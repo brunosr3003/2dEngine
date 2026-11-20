@@ -1,162 +1,152 @@
 # Barcos novos + PvP naval — status da implementação
 
-Design: `docs/BARCOS.md` (barcos, tiers, pontos) e `docs/PVP-NAVAL.md` (combate,
-abordagem, saque). Este arquivo diz **o que já está no código e o que falta**.
+Design: `docs/BARCOS.md`, `docs/PVP-NAVAL.md` e `docs/NAVEGACAO.md`.
+Este arquivo registra o que está realmente ligado ao jogo e o que ainda falta.
 
-Branch: `worktree-tag-cla-preco-mercado`. Atualizado em 19/11/2026.
-
----
+Branch: `worktree-tag-cla-preco-mercado`. Atualizado em 20/11/2026.
 
 ## Resumo
 
-| Fase | O quê | Status |
-|------|-------|--------|
-| 1 | Dados, stats, migração, upgrade | **Começada** (só a base de dados) |
-| 2 | UI no Estaleiro (pontos, galeria) | Não começada |
-| 3 | Projéteis desviáveis | Não começada (já existe uma base no código) |
-| 4 | Barco derrotado (fogo, reparo de vela) | Não começada |
-| 5 | Abordagem + respawn com delay | Não começada |
-| 6 | Saque + Naval Tokens + loja | Não começada |
-| 7 | IA do barco (auto-return / auto-defend) | Não começada |
-| 8 | Alianças entre tripulações | Não começada |
+| Fase | Escopo | Status real |
+|---|---|---|
+| 1 | Tipos, stats, migração, pontos e tiers | **Implementada** |
+| 2 | Estaleiro e UI dos barcos | **Implementada** |
+| 3 | Combate com projéteis desviáveis | **Implementada** |
+| 4 | Estado derrotado, fogo e reparo de vela | **Implementada** |
+| 5 | Abordagem hostil e respawn naval | **Implementada** |
+| 6 | Saque PvP e Naval Tokens | **Implementada** |
+| 7 | IA do barco abandonado | **Implementada** |
+| 8 | Alianças entre tripulações | **Implementada via grupos** |
 
-**Hoje nada disso muda o jogo.** Os tipos novos existem, mas nenhuma parte do
-servidor ou do cliente lê eles ainda. Os barcos atuais (Sloop, Schooner,
-Galleon, Man-o'-War) continuam funcionando como antes.
+O sistema novo já altera o jogo. Barcos legados continuam aceitos e são
+migrados; barcos novos usam tipo, tier e pontos nas contas compartilhadas por
+cliente e servidor.
 
----
+## Implementado
 
-## O que já foi feito
+### 1. Barcos, progressão e migração
 
-### Commitado (`7bdb507`)
+Em `crates/shared/src/navio.rs` e `crates/shared/src/items.rs`:
 
-`crates/shared/src/navio.rs`, bloco "NOVO SISTEMA DE BARCOS":
-- `Tamanho` (Pequeno / Médio / Grande) e `Variante` (Veloz / Ataque / Tanque).
-- `TipoBarco`: as 9 combinações, com `id()` 0–8, `de_id()`, `nome()` em inglês
-  ("Swift Sloop", "Ironclad Galleon"…) e `capacidade()` (2 / 4 / 8 passageiros).
-- `StatsBase` e `stats_base(tipo)` com valores para os 9 tipos.
-- `PONTOS_POR_TIER`: T1 10, T2 18, T3 26, T4 34.
+- nove tipos (`Tamanho` × `Variante`), com nomes, capacidade e stats base;
+- tiers T1–T4, limites de pontos e stats finais em unidades reais do jogo;
+- `NavioData` guarda `tipo_novo`, `tier` e quatro eixos de pontos;
+- casco, velocidade, giro, arranque, canhão, visual e capacidade leem os dados
+  novos, preservando o caminho legado quando necessário;
+- migração dos quatro cascos antigos preserva cosméticos, tesouro e proporção
+  de HP;
+- validação de alocação, custo de respec e custo de upgrade;
+- upgrade exige outro barco idêntico e ouro; pontos são preservados;
+- capacidade 2/4/8 é aplicada ao embarque da tripulação;
+- construção, alocação, respec e upgrade são validados no servidor.
 
-`crates/shared/src/items.rs`, no fim de `NavioData`:
-- `tipo_novo: Option<u8>` (`None` = barco antigo).
-- `pontos: [u8; 4]` (velocidade, HP, dano, virada).
+### 2. Estaleiro e apresentação
 
-O `cargo check -p client` passou no brunjilinux com isso.
+Em `crates/client/src/estaleiro_ui.rs`:
 
-### Feito mas ainda não commitado
+- galeria dos nove tipos e construção dos cascos T1;
+- preview 3D;
+- painel de quatro stats com pontos usados/disponíveis e preview;
+- respec com custo e upgrade T1→T4;
+- cosméticos de vela e figura de proa continuam integrados.
 
-Em `navio.rs`, logo acima de `stats_base`:
-- `tier_mult(tier)`: 0,6 / 0,9 / 1,2 / 1,5.
-- `valida_pontos(tier, pontos)`: a soma não passa do limite do tier.
-- `stats_finais_novo(tipo, tier, pontos)`: soma base + pontos e multiplica pelo tier.
+### 3. Combate naval — concluído nesta rodada
 
----
+Base já existente:
 
-## Problemas conhecidos no que já existe
+- balas são entidades temporárias do servidor e acertam apenas ao pousar;
+- avanço da mira e raio de acerto permitem desviar virando ou saindo do ponto;
+- dano de PvP vai ao casco e respeita PK, águas pacíficas e zona segura;
+- cliente desenha disparo, fumaça, trajetória, impacto e splash;
+- todos os canhões saem do costado, nunca da proa.
 
-1. **Os números de `stats_base` são provisórios e estão na escala errada.**
-   O jogo mede velocidade em u/s (10 a 13,4; o fio aguenta 15,5) e virada em
-   rad/s (0,7 a 1,5). Os valores escritos (velocidade 120, virada 180) não
-   batem com isso, e "1 ponto = +1" quase não faz diferença no HP (2.000+).
-   **Decisão pendente:** passar para unidades reais, com cada ponto valendo
-   um % do stat (ex.: HP +4%, dano +4%, velocidade +2%, virada +3% por ponto).
-2. **Aplicar o multiplicador do tier na velocidade fica estranho:** um T1 a
-   60% andaria a ~6 u/s. Proposta: o tier pesa cheio em HP e dano e pouco em
-   velocidade e virada (ex.: 0,85 / 0,95 / 1,05 / 1,15). E toda velocidade
-   continua presa em `VELOCIDADE_MAX` (15,5).
-3. **O tier do barco não está guardado em lugar nenhum.** As funções do navio
-   só recebem o `NavioData`, não o item inteiro. Proposta: um campo `tier`
-   em `NavioData`.
-4. **Os testes de `navio.rs` não compilam.** A linha ~1353 monta um
-   `NavioData` campo a campo, sem `..Default::default()`, e agora faltam os
-   campos novos. O `check_cli.sh` só roda `cargo check -p client` e não pegou.
-   Falta rodar `cargo test -p shared`.
-5. **Protocolo:** `NavioData` vai no fio em postcard (posicional), então os
-   campos novos mudam o formato. Produção está na **198** e a 199 é só de
-   teste, então tudo bem ficar na 199 enquanto ela não for lançada. Se a 199
-   sair antes disto ficar pronto, o protocolo tem que subir.
+Finalizado agora:
 
----
+- **Broadside:** cinco balas em leque por alvo, com voo e colisão próprios; o
+  dano total foi dividido entre as cinco;
+- **Long Gun:** bala a 60 u/s, teto de voo de 0,7 s e avanço específico;
+- **Chain Shot:** quinta habilidade, alcance 18, dano baixo e recarga de 20 s;
+  acertar um casco válido reduz a velocidade a 50% por 5 s;
+- a lentidão só entra quando o dano ao casco foi autorizado e aplicado;
+- barra naval ampliada para cinco botões, atalhos 1–5, AUTO, cooldown,
+  tooltip, cor e ícone da Chain Shot;
+- VFX usa o tempo rápido correto na Long Gun e tiro lateral na Chain Shot;
+- piloto automático usa Chain Shot contra navios, sem gastá-la em mobs;
+- `Session` mantém os relógios de Smoke e Chain Shot separadamente;
+- testes cobrem leque, voo rápido, definição da Chain Shot e lentidão.
 
-## O que falta fazer
+### 4. Barco derrotado, abordagem e respawn
 
-### Fase 1 — base (próximo passo)
-- [ ] Resolver os problemas 1 a 4 acima (unidades reais, tier no `NavioData`,
-      testes compilando).
-- [ ] Ligar o sistema novo nas funções que o jogo já usa: `casco_total`,
-      `velocidade_do_navio`, `giro_max`, `mult_do_canhao` e `Visual::de`
-      (escolher modelo/escala pelo tamanho). Se `tipo_novo` for `Some`, usa a
-      conta nova; se for `None`, a de hoje. Assim o servidor, o HUD e o
-      combate usam os stats novos sem mexer em cada chamada.
-- [ ] **Capacidade:** achar onde o convés aceita passageiros e limitar por
-      `TipoBarco::capacidade()`.
-- [ ] **Migração dos barcos antigos:** função que converte Sloop / Schooner /
-      Galleon / Man-o'-War para tipo + tier novos e as estrelas em pontos,
-      sem o jogador perder nada. Falta decidir o mapeamento exato.
-- [ ] **Upgrade T1→T4:** 2 barcos iguais (tipo + tier) + ouro = 1 do tier de
-      cima. Falta decidir se os pontos se mantêm ou resetam.
-- [ ] **Respec:** zerar os pontos por um custo em ouro.
-- [ ] **Como se ganha cada um dos 9 tipos:** craft no Estaleiro? Com quais
-      materiais? Hoje só existe a escada Sloop → Man-o'-War.
-- [ ] Item id / nome / ícone para os tipos novos (ou um item só, com o tipo
-      dentro da instância).
+- casco a zero permanece por 12 minutos como destroço abordável;
+- destroço para, deriva, recebe fogo/fumaça no cliente e mantém o convés;
+- capitão pode abandonar imediatamente ou reparar a vela por 45 s;
+- movimento, dano, saída do ponto ou estado inválido interrompem o reparo;
+- reparo de vela devolve 10% do casco e o reparo completo continua no cais;
+- abordagem hostil é liberada a curta distância contra destroços fora da zona
+  segura; o invasor não passa a integrar a tripulação inimiga;
+- mortes no combate naval usam espera crescente e retornam ao convés enquanto
+  o navio ainda existe; o afundamento aplica a morte naval definitiva.
 
-### Fase 2 — UI (Estaleiro, `client/src/estaleiro_ui.rs`)
-- [ ] Painel de pontos: 4 stats com +/−, pontos usados/disponíveis, preview
-      dos stats finais, botão aplicar e botão respec.
-- [ ] Galeria 3×3 dos tipos com stats base, capacidade e preview 3D.
-- [ ] Tela de upgrade de tier.
-- [ ] Skins de casco (estilo skin de montaria). Velas e figuras já existem.
+### 5. Navegação, convés e tripulação
 
-### Fase 3 — projéteis desviáveis
-Já existem `tempo_de_voo`, `mira_com_avanco` e `acertou` em `navio.rs`.
-**Primeiro passo:** ver o que já é projétil de verdade hoje e o que é acerto
-instantâneo.
-- [ ] Projétil com tempo de voo, que erra se o alvo desviar.
-- [ ] Broadside em leque, Long Gun rápido, Chain Shot com lentidão (skill nova).
-- [ ] Efeito visual de disparo, rastro e impacto/splash.
+- casco com giro, inércia, aceleração e rota marítima A*;
+- piloto automático do servidor orbita, mira e dispara;
+- convés andável, leme, capitão e membros da tripulação;
+- membro do mesmo grupo pode embarcar ao navegar ao lado;
+- o próprio barco do passageiro é recolhido durante o embarque;
+- lotação respeita o tamanho do barco;
+- sem capitão, a tripulação é levada ao cais.
 
-### Fase 4 — barco derrotado
-- [ ] HP 0 deixa o barco parado em vez de ele sumir: velas rasgadas, fogo,
-      fumaça, inclinado, à deriva.
-- [ ] Timer para afundar sozinho (10–15 min).
-- [ ] Capitão escolhe: **Afundar** (todos vão para o cais da última ilha) ou
-      **Reparar vela** (30–60 s parado no mastro, cancela com dano ou se andar;
-      ao terminar o barco volta com 10% de HP). Ilimitado, sem material e sem
-      cooldown.
+### 6. Saque naval e tesouro
 
-### Fase 5 — abordagem e PvP no convés
-- [ ] Pular para o convés de um barco a 5–10 u. Vários barcos ao mesmo tempo.
-- [ ] Respawn com delay crescente no mesmo combate (5 s, 10 s, 15 s…), no
-      próprio barco se ele estiver inteiro.
-- [ ] Barco afundado: morte real (−2% XP, −50 de proficiência naval, nunca
-      desce de nível) e volta ao cais da última ilha.
+- invasor aborda o destroço e canaliza o saque por 10 s;
+- mover, tomar dano, sair do destroço ou outro jogador concluir primeiro
+  interrompe/recusa o canal;
+- a recompensa é gerada pelo sistema e não remove itens da vítima;
+- o saque paga ouro, 1–3 Naval Tokens e fragmentos navais, com entrega pelo
+  correio quando a bolsa está cheia;
+- cada destroço só pode ser saqueado uma vez;
+- o Estaleiro oferece uma loja naval que consome tokens;
+- elites do mar e, com chance menor, criaturas comuns fornecem tokens em PvE;
+- destroço não saqueado deixa um barril temporário, canalizável e marcado no
+  mapa por 15 minutos.
 
-### Fase 6 — saque e Naval Tokens
-- [ ] Baú do barco derrotado: canalizar 10 s, interrompido por dano.
-- [ ] Loot só gerado pelo sistema (500–2.000 de ouro, 1–3 Naval Tokens,
-      chance de material raro). **Nunca** sai item do jogador.
-- [ ] Barril boiando quando o barco afunda: 15 min, coleta de 5 s, aparece no
-      mapa depois de 5 min, o dono também pode pegar.
-- [ ] Naval Tokens: item/moeda, NPC loja no cais (skins, velas, figuras, pets)
-      e fontes PvE (entregas, exploração, daily).
+Infraestrutura adicional do Baú do Colosso:
+
+- a maquinaria do Baú do Colosso permanece no código, mas
+  `BAU_DO_COLOSSO_LIGADO = false`: chefes não geram esse baú atualmente;
+- multiplicador cresce ao atravessar ilhas;
+- barco com tesouro fica marcado e pode ser atacado;
+- ao afundar, o tesouro boia; em abate PvP ele é reservado ao vencedor;
+- coleta é canalizada e pode ser interrompida;
+- abrir paga ouro/materiais conforme o conteúdo e o multiplicador.
 
 ### Fase 7 — IA do barco
-- [ ] Todos abordaram outro barco: o seu fica virando para ser difícil de acertar.
-- [ ] Tripulação morta ou desconectada: o barco volta sozinho para o cais.
-- [ ] Caiu a conexão: 2 min no convés e depois vai para o cais em segurança.
+
+- ao abordar um inimigo, o casco próprio continua no mar sob comando
+  autônomo em vez de desaparecer;
+- o barco responde com bordadas aos agressores válidos;
+- sem capitão, navega de volta ao cais depois da tolerância de dois minutos;
+- reconectar ou usar “voltar ao meu navio” recupera o casco autônomo próximo.
 
 ### Fase 8 — alianças
-- [ ] Convite entre líderes de tripulação, aceitar ou recusar.
-- [ ] Aliados não se atacam e aparecem marcados.
-- [ ] Loot dividido igual entre os aliados a até 100 u.
 
----
+- o convite/aceite e a dissolução usam o sistema de grupo já exposto no menu;
+- capitães aliados podem continuar em cascos distintos;
+- regras de PK impedem fogo amigo e o HUD identifica os membros do grupo;
+- o saque de destroço é dividido automaticamente entre aliados a até 30 u.
 
-## Ainda falta decidir
-- Mapeamento dos barcos antigos para os tipos novos.
-- Se os pontos se mantêm no upgrade de tier.
-- Quanto vale cada ponto em cada stat (itens 1 e 2 acima).
-- Como se consegue cada tipo de barco e quanto custa.
-- O que exatamente acontece com HP 0 além do fogo (o dono tem uma ideia
-  própria; por enquanto fica só o gatilho).
+## O que ainda falta
+
+- skins completas de casco e variações visuais próprias por tier;
+- VFX/áudio de polimento para reparo, abordagem e saque;
+- playtest e ajuste fino de builds, recompensas e timers.
+
+## Validação de 20/11/2026
+
+- `cargo check -p shared -p server -p client`: **passou**;
+- 24 testes de `shared::navio`: passaram;
+- 42 testes de `server::world::navio`: passaram;
+- 14 testes de convés, incluindo abordagem, autonomia e reconexão, passaram.
+
+Warnings antigos do projeto permanecem, sem erro de compilação.

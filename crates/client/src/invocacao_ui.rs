@@ -70,7 +70,11 @@ pub fn icone_pergaminho_de(item_id: u16, c: Vec2, lado: f32) {
     // The key summon has an illustrated icon in the item atlas: an open chest
     // with craft keys (owner, 11/11/2026).
     if item_id == it::PERGAMINHO_INVOCA_CHAVE
-        && crate::icones::desenha(item_id, Rect::new(c.x - lado * 0.5, c.y - lado * 0.5, lado, lado), 1.0)
+        && crate::icones::desenha(
+            item_id,
+            Rect::new(c.x - lado * 0.5, c.y - lado * 0.5, lado, lado),
+            1.0,
+        )
     {
         return;
     }
@@ -185,7 +189,9 @@ impl InvocacaoUi {
         let t = (agora - inicio).max(0.0) as f32;
         let seguro = crate::hud_layout::tela_segura();
         let k = (seguro.w / BASE_W).min(seguro.h / BASE_H).clamp(0.5, 3.0);
-        let acao = estilo::no_painel(k, || cena(&premios, nomes, skills, vox, solido, t, k, seguro));
+        let acao = estilo::no_painel(k, || {
+            cena(&premios, nomes, skills, vox, solido, t, k, seguro)
+        });
         match acao {
             Acao::Nada => {}
             Acao::Pular(para) => self.atual = Some((premios, agora - para as f64)),
@@ -248,8 +254,14 @@ fn info(
 ) -> Info {
     match premio {
         PremioInvocacao::Chave { item_id, cor } => Info {
-            titulo: nomes.get(item_id).cloned().unwrap_or_else(|| "Crafting Key".into()),
-            sub: format!("{} · Key", shared::forja::Grau::de_u8(*cor).map_or("Common", |g| g.nome())),
+            titulo: nomes
+                .get(item_id)
+                .cloned()
+                .unwrap_or_else(|| "Crafting Key".into()),
+            sub: format!(
+                "{} · Key",
+                shared::forja::Grau::de_u8(*cor).map_or("Common", |g| g.nome())
+            ),
             // The colour IS the rarity (it used to be the same blue for every key).
             cor: cor_do_grau(*cor),
             raridade: *cor,
@@ -274,7 +286,11 @@ fn info(
                 raridade: g,
             }
         }
-        PremioInvocacao::Tomo { skill_id, grau, quantidade } => Info {
+        PremioInvocacao::Tomo {
+            skill_id,
+            grau,
+            quantidade,
+        } => Info {
             titulo: skills
                 .iter()
                 .find(|s| s.id == *skill_id)
@@ -305,7 +321,12 @@ fn sai(x: f32) -> f32 {
 
 fn mistura(a: Color, b: Color, f: f32) -> Color {
     let f = f.clamp(0.0, 1.0);
-    Color::new(a.r + (b.r - a.r) * f, a.g + (b.g - a.g) * f, a.b + (b.b - a.b) * f, a.a + (b.a - a.a) * f)
+    Color::new(
+        a.r + (b.r - a.r) * f,
+        a.g + (b.g - a.g) * f,
+        a.b + (b.b - a.b) * f,
+        a.a + (b.a - a.a) * f,
+    )
 }
 
 fn sorte(i: u32) -> f32 {
@@ -330,10 +351,30 @@ fn leque(pts: &[Vec2], cor: Color) {
 
 /// A four-point twinkle.
 fn brilhinho(c: Vec2, r: f32, cor: Color) {
-    draw_triangle(c + vec2(0.0, -r), c + vec2(r * 0.22, 0.0), c + vec2(-r * 0.22, 0.0), cor);
-    draw_triangle(c + vec2(0.0, r), c + vec2(r * 0.22, 0.0), c + vec2(-r * 0.22, 0.0), cor);
-    draw_triangle(c + vec2(-r, 0.0), c + vec2(0.0, r * 0.22), c + vec2(0.0, -r * 0.22), cor);
-    draw_triangle(c + vec2(r, 0.0), c + vec2(0.0, r * 0.22), c + vec2(0.0, -r * 0.22), cor);
+    draw_triangle(
+        c + vec2(0.0, -r),
+        c + vec2(r * 0.22, 0.0),
+        c + vec2(-r * 0.22, 0.0),
+        cor,
+    );
+    draw_triangle(
+        c + vec2(0.0, r),
+        c + vec2(r * 0.22, 0.0),
+        c + vec2(-r * 0.22, 0.0),
+        cor,
+    );
+    draw_triangle(
+        c + vec2(-r, 0.0),
+        c + vec2(0.0, r * 0.22),
+        c + vec2(0.0, -r * 0.22),
+        cor,
+    );
+    draw_triangle(
+        c + vec2(r, 0.0),
+        c + vec2(0.0, r * 0.22),
+        c + vec2(0.0, -r * 0.22),
+        cor,
+    );
 }
 
 /// The egg in its own coordinates (centre 0,0; `rx`/`ry` half sizes; the top
@@ -373,7 +414,13 @@ impl Ovo {
         let amp = self.ry * 0.09;
         (0..=8)
             .map(|i| {
-                let dy = if i == 0 || i == 8 { 0.0 } else if i % 2 == 1 { amp } else { -amp };
+                let dy = if i == 0 || i == 8 {
+                    0.0
+                } else if i % 2 == 1 {
+                    amp
+                } else {
+                    -amp
+                };
                 vec2(-xs + 2.0 * xs * i as f32 / 8.0, y + dy)
             })
             .collect()
@@ -381,7 +428,9 @@ impl Ovo {
 
     fn arco(&self, de: f32, ate: f32) -> Vec<Vec2> {
         let n = 24;
-        (0..=n).map(|i| self.ponto(de + (ate - de) * i as f32 / n as f32)).collect()
+        (0..=n)
+            .map(|i| self.ponto(de + (ate - de) * i as f32 / n as f32))
+            .collect()
     }
 
     /// (outline arc, polygon) of the top half.
@@ -433,19 +482,42 @@ pub const OVO_PET: CoresOvo = CoresOvo {
 
 /// The egg icon (shop, bag, slots): same drawing as the reveal, still whole.
 pub fn icone_ovo(c: Vec2, lado: f32, cores: CoresOvo) {
-    let ovo = Ovo { rx: lado * 0.30, ry: lado * 0.39 };
-    draw_ellipse(c.x, c.y + ovo.ry * 0.98, ovo.rx * 0.95, ovo.ry * 0.13, 0.0, Color::new(0.0, 0.0, 0.0, 0.30));
+    let ovo = Ovo {
+        rx: lado * 0.30,
+        ry: lado * 0.39,
+    };
+    draw_ellipse(
+        c.x,
+        c.y + ovo.ry * 0.98,
+        ovo.rx * 0.95,
+        ovo.ry * 0.13,
+        0.0,
+        Color::new(0.0, 0.0, 0.0, 0.30),
+    );
     let xf = move |l: Vec2| c + l;
     desenha_ovo(&ovo, &xf, lado / 150.0, 0.0, WHITE, 0.0, cores);
 }
 const CASCA_BORDA: Color = Color::new(0.16, 0.11, 0.20, 1.0);
 /// Spots: (x, y) as fractions of rx/ry, radius as a fraction of rx.
-const PINTAS: [(f32, f32, f32); 5] =
-    [(-0.38, -0.28, 0.20), (0.42, 0.02, 0.15), (-0.12, 0.50, 0.13), (0.22, -0.60, 0.10), (0.50, 0.55, 0.09)];
+const PINTAS: [(f32, f32, f32); 5] = [
+    (-0.38, -0.28, 0.20),
+    (0.42, 0.02, 0.15),
+    (-0.12, 0.50, 0.13),
+    (0.22, -0.60, 0.10),
+    (0.50, 0.55, 0.09),
+];
 
 /// The whole egg, still closed. `xf` maps egg coordinates to the screen.
 #[allow(clippy::too_many_arguments)]
-fn desenha_ovo(ovo: &Ovo, xf: &dyn Fn(Vec2) -> Vec2, k: f32, racha: f32, luz: Color, branco: f32, cores: CoresOvo) {
+fn desenha_ovo(
+    ovo: &Ovo,
+    xf: &dyn Fn(Vec2) -> Vec2,
+    k: f32,
+    racha: f32,
+    luz: Color,
+    branco: f32,
+    cores: CoresOvo,
+) {
     let contorno = ovo.contorno();
     let borda: Vec<Vec2> = contorno.iter().map(|p| xf(*p * 1.06)).collect();
     leque(&borda, CASCA_BORDA);
@@ -458,7 +530,12 @@ fn desenha_ovo(ovo: &Ovo, xf: &dyn Fn(Vec2) -> Vec2, k: f32, racha: f32, luz: Co
     for (x, y, r) in PINTAS {
         let c = xf(vec2(x * ovo.rx, y * ovo.ry));
         draw_circle(c.x, c.y, r * ovo.rx, cores.pinta);
-        draw_circle(c.x - r * ovo.rx * 0.25, c.y - r * ovo.rx * 0.25, r * ovo.rx * 0.45, mistura(cores.pinta, WHITE, 0.35));
+        draw_circle(
+            c.x - r * ovo.rx * 0.25,
+            c.y - r * ovo.rx * 0.25,
+            r * ovo.rx * 0.45,
+            mistura(cores.pinta, WHITE, 0.35),
+        );
     }
     let h = xf(vec2(-0.40 * ovo.rx, -0.48 * ovo.ry));
     draw_circle(h.x, h.y, 0.15 * ovo.rx, Color::new(1.0, 1.0, 1.0, 0.75));
@@ -475,19 +552,39 @@ fn desenha_ovo(ovo: &Ovo, xf: &dyn Fn(Vec2) -> Vec2, k: f32, racha: f32, luz: Co
                 continue;
             }
             let (a, b) = (xf(w[0]), xf(w[1]));
-            draw_line(a.x, a.y, b.x, b.y, 8.0 * k, estilo::alfa(luz, 0.35 * (racha / 3.0).min(1.0)));
+            draw_line(
+                a.x,
+                a.y,
+                b.x,
+                b.y,
+                8.0 * k,
+                estilo::alfa(luz, 0.35 * (racha / 3.0).min(1.0)),
+            );
             draw_line(a.x, a.y, b.x, b.y, 3.2 * k, CASCA_BORDA);
             draw_line(a.x, a.y, b.x, b.y, 1.6 * k, mistura(luz, WHITE, 0.5));
         }
         // Little branches off the seam.
-        let ramos = [(3usize, -1.0, 2.0), (5, 1.0, 2.0), (2, 1.0, 3.0), (6, -1.0, 3.0)];
+        let ramos = [
+            (3usize, -1.0, 2.0),
+            (5, 1.0, 2.0),
+            (2, 1.0, 3.0),
+            (6, -1.0, 3.0),
+        ];
         for (i, lado, nivel) in ramos {
             if racha < nivel - 0.5 {
                 continue;
             }
             let p0 = costura[i];
-            let p1 = p0 + vec2(ovo.rx * 0.10 * lado, -ovo.ry * 0.16 * lado.signum() * if i % 2 == 0 { 1.0 } else { -1.0 });
-            let p2 = p1 + vec2(ovo.rx * 0.10, -ovo.ry * 0.08 * if i % 2 == 0 { 1.0 } else { -1.0 });
+            let p1 = p0
+                + vec2(
+                    ovo.rx * 0.10 * lado,
+                    -ovo.ry * 0.16 * lado.signum() * if i % 2 == 0 { 1.0 } else { -1.0 },
+                );
+            let p2 = p1
+                + vec2(
+                    ovo.rx * 0.10,
+                    -ovo.ry * 0.08 * if i % 2 == 0 { 1.0 } else { -1.0 },
+                );
             for (a, b) in [(p0, p1), (p1, p2)] {
                 let (a, b) = (xf(a), xf(b));
                 draw_line(a.x, a.y, b.x, b.y, 2.6 * k, CASCA_BORDA);
@@ -501,7 +598,15 @@ fn desenha_ovo(ovo: &Ovo, xf: &dyn Fn(Vec2) -> Vec2, k: f32, racha: f32, luz: Co
 }
 
 /// One flying half of the shell.
-fn desenha_metade(arco: &[Vec2], pol: &[Vec2], xf: &dyn Fn(Vec2) -> Vec2, k: f32, luz: Color, a: f32, cores: CoresOvo) {
+fn desenha_metade(
+    arco: &[Vec2],
+    pol: &[Vec2],
+    xf: &dyn Fn(Vec2) -> Vec2,
+    k: f32,
+    luz: Color,
+    a: f32,
+    cores: CoresOvo,
+) {
     let pts: Vec<Vec2> = pol.iter().map(|p| xf(*p)).collect();
     leque(&pts, estilo::alfa(cores.casca, a));
     for w in arco.windows(2) {
@@ -511,8 +616,22 @@ fn desenha_metade(arco: &[Vec2], pol: &[Vec2], xf: &dyn Fn(Vec2) -> Vec2, k: f32
     let n = pts.len();
     let costura = &pts[arco.len() - 1..];
     for i in 0..costura.len() {
-        let (p, q) = (costura[i], if i + 1 < costura.len() { costura[i + 1] } else { pts[0] });
-        draw_line(p.x, p.y, q.x, q.y, 3.0 * k, estilo::alfa(mistura(luz, WHITE, 0.4), a));
+        let (p, q) = (
+            costura[i],
+            if i + 1 < costura.len() {
+                costura[i + 1]
+            } else {
+                pts[0]
+            },
+        );
+        draw_line(
+            p.x,
+            p.y,
+            q.x,
+            q.y,
+            3.0 * k,
+            estilo::alfa(mistura(luz, WHITE, 0.4), a),
+        );
     }
     let _ = n;
 }
@@ -598,8 +717,20 @@ fn livro_aberto(c: Vec2, lado: f32, cor: Color, t: f32) {
     disco(runa, lado * (0.42 + 0.04 * pulso), estilo::alfa(cor, 0.18));
     disco(runa, lado * 0.26, estilo::alfa(cor, 0.25));
     draw_poly_lines(runa.x, runa.y, 6, lado * 0.24, t * 40.0, lado * 0.03, cor);
-    draw_poly(runa.x, runa.y, 6, lado * 0.13, -t * 60.0, mistura(cor, WHITE, 0.55));
-    draw_triangle(base + vec2(-w * 0.5, -h * 0.6), base + vec2(w * 0.5, -h * 0.6), runa, estilo::alfa(cor, 0.12));
+    draw_poly(
+        runa.x,
+        runa.y,
+        6,
+        lado * 0.13,
+        -t * 60.0,
+        mistura(cor, WHITE, 0.55),
+    );
+    draw_triangle(
+        base + vec2(-w * 0.5, -h * 0.6),
+        base + vec2(w * 0.5, -h * 0.6),
+        runa,
+        estilo::alfa(cor, 0.12),
+    );
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -613,10 +744,16 @@ fn cena(
     k: f32,
     seguro: Rect,
 ) -> Acao {
-    let o = vec2(seguro.center().x - BASE_W * k * 0.5, seguro.center().y - BASE_H * k * 0.5);
+    let o = vec2(
+        seguro.center().x - BASE_W * k * 0.5,
+        seguro.center().y - BASE_H * k * 0.5,
+    );
     let p = |x: f32, y: f32| o + vec2(x, y) * k;
     let infos: Vec<Info> = premios.iter().map(|pr| info(pr, nomes, skills)).collect();
-    let melhor = infos.iter().max_by_key(|i| i.raridade).map_or(estilo::OURO, |i| i.cor);
+    let melhor = infos
+        .iter()
+        .max_by_key(|i| i.raridade)
+        .map_or(estilo::OURO, |i| i.cor);
     let clicou = crate::foco::clique();
     let m = Vec2::from(mouse_position());
 
@@ -629,18 +766,39 @@ fn cena(
     let estourou = t >= T_ESTOURO;
     let b = (t - T_ESTOURO).max(0.0);
     // Spotlight: cold at first, the prize's colour as it cracks.
-    let luz = mistura(Color::new(0.62, 0.74, 1.0, 1.0), melhor, if estourou { 1.0 } else { racha / 3.0 });
-    let centro = if premios.len() > 1 { p(450.0, 200.0) } else { p(450.0, 150.0) };
+    let luz = mistura(
+        Color::new(0.62, 0.74, 1.0, 1.0),
+        melhor,
+        if estourou { 1.0 } else { racha / 3.0 },
+    );
+    let centro = if premios.len() > 1 {
+        p(450.0, 200.0)
+    } else {
+        p(450.0, 150.0)
+    };
     for i in 0..7 {
         let r = (330.0 - i as f32 * 42.0) * k;
-        disco(centro, r, estilo::alfa(luz, 0.028 + if estourou { 0.012 } else { 0.0 }));
+        disco(
+            centro,
+            r,
+            estilo::alfa(luz, 0.028 + if estourou { 0.012 } else { 0.0 }),
+        );
     }
 
-    let ovo = Ovo { rx: 58.0 * k, ry: 76.0 * k };
+    let ovo = Ovo {
+        rx: 58.0 * k,
+        ry: 76.0 * k,
+    };
     // The egg of the scroll that was opened.
-    let cores = if premios.iter().all(|p| matches!(p, PremioInvocacao::Pet { .. })) {
+    let cores = if premios
+        .iter()
+        .all(|p| matches!(p, PremioInvocacao::Pet { .. }))
+    {
         OVO_PET
-    } else if premios.iter().all(|p| matches!(p, PremioInvocacao::Montaria { .. })) {
+    } else if premios
+        .iter()
+        .all(|p| matches!(p, PremioInvocacao::Montaria { .. }))
+    {
         OVO_MONTARIA
     } else {
         OVO_PEROLA
@@ -660,7 +818,8 @@ fn cena(
         for (i, (s, d)) in SACUDIDAS.iter().enumerate() {
             let x = (t - s) / d;
             if (0.0..1.0).contains(&x) {
-                rot += (x * std::f32::consts::TAU * 2.0).sin() * (1.0 - x) * (0.16 + 0.07 * i as f32);
+                rot +=
+                    (x * std::f32::consts::TAU * 2.0).sin() * (1.0 - x) * (0.16 + 0.07 * i as f32);
             }
         }
         // Breathing while it glows white, about to burst.
@@ -670,13 +829,25 @@ fn cena(
         sy *= pulso;
         // Ground shadow.
         let sombra = 1.0 - (-cai / (300.0 * k)).min(1.0) * 0.6;
-        draw_ellipse(c_ovo.x, c_ovo.y + ovo.ry + 6.0 * k, ovo.rx * 1.05 * sombra, 11.0 * k * sombra, 0.0, Color::new(0.0, 0.0, 0.0, 0.40 * sombra));
+        draw_ellipse(
+            c_ovo.x,
+            c_ovo.y + ovo.ry + 6.0 * k,
+            ovo.rx * 1.05 * sombra,
+            11.0 * k * sombra,
+            0.0,
+            Color::new(0.0, 0.0, 0.0, 0.40 * sombra),
+        );
         // Evolution rings pulling inwards while it glows.
         if branco > 0.0 {
             for j in 0..3 {
                 let f = ((t * 1.8 + j as f32 / 3.0).fract()).max(0.0);
                 let r = (220.0 * (1.0 - f) + 70.0) * k;
-                anel(c_ovo, r, 3.0 * k, estilo::alfa(mistura(luz, WHITE, 0.5), branco * f * 0.8));
+                anel(
+                    c_ovo,
+                    r,
+                    3.0 * k,
+                    estilo::alfa(mistura(luz, WHITE, 0.5), branco * f * 0.8),
+                );
             }
         }
         let pivo = vec2(0.0, ovo.ry);
@@ -694,11 +865,23 @@ fn cena(
             }
             for j in 0..8u32 {
                 let a = sorte(j + 17 * i as u32) * std::f32::consts::TAU;
-                let pos = c_ovo + vec2(a.cos() * ovo.rx, a.sin() * ovo.ry * 0.5 + ovo.costura_y()) * (0.9 + sai(q) * 0.7);
-                brilhinho(pos, (7.0 * (1.0 - q)) * k, estilo::alfa(mistura(luz, WHITE, 0.5), 1.0 - q));
+                let pos = c_ovo
+                    + vec2(a.cos() * ovo.rx, a.sin() * ovo.ry * 0.5 + ovo.costura_y())
+                        * (0.9 + sai(q) * 0.7);
+                brilhinho(
+                    pos,
+                    (7.0 * (1.0 - q)) * k,
+                    estilo::alfa(mistura(luz, WHITE, 0.5), 1.0 - q),
+                );
             }
         }
-        estilo::texto_centro(p(450.0, 404.0).x, p(450.0, 404.0).y, "Tap to skip", 13, estilo::alfa(estilo::SUAVE, (t / 0.6).min(1.0)));
+        estilo::texto_centro(
+            p(450.0, 404.0).x,
+            p(450.0, 404.0).y,
+            "Tap to skip",
+            13,
+            estilo::alfa(estilo::SUAVE, (t / 0.6).min(1.0)),
+        );
         if clicou {
             acao = Acao::Pular(T_ESTOURO);
         }
@@ -731,19 +914,39 @@ fn cena(
             for j in 0..30u32 {
                 let a = sorte(j) * std::f32::consts::TAU;
                 let vel = (160.0 + 260.0 * sorte(j + 99)) * k;
-                let pos = c_ovo + vec2(a.cos(), a.sin()) * vel * sai(q) + vec2(0.0, 60.0 * k * q * q);
-                let cor = if j % 3 == 0 { WHITE } else { mistura(melhor, WHITE, 0.3) };
-                brilhinho(pos, (9.0 + 6.0 * sorte(j + 7)) * (1.0 - q) * k, estilo::alfa(cor, 1.0 - q));
+                let pos =
+                    c_ovo + vec2(a.cos(), a.sin()) * vel * sai(q) + vec2(0.0, 60.0 * k * q * q);
+                let cor = if j % 3 == 0 {
+                    WHITE
+                } else {
+                    mistura(melhor, WHITE, 0.3)
+                };
+                brilhinho(
+                    pos,
+                    (9.0 + 6.0 * sorte(j + 7)) * (1.0 - q) * k,
+                    estilo::alfa(cor, 1.0 - q),
+                );
             }
         }
         if b < 0.5 {
             let q = b / 0.5;
-            anel(c_ovo, (60.0 + 460.0 * sai(q)) * k, 8.0 * k * (1.0 - q), estilo::alfa(mistura(melhor, WHITE, 0.6), 1.0 - q));
+            anel(
+                c_ovo,
+                (60.0 + 460.0 * sai(q)) * k,
+                8.0 * k * (1.0 - q),
+                estilo::alfa(mistura(melhor, WHITE, 0.6), 1.0 - q),
+            );
         }
         // The white flash.
         let flash = (1.0 - b / 0.45).max(0.0).powf(1.6);
         if flash > 0.0 {
-            draw_rectangle(0.0, 0.0, screen_width(), screen_height(), Color::new(1.0, 1.0, 1.0, flash * 0.92));
+            draw_rectangle(
+                0.0,
+                0.0,
+                screen_width(),
+                screen_height(),
+                Color::new(1.0, 1.0, 1.0, flash * 0.92),
+            );
         }
     }
     acao
@@ -764,13 +967,33 @@ fn unico(
 ) -> Acao {
     let s = sai_volta((b - 0.05) / 0.5);
     let pc = p(450.0, 150.0);
-    let caixa = |w: f32, h: f32| Rect::new(pc.x - w * 0.5 * k * s, pc.y - h * 0.5 * k * s, w * k * s, h * k * s);
+    let caixa = |w: f32, h: f32| {
+        Rect::new(
+            pc.x - w * 0.5 * k * s,
+            pc.y - h * 0.5 * k * s,
+            w * k * s,
+            h * k * s,
+        )
+    };
     // A small pedestal glow under the prize.
-    draw_ellipse(pc.x, pc.y + 96.0 * k, 120.0 * k * s, 16.0 * k * s, 0.0, estilo::alfa(inf.cor, 0.22));
+    draw_ellipse(
+        pc.x,
+        pc.y + 96.0 * k,
+        120.0 * k * s,
+        16.0 * k * s,
+        0.0,
+        estilo::alfa(inf.cor, 0.22),
+    );
     if s > 0.02 {
         match premio {
             PremioInvocacao::Montaria { item_id } => {
-                crate::render3d::vitrine_montaria(vox, *item_id, caixa(330.0, 220.0), t * 0.45, solido);
+                crate::render3d::vitrine_montaria(
+                    vox,
+                    *item_id,
+                    caixa(330.0, 220.0),
+                    t * 0.45,
+                    solido,
+                );
             }
             PremioInvocacao::Pet { item_id } => {
                 crate::render3d::vitrine_pet(vox, *item_id, caixa(330.0, 220.0), t * 0.45, solido);
@@ -782,7 +1005,12 @@ fn unico(
                 }
             }
             PremioInvocacao::Tomo { grau, .. } => {
-                livro_aberto(pc + vec2(0.0, 20.0 * k * s), 120.0 * k * s, cor_do_tomo(*grau), t);
+                livro_aberto(
+                    pc + vec2(0.0, 20.0 * k * s),
+                    120.0 * k * s,
+                    cor_do_tomo(*grau),
+                    t,
+                );
             }
         }
     }
@@ -791,7 +1019,11 @@ fn unico(
         let a = sorte(j + 300) * std::f32::consts::TAU + t * 0.3;
         let r = (120.0 + 50.0 * sorte(j + 400)) * k;
         let f = ((t * 1.4 + sorte(j + 500) * 6.0).sin() * 0.5 + 0.5) * sai(b / 0.6);
-        brilhinho(pc + vec2(a.cos() * r * 1.3, a.sin() * r * 0.8), 8.0 * k * f, estilo::alfa(mistura(inf.cor, WHITE, 0.5), f));
+        brilhinho(
+            pc + vec2(a.cos() * r * 1.3, a.sin() * r * 0.8),
+            8.0 * k * f,
+            estilo::alfa(mistura(inf.cor, WHITE, 0.5), f),
+        );
     }
     let a = sai((b - 0.25) / 0.35);
     let cab = match premio {
@@ -807,7 +1039,10 @@ fn unico(
             inf.titulo.clone(),
             inf.sub.clone(),
             shared::montarias::de_item(*item_id).map(|(_, g)| {
-                format!("Equip in the mount slot: {:.0}% mounted speed", shared::montarias::velocidade(g) * 100.0)
+                format!(
+                    "Equip in the mount slot: {:.0}% mounted speed",
+                    shared::montarias::velocidade(g) * 100.0
+                )
             }),
         ),
         PremioInvocacao::Pet { item_id } => (
@@ -822,12 +1057,25 @@ fn unico(
             }),
         ),
         PremioInvocacao::Chave { .. } => (inf.titulo.clone(), inf.sub.clone(), None),
-        PremioInvocacao::Tomo { grau, quantidade, .. } => {
+        PremioInvocacao::Tomo {
+            grau, quantidade, ..
+        } => {
             let nome = inf.titulo.clone();
-            (format!("Tome {}", grau.nome()), format!("{nome} · you own x{quantidade}"), None)
+            (
+                format!("Tome {}", grau.nome()),
+                format!("{nome} · you own x{quantidade}"),
+                None,
+            )
         }
     };
-    texto_com_sombra(x, p(0.0, 290.0).y, &titulo, 27, estilo::alfa(mistura(inf.cor, WHITE, 0.15), a), k);
+    texto_com_sombra(
+        x,
+        p(0.0, 290.0).y,
+        &titulo,
+        27,
+        estilo::alfa(mistura(inf.cor, WHITE, 0.15), a),
+        k,
+    );
     estilo::texto_centro_forte(x, p(0.0, 316.0).y, &linha, 15, estilo::alfa(inf.cor, a));
     if let Some(e) = extra {
         estilo::texto_centro(x, p(0.0, 340.0).y, &e, 14, estilo::alfa(estilo::TEXTO, a));
@@ -870,8 +1118,19 @@ fn lote(
     let y0 = 62.0;
     let x = p(450.0, 0.0).x;
     let a = sai((b - 0.2) / 0.3);
-    let titulo = if n == 11 { "11 PRIZES · 10+1 BONUS" } else { "SUMMONING COMPLETE" };
-    texto_com_sombra(x, p(0.0, 38.0).y, titulo, 22, estilo::alfa(estilo::OURO, a), k);
+    let titulo = if n == 11 {
+        "11 PRIZES · 10+1 BONUS"
+    } else {
+        "SUMMONING COMPLETE"
+    };
+    texto_com_sombra(
+        x,
+        p(0.0, 38.0).y,
+        titulo,
+        22,
+        estilo::alfa(estilo::OURO, a),
+        k,
+    );
     for (i, (premio, inf)) in premios.iter().zip(infos).enumerate() {
         let linha = i / cols;
         let na_linha = (n - linha * cols).min(cols);
@@ -883,20 +1142,44 @@ fn lote(
             continue;
         }
         let c = p(cx, cy);
-        let card = Rect::new(c.x - cw * 0.5 * k * s, c.y - ch * 0.5 * k * s, cw * k * s, ch * k * s);
+        let card = Rect::new(
+            c.x - cw * 0.5 * k * s,
+            c.y - ch * 0.5 * k * s,
+            cw * k * s,
+            ch * k * s,
+        );
         estilo::cartao(card, false, true);
         if inf.raridade >= 4 {
             // Rare ones breathe: a second, pulsing outline.
             let pulso = 0.5 + 0.5 * (t * 3.0 + i as f32).sin();
             let d = (3.0 + 2.0 * pulso) * k;
-            draw_rectangle_lines(card.x - d, card.y - d, card.w + 2.0 * d, card.h + 2.0 * d, 2.0 * k, estilo::alfa(inf.cor, 0.35 + 0.4 * pulso));
+            draw_rectangle_lines(
+                card.x - d,
+                card.y - d,
+                card.w + 2.0 * d,
+                card.h + 2.0 * d,
+                2.0 * k,
+                estilo::alfa(inf.cor, 0.35 + 0.4 * pulso),
+            );
         }
         draw_rectangle(card.x, card.y, 5.0 * k * s, card.h, inf.cor);
-        draw_rectangle_lines(card.x, card.y, card.w, card.h, 2.0 * k, estilo::alfa(inf.cor, 0.85));
+        draw_rectangle_lines(
+            card.x,
+            card.y,
+            card.w,
+            card.h,
+            2.0 * k,
+            estilo::alfa(inf.cor, 0.85),
+        );
         if s < 0.85 {
             continue;
         }
-        let ic = Rect::new(card.x + 10.0 * k, card.y + (card.h - 54.0 * k) * 0.5, 54.0 * k, 54.0 * k);
+        let ic = Rect::new(
+            card.x + 10.0 * k,
+            card.y + (card.h - 54.0 * k) * 0.5,
+            54.0 * k,
+            54.0 * k,
+        );
         match premio {
             PremioInvocacao::Pet { item_id } | PremioInvocacao::Montaria { item_id } => {
                 crate::icones::icone_com_3d(*item_id, ic, None, None, Some((vox, solido)));
@@ -908,11 +1191,25 @@ fn lote(
                 let cc = ic.center();
                 draw_circle(cc.x, cc.y, 22.0 * k, estilo::alfa(inf.cor, 0.18));
                 draw_poly(cc.x, cc.y, 6, 15.0 * k, t * 30.0, inf.cor);
-                draw_poly(cc.x, cc.y, 6, 7.0 * k, -t * 30.0, mistura(inf.cor, WHITE, 0.6));
+                draw_poly(
+                    cc.x,
+                    cc.y,
+                    6,
+                    7.0 * k,
+                    -t * 30.0,
+                    mistura(inf.cor, WHITE, 0.6),
+                );
             }
         }
         let tx = card.x + 72.0 * k;
-        estilo::texto_ajustado(&inf.titulo, tx, card.y + 32.0 * k, card.w - 80.0 * k, 14, estilo::TEXTO);
+        estilo::texto_ajustado(
+            &inf.titulo,
+            tx,
+            card.y + 32.0 * k,
+            card.w - 80.0 * k,
+            14,
+            estilo::TEXTO,
+        );
         estilo::texto(tx, card.y + 56.0 * k, &inf.sub, 12, inf.cor);
     }
     let fim = LOTE_INICIO + n as f32 * LOTE_PASSO + 0.28;
@@ -935,8 +1232,14 @@ mod testes_ovo {
         let ovo = Ovo { rx: 58.0, ry: 76.0 };
         let c = ovo.costura();
         let ts = ovo.th_costura();
-        assert!((c[0] - ovo.ponto(-ts)).length() < 0.5, "left end of the seam on the outline");
-        assert!((c[8] - ovo.ponto(ts)).length() < 0.5, "right end of the seam on the outline");
+        assert!(
+            (c[0] - ovo.ponto(-ts)).length() < 0.5,
+            "left end of the seam on the outline"
+        );
+        assert!(
+            (c[8] - ovo.ponto(ts)).length() < 0.5,
+            "right end of the seam on the outline"
+        );
         let (_, cima) = ovo.de_cima();
         let (_, baixo) = ovo.de_baixo();
         assert!(cima.iter().all(|p| p.y <= ovo.costura_y() + ovo.ry * 0.1));
@@ -983,8 +1286,13 @@ pub async fn previa(vox: &VoxCache) {
             quantidade: i as u16 + 1,
         })
         .collect();
-    lote[2] = PremioInvocacao::Pet { item_id: shared::item_id::PET_BASE + 1 };
-    lote[5] = PremioInvocacao::Chave { item_id: shared::item_id::HORN + 2, cor: 3 };
+    lote[2] = PremioInvocacao::Pet {
+        item_id: shared::item_id::PET_BASE + 1,
+    };
+    lote[5] = PremioInvocacao::Chave {
+        item_id: shared::item_id::HORN + 2,
+        cor: 3,
+    };
     lote[9] = PremioInvocacao::Montaria {
         item_id: shared::item_id::montaria_no_grau(shared::item_id::MONTARIA_BASE, 4),
     };
@@ -1003,12 +1311,17 @@ pub async fn previa(vox: &VoxCache) {
         ("07-montaria.png", montaria(), 3.4),
         (
             "08-pet.png",
-            vec![PremioInvocacao::Pet { item_id: shared::item_id::PET_BASE + 3 }],
+            vec![PremioInvocacao::Pet {
+                item_id: shared::item_id::PET_BASE + 3,
+            }],
             3.4,
         ),
         (
             "09-chave.png",
-            vec![PremioInvocacao::Chave { item_id: shared::item_id::HORN + 2, cor: 3 }],
+            vec![PremioInvocacao::Chave {
+                item_id: shared::item_id::HORN + 2,
+                cor: 3,
+            }],
             3.4,
         ),
         (
@@ -1028,13 +1341,20 @@ pub async fn previa(vox: &VoxCache) {
         crate::render3d::camera_padrao();
         clear_background(Color::new(0.16, 0.12, 0.10, 1.0));
         use shared::item_id as it;
-        let ids = [it::PERGAMINHO_INVOCA_CHAVE, it::PERGAMINHO_INVOCA_TOMO, it::PERGAMINHO_INVOCA_MONTARIA, it::PERGAMINHO_INVOCA_PET];
+        let ids = [
+            it::PERGAMINHO_INVOCA_CHAVE,
+            it::PERGAMINHO_INVOCA_TOMO,
+            it::PERGAMINHO_INVOCA_MONTARIA,
+            it::PERGAMINHO_INVOCA_PET,
+        ];
         for (i, id) in ids.iter().enumerate() {
             icone_pergaminho_de(*id, vec2(140.0 + i as f32 * 200.0, 150.0), 150.0);
             icone_pergaminho_de(*id, vec2(140.0 + i as f32 * 200.0, 320.0), 56.0);
         }
         unsafe { get_internal_gl().flush() };
-        rt.texture.get_texture_data().export_png(&format!("{saida}/00-icones.png"));
+        rt.texture
+            .get_texture_data()
+            .export_png(&format!("{saida}/00-icones.png"));
         next_frame().await;
     }
     for (arquivo, premios, tempo) in cenas {

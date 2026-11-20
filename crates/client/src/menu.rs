@@ -432,7 +432,14 @@ impl Menu {
                     if estilo::medir(&rotulo, t) <= r.w - 8.0 {
                         estilo::texto_centro(r.center().x, r.y + r.h - 7.0, &rotulo, t, cor);
                     } else {
-                        estilo::texto_ajustado(&rotulo, r.x + 4.0, r.y + r.h - 7.0, r.w - 8.0, t, cor);
+                        estilo::texto_ajustado(
+                            &rotulo,
+                            r.x + 4.0,
+                            r.y + r.h - 7.0,
+                            r.w - 8.0,
+                            t,
+                            cor,
+                        );
                     }
                     if travado {
                         cadeado(vec2(r.x + r.w - 11.0, r.y + 12.0), 6.0);
@@ -565,12 +572,14 @@ mod tests {
         for (_, linhas) in GRUPOS {
             for (item, _, _) in linhas {
                 let nome = nome_do_icone(*item);
-                assert!(crate::icones_ui::celula_ui(nome).is_some(), "{item:?}: {nome} ausente");
+                assert!(
+                    crate::icones_ui::celula_ui(nome).is_some(),
+                    "{item:?}: {nome} ausente"
+                );
                 assert!(nomes.insert(nome), "icone repetido: {nome}");
             }
         }
     }
-
 
     #[test]
     fn grade_cabe_sem_sobrepor_aparencia_a_coluna_seguinte() {

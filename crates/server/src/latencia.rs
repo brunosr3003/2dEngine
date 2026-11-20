@@ -47,7 +47,8 @@ struct Conexao {
     ultima_base: Option<Instant>,
 }
 
-static CONEXOES: parking_lot::Mutex<Option<HashMap<SocketAddr, Conexao>>> = parking_lot::Mutex::new(None);
+static CONEXOES: parking_lot::Mutex<Option<HashMap<SocketAddr, Conexao>>> =
+    parking_lot::Mutex::new(None);
 
 fn com<R>(f: impl FnOnce(&mut HashMap<SocketAddr, Conexao>) -> R) -> R {
     f(CONEXOES.lock().get_or_insert_with(HashMap::new))
@@ -56,7 +57,13 @@ fn com<R>(f: impl FnOnce(&mut HashMap<SocketAddr, Conexao>) -> R) -> R {
 /// The connection task: a new connection and its real IP.
 pub fn abriu(peer: SocketAddr, ip: String) {
     com(|m| {
-        m.insert(peer, Conexao { ip, ..Default::default() });
+        m.insert(
+            peer,
+            Conexao {
+                ip,
+                ..Default::default()
+            },
+        );
     });
 }
 
@@ -77,7 +84,9 @@ pub fn rede(peer: SocketAddr, ms: u32) {
 
 /// Is this sample bad?
 pub fn ruim(rede_ms: Option<u32>, jogo_ms: u32, fps: u32) -> bool {
-    rede_ms.is_some_and(|r| r >= REDE_RUIM_MS) || jogo_ms >= JOGO_RUIM_MS || (fps > 0 && fps < FPS_RUIM)
+    rede_ms.is_some_and(|r| r >= REDE_RUIM_MS)
+        || jogo_ms >= JOGO_RUIM_MS
+        || (fps > 0 && fps < FPS_RUIM)
 }
 
 /// The client reported its numbers: maybe write a row.
@@ -94,7 +103,8 @@ pub fn registrar(
     let decisao = com(|m| {
         let c = m.entry(peer).or_default();
         let e_ruim = ruim(c.rede_ms, jogo_ms, fps);
-        let passou = |t: Option<Instant>, s: u64| t.is_none_or(|t| agora.duration_since(t).as_secs() >= s);
+        let passou =
+            |t: Option<Instant>, s: u64| t.is_none_or(|t| agora.duration_since(t).as_secs() >= s);
         let grava = if e_ruim && passou(c.ultimo_ruim, RUIM_A_CADA_S) {
             c.ultimo_ruim = Some(agora);
             true
@@ -106,9 +116,17 @@ pub fn registrar(
         };
         grava.then(|| (c.ip.clone(), c.rede_ms, e_ruim))
     });
-    let Some((ip, rede_ms, e_ruim)) = decisao else { return };
-    let Some(pool) = crate::chat_global::pool() else { return };
-    let plataforma: String = plataforma.chars().filter(|c| c.is_ascii_alphanumeric()).take(12).collect();
+    let Some((ip, rede_ms, e_ruim)) = decisao else {
+        return;
+    };
+    let Some(pool) = crate::chat_global::pool() else {
+        return;
+    };
+    let plataforma: String = plataforma
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .take(12)
+        .collect();
     tokio::spawn(async move {
         let r = async {
             sqlx::query(CRIAR).execute(&pool).await?;

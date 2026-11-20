@@ -33,7 +33,12 @@ pub fn define_garantias(v: Vec<(u8, u8, u16)>) {
 /// Attempts left until the sure one for this recipe, if it has a guarantee.
 pub fn faltam_garantia(r: &ReceitaDeCombinar) -> Option<u16> {
     let (f, c) = combinar::chave_da_garantia(r)?;
-    let n = GARANTIAS.with(|g| g.borrow().iter().find(|x| x.0 == f && x.1 == c).map_or(0, |x| x.2));
+    let n = GARANTIAS.with(|g| {
+        g.borrow()
+            .iter()
+            .find(|x| x.0 == f && x.1 == c)
+            .map_or(0, |x| x.2)
+    });
     Some(combinar::faltam_para_garantia(n))
 }
 
@@ -652,7 +657,12 @@ impl Oficina {
                 &if r.chance == 100 {
                     format!("{} for 1 · guaranteed · you have {}", r.qtd, t(r.entrada))
                 } else {
-                    format!("{} for 1 · {}% · you have {}", r.qtd, r.chance, t(r.entrada))
+                    format!(
+                        "{} for 1 · {}% · you have {}",
+                        r.qtd,
+                        r.chance,
+                        t(r.entrada)
+                    )
                 },
                 12,
                 estilo::SUAVE,
@@ -708,9 +718,15 @@ impl Oficina {
         } else if let Some(n) = faltam_garantia(r) {
             // Every 25th attempt of the color is sure (`combinar::GARANTIA`).
             if n == 1 {
-                (format!("{}% per attempt · next one is guaranteed!", r.chance), VERDE)
+                (
+                    format!("{}% per attempt · next one is guaranteed!", r.chance),
+                    VERDE,
+                )
             } else {
-                (format!("{}% per attempt · guaranteed in {n} tries", r.chance), AMARELO)
+                (
+                    format!("{}% per attempt · guaranteed in {n} tries", r.chance),
+                    AMARELO,
+                )
             }
         } else {
             (format!("{}% per attempt", r.chance), AMARELO)
@@ -932,9 +948,7 @@ mod tests {
 
     #[test]
     fn texto_do_resultado_diz_quantas_deram_certo() {
-        assert!(texto_do_resultado(3, 1, "Horn", "")
-            .0
-            .contains("1x Horn"));
+        assert!(texto_do_resultado(3, 1, "Horn", "").0.contains("1x Horn"));
         assert!(!texto_do_resultado(3, 0, "Horn", "").1);
         assert!(texto_do_resultado(0, 0, "", "faltam: x")
             .0

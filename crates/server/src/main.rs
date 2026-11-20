@@ -12,36 +12,36 @@
 
 mod auth;
 mod avisos_globais;
-mod chat_global;
-mod hud_layouts;
-mod latencia;
-mod eventos_bonus;
 #[cfg(test)]
 mod balanceamento;
 mod barra;
 mod canais;
-mod precos;
-mod prime;
+mod chat_global;
 mod coleta;
 mod correio_admin;
 mod craft;
-mod loja_npc;
 mod economy;
+mod eventos_bonus;
+mod financeiro;
+mod hud_layouts;
+mod latencia;
 mod loja;
 mod loja_google_play;
+mod loja_npc;
 mod loot_mobs;
 mod mapa_ilha;
 mod mercado;
 mod mercado_razao;
 mod mesa;
-mod financeiro;
-mod ofertas;
 mod morte;
+mod ofertas;
 mod panoptico;
 mod persistence;
-mod pvp_sim;
+mod precos;
 mod preferencias;
 mod presenca;
+mod prime;
+mod pvp_sim;
 mod quests;
 mod recipes;
 mod rumo;
@@ -91,7 +91,10 @@ async fn main() -> Result<()> {
         linhas.sort_by(|a, b| b.poder.cmp(&a.poder));
         println!("nome\tnivel\tpoder\tclasse\trenascimentos");
         for l in linhas {
-            println!("{}\t{}\t{}\t{}\t{}", l.nome, l.nivel, l.poder, l.classe, l.renascimentos);
+            println!(
+                "{}\t{}\t{}\t{}\t{}",
+                l.nome, l.nivel, l.poder, l.classe, l.renascimentos
+            );
         }
         return Ok(());
     }

@@ -40,8 +40,8 @@ use crate::world::habilidades::{
     cura_do_dreno, cura_evoluida, dano_da_skill, duracao_do_baluarte, escudo_do_salto, sempre_crita,
 };
 use crate::world::{
-    cooldown_do_ataque, cura_da_sede, dano_mitigado, effective_stats, em_execucao, folego_de_iniciante,
-    golpe_critico, golpe_da_katana, golpe_na_muralha, regen_de_hp,
+    cooldown_do_ataque, cura_da_sede, dano_mitigado, effective_stats, em_execucao,
+    folego_de_iniciante, golpe_critico, golpe_da_katana, golpe_na_muralha, regen_de_hp,
 };
 
 /// Longest fight the rotation simulates.
@@ -150,7 +150,11 @@ impl Lutador {
     }
 
     fn esquiva(&self) -> f32 {
-        shared::combat::chance_de_esquiva(self.arma, self.alocados[shared::stat_idx::DES], self.nivel)
+        shared::combat::chance_de_esquiva(
+            self.arma,
+            self.alocados[shared::stat_idx::DES],
+            self.nivel,
+        )
     }
 }
 
@@ -244,14 +248,21 @@ impl Regras {
     /// The proposal column starts from the live rules; the Panopticon's
     /// query params change it to try other numbers.
     pub fn propostas_padrao() -> Regras {
-        Regras { label: "proposed", ..Regras::atuais() }
+        Regras {
+            label: "proposed",
+            ..Regras::atuais()
+        }
     }
 
     /// Proposed rules from query params; anything missing or invalid keeps
     /// its default. `cap_pct` <= 0 or >= 1 means no cap.
     pub fn propostas_da_query(q: &HashMap<String, String>) -> Regras {
         let mut r = Regras::propostas_padrao();
-        let f = |k: &str| q.get(k).and_then(|v| v.trim().parse::<f32>().ok()).filter(|v| v.is_finite());
+        let f = |k: &str| {
+            q.get(k)
+                .and_then(|v| v.trim().parse::<f32>().ok())
+                .filter(|v| v.is_finite())
+        };
         if let Some(v) = f("skill_mult") {
             r.skill_mult = v.max(0.0);
         }
@@ -294,7 +305,13 @@ impl Regras {
 
     /// Level-gap multiplier: only when the attacker is BELOW the target.
     pub fn mult_de_nivel(&self, atacante: u32, alvo: u32) -> f32 {
-        shared::pk::pvp_mult_nivel(atacante, alvo, self.level_free_gap, self.level_penalty_per_level, self.level_floor)
+        shared::pk::pvp_mult_nivel(
+            atacante,
+            alvo,
+            self.level_free_gap,
+            self.level_penalty_per_level,
+            self.level_floor,
+        )
     }
 }
 
@@ -325,7 +342,13 @@ fn bruto(at: &Lutador, acao: Acao, crit: bool, alvo_em_execucao: bool, r: &Regra
         }
         Acao::Skill(i) => {
             let (skill, tier) = &at.skills[i];
-            dano_da_skill(skill, *tier, at.stats.attack_damage, crate::world::cadencia_base_da_arma(at.arma), crit)
+            dano_da_skill(
+                skill,
+                *tier,
+                at.stats.attack_damage,
+                crate::world::cadencia_base_da_arma(at.arma),
+                crit,
+            )
         }
     }
 }
@@ -504,8 +527,16 @@ pub fn ficha(l: &Lutador) -> Ficha {
                     lock_s: trava,
                     impact_s: impacto,
                     mp_cost: s.custo_mp,
-                    raw: if dano { bruto(l, Acao::Skill(i), false, false, &r) } else { 0 },
-                    raw_crit: if dano { bruto(l, Acao::Skill(i), true, false, &r) } else { 0 },
+                    raw: if dano {
+                        bruto(l, Acao::Skill(i), false, false, &r)
+                    } else {
+                        0
+                    },
+                    raw_crit: if dano {
+                        bruto(l, Acao::Skill(i), true, false, &r)
+                    } else {
+                        0
+                    },
                 }
             })
             .collect(),
@@ -617,7 +648,11 @@ fn linha(at: &Lutador, alvo: &Lutador, a: Acao, r: &Regras) -> LinhaDeAcao {
     let hit = golpe(at, alvo, a, false, false, r);
     let hit_crit = golpe(at, alvo, a, true, false, r);
     let c = crit_de(at, a);
-    let esquiva = if a == Acao::Basico { alvo.esquiva() } else { 0.0 };
+    let esquiva = if a == Acao::Basico {
+        alvo.esquiva()
+    } else {
+        0.0
+    };
     let expected = ((1.0 - c) * hit as f32 + c * hit_crit as f32) * (1.0 - esquiva);
     let katana = a == Acao::Basico && at.arma == shared::item_id::KATANA && r.katana_execute_pvp;
     let (cd, trava, _) = tempos(at, a);
@@ -707,9 +742,10 @@ fn rotacao(at: &Lutador, alvo: &Lutador, r: &Regras, burst: bool) -> Rotacao {
     loop {
         // Decide at `t`.
         if t >= travado_ate {
-            let skill = ordem.iter().copied().find(|&i| {
-                pronta[i] <= t + 1e-4 && mp + 1e-3 >= at.skills[i].0.custo_mp as f32
-            });
+            let skill = ordem
+                .iter()
+                .copied()
+                .find(|&i| pronta[i] <= t + 1e-4 && mp + 1e-3 >= at.skills[i].0.custo_mp as f32);
             if let Some(i) = skill {
                 let (cd, trava, impacto) = tempos(at, Acao::Skill(i));
                 pronta[i] = t + cd;
@@ -773,7 +809,10 @@ fn rotacao(at: &Lutador, alvo: &Lutador, r: &Regras, burst: bool) -> Rotacao {
 }
 
 fn duelo(at: &Lutador, alvo: &Lutador, r: &Regras) -> Duelo {
-    let actions: Vec<LinhaDeAcao> = acoes(at).into_iter().map(|a| linha(at, alvo, a, r)).collect();
+    let actions: Vec<LinhaDeAcao> = acoes(at)
+        .into_iter()
+        .map(|a| linha(at, alvo, a, r))
+        .collect();
     let max_hit = actions.iter().map(|l| l.hit_crit).max().unwrap_or(0);
     Duelo {
         attacker: at.nome.clone(),
@@ -797,19 +836,36 @@ fn lado(a: &Lutador, b: &Lutador, r: Regras) -> Lado {
             "none",
             format!("Nobody finishes the other within {LIMITE_S:.0} s."),
         ),
-        (Some(x), None) => ("a", format!("{} kills {} in {x:.1} s; {} cannot finish within {LIMITE_S:.0} s.", a.nome, b.nome, b.nome)),
-        (None, Some(y)) => ("b", format!("{} kills {} in {y:.1} s; {} cannot finish within {LIMITE_S:.0} s.", b.nome, a.nome, a.nome)),
-        (Some(x), Some(y)) if (x - y).abs() < 0.05 => (
-            "tie",
-            format!("Trade: both finish in about {x:.1} s."),
+        (Some(x), None) => (
+            "a",
+            format!(
+                "{} kills {} in {x:.1} s; {} cannot finish within {LIMITE_S:.0} s.",
+                a.nome, b.nome, b.nome
+            ),
         ),
+        (None, Some(y)) => (
+            "b",
+            format!(
+                "{} kills {} in {y:.1} s; {} cannot finish within {LIMITE_S:.0} s.",
+                b.nome, a.nome, a.nome
+            ),
+        ),
+        (Some(x), Some(y)) if (x - y).abs() < 0.05 => {
+            ("tie", format!("Trade: both finish in about {x:.1} s."))
+        }
         (Some(x), Some(y)) if x < y => (
             "a",
-            format!("{} kills {} first: {x:.1} s (the other needs {y:.1} s).", a.nome, b.nome),
+            format!(
+                "{} kills {} first: {x:.1} s (the other needs {y:.1} s).",
+                a.nome, b.nome
+            ),
         ),
         (Some(x), Some(y)) => (
             "b",
-            format!("{} kills {} first: {y:.1} s (the other needs {x:.1} s).", b.nome, a.nome),
+            format!(
+                "{} kills {} first: {y:.1} s (the other needs {x:.1} s).",
+                b.nome, a.nome
+            ),
         ),
     };
     Lado {
@@ -920,7 +976,10 @@ impl Default for OpcoesDoDuelo {
 impl OpcoesDoDuelo {
     pub fn da_query(q: &HashMap<String, String>) -> OpcoesDoDuelo {
         let mut o = OpcoesDoDuelo::default();
-        let liga = |k: &str| q.get(k).map(|v| matches!(v.trim(), "1" | "true" | "on" | "yes"));
+        let liga = |k: &str| {
+            q.get(k)
+                .map(|v| matches!(v.trim(), "1" | "true" | "on" | "yes"))
+        };
         if let Some(v) = liga("potions") {
             o.potions = v;
         }
@@ -1216,7 +1275,8 @@ impl<'a> Luta<'a> {
         let (s, tier) = &at.l.skills[k];
         if s.id == 10 {
             // The heal is a share of what lands, like the live loop.
-            let cura = (1.0 - c) * cura_do_dreno(n as i32, *tier) as f32 + c * cura_do_dreno(x as i32, *tier) as f32;
+            let cura = (1.0 - c) * cura_do_dreno(n as i32, *tier) as f32
+                + c * cura_do_dreno(x as i32, *tier) as f32;
             v += cura.min(at.hp_max - at.hp);
         }
         v
@@ -1243,7 +1303,11 @@ impl<'a> Luta<'a> {
         if self.op.potions {
             let c = &mut self.c[i];
             for (id, frac, limiar) in [
-                (shared::item_id::GREATER_HEAL, c.hp / c.hp_max, POCAO_DE_VIDA_ABAIXO_DE),
+                (
+                    shared::item_id::GREATER_HEAL,
+                    c.hp / c.hp_max,
+                    POCAO_DE_VIDA_ABAIXO_DE,
+                ),
                 (
                     shared::item_id::GREATER_MANA,
                     c.mp / (c.l.stats.mp_max.max(1) as f32),
@@ -1253,7 +1317,9 @@ impl<'a> Luta<'a> {
                 if frac >= limiar {
                     continue;
                 }
-                let Some(cura) = shared::pocoes::cura_de(id) else { continue };
+                let Some(cura) = shared::pocoes::cura_de(id) else {
+                    continue;
+                };
                 if let Ok(na_hora) = c.pocoes.beber(&cura, t, false) {
                     if cura.grupo == shared::pocoes::Grupo::Vida {
                         let g = c.curar(na_hora * c.hp_max);
@@ -1301,9 +1367,8 @@ impl<'a> Luta<'a> {
 
     fn escolher_skill(&self, i: usize, t: f32) -> Option<usize> {
         let c = &self.c[i];
-        let pronta = |k: usize| {
-            c.pronta[k] <= t + 1e-4 && c.mp + 1e-3 >= c.l.skills[k].0.custo_mp as f32
-        };
+        let pronta =
+            |k: usize| c.pronta[k] <= t + 1e-4 && c.mp + 1e-3 >= c.l.skills[k].0.custo_mp as f32;
         let frac = c.hp / c.hp_max;
         // Defensive first.
         for (k, (s, tier)) in c.l.skills.iter().enumerate() {
@@ -1416,7 +1481,8 @@ impl<'a> Luta<'a> {
                 // the live loop pays it where HP drops, not on the downed bar.
                 let alvo_de_pe = !self.c[j].caido();
                 if s.id == 10 && alvo_de_pe {
-                    let q = (1.0 - w) * cura_do_dreno(n, tier) as f32 + w * cura_do_dreno(x, tier) as f32;
+                    let q = (1.0 - w) * cura_do_dreno(n, tier) as f32
+                        + w * cura_do_dreno(x, tier) as f32;
                     cura = self.c[i].curar(q);
                     self.c[i].curas.life_drain += cura;
                 }
@@ -1480,7 +1546,12 @@ impl<'a> Luta<'a> {
                 // A duel is always in combat: the plain in-combat base (the
                 // x4 resting boost was removed on 15/11/2026).
                 let folego = folego_de_iniciante(c.l.nivel, c.hp_max as i32, t - c.ultimo_combate);
-                let pontos = regen_de_hp(0, i32::MAX, &mut c.resto_regen, (c.l.stats.hp_regen + folego) * dt);
+                let pontos = regen_de_hp(
+                    0,
+                    i32::MAX,
+                    &mut c.resto_regen,
+                    (c.l.stats.hp_regen + folego) * dt,
+                );
                 let g = c.curar(pontos as f32);
                 c.curas.regen += g;
             }
@@ -1507,7 +1578,8 @@ impl<'a> Luta<'a> {
             // Everything due this tick lands, like the server's one damage
             // pass per tick: a cast that reached its impact is not cancelled
             // by its caster going down in the same tick.
-            self.impactos.sort_by(|x, y| x.t.total_cmp(&y.t).then(x.seq.cmp(&y.seq)));
+            self.impactos
+                .sort_by(|x, y| x.t.total_cmp(&y.t).then(x.seq.cmp(&y.seq)));
             let n = self.impactos.iter().take_while(|m| m.t <= t + 1e-4).count();
             let agora: Vec<Impacto> = self.impactos.drain(..n).collect();
             for m in agora {
@@ -1563,7 +1635,14 @@ impl<'a> Luta<'a> {
     }
 }
 
-fn uma_luta(a: &Lutador, b: &Lutador, r: &Regras, op: &OpcoesDoDuelo, sorte: Sorte, grava: bool) -> ResultadoDoDuelo {
+fn uma_luta(
+    a: &Lutador,
+    b: &Lutador,
+    r: &Regras,
+    op: &OpcoesDoDuelo,
+    sorte: Sorte,
+    grava: bool,
+) -> ResultadoDoDuelo {
     Luta {
         c: [Corpo::novo(a), Corpo::novo(b)],
         r,
@@ -1626,13 +1705,22 @@ pub fn monte_carlo(a: &Lutador, b: &Lutador, r: &Regras, op: &OpcoesDoDuelo) -> 
 
 /// The interleaved duel under one rule set: the expected run, plus the
 /// Monte Carlo when `op.mc_runs > 0`.
-pub fn duelo_intercalado(a: &Lutador, b: &Lutador, r: &Regras, op: &OpcoesDoDuelo) -> DueloIntercalado {
+pub fn duelo_intercalado(
+    a: &Lutador,
+    b: &Lutador,
+    r: &Regras,
+    op: &OpcoesDoDuelo,
+) -> DueloIntercalado {
     let expected = uma_luta(a, b, r, op, Sorte::Media, true);
     let mc = (op.mc_runs > 0).then(|| monte_carlo(a, b, r, op));
     let pct = |x: f32| x * 100.0;
     let mut verdict = match expected.winner {
         "a" | "b" => {
-            let (v, p) = if expected.winner == "a" { (&expected.a, &expected.b) } else { (&expected.b, &expected.a) };
+            let (v, p) = if expected.winner == "a" {
+                (&expected.a, &expected.b)
+            } else {
+                (&expected.b, &expected.a)
+            };
             format!(
                 "{} kills {} in {:.1} s with {:.0}% health left.",
                 v.name,
@@ -1658,7 +1746,8 @@ pub fn duelo_intercalado(a: &Lutador, b: &Lutador, r: &Regras, op: &OpcoesDoDuel
             pct(m.a_win_pct),
             b.nome,
             pct(m.b_win_pct),
-            m.median_ttk_s.map_or(String::new(), |x| format!(", median TTK {x:.1} s"))
+            m.median_ttk_s
+                .map_or(String::new(), |x| format!(", median TTK {x:.1} s"))
         ));
     }
     DueloIntercalado {
@@ -1706,7 +1795,12 @@ impl Orcamento {
 }
 
 /// One archetype through the real stat code, on the budget.
-pub fn arquetipo(nome: &str, conjunto: Conjunto, pontos: [u32; shared::STAT_COUNT], o: &Orcamento) -> Lutador {
+pub fn arquetipo(
+    nome: &str,
+    conjunto: Conjunto,
+    pontos: [u32; shared::STAT_COUNT],
+    o: &Orcamento,
+) -> Lutador {
     use shared::item_id as it;
     use shared::EquipSlot as E;
     let xp = shared::xp_for_level_with_mult(o.level, crate::economy::xp_multiplier());
@@ -1768,9 +1862,19 @@ pub fn arquetipos(o: &Orcamento) -> Vec<Lutador> {
         // Anubis-like: every point in DEX (dodge capped at 25% from 50).
         arquetipo("Pistols", Conjunto::Pistolas, com(&[(si::DES, p)]), o),
         // Tank/caster: half INT (attack), half VIT (health, regen).
-        arquetipo("Ring", Conjunto::AnelMagico, com(&[(si::INT, p / 2), (si::VIT, p - p / 2)]), o),
+        arquetipo(
+            "Ring",
+            Conjunto::AnelMagico,
+            com(&[(si::INT, p / 2), (si::VIT, p - p / 2)]),
+            o,
+        ),
         // The shield already brings the tankiness: every point in STR.
-        arquetipo("Sword&Shield", Conjunto::EspadaEscudo, com(&[(si::FOR, p)]), o),
+        arquetipo(
+            "Sword&Shield",
+            Conjunto::EspadaEscudo,
+            com(&[(si::FOR, p)]),
+            o,
+        ),
         arquetipo("Katana", Conjunto::Katana, com(&[(si::FOR, p)]), o),
     ]
 }
@@ -1826,7 +1930,11 @@ pub struct Torneio {
 }
 
 /// Every pair of `lutadores` under every rule set.
-pub fn torneio(lutadores: &[Lutador], regras: &[Regras], op: &OpcoesDoDuelo) -> Vec<LinhaDoTorneio> {
+pub fn torneio(
+    lutadores: &[Lutador],
+    regras: &[Regras],
+    op: &OpcoesDoDuelo,
+) -> Vec<LinhaDoTorneio> {
     let mut v = Vec::new();
     for r in regras {
         for i in 0..lutadores.len() {
@@ -1852,7 +1960,11 @@ pub fn torneio(lutadores: &[Lutador], regras: &[Regras], op: &OpcoesDoDuelo) -> 
                     b_hp_pct: e.b.hp_final_pct,
                     a_win_pct: d.monte_carlo.as_ref().map(|m| m.a_win_pct),
                     b_win_pct: d.monte_carlo.as_ref().map(|m| m.b_win_pct),
-                    draw_pct: d.monte_carlo.as_ref().zip(n).map(|(m, n)| m.draws as f32 / n),
+                    draw_pct: d
+                        .monte_carlo
+                        .as_ref()
+                        .zip(n)
+                        .map(|(m, n)| m.draws as f32 / n),
                     median_ttk_s: d.monte_carlo.as_ref().and_then(|m| m.median_ttk_s),
                 });
             }
@@ -1909,7 +2021,12 @@ mod testes {
 
     /// A synthetic character through the real `effective_stats`: points in
     /// one attribute, no gear but the weapon.
-    pub(super) fn sintetico(nome: &str, nivel: u32, arma: u16, pontos: [u32; shared::STAT_COUNT]) -> Lutador {
+    pub(super) fn sintetico(
+        nome: &str,
+        nivel: u32,
+        arma: u16,
+        pontos: [u32; shared::STAT_COUNT],
+    ) -> Lutador {
         let xp = shared::xp_for_level_with_mult(nivel, crate::economy::xp_multiplier());
         let equip = shared::Equipment {
             weapon: Some(arma),
@@ -1929,7 +2046,15 @@ mod testes {
     }
 
     /// Stats set by hand: what a geared, all-in character looks like.
-    fn com_stats(nome: &str, nivel: u32, arma: u16, hp: i32, atk: i32, def: i32, crit: f32) -> Lutador {
+    fn com_stats(
+        nome: &str,
+        nivel: u32,
+        arma: u16,
+        hp: i32,
+        atk: i32,
+        def: i32,
+        crit: f32,
+    ) -> Lutador {
         let mut l = sintetico(nome, nivel, arma, [0; shared::STAT_COUNT]);
         l.stats.hp_max = hp;
         l.stats.attack_damage = atk;
@@ -1941,15 +2066,38 @@ mod testes {
 
     #[test]
     fn regras_atuais_sao_a_cadeia_do_jogo() {
-        let a = com_stats("A", 30, shared::item_id::ESPADA_E_ESCUDO, 1000, 300, 50, 0.0);
-        let b = com_stats("B", 30, shared::item_id::ESPADA_E_ESCUDO, 1000, 300, 50, 0.0);
+        let a = com_stats(
+            "A",
+            30,
+            shared::item_id::ESPADA_E_ESCUDO,
+            1000,
+            300,
+            50,
+            0.0,
+        );
+        let b = com_stats(
+            "B",
+            30,
+            shared::item_id::ESPADA_E_ESCUDO,
+            1000,
+            300,
+            50,
+            0.0,
+        );
         let r = Regras::antes_do_balanceamento();
-        assert_eq!(golpe(&a, &b, Acao::Basico, false, false, &r), dano_mitigado(300, 50, 0.0));
+        assert_eq!(
+            golpe(&a, &b, Acao::Basico, false, false, &r),
+            dano_mitigado(300, 50, 0.0)
+        );
         assert_eq!(
             golpe(&a, &b, Acao::Basico, true, false, &r),
             dano_mitigado(golpe_critico(300), 50, 0.0)
         );
-        assert_eq!(r.mult_de_nivel(18, 48), 1.0, "no level gap before the balance");
+        assert_eq!(
+            r.mult_de_nivel(18, 48),
+            1.0,
+            "no level gap before the balance"
+        );
         // The live rules are `shared::pk`'s, the same function the loop calls.
         let r = Regras::atuais();
         let poder = |l: &Lutador| shared::dungeon::poder_de_stats(&l.stats);
@@ -1959,13 +2107,34 @@ mod testes {
         );
         // A far weaker attacker (power, like the live loop since 15/11/2026).
         let fraco = com_stats("C", 20, shared::item_id::ESPADA_E_ESCUDO, 300, 300, 0, 0.0);
-        let forte = com_stats("D", 30, shared::item_id::ESPADA_E_ESCUDO, 6000, 300, 50, 0.0);
-        assert!(r.mult_do_gap(&fraco, &forte) < 1.0, "{} vs {}", poder(&fraco), poder(&forte));
+        let forte = com_stats(
+            "D",
+            30,
+            shared::item_id::ESPADA_E_ESCUDO,
+            6000,
+            300,
+            50,
+            0.0,
+        );
+        assert!(
+            r.mult_do_gap(&fraco, &forte) < 1.0,
+            "{} vs {}",
+            poder(&fraco),
+            poder(&forte)
+        );
         assert_eq!(
             golpe(&fraco, &forte, Acao::Basico, false, false, &r),
-            shared::pk::pvp_dano(dano_mitigado(300, 50, 0.0), false, poder(&fraco), poder(&forte))
+            shared::pk::pvp_dano(
+                dano_mitigado(300, 50, 0.0),
+                false,
+                poder(&fraco),
+                poder(&forte)
+            )
         );
-        assert_eq!(Regras::propostas_padrao().skill_mult, shared::pk::PVP_MULT_SKILL);
+        assert_eq!(
+            Regras::propostas_padrao().skill_mult,
+            shared::pk::PVP_MULT_SKILL
+        );
     }
 
     /// Equal levels, glass cannons: under CURRENT rules a skill crit takes
@@ -1978,7 +2147,10 @@ mod testes {
         let antes = lado(&a, &b, Regras::antes_do_balanceamento());
         let d = &antes.a_vs_b;
         assert!(d.one_shot, "max hit {:.0}% of HP", d.max_hit_pct * 100.0);
-        assert!(!av.current.a_vs_b.one_shot, "the live rules no longer one-shot");
+        assert!(
+            !av.current.a_vs_b.one_shot,
+            "the live rules no longer one-shot"
+        );
         assert!(d.expected.ttk_s.unwrap() < 2.0, "{:?}", d.expected.ttk_s);
         // The proposed defaults turn it into a multi-hit fight.
         let p = &av.proposed.a_vs_b;
@@ -1992,10 +2164,22 @@ mod testes {
     #[test]
     fn grande_diferenca_de_nivel_nao_mata_rapido() {
         let baixo = com_stats("Low", 18, shared::item_id::KATANA, 500, 260, 15, 0.30);
-        let alto = com_stats("High", 48, shared::item_id::ESPADA_E_ESCUDO, 1400, 300, 60, 0.10);
+        let alto = com_stats(
+            "High",
+            48,
+            shared::item_id::ESPADA_E_ESCUDO,
+            1400,
+            300,
+            60,
+            0.10,
+        );
         let r = Regras::propostas_padrao();
         assert!((r.mult_de_nivel(18, 48) - 0.20).abs() < 1e-6);
-        assert_eq!(r.mult_de_nivel(48, 18), 1.0, "only the lower side is penalised");
+        assert_eq!(
+            r.mult_de_nivel(48, 18),
+            1.0,
+            "only the lower side is penalised"
+        );
         let av = avaliar(&baixo, &alto, r);
         let p = &av.proposed.a_vs_b;
         eprintln!(
@@ -2005,8 +2189,16 @@ mod testes {
             p.burst.ttk_s,
             p.expected.ttk_s
         );
-        assert!(p.burst.ttk_s.is_none_or(|t| t > 10.0), "burst {:?}", p.burst.ttk_s);
-        assert!(p.expected.ttk_s.is_none_or(|t| t > 15.0), "{:?}", p.expected.ttk_s);
+        assert!(
+            p.burst.ttk_s.is_none_or(|t| t > 10.0),
+            "burst {:?}",
+            p.burst.ttk_s
+        );
+        assert!(
+            p.expected.ttk_s.is_none_or(|t| t > 15.0),
+            "{:?}",
+            p.expected.ttk_s
+        );
         // Before the balance it was much faster.
         let antes = lado(&baixo, &alto, Regras::antes_do_balanceamento());
         let c = &antes.a_vs_b;
@@ -2068,13 +2260,34 @@ mod testes {
         crate::economy::init_vazia_para_testes();
         let o = Orcamento::nivel_55();
         let k = arquetipo("K", Conjunto::Katana, [o.pontos(), 0, 0, 0, 0, 0], &o);
-        let d = duelo_intercalado(&k, &k, &Regras::atuais(), &OpcoesDoDuelo { mc_runs: 200, ..Default::default() });
-        assert_eq!(d.expected.a.damage_dealt.round(), d.expected.b.damage_dealt.round(), "{}", d.verdict);
+        let d = duelo_intercalado(
+            &k,
+            &k,
+            &Regras::atuais(),
+            &OpcoesDoDuelo {
+                mc_runs: 200,
+                ..Default::default()
+            },
+        );
+        assert_eq!(
+            d.expected.a.damage_dealt.round(),
+            d.expected.b.damage_dealt.round(),
+            "{}",
+            d.verdict
+        );
         let m = d.monte_carlo.unwrap();
         assert_eq!(m.runs, 200);
         assert!((m.a_win_pct - m.b_win_pct).abs() < 0.2, "{m:?}");
         // Seeded: the same options give the same answer.
-        let m2 = monte_carlo(&k, &k, &Regras::atuais(), &OpcoesDoDuelo { mc_runs: 200, ..Default::default() });
+        let m2 = monte_carlo(
+            &k,
+            &k,
+            &Regras::atuais(),
+            &OpcoesDoDuelo {
+                mc_runs: 200,
+                ..Default::default()
+            },
+        );
         assert_eq!((m.a_wins, m.b_wins), (m2.a_wins, m2.b_wins));
     }
 
@@ -2085,7 +2298,10 @@ mod testes {
         assert_eq!(golpe_na_muralha(1000, 10), 400);
         assert_eq!(golpe_na_muralha(1, 10), 1);
         assert_eq!(cura_da_sede(100), 25);
-        let baluarte = shared::skills::playtest().into_iter().find(|s| s.id == 3).unwrap();
+        let baluarte = shared::skills::playtest()
+            .into_iter()
+            .find(|s| s.id == 3)
+            .unwrap();
         assert_eq!(duracao_do_baluarte(&baluarte, 1), 5.0);
         assert_eq!(duracao_do_baluarte(&baluarte, 7), 6.0);
         assert_eq!(duracao_do_baluarte(&baluarte, 10), 8.0);
@@ -2104,9 +2320,17 @@ mod testes {
         // proposed multipliers give the kits time to show.
         let r = regras_do_torneio()[1];
         let d = duelo_intercalado(espada, katana, &r, &sem_mc()).expected;
-        assert!(d.a.bulwark_absorbed > 0.0, "Bulwark never cut a hit: {:?}", d.a);
+        assert!(
+            d.a.bulwark_absorbed > 0.0,
+            "Bulwark never cut a hit: {:?}",
+            d.a
+        );
         assert!(d.a.skills_cast > 0);
-        assert!(d.b.heals.thirst > 0.0, "Thirst never healed: {:?}", d.b.heals);
+        assert!(
+            d.b.heals.thirst > 0.0,
+            "Thirst never healed: {:?}",
+            d.b.heals
+        );
         let d = duelo_intercalado(anel, pist, &r, &sem_mc()).expected;
         assert!(d.a.heals.life_drain > 0.0, "{:?}", d.a.heals);
         // Life Drain heals a share of what lands, never more than the damage
@@ -2122,21 +2346,28 @@ mod testes {
         let d = duelo_intercalado(espada, pist, &r, &sem_mc()).expected;
         assert!(d.b.dodges > 0, "DEX dodge: {:?}", d.b);
         // Without the hit-stun nobody is held.
-        let sem = OpcoesDoDuelo { hit_stun: false, ..sem_mc() };
+        let sem = OpcoesDoDuelo {
+            hit_stun: false,
+            ..sem_mc()
+        };
         let d2 = duelo_intercalado(anel, pist, &r, &sem).expected;
         assert_eq!(d2.a.stunned_s, 0.0);
         // Potions heal when on.
-        let com = OpcoesDoDuelo { potions: true, ..sem_mc() };
+        let com = OpcoesDoDuelo {
+            potions: true,
+            ..sem_mc()
+        };
         let d3 = duelo_intercalado(anel, pist, &r, &com).expected;
         assert!(d3.a.heals.potions > 0.0 || d3.b.heals.potions > 0.0);
     }
 
     #[test]
     fn opcoes_da_query() {
-        let q: HashMap<String, String> = [("potions", "true"), ("hit_stun", "0"), ("mc_runs", "99999")]
-            .into_iter()
-            .map(|(k, v)| (k.to_string(), v.to_string()))
-            .collect();
+        let q: HashMap<String, String> =
+            [("potions", "true"), ("hit_stun", "0"), ("mc_runs", "99999")]
+                .into_iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect();
         let o = OpcoesDoDuelo::da_query(&q);
         assert!(o.potions && !o.hit_stun);
         assert_eq!(o.mc_runs, MC_MAX);
@@ -2151,7 +2382,11 @@ mod testes {
     fn torneio_de_arquetipos() {
         crate::economy::init_vazia_para_testes();
         for potions in [false, true] {
-            let op = OpcoesDoDuelo { potions, mc_runs: 200, ..Default::default() };
+            let op = OpcoesDoDuelo {
+                potions,
+                mc_runs: 200,
+                ..Default::default()
+            };
             let t = torneio_padrao(&op);
             if !potions {
                 println!("budget: {:?} ({} points each)", t.budget, t.budget.pontos());
@@ -2164,7 +2399,10 @@ mod testes {
                     );
                 }
             }
-            println!("\n######## potions {} ########", if potions { "ON (AUTO)" } else { "off" });
+            println!(
+                "\n######## potions {} ########",
+                if potions { "ON (AUTO)" } else { "off" }
+            );
             println!("{}", tabela_do_torneio(&t.rows));
         }
     }
@@ -2172,7 +2410,12 @@ mod testes {
     /// Prints a sample evaluation (run with `--nocapture`).
     #[test]
     fn amostra_json() {
-        let a = sintetico("Alpha", 48, shared::item_id::ESPADA_E_ESCUDO, [40, 0, 0, 30, 0, 20]);
+        let a = sintetico(
+            "Alpha",
+            48,
+            shared::item_id::ESPADA_E_ESCUDO,
+            [40, 0, 0, 30, 0, 20],
+        );
         let b = sintetico("Beta", 18, shared::item_id::KATANA, [30, 10, 0, 0, 0, 0]);
         let av = avaliar(&a, &b, Regras::propostas_padrao());
         let j = serde_json::to_string_pretty(&av).unwrap();

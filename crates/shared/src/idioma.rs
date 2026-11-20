@@ -312,9 +312,7 @@ impl Dicionario {
         Self::novo_de(verbetes.iter())
     }
 
-    fn novo_de(
-        verbetes: impl Iterator<Item = &'static (&'static str, &'static str)>,
-    ) -> Self {
+    fn novo_de(verbetes: impl Iterator<Item = &'static (&'static str, &'static str)>) -> Self {
         let mut exatos = HashMap::new();
         let mut por_inicio: HashMap<&'static str, Vec<Modelo>> = HashMap::new();
         let mut sem_inicio = Vec::new();
@@ -484,9 +482,8 @@ impl Modelo {
     fn preenche(&self, valores: &[&str], dic: &Dicionario) -> String {
         let pedacos_en = &self.saida_pedacos;
         let nomes_en = &self.saida_nomes;
-        let mut fora = String::with_capacity(
-            pedacos_en.iter().map(|p| p.len()).sum::<usize>() + 16,
-        );
+        let mut fora =
+            String::with_capacity(pedacos_en.iter().map(|p| p.len()).sum::<usize>() + 16);
         for (i, pedaco) in pedacos_en.iter().enumerate() {
             fora.push_str(pedaco);
             if i >= nomes_en.len() {
@@ -515,12 +512,10 @@ impl Modelo {
                 // Uma volta só, e nunca em número puro: o que vem no buraco é
                 // muitas vezes "12" ou "2.708", e procurar verbete pra isso é
                 // só busca perdida.
-                Some(v) if v.chars().any(char::is_alphabetic) => {
-                    match dic.traduz_valor(v) {
-                        Some(t) => fora.push_str(t),
-                        None => fora.push_str(v),
-                    }
-                }
+                Some(v) if v.chars().any(char::is_alphabetic) => match dic.traduz_valor(v) {
+                    Some(t) => fora.push_str(t),
+                    None => fora.push_str(v),
+                },
                 Some(v) => fora.push_str(v),
                 None => {
                     fora.push('{');
@@ -589,7 +584,10 @@ mod testes {
     fn portugues_e_identidade() {
         assert_eq!(tr_em(Idioma::Pt, "Bolsa"), "Bolsa");
         // Nem passa pelo dicionário: frase que não existe sai igual.
-        assert_eq!(tr_em(Idioma::Pt, "frase que ninguém escreveu"), "frase que ninguém escreveu");
+        assert_eq!(
+            tr_em(Idioma::Pt, "frase que ninguém escreveu"),
+            "frase que ninguém escreveu"
+        );
     }
 
     /// OS DOIS SEPARADORES ANDAM JUNTOS, e cada idioma tem o seu.
@@ -638,7 +636,10 @@ mod testes {
     #[test]
     fn o_modelo_mais_especifico_ganha() {
         // O curto casaria a frase toda com " de 12" dentro do buraco.
-        let d = dic(&[("Nível {n}", "Level {n}"), ("Nível {n} de {t}", "Level {n} of {t}")]);
+        let d = dic(&[
+            ("Nível {n}", "Level {n}"),
+            ("Nível {n} de {t}", "Level {n} of {t}"),
+        ]);
         match d.traduz("Nível 5 de 12") {
             Achado::Montado(v) => assert_eq!(v, "Level 5 of 12"),
             _ => panic!("não casou"),
@@ -667,9 +668,15 @@ mod testes {
     fn modelo_exige_a_frase_inteira() {
         // Sobrou texto no fim: não é este verbete.
         let d = dic(&[("Nível {n} de {t}", "Level {n} of {t}")]);
-        assert!(matches!(d.traduz("Nível 5 de 12 e mais coisa aqui"), Achado::Montado(_)));
+        assert!(matches!(
+            d.traduz("Nível 5 de 12 e mais coisa aqui"),
+            Achado::Montado(_)
+        ));
         let d2 = dic(&[("Você precisa de {n} de ouro", "You need {n} gold")]);
-        assert!(matches!(d2.traduz("Você precisa de 30 de ouro"), Achado::Montado(_)));
+        assert!(matches!(
+            d2.traduz("Você precisa de 30 de ouro"),
+            Achado::Montado(_)
+        ));
         assert!(matches!(d2.traduz("Você precisa de ouro"), Achado::Nada));
     }
 
@@ -723,11 +730,16 @@ mod testes {
         // O contrato que segura o jogo: falta de tradução não some com o
         // texto. Depois da inversão o original é o INGLÊS, então quem pode
         // ficar sem verbete é o português.
-        assert_eq!(tr_em(Idioma::Pt, "\u{1}frase inexistente\u{1}"), "\u{1}frase inexistente\u{1}");
+        assert_eq!(
+            tr_em(Idioma::Pt, "\u{1}frase inexistente\u{1}"),
+            "\u{1}frase inexistente\u{1}"
+        );
         assert_eq!(tr_estrito(Idioma::Pt, "\u{1}frase inexistente\u{1}"), None);
         // E o inglês nunca fica sem: ele é a fonte.
-        assert_eq!(tr_estrito(Idioma::En, "\u{1}frase inexistente\u{1}"),
-                   Some("\u{1}frase inexistente\u{1}".to_string()));
+        assert_eq!(
+            tr_estrito(Idioma::En, "\u{1}frase inexistente\u{1}"),
+            Some("\u{1}frase inexistente\u{1}".to_string())
+        );
     }
 
     #[test]

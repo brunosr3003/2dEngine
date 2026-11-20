@@ -45,11 +45,26 @@ pub struct Anel {
 }
 
 pub const ANEIS: [Anel; 5] = [
-    Anel { nome: "the Bubble Kingdom", nivel: (100, 100) },
-    Anel { nome: "the Kelp Forest", nivel: (100, 105) },
-    Anel { nome: "the Shipwreck Graveyard", nivel: (105, 110) },
-    Anel { nome: "the Lantern Trench", nivel: (110, 115) },
-    Anel { nome: "the Abyss Rim", nivel: (115, 120) },
+    Anel {
+        nome: "the Bubble Kingdom",
+        nivel: (100, 100),
+    },
+    Anel {
+        nome: "the Kelp Forest",
+        nivel: (100, 105),
+    },
+    Anel {
+        nome: "the Shipwreck Graveyard",
+        nivel: (105, 110),
+    },
+    Anel {
+        nome: "the Lantern Trench",
+        nivel: (110, 115),
+    },
+    Anel {
+        nome: "the Abyss Rim",
+        nivel: (115, 120),
+    },
 ];
 
 /// The ring `q` is in (0 = the bubble).
@@ -130,26 +145,58 @@ pub fn ponto(p: u16) -> Option<Vec2> {
 
 /// Small safe settlements, with real shops and residents.
 #[derive(Clone, Copy, Debug)]
-pub struct Povoado { pub nome: &'static str, pub centro: Vec2 }
+pub struct Povoado {
+    pub nome: &'static str,
+    pub centro: Vec2,
+}
 pub const POVOADOS: [Povoado; 3] = [
-    Povoado {nome:"Pearl Haven",centro:Vec2::new(-185.0,75.0)},
-    Povoado {nome:"Shellwatch",centro:Vec2::new(285.0,100.0)},
-    Povoado {nome:"Lantern Refuge",centro:Vec2::new(-80.0,-420.0)},
+    Povoado {
+        nome: "Pearl Haven",
+        centro: Vec2::new(-185.0, 75.0),
+    },
+    Povoado {
+        nome: "Shellwatch",
+        centro: Vec2::new(285.0, 100.0),
+    },
+    Povoado {
+        nome: "Lantern Refuge",
+        centro: Vec2::new(-80.0, -420.0),
+    },
 ];
 pub const RAIO_POVOADO: f32 = 27.0;
-pub const CAMPOS_ENERGIA: [Vec2;4] = [Vec2::new(-30.0,190.0),Vec2::new(205.0,-200.0),Vec2::new(-360.0,-190.0),Vec2::new(300.0,480.0)];
+pub const CAMPOS_ENERGIA: [Vec2; 4] = [
+    Vec2::new(-30.0, 190.0),
+    Vec2::new(205.0, -200.0),
+    Vec2::new(-360.0, -190.0),
+    Vec2::new(300.0, 480.0),
+];
 pub const RAIO_CAMPO_ENERGIA: f32 = 23.0;
-pub fn campo_energia(q:Vec2)->bool { CAMPOS_ENERGIA.iter().any(|c|c.distance(q)<RAIO_CAMPO_ENERGIA) }
-pub fn no_povoado(q:Vec2)->bool { POVOADOS.iter().any(|p|p.centro.distance(q)<RAIO_POVOADO+5.0) }
-fn distancia_segmento(q:Vec2,a:Vec2,b:Vec2)->f32 {
-    let d=b-a;let t=((q-a).dot(d)/d.length_squared()).clamp(0.0,1.0);q.distance(a+d*t)
+pub fn campo_energia(q: Vec2) -> bool {
+    CAMPOS_ENERGIA
+        .iter()
+        .any(|c| c.distance(q) < RAIO_CAMPO_ENERGIA)
 }
-fn no_caminho(q:Vec2)->bool { POVOADOS.iter().any(|p|distancia_segmento(q,Vec2::ZERO,p.centro)<4.0) }
+pub fn no_povoado(q: Vec2) -> bool {
+    POVOADOS
+        .iter()
+        .any(|p| p.centro.distance(q) < RAIO_POVOADO + 5.0)
+}
+fn distancia_segmento(q: Vec2, a: Vec2, b: Vec2) -> f32 {
+    let d = b - a;
+    let t = ((q - a).dot(d) / d.length_squared()).clamp(0.0, 1.0);
+    q.distance(a + d * t)
+}
+fn no_caminho(q: Vec2) -> bool {
+    POVOADOS
+        .iter()
+        .any(|p| distancia_segmento(q, Vec2::ZERO, p.centro) < 4.0)
+}
 
 // ─────────────────────────────── the seafloor ───────────────────────────────
 
 fn hash(x: i32, y: i32) -> f32 {
-    let mut h = (x as u32).wrapping_mul(73_856_093) ^ (y as u32).wrapping_mul(19_349_663) ^ 0x51ED_270B;
+    let mut h =
+        (x as u32).wrapping_mul(73_856_093) ^ (y as u32).wrapping_mul(19_349_663) ^ 0x51ED_270B;
     h ^= h >> 13;
     h = h.wrapping_mul(0x5bd1_e995);
     h ^= h >> 15;
@@ -172,7 +219,9 @@ fn ruido(p: Vec2) -> f32 {
 }
 
 fn fbm(p: Vec2) -> f32 {
-    0.55 * ruido(p) + 0.3 * ruido(p * 2.03 + Vec2::splat(17.0)) + 0.15 * ruido(p * 4.1 - Vec2::splat(9.0))
+    0.55 * ruido(p)
+        + 0.3 * ruido(p * 2.03 + Vec2::splat(17.0))
+        + 0.15 * ruido(p * 4.1 - Vec2::splat(9.0))
 }
 
 fn suave(a: f32, b: f32, x: f32) -> f32 {
@@ -184,7 +233,10 @@ fn suave(a: f32, b: f32, x: f32) -> f32 {
 /// circle).
 fn parede_em(q: Vec2) -> f32 {
     let a = q.y.atan2(q.x);
-    PAREDE_DE + 18.0 * (a * 3.0 + 0.7).sin() + 10.0 * (a * 7.0 - 1.1).sin() + 6.0 * (a * 13.0 + 2.0).sin()
+    PAREDE_DE
+        + 18.0 * (a * 3.0 + 0.7).sin()
+        + 10.0 * (a * 7.0 - 1.1).sin()
+        + 6.0 * (a * 13.0 + 2.0).sin()
 }
 
 /// The field bosses' arenas, weakest first (`bosses::da_zona` order).
@@ -193,7 +245,13 @@ pub fn arenas() -> [Vec2; 5] {
         let a = graus.to_radians();
         Vec2::new(a.cos(), a.sin()) * r
     };
-    [polar(35.0, 315.0), polar(150.0, 445.0), polar(255.0, 560.0), polar(215.0, 590.0), polar(335.0, 585.0)]
+    [
+        polar(35.0, 315.0),
+        polar(150.0, 445.0),
+        polar(255.0, 560.0),
+        polar(215.0, 590.0),
+        polar(335.0, 585.0),
+    ]
 }
 pub const RAIO_ARENA: f32 = 20.0;
 
@@ -213,7 +271,9 @@ pub fn naufragios() -> &'static [(Vec2, u8, i32)] {
             let a = (k as f32 / 22.0 + hash(k, 3) * 0.03) * std::f32::consts::TAU;
             let r = KELP_ATE + 25.0 + hash(k, 9) * (NAUFRAGIOS_ATE - KELP_ATE - 50.0);
             let p = Vec2::new(a.cos(), a.sin()) * r;
-            if arenas().iter().any(|c| c.distance(p) < RAIO_ARENA + 14.0) || p.distance(portal_do_galeao()) < 18.0 {
+            if arenas().iter().any(|c| c.distance(p) < RAIO_ARENA + 14.0)
+                || p.distance(portal_do_galeao()) < 18.0
+            {
                 continue;
             }
             v.push((p, (hash(k, 5) * 4.0) as u8 % 4, k));
@@ -226,7 +286,9 @@ pub fn naufragios() -> &'static [(Vec2, u8, i32)] {
 /// the floor. Clear round the arenas and along four ways out.
 fn pinaculo_em(q: Vec2) -> Option<i32> {
     let r = q.length();
-    if no_povoado(q) || campo_energia(q) || no_caminho(q) { return None; }
+    if no_povoado(q) || campo_energia(q) || no_caminho(q) {
+        return None;
+    }
     if r < FOSSA_ATE + 10.0 {
         return None;
     }
@@ -235,7 +297,8 @@ fn pinaculo_em(q: Vec2) -> Option<i32> {
     }
     let ang = q.y.atan2(q.x);
     for k in 0..4 {
-        let caminho = (k as f32 * std::f32::consts::FRAC_PI_2 + 0.4).rem_euclid(std::f32::consts::TAU);
+        let caminho =
+            (k as f32 * std::f32::consts::FRAC_PI_2 + 0.4).rem_euclid(std::f32::consts::TAU);
         let da = (ang - caminho).rem_euclid(std::f32::consts::TAU);
         if da.min(std::f32::consts::TAU - da) * r < 9.0 {
             return None;
@@ -250,12 +313,17 @@ fn relevo_do_fundo(q: Vec2) -> f32 {
     let r = q.length();
     let mut h = (fbm(q / 70.0) - 0.5) * 7.0 + (ruido(q / 16.0) - 0.5) * 1.6;
     // The trench: a sunken ring, its floor six blocks down.
-    let dentro = suave(NAUFRAGIOS_ATE - 5.0, NAUFRAGIOS_ATE + 25.0, r) * (1.0 - suave(FOSSA_ATE - 25.0, FOSSA_ATE + 5.0, r));
+    let dentro = suave(NAUFRAGIOS_ATE - 5.0, NAUFRAGIOS_ATE + 25.0, r)
+        * (1.0 - suave(FOSSA_ATE - 25.0, FOSSA_ATE + 5.0, r));
     h -= 6.0 * dentro;
     // The bubble's floor: flat (the town), easing into the dunes past it.
     h *= suave(BOLHA_RAIO - 15.0, BOLHA_RAIO + 10.0, r);
-    for p in POVOADOS { h *= suave(RAIO_POVOADO,RAIO_POVOADO+10.0,p.centro.distance(q)); }
-    for c in CAMPOS_ENERGIA { h *= suave(24.0,34.0,c.distance(q)); }
+    for p in POVOADOS {
+        h *= suave(RAIO_POVOADO, RAIO_POVOADO + 10.0, p.centro.distance(q));
+    }
+    for c in CAMPOS_ENERGIA {
+        h *= suave(24.0, 34.0, c.distance(q));
+    }
     h
 }
 
@@ -342,15 +410,31 @@ pub fn e_palacio(q: Vec2) -> bool {
 pub fn pintura(q: Vec2) -> Option<crate::terreno::Material> {
     use crate::terreno::Material as M;
     let r = q.length();
-    if no_povoado(q) { return Some(M::MarmoreSombra); }
-    if campo_energia(q) { return Some(M::RochaAbissal); }
-    if no_caminho(q) { return Some(M::AreiaFunda); }
-    let xadrez = |passo: f32| ((q.x / passo).floor() as i32 + (q.y / passo).floor() as i32).rem_euclid(2) == 0;
+    if no_povoado(q) {
+        return Some(M::MarmoreSombra);
+    }
+    if campo_energia(q) {
+        return Some(M::RochaAbissal);
+    }
+    if no_caminho(q) {
+        return Some(M::AreiaFunda);
+    }
+    let xadrez = |passo: f32| {
+        ((q.x / passo).floor() as i32 + (q.y / passo).floor() as i32).rem_euclid(2) == 0
+    };
     if r > parede_em(q) {
-        return Some(if (q.x * 0.7 + q.y).rem_euclid(9.0) < 1.0 { M::RochaEscura } else { M::RochaAbissal });
+        return Some(if (q.x * 0.7 + q.y).rem_euclid(9.0) < 1.0 {
+            M::RochaEscura
+        } else {
+            M::RochaAbissal
+        });
     }
     if pinaculo_em(q).is_some() {
-        return Some(if hash(q.x as i32, q.y as i32) < 0.06 { M::NeonCiano } else { M::RochaAbissal });
+        return Some(if hash(q.x as i32, q.y as i32) < 0.06 {
+            M::NeonCiano
+        } else {
+            M::RochaAbissal
+        });
     }
     if dentro_da_bolha(q) {
         if q.distance(ENSEADA) < ENSEADA_RAIO {
@@ -371,23 +455,50 @@ pub fn pintura(q: Vec2) -> Option<crate::terreno::Material> {
         // Shell paving with six curved streets and a coral rim. Broad neon
         // grid lines looked like a circuit board instead of a sea kingdom.
         if r > BOLHA_RAIO - 8.0 {
-            return Some(if hash((q.x / 4.0) as i32, (q.y / 4.0) as i32) < 0.25 { M::Coral } else { M::PetalaRosa });
+            return Some(if hash((q.x / 4.0) as i32, (q.y / 4.0) as i32) < 0.25 {
+                M::Coral
+            } else {
+                M::PetalaRosa
+            });
         }
         let radial = (q.y.atan2(q.x) * 3.0 / std::f32::consts::PI).rem_euclid(1.0);
         if radial < 0.035 || radial > 0.965 || (r - 72.0).abs() < 2.5 {
             return Some(M::Calcada);
         }
-        return Some(if xadrez(4.0) { M::Marmore } else { M::MarmoreSombra });
+        return Some(if xadrez(4.0) {
+            M::Marmore
+        } else {
+            M::MarmoreSombra
+        });
     }
     if arenas().iter().any(|a| a.distance(q) < RAIO_ARENA) {
-        let a = arenas().into_iter().min_by(|a, b| a.distance(q).total_cmp(&b.distance(q))).unwrap();
-        return Some(if (a.distance(q) % 6.0) < 0.5 { M::NeonCiano } else { M::RochaAbissal });
+        let a = arenas()
+            .into_iter()
+            .min_by(|a, b| a.distance(q).total_cmp(&b.distance(q)))
+            .unwrap();
+        return Some(if (a.distance(q) % 6.0) < 0.5 {
+            M::NeonCiano
+        } else {
+            M::RochaAbissal
+        });
     }
     // The open floor, by ring.
     let n = ruido(q / 9.0);
     Some(match anel_em(q) {
-        1 => if n < 0.35 { M::Alga } else { M::AreiaFunda },
-        2 => if n < 0.25 { M::RochaAbissal } else { M::AreiaFunda },
+        1 => {
+            if n < 0.35 {
+                M::Alga
+            } else {
+                M::AreiaFunda
+            }
+        }
+        2 => {
+            if n < 0.25 {
+                M::RochaAbissal
+            } else {
+                M::AreiaFunda
+            }
+        }
         // The trench glows where the rock is cracked.
         3 => {
             if hash(q.x as i32 * 3, q.y as i32 * 3) < 0.012 {
@@ -398,7 +509,13 @@ pub fn pintura(q: Vec2) -> Option<crate::terreno::Material> {
                 M::AreiaFunda
             }
         }
-        _ => if n < 0.55 { M::RochaAbissal } else { M::AreiaFunda },
+        _ => {
+            if n < 0.55 {
+                M::RochaAbissal
+            } else {
+                M::AreiaFunda
+            }
+        }
     })
 }
 
@@ -409,7 +526,11 @@ pub fn fachada(q: Vec2, gx: i32, gz: i32, alto: i32) -> crate::terreno::Material
     let p = q - PALACIO;
     if alto <= PALACIO_ALTO {
         // The pillar: dark rock with veins.
-        return if (gx + gz + alto).rem_euclid(11) == 0 { M::NeonCiano } else { M::RochaAbissal };
+        return if (gx + gz + alto).rem_euclid(11) == 0 {
+            M::NeonCiano
+        } else {
+            M::RochaAbissal
+        };
     }
     let acima = alto - PALACIO_ALTO;
     if acima % 6 == 5 {
@@ -430,7 +551,13 @@ pub fn fachada(q: Vec2, gx: i32, gz: i32, alto: i32) -> crate::terreno::Material
 /// open floor); `f` is the species draw. `None`: nothing grows at `q`.
 pub fn arvore_em(q: Vec2, f: f32) -> Option<crate::terreno::Arvore> {
     use crate::terreno::Arvore;
-    if dentro_da_bolha(q) || no_povoado(q) || campo_energia(q) || no_caminho(q) || pinaculo_em(q).is_some() || q.length() > parede_em(q) - 4.0 {
+    if dentro_da_bolha(q)
+        || no_povoado(q)
+        || campo_energia(q)
+        || no_caminho(q)
+        || pinaculo_em(q).is_some()
+        || q.length() > parede_em(q) - 4.0
+    {
         return None;
     }
     if arenas().iter().any(|a| a.distance(q) < RAIO_ARENA + 6.0)
@@ -440,7 +567,13 @@ pub fn arvore_em(q: Vec2, f: f32) -> Option<crate::terreno::Arvore> {
         return None;
     }
     Some(match anel_em(q) {
-        1 => if f < 0.85 { Arvore::Alga } else { Arvore::Coral },
+        1 => {
+            if f < 0.85 {
+                Arvore::Alga
+            } else {
+                Arvore::Coral
+            }
+        }
         3 => {
             // The trench is sparse: one in three draws grows anything.
             if f > 0.35 {
@@ -448,7 +581,15 @@ pub fn arvore_em(q: Vec2, f: f32) -> Option<crate::terreno::Arvore> {
             }
             Arvore::Coral
         }
-        _ => if f < 0.3 { Arvore::Alga } else if f < 0.75 { Arvore::Coral } else { return None },
+        _ => {
+            if f < 0.3 {
+                Arvore::Alga
+            } else if f < 0.75 {
+                Arvore::Coral
+            } else {
+                return None;
+            }
+        }
     })
 }
 
@@ -464,13 +605,18 @@ pub fn densidade_em(q: Vec2) -> f32 {
 
 /// Plants grow on the open floor, not in the kingdom.
 pub fn planta_livre(q: Vec2) -> bool {
-    !dentro_da_bolha(q) && !no_povoado(q) && !no_caminho(q) && pinaculo_em(q).is_none() && q.length() < parede_em(q) - 2.0
+    !dentro_da_bolha(q)
+        && !no_povoado(q)
+        && !no_caminho(q)
+        && pinaculo_em(q).is_none()
+        && q.length() < parede_em(q) - 2.0
 }
 
 /// The mob level band at `q`; `None` in the kingdom and in the wall.
 pub fn faixa_em(q: Vec2) -> Option<(u32, u32)> {
     let a = anel_em(q);
-    (a != 0 && !no_povoado(q) && !campo_energia(q) && q.length() < parede_em(q)).then(|| ANEIS[a].nivel)
+    (a != 0 && !no_povoado(q) && !campo_energia(q) && q.length() < parede_em(q))
+        .then(|| ANEIS[a].nivel)
 }
 
 pub fn e_abissal(zona: &str) -> bool {
@@ -507,30 +653,76 @@ pub fn luzes() -> &'static [LuzDoFundo] {
                 k += 1;
                 let q = Vec2::new(x + 5.0, z + 5.0);
                 x += 20.0;
-                if q.length() > BOLHA_RAIO - 10.0 || e_palacio(q) || q.distance(ENSEADA) < ENSEADA_RAIO + 2.0 {
+                if q.length() > BOLHA_RAIO - 10.0
+                    || e_palacio(q)
+                    || q.distance(ENSEADA) < ENSEADA_RAIO + 2.0
+                {
                     continue;
                 }
-                let cor = if k % 2 == 0 { [0.45, 0.95, 1.0] } else { [1.0, 0.55, 0.8] };
-                v.push(LuzDoFundo { pos: q, alto: 5.6, cor, raio: 20.0, agua_viva: false, coral: false, seed: k });
+                let cor = if k % 2 == 0 {
+                    [0.45, 0.95, 1.0]
+                } else {
+                    [1.0, 0.55, 0.8]
+                };
+                v.push(LuzDoFundo {
+                    pos: q,
+                    alto: 5.6,
+                    cor,
+                    raio: 20.0,
+                    agua_viva: false,
+                    coral: false,
+                    seed: k,
+                });
             }
             z += 20.0;
         }
         // Bioluminescent coral gardens: low lights illuminate the ground.
-        let mut coral_at = |q:Vec2,seed:i32| {
-            if e_palacio(q) || pinaculo_em(q).is_some() || campo_energia(q) { return; }
-            let cor=match seed.rem_euclid(3) {0=>[0.25,1.0,0.85],1=>[1.0,0.35,0.65],_=>[0.50,0.65,1.0]};
-            v.push(LuzDoFundo {pos:q,alto:1.2,cor,raio:12.0,agua_viva:false,coral:true,seed});
+        let mut coral_at = |q: Vec2, seed: i32| {
+            if e_palacio(q) || pinaculo_em(q).is_some() || campo_energia(q) {
+                return;
+            }
+            let cor = match seed.rem_euclid(3) {
+                0 => [0.25, 1.0, 0.85],
+                1 => [1.0, 0.35, 0.65],
+                _ => [0.50, 0.65, 1.0],
+            };
+            v.push(LuzDoFundo {
+                pos: q,
+                alto: 1.2,
+                cor,
+                raio: 12.0,
+                agua_viva: false,
+                coral: true,
+                seed,
+            });
         };
         for p in POVOADOS {
-            for k in 0..8 {let a=k as f32*std::f32::consts::TAU/8.0;coral_at(p.centro+Vec2::new(a.cos(),a.sin())*23.0,k+1200);}
-            let n=(p.centro.length()/22.0) as i32;
-            for k in 0..n {let q=p.centro*(k as f32/n as f32);let d=p.centro.normalize().perp();coral_at(q+d*6.0,1400+k);}
+            for k in 0..8 {
+                let a = k as f32 * std::f32::consts::TAU / 8.0;
+                coral_at(p.centro + Vec2::new(a.cos(), a.sin()) * 23.0, k + 1200);
+            }
+            let n = (p.centro.length() / 22.0) as i32;
+            for k in 0..n {
+                let q = p.centro * (k as f32 / n as f32);
+                let d = p.centro.normalize().perp();
+                coral_at(q + d * 6.0, 1400 + k);
+            }
         }
-        for k in 0..36 {let a=k as f32*std::f32::consts::TAU/36.0;coral_at(Vec2::new(a.cos(),a.sin())*105.0,k+1600);}
-        for x in -24..=24 {for z in -24..=24 {
-            let q=Vec2::new(x as f32*24.0+hash(x,z)*8.0,z as f32*24.0);
-            if q.length()<PAREDE_DE-20.0 && q.length()>BOLHA_RAIO+10.0 && hash(x+200,z)>0.84 {coral_at(q,2000+x*49+z);}
-        }}
+        for k in 0..36 {
+            let a = k as f32 * std::f32::consts::TAU / 36.0;
+            coral_at(Vec2::new(a.cos(), a.sin()) * 105.0, k + 1600);
+        }
+        for x in -24..=24 {
+            for z in -24..=24 {
+                let q = Vec2::new(x as f32 * 24.0 + hash(x, z) * 8.0, z as f32 * 24.0);
+                if q.length() < PAREDE_DE - 20.0
+                    && q.length() > BOLHA_RAIO + 10.0
+                    && hash(x + 200, z) > 0.84
+                {
+                    coral_at(q, 2000 + x * 49 + z);
+                }
+            }
+        }
         // Outside: jellyfish drifting over the floor, thickest in the trench.
         for i in 0..900 {
             let a = hash(i, 1) * std::f32::consts::TAU;
@@ -550,7 +742,15 @@ pub fn luzes() -> &'static [LuzDoFundo] {
                 1 => [0.85, 0.5, 1.0],
                 _ => [0.4, 1.0, 0.75],
             };
-            v.push(LuzDoFundo { pos: q, alto: 3.0 + hash(i, 4) * 5.0, cor, raio: 9.0, agua_viva: true, coral: false, seed: i });
+            v.push(LuzDoFundo {
+                pos: q,
+                alto: 3.0 + hash(i, 4) * 5.0,
+                cor,
+                raio: 9.0,
+                agua_viva: true,
+                coral: false,
+                seed: i,
+            });
         }
         v
     })
@@ -580,8 +780,8 @@ mod testes {
             let raio = (RAIO_CAMPO_ENERGIA / BLOCO).ceil() as i32;
             let bx = (centro.x / BLOCO).round() as i32;
             let bz = (centro.y / BLOCO).round() as i32;
-            for z in bz-raio..=bz+raio {
-                for x in bx-raio..=bx+raio {
+            for z in bz - raio..=bz + raio {
+                for x in bx - raio..=bx + raio {
                     let p = Vec2::new(x as f32, z as f32) * BLOCO;
                     let topo = ger.bloco_em(x, z);
                     if let Some(no) = energia_da_coluna(Bioma::Abissal, x, z, topo, &ger, false) {
@@ -593,7 +793,10 @@ mod testes {
                     }
                 }
             }
-            assert!(depositos >= 8, "energy field at {centro:?} has only {depositos} deposits");
+            assert!(
+                depositos >= 8,
+                "energy field at {centro:?} has only {depositos} deposits"
+            );
         }
     }
 
@@ -605,8 +808,15 @@ mod testes {
             assert!(w[1].nivel.0 >= w[0].nivel.0);
         }
         assert_eq!(ANEIS[4].nivel.1, 120);
-        assert_eq!(altura_em(centro_da_cidade()), NIVEL_CHAO, "the town is not flat");
-        assert!(altura_em(Vec2::new(0.0, 690.0)) > NIVEL_CHAO + 40, "no wall at the edge");
+        assert_eq!(
+            altura_em(centro_da_cidade()),
+            NIVEL_CHAO,
+            "the town is not flat"
+        );
+        assert!(
+            altura_em(Vec2::new(0.0, 690.0)) > NIVEL_CHAO + 40,
+            "no wall at the edge"
+        );
         assert!(altura_em(ENSEADA) < 0, "the cove has no water");
         let mut seco = 0;
         for i in 0..2000 {
@@ -631,7 +841,11 @@ mod testes {
         for i in 1..=200 {
             let p = RAMPA_PE + eixo * (i as f32 / 200.0);
             let h = altura_em(p);
-            assert!(h - ultima <= 1, "a step of {} blocks on the ramp at {p}", h - ultima);
+            assert!(
+                h - ultima <= 1,
+                "a step of {} blocks on the ramp at {p}",
+                h - ultima
+            );
             ultima = h;
         }
         assert!(ultima >= NIVEL_CHAO + PALACIO_ALTO - 1);
@@ -641,12 +855,25 @@ mod testes {
     #[test]
     fn as_arenas_sao_planas() {
         let chefes = crate::bosses::da_zona(ZONA);
-        assert_eq!(chefes.len(), 5, "five field bosses including the sanctuary Hydra");
+        assert_eq!(
+            chefes.len(),
+            5,
+            "five field bosses including the sanctuary Hydra"
+        );
         for (a, c) in arenas().iter().zip(chefes) {
             let (lo, hi) = faixa_em(*a).expect("an arena off the floor");
-            assert!(c.nivel >= lo && c.nivel <= hi + 1, "{} ({}) in a {lo}-{hi} ring", c.nome, c.nivel);
+            assert!(
+                c.nivel >= lo && c.nivel <= hi + 1,
+                "{} ({}) in a {lo}-{hi} ring",
+                c.nome,
+                c.nivel
+            );
             for d in [Vec2::X, Vec2::Y, -Vec2::X, -Vec2::Y] {
-                assert!((altura_em(*a + d * (RAIO_ARENA - 2.0)) - altura_em(*a)).abs() <= 1, "{}'s arena is not flat", c.nome);
+                assert!(
+                    (altura_em(*a + d * (RAIO_ARENA - 2.0)) - altura_em(*a)).abs() <= 1,
+                    "{}'s arena is not flat",
+                    c.nome
+                );
             }
         }
     }

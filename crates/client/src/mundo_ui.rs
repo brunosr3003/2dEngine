@@ -109,7 +109,10 @@ impl Miniaturas {
             let (tx, rx) = std::sync::mpsc::channel();
             std::thread::spawn(move || {
                 for (i, d) in ARQUIPELAGO.iter().enumerate() {
-                    if tx.send((i, crate::mapa::miniatura_da_ilha(d, LADO_DA_MINIATURA))).is_err() {
+                    if tx
+                        .send((i, crate::mapa::miniatura_da_ilha(d, LADO_DA_MINIATURA)))
+                        .is_err()
+                    {
                         return;
                     }
                 }
@@ -118,7 +121,11 @@ impl Miniaturas {
         }
         if let Some(rx) = &self.rx {
             while let Ok((i, rgba)) = rx.try_recv() {
-                let t = Texture2D::from_rgba8(LADO_DA_MINIATURA as u16, LADO_DA_MINIATURA as u16, &rgba);
+                let t = Texture2D::from_rgba8(
+                    LADO_DA_MINIATURA as u16,
+                    LADO_DA_MINIATURA as u16,
+                    &rgba,
+                );
                 t.set_filter(FilterMode::Linear);
                 self.tex[i] = Some(t);
             }
@@ -154,8 +161,19 @@ pub fn desenha(
 
     // Ilha fora do ar fica APAGADA. Nao e' decoracao: e' a diferenca entre
     // "o chefe de la' esta' vivo" e "ninguem sabe o que ha' la'".
-    let opacidade = |d: &DefIlha| if mundo.da_zona(d.zona).is_none_or(|i| i.no_ar) { 1.0 } else { 0.45 };
-    let lugar = |d: &DefIlha| (ponto(vec2(d.centro[0], d.centro[1])), (d.raio_m() * escala).max(u(10.0)));
+    let opacidade = |d: &DefIlha| {
+        if mundo.da_zona(d.zona).is_none_or(|i| i.no_ar) {
+            1.0
+        } else {
+            0.45
+        }
+    };
+    let lugar = |d: &DefIlha| {
+        (
+            ponto(vec2(d.centro[0], d.centro[1])),
+            (d.raio_m() * escala).max(u(10.0)),
+        )
+    };
 
     // Every island's picture first, then the names, rings and crowns on top:
     // a big island's picture must not cover a neighbour's name.
@@ -164,13 +182,18 @@ pub fn desenha(
         let a = opacidade(d);
         let desenhou = MINIATURAS.with(|t| {
             let t = t.borrow();
-            let Some(Some(tex)) = t.tex.get(idx) else { return false };
+            let Some(Some(tex)) = t.tex.get(idx) else {
+                return false;
+            };
             draw_texture_ex(
                 tex,
                 c.x - raio,
                 c.y - raio,
                 Color::new(1.0, 1.0, 1.0, a),
-                DrawTextureParams { dest_size: Some(vec2(raio * 2.0, raio * 2.0)), ..Default::default() },
+                DrawTextureParams {
+                    dest_size: Some(vec2(raio * 2.0, raio * 2.0)),
+                    ..Default::default()
+                },
             );
             true
         });
@@ -192,25 +215,51 @@ pub fn desenha(
                 c.y,
                 raio * 0.9,
                 u(if aqui { 2.5 } else { 1.5 }),
-                if aqui { estilo::OURO } else { Color::new(1.0, 1.0, 1.0, 0.6) },
+                if aqui {
+                    estilo::OURO
+                } else {
+                    Color::new(1.0, 1.0, 1.0, 0.6)
+                },
             );
         }
         // Nome e faixa de nivel, on a dark band so it reads over any coast.
         let titulo = if aqui {
             format!("{} · you are here", d.nome)
         } else if a == 1.0 {
-            format!("{} · Lv {}", d.nome, shared::progressao::texto_de_faixa(d.nivel.0 as u32, d.nivel.1 as u32))
+            format!(
+                "{} · Lv {}",
+                d.nome,
+                shared::progressao::texto_de_faixa(d.nivel.0 as u32, d.nivel.1 as u32)
+            )
         } else {
             format!("{} · offline", d.nome)
         };
         let y = c.y - raio * 0.9 - u(10.0);
         let w = estilo::medir(&titulo, 13) + u(14.0);
-        draw_rectangle(c.x - w * 0.5, y - u(12.0), w, u(18.0), Color::new(0.04, 0.07, 0.12, 0.72));
-        estilo::texto_centro(c.x, y, &titulo, 13, if aqui { estilo::OURO } else { estilo::TEXTO });
+        draw_rectangle(
+            c.x - w * 0.5,
+            y - u(12.0),
+            w,
+            u(18.0),
+            Color::new(0.04, 0.07, 0.12, 0.72),
+        );
+        estilo::texto_centro(
+            c.x,
+            y,
+            &titulo,
+            13,
+            if aqui { estilo::OURO } else { estilo::TEXTO },
+        );
         if sob && !aqui {
             let dica = "click to travel";
             let yd = c.y + raio * 0.9 + u(14.0);
-            estilo::texto_centro(c.x + 1.0, yd + 1.0, dica, 12, Color::new(0.0, 0.0, 0.0, 0.85));
+            estilo::texto_centro(
+                c.x + 1.0,
+                yd + 1.0,
+                dica,
+                12,
+                Color::new(0.0, 0.0, 0.0, 0.85),
+            );
             estilo::texto_centro(c.x, yd, dica, 12, estilo::OURO);
         }
         // Os chefes, em volta do centro da ilha.
@@ -231,7 +280,13 @@ pub fn desenha(
                 None => "alive".to_string(),
                 Some(s) => conta_regressiva(s),
             };
-            estilo::texto_centro(q.x + 1.0, q.y + u(19.0), &rotulo, 11, Color::new(0.0, 0.0, 0.0, 0.85));
+            estilo::texto_centro(
+                q.x + 1.0,
+                q.y + u(19.0),
+                &rotulo,
+                11,
+                Color::new(0.0, 0.0, 0.0, 0.85),
+            );
             estilo::texto_centro(q.x, q.y + u(18.0), &rotulo, 11, cor);
         }
         if clicou && sob {
@@ -268,7 +323,11 @@ pub fn linhas_de_chefe(mundo: &Mundo, agora_unix: i64) -> Vec<(String, String, b
                 Some(s) => (conta_regressiva(s), false, s),
             };
             v.push((
-                format!("{} · Nv {}", ch.nome, shared::progressao::texto_de_nivel(ch.nivel as u32)),
+                format!(
+                    "{} · Nv {}",
+                    ch.nome,
+                    shared::progressao::texto_de_nivel(ch.nivel as u32)
+                ),
                 format!("{} · {texto}", d.nome),
                 vivo,
                 ordem,

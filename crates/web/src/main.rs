@@ -9,8 +9,8 @@
 //! `accounts` para contas; `characters` continua sendo do server).
 
 mod auth;
-mod db;
 mod contas;
+mod db;
 mod econ_admin;
 mod email;
 mod google;
@@ -312,7 +312,8 @@ async fn client_release() -> Result<Json<serde_json::Value>, axum::http::StatusC
     let pasta = std::env::var("WEB_STATIC").unwrap_or_else(|_| "static".into());
     let texto = std::fs::read_to_string(std::path::Path::new(&pasta).join("releases.json"))
         .map_err(|_| axum::http::StatusCode::SERVICE_UNAVAILABLE)?;
-    serde_json::from_str(&texto).map(Json)
+    serde_json::from_str(&texto)
+        .map(Json)
         .map_err(|_| axum::http::StatusCode::SERVICE_UNAVAILABLE)
 }
 

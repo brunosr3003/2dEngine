@@ -82,21 +82,36 @@ impl EditorHud {
         // ── the elements, where they will be ──
         let mut z = hud_layout::atual();
         for &(id, nome, _) in hud_custom::ITENS {
-            let Some(r) = hud_custom::campo(&mut z, id).map(|r| *r) else { continue };
+            let Some(r) = hud_custom::campo(&mut z, id).map(|r| *r) else {
+                continue;
+            };
             let sel = self.sel == Some(id);
             let mudou = self.layout.itens.contains_key(id);
-            draw_rectangle(r.x, r.y, r.w, r.h, if sel {
-                Color::new(0.91, 0.75, 0.46, 0.30)
-            } else {
-                Color::new(1.0, 1.0, 1.0, 0.10)
-            });
-            draw_rectangle_lines(r.x, r.y, r.w, r.h, if sel { 3.0 } else { 1.5 }, if sel {
-                estilo::OURO
-            } else if mudou {
-                Color::new(0.62, 0.80, 0.98, 0.9)
-            } else {
-                Color::new(1.0, 1.0, 1.0, 0.55)
-            });
+            draw_rectangle(
+                r.x,
+                r.y,
+                r.w,
+                r.h,
+                if sel {
+                    Color::new(0.91, 0.75, 0.46, 0.30)
+                } else {
+                    Color::new(1.0, 1.0, 1.0, 0.10)
+                },
+            );
+            draw_rectangle_lines(
+                r.x,
+                r.y,
+                r.w,
+                r.h,
+                if sel { 3.0 } else { 1.5 },
+                if sel {
+                    estilo::OURO
+                } else if mudou {
+                    Color::new(0.62, 0.80, 0.98, 0.9)
+                } else {
+                    Color::new(1.0, 1.0, 1.0, 0.55)
+                },
+            );
             let lado = r.w.min(r.h);
             let c = r.center();
             let letra = if r.w < 64.0 * f { 8 } else { 10 };
@@ -117,26 +132,40 @@ impl EditorHud {
             let mut zz = hud_layout::atual();
             let caixas: Vec<(bool, Rect)> = hud_custom::ITENS
                 .iter()
-                .filter_map(|&(id, _, _)| hud_custom::campo(&mut zz, id).map(|r| (self.sel == Some(id), *r)))
+                .filter_map(|&(id, _, _)| {
+                    hud_custom::campo(&mut zz, id).map(|r| (self.sel == Some(id), *r))
+                })
                 .collect();
-            let meio = Rect::new(seguro.center().x - w * 0.5, seguro.center().y - h * 0.5, w, h);
+            let meio = Rect::new(
+                seguro.center().x - w * 0.5,
+                seguro.center().y - h * 0.5,
+                w,
+                h,
+            );
             let opcoes: Vec<Rect> = [0.0, -seguro.h * 0.28, seguro.h * 0.28]
                 .into_iter()
-                .map(|dy| Rect::new(meio.x, (meio.y + dy).clamp(seguro.y, seguro.y + seguro.h - h), w, h))
+                .map(|dy| {
+                    Rect::new(
+                        meio.x,
+                        (meio.y + dy).clamp(seguro.y, seguro.y + seguro.h - h),
+                        w,
+                        h,
+                    )
+                })
                 .collect();
             if let Some(i) = self.posicao_barra {
                 opcoes[i % 3]
             } else {
-            opcoes
-                .into_iter()
-                .min_by_key(|b| {
-                    caixas
-                        .iter()
-                        .filter(|(_, r)| r.overlaps(b))
-                        .map(|(sel, _)| if *sel { 100 } else { 1 })
-                        .sum::<u32>()
-                })
-                .unwrap_or(meio)
+                opcoes
+                    .into_iter()
+                    .min_by_key(|b| {
+                        caixas
+                            .iter()
+                            .filter(|(_, r)| r.overlaps(b))
+                            .map(|(sel, _)| if *sel { 100 } else { 1 })
+                            .sum::<u32>()
+                    })
+                    .unwrap_or(meio)
             }
         };
         let mut barra = barra;
@@ -177,7 +206,13 @@ impl EditorHud {
                         estilo::TEXTO,
                     );
                 } else {
-                    estilo::texto(menos_s.x, y1 + lh * 0.62, "This one can only be moved", 13, estilo::SUAVE);
+                    estilo::texto(
+                        menos_s.x,
+                        y1 + lh * 0.62,
+                        "This one can only be moved",
+                        13,
+                        estilo::SUAVE,
+                    );
                 }
                 botao(um, "Reset", false);
             }
@@ -203,13 +238,28 @@ impl EditorHud {
             estilo::OURO,
         );
         let tudo = Rect::new(barra.x + barra.w - 10.0 * f - 128.0 * f, y2, 128.0 * f, lh);
-        botao(tudo, if self.confirmar_tudo { "Sure?" } else { "Reset all" }, false);
+        botao(
+            tudo,
+            if self.confirmar_tudo {
+                "Sure?"
+            } else {
+                "Reset all"
+            },
+            false,
+        );
         let mover = Rect::new(tudo.x - 8.0 * f - 104.0 * f, y2, 104.0 * f, lh);
         let mover = (mover.x > mais_t.x + mais_t.w + 4.0 * f).then_some(mover);
         if let Some(b) = mover {
             botao(b, "Move bar", false);
         }
-        draw_line(x0, y2 - 5.0 * f, barra.x + barra.w - 10.0 * f, y2 - 5.0 * f, 1.0, Color::new(1.0, 1.0, 1.0, 0.12));
+        draw_line(
+            x0,
+            y2 - 5.0 * f,
+            barra.x + barra.w - 10.0 * f,
+            y2 - 5.0 * f,
+            1.0,
+            Color::new(1.0, 1.0, 1.0, 0.12),
+        );
         estilo::texto(
             x0,
             barra.y + barra.h - 8.0 * f,
@@ -267,11 +317,17 @@ impl EditorHud {
                 // From wherever it is now to the next of the three places.
                 let agora = [0.0f32, -0.28, 0.28]
                     .iter()
-                    .position(|dy| (barra.y - (seguro.center().y - h * 0.5 + dy * seguro.h)).abs() < 2.0)
+                    .position(|dy| {
+                        (barra.y - (seguro.center().y - h * 0.5 + dy * seguro.h)).abs() < 2.0
+                    })
                     .unwrap_or(0);
                 self.posicao_barra = Some(self.posicao_barra.unwrap_or(agora) + 1);
             } else if menos_t.toca(m) || mais_t.toca(m) {
-                let passo = if mais_t.toca(m) { hud_custom::PASSO } else { -hud_custom::PASSO };
+                let passo = if mais_t.toca(m) {
+                    hud_custom::PASSO
+                } else {
+                    -hud_custom::PASSO
+                };
                 self.layout.botoes = hud_custom::limita(self.layout.botoes + passo);
                 self.muda(true);
             } else if let Some(id) = self.sel {
@@ -279,7 +335,11 @@ impl EditorHud {
                     self.layout.itens.remove(id);
                     self.muda(true);
                 } else if hud_custom::redimensiona(id) && (menos_s.toca(m) || mais_s.toca(m)) {
-                    let passo = if mais_s.toca(m) { hud_custom::PASSO } else { -hud_custom::PASSO };
+                    let passo = if mais_s.toca(m) {
+                        hud_custom::PASSO
+                    } else {
+                        -hud_custom::PASSO
+                    };
                     sel_k(&mut self.layout, id, passo);
                     self.muda(true);
                 }
@@ -302,7 +362,8 @@ impl EditorHud {
 /// picked and with the attack button picked, at a PC and a phone size.
 #[cfg(debug_assertions)]
 pub async fn previa() {
-    let saida = std::env::var("MMO_PREVIA_SAIDA").unwrap_or_else(|_| "/tmp/tempest-editor-hud".into());
+    let saida =
+        std::env::var("MMO_PREVIA_SAIDA").unwrap_or_else(|_| "/tmp/tempest-editor-hud".into());
     std::fs::create_dir_all(&saida).unwrap();
     let mut ed = EditorHud::default();
     ed.abrir();
@@ -317,12 +378,19 @@ pub async fn previa() {
             for _ in 0..3 {
                 set_camera(&Camera2D {
                     render_target: Some(rt.clone()),
-                    ..Camera2D::from_display_rect(Rect::new(0.0, 0.0, screen_width(), screen_height()))
+                    ..Camera2D::from_display_rect(Rect::new(
+                        0.0,
+                        0.0,
+                        screen_width(),
+                        screen_height(),
+                    ))
                 });
                 clear_background(Color::new(0.30, 0.42, 0.30, 1.0));
                 let _ = ed.desenha();
                 unsafe { get_internal_gl().flush() };
-                rt.texture.get_texture_data().export_png(&format!("{saida}/{nome}-{}.png", w as u32));
+                rt.texture
+                    .get_texture_data()
+                    .export_png(&format!("{saida}/{nome}-{}.png", w as u32));
                 set_default_camera();
                 next_frame().await;
             }

@@ -5,11 +5,28 @@ pub const PET_INICIO: u16 = 520;
 pub const MONTARIA_INICIO: u16 = 528;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Efeito { Drop, LootMelhor, Xp, Energia, Minerio, Darksteel, Vida, Mana }
+pub enum Efeito {
+    Drop,
+    LootMelhor,
+    Xp,
+    Energia,
+    Minerio,
+    Darksteel,
+    Vida,
+    Mana,
+}
 
 impl Efeito {
-    pub const TODOS: [Self; 8] = [Self::Drop, Self::LootMelhor, Self::Xp,
-        Self::Energia, Self::Minerio, Self::Darksteel, Self::Vida, Self::Mana];
+    pub const TODOS: [Self; 8] = [
+        Self::Drop,
+        Self::LootMelhor,
+        Self::Xp,
+        Self::Energia,
+        Self::Minerio,
+        Self::Darksteel,
+        Self::Vida,
+        Self::Mana,
+    ];
     pub fn nome(self) -> &'static str {
         match self {
             Self::Drop => "Drop chance +10%",
@@ -29,13 +46,19 @@ pub fn tipo(id: u16) -> Option<(bool, Efeito)> {
         (true, id - PET_INICIO)
     } else if (MONTARIA_INICIO..MONTARIA_INICIO + 8).contains(&id) {
         (false, id - MONTARIA_INICIO)
-    } else { return None };
+    } else {
+        return None;
+    };
     Some((pet, Efeito::TODOS[n as usize]))
 }
 
 pub fn nome(id: u16) -> Option<String> {
     let (pet, efeito) = tipo(id)?;
-    Some(format!("{}: {}", if pet { "Pet" } else { "Mount" }, efeito.nome()))
+    Some(format!(
+        "{}: {}",
+        if pet { "Pet" } else { "Mount" },
+        efeito.nome()
+    ))
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -70,11 +93,22 @@ impl Bonus {
 
 pub fn bonus(equip: &Equipment) -> Bonus {
     let mut b = Bonus::default();
-    if equip.pets().iter().any(|(_, id, _)| id.is_some_and(|id| item_id::pet_de_id(id).is_some())) {
-        if let Some((true, e)) = equip.acessorio_pet.and_then(tipo) { b.somar(e); }
+    if equip
+        .pets()
+        .iter()
+        .any(|(_, id, _)| id.is_some_and(|id| item_id::pet_de_id(id).is_some()))
+    {
+        if let Some((true, e)) = equip.acessorio_pet.and_then(tipo) {
+            b.somar(e);
+        }
     }
-    if equip.montaria.is_some_and(|id| item_id::montaria_de_id(id).is_some()) {
-        if let Some((false, e)) = equip.acessorio_montaria.and_then(tipo) { b.somar(e); }
+    if equip
+        .montaria
+        .is_some_and(|id| item_id::montaria_de_id(id).is_some())
+    {
+        if let Some((false, e)) = equip.acessorio_montaria.and_then(tipo) {
+            b.somar(e);
+        }
     }
     b
 }

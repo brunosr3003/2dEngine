@@ -1,7 +1,7 @@
 //! Grupo, amigos, cartas e cla: o cliente pede, o servidor valida.
+use crate::hud_estilo as e;
 #[allow(unused_imports)]
 use crate::ui::Toque as _;
-use crate::hud_estilo as e;
 use macroquad::prelude::*;
 use shared::{
     protocol::ClientMessage,
@@ -147,8 +147,7 @@ impl Social {
                 self.carregado = true;
             }
             Aviso::Resultado { ok, texto } => {
-                if ok && (texto == "Letter sent." || texto.starts_with("Official mail sent"))
-                {
+                if ok && (texto == "Letter sent." || texto.starts_with("Official mail sent")) {
                     self.texto.clear();
                     self.assunto.clear();
                     self.escrevendo = false;
@@ -179,7 +178,14 @@ impl Social {
         if agora >= self.atualizar_em && agora >= self.ocupado_ate {
             // A red name on the map follows every 10 s (the blacklist).
             let seguindo = self.mapa_aberto || self.marcador().is_some();
-            self.atualizar_em = agora + if self.aberto { 5.0 } else if seguindo { 10.0 } else { 20.0 };
+            self.atualizar_em = agora
+                + if self.aberto {
+                    5.0
+                } else if seguindo {
+                    10.0
+                } else {
+                    20.0
+                };
             return Some(msg(Pedido::Estado));
         }
         None
@@ -380,11 +386,41 @@ impl Social {
         }
     }
     fn grupo_ui(&mut self, a: Rect, d: &[char], s: &mut Vec<ClientMessage>) {
-        e::texto(a.x, a.y + 14.0, "Up to 5 players on the same channel. Invites last 60 seconds.", 15, e::SUAVE);
-        e::texto(a.x, a.y + 38.0, "XP is split evenly between members in the same area, within 25 m of the kill.", 14, e::TEXTO);
-        e::texto(a.x, a.y + 61.0, "2 nearby: +10% (55% each) · 3: +20% (40% each)", 14, e::OURO);
-        e::texto(a.x, a.y + 84.0, "4 nearby: +30% (32.5% each) · 5: +30% (26% each)", 14, e::OURO);
-        e::texto(a.x, a.y + 107.0, "The bonus grows up to 4 players. Solo: 100%. XP fractions are dropped.", 13, e::SUAVE);
+        e::texto(
+            a.x,
+            a.y + 14.0,
+            "Up to 5 players on the same channel. Invites last 60 seconds.",
+            15,
+            e::SUAVE,
+        );
+        e::texto(
+            a.x,
+            a.y + 38.0,
+            "XP is split evenly between members in the same area, within 25 m of the kill.",
+            14,
+            e::TEXTO,
+        );
+        e::texto(
+            a.x,
+            a.y + 61.0,
+            "2 nearby: +10% (55% each) · 3: +20% (40% each)",
+            14,
+            e::OURO,
+        );
+        e::texto(
+            a.x,
+            a.y + 84.0,
+            "4 nearby: +30% (32.5% each) · 5: +30% (26% each)",
+            14,
+            e::OURO,
+        );
+        e::texto(
+            a.x,
+            a.y + 107.0,
+            "The bonus grows up to 4 players. Solo: 100%. XP fractions are dropped.",
+            13,
+            e::SUAVE,
+        );
         campo(
             Rect::new(a.x, a.y + 148.0, a.w - 180.0, 40.0),
             "Character name",
@@ -479,7 +515,11 @@ impl Social {
                 "{} / {} friends · {} online",
                 self.estado.amigos.len(),
                 social::MAX_AMIGOS,
-                self.estado.amigos.iter().filter(|n| self.estado.neste_canal.contains(n)).count()
+                self.estado
+                    .amigos
+                    .iter()
+                    .filter(|n| self.estado.neste_canal.contains(n))
+                    .count()
             ),
             14,
             e::SUAVE,
@@ -518,8 +558,14 @@ impl Social {
             };
             let rotulo = contato.map_or_else(|| nome.clone(), |c| social::com_tag(&c.tag, nome));
             if *tipo == 1 {
-                let on = contato.is_some_and(|c| c.online) || self.estado.neste_canal.contains(nome);
-                draw_circle(a.x + 6.0, y + 18.0, 5.0, if on { e::VERDE } else { e::alfa(e::SUAVE, 0.5) });
+                let on =
+                    contato.is_some_and(|c| c.online) || self.estado.neste_canal.contains(nome);
+                draw_circle(
+                    a.x + 6.0,
+                    y + 18.0,
+                    5.0,
+                    if on { e::VERDE } else { e::alfa(e::SUAVE, 0.5) },
+                );
             }
             e::texto_ajustado(
                 &format!("{rotulo} · {status}"),
@@ -648,9 +694,22 @@ impl Social {
             );
             let mostrando = self.no_mapa.as_deref() == Some(inimigo.nome.as_str());
             if inimigo.localizado()
-                && botao_fim(a, y, 2, if mostrando { "Hide on map" } else { "Show on map" })
+                && botao_fim(
+                    a,
+                    y,
+                    2,
+                    if mostrando {
+                        "Hide on map"
+                    } else {
+                        "Show on map"
+                    },
+                )
             {
-                self.no_mapa = if mostrando { None } else { Some(inimigo.nome.clone()) };
+                self.no_mapa = if mostrando {
+                    None
+                } else {
+                    Some(inimigo.nome.clone())
+                };
             }
             if botao_fim(a, y, 1, "Remove") {
                 if mostrando {
@@ -957,7 +1016,12 @@ impl Social {
                 .join("; ");
             // A kill letter is the server's English, one sentence per
             // paragraph: each one is translated on its own before wrapping.
-            let matador = self.estado.matadores.iter().find(|(id, _)| *id == c.id).map(|(_, m)| m.clone());
+            let matador = self
+                .estado
+                .matadores
+                .iter()
+                .find(|(id, _)| *id == c.id)
+                .map(|(_, m)| m.clone());
             let conteudo = if matador.is_some() {
                 c.texto
                     .split('\n')
@@ -1013,11 +1077,7 @@ impl Social {
             }
             if crate::ui::botao(
                 Rect::new(right.x, right.y + right.h - 40.0, 130.0, 40.0),
-                if c.oficial {
-                    "Claim items"
-                } else {
-                    "Reply"
-                },
+                if c.oficial { "Claim items" } else { "Reply" },
                 !c.oficial
                     || (!c.anexos.is_empty() && !c.resgatada && get_time() >= self.ocupado_ate),
             ) {
@@ -1045,7 +1105,11 @@ impl Social {
                 let ja = self.estado.lista_negra.iter().any(|i| i.nome == m);
                 if crate::ui::botao(
                     Rect::new(right.x + 280.0, right.y + right.h - 40.0, 170.0, 40.0),
-                    if ja { "On your blacklist" } else { "Add to blacklist" },
+                    if ja {
+                        "On your blacklist"
+                    } else {
+                        "Add to blacklist"
+                    },
                     !ja,
                 ) {
                     self.enviar(Pedido::AdicionarListaNegra { nome: m }, s);
@@ -1238,11 +1302,27 @@ impl Social {
         // ── header ──
         let cab = Rect::new(a.x, a.y, a.w, 62.0 * k);
         e::cartao(cab, false, false);
-        emblema(vec2(cab.x + 31.0 * k, cab.center().y), 22.0 * k, &c.tag, &c.nome);
+        emblema(
+            vec2(cab.x + 31.0 * k, cab.center().y),
+            22.0 * k,
+            &c.tag,
+            &c.nome,
+        );
         let tx = cab.x + 62.0 * k;
         let seg_w = 230.0 * k;
-        e::texto_ajustado(&c.nome, tx, cab.y + 26.0 * k, cab.w - seg_w - 80.0 * k, 20, e::OURO);
-        let tag = if c.tag.is_empty() { "No tag".to_string() } else { format!("[{}]", c.tag) };
+        e::texto_ajustado(
+            &c.nome,
+            tx,
+            cab.y + 26.0 * k,
+            cab.w - seg_w - 80.0 * k,
+            20,
+            e::OURO,
+        );
+        let tag = if c.tag.is_empty() {
+            "No tag".to_string()
+        } else {
+            format!("[{}]", c.tag)
+        };
         e::texto_ajustado(
             &format!(
                 "{tag} · {} / {} members · {online} online · You: {}",
@@ -1258,7 +1338,10 @@ impl Social {
         );
         // Members | Manage.
         let m = Vec2::from(mouse_position());
-        for (i, (rotulo, gerir)) in [("Members", false), ("Manage", true)].into_iter().enumerate() {
+        for (i, (rotulo, gerir)) in [("Members", false), ("Manage", true)]
+            .into_iter()
+            .enumerate()
+        {
             let r = Rect::new(
                 cab.x + cab.w - seg_w - 10.0 * k + i as f32 * seg_w * 0.5,
                 cab.y + 11.0 * k,
@@ -1319,32 +1402,76 @@ impl Social {
             let sel = self.cla_sel.as_deref() == Some(mb.nome.as_str());
             e::cartao(r, r.toca(m), sel);
             let cy = r.center().y;
-            draw_circle(r.x + 14.0 * k, cy, 5.0 * k, if mb.online { e::VERDE } else { e::alfa(e::SUAVE, 0.45) });
+            draw_circle(
+                r.x + 14.0 * k,
+                cy,
+                5.0 * k,
+                if mb.online {
+                    e::VERDE
+                } else {
+                    e::alfa(e::SUAVE, 0.45)
+                },
+            );
             // Name + rank.
             let x = r.x + 28.0 * k;
-            let cor = if mb.nome == eu { e::VERDE } else if mb.online { e::TEXTO } else { e::SUAVE };
+            let cor = if mb.nome == eu {
+                e::VERDE
+            } else if mb.online {
+                e::TEXTO
+            } else {
+                e::SUAVE
+            };
             let nome_w = (r.w * 0.30).max(120.0 * k);
             e::texto_ajustado(&mb.nome, x, cy - 3.0 * k, nome_w, 16, cor);
             if mb.cargo != social::cargo::MEMBRO {
-                let cor_cargo = if mb.cargo == social::cargo::LIDER { e::OURO } else { e::AZUL };
-                e::texto(x, cy + 15.0 * k, social::cargo::nome(mb.cargo), 12, cor_cargo);
+                let cor_cargo = if mb.cargo == social::cargo::LIDER {
+                    e::OURO
+                } else {
+                    e::AZUL
+                };
+                e::texto(
+                    x,
+                    cy + 15.0 * k,
+                    social::cargo::nome(mb.cargo),
+                    12,
+                    cor_cargo,
+                );
             }
             // Level and class.
             let x2 = x + nome_w + 10.0 * k;
             let classe = shared::skills::Conjunto::de_u8(mb.conjunto).map_or("", |c| c.nome());
-            let nivel = if mb.nivel > 0 { format!("Lv {}", shared::progressao::texto_de_nivel(mb.nivel as u32)) } else { "Lv ?".to_string() };
+            let nivel = if mb.nivel > 0 {
+                format!("Lv {}", shared::progressao::texto_de_nivel(mb.nivel as u32))
+            } else {
+                "Lv ?".to_string()
+            };
             e::texto(x2, cy - 3.0 * k, &nivel, 15, e::TEXTO);
             e::texto_ajustado(classe, x2, cy + 15.0 * k, 130.0 * k, 12, e::SUAVE);
             // Where / last seen.
             let x3 = x2 + 140.0 * k;
-            let acoes = if sel { acoes_do_membro(meu, mb, eu) } else { Vec::new() };
+            let acoes = if sel {
+                acoes_do_membro(meu, mb, eu)
+            } else {
+                Vec::new()
+            };
             let fim = r.x + r.w - acoes.len() as f32 * (bw + 6.0) - 8.0;
-            e::texto_ajustado(&onde_esta(mb, agora), x3, cy + 5.0 * k, (fim - x3 - 8.0).max(0.0), 14,
-                if mb.online { e::TEXTO } else { e::SUAVE });
+            e::texto_ajustado(
+                &onde_esta(mb, agora),
+                x3,
+                cy + 5.0 * k,
+                (fim - x3 - 8.0).max(0.0),
+                14,
+                if mb.online { e::TEXTO } else { e::SUAVE },
+            );
             // Actions on the selected row only: the list stays readable.
             let mut usou = false;
             for (j, acao) in acoes.iter().enumerate() {
-                let b = Rect::new(fim + j as f32 * (bw + 6.0), r.y + (r.h - 38.0 * k.min(1.15)) * 0.5, bw, 38.0 * k.min(1.15));
+                let b = Rect::new(
+                    fim + j as f32 * (bw + 6.0),
+                    r.y + (r.h - 38.0 * k.min(1.15)) * 0.5,
+                    bw,
+                    38.0 * k.min(1.15),
+                );
                 if crate::ui::botao(b, acao.rotulo(), true) {
                     usou = true;
                     self.acao_no_membro(*acao, &mb.nome, s);
@@ -1375,7 +1502,15 @@ impl Social {
         }
     }
 
-    fn cla_gerir_ui(&mut self, a: Rect, c: &social::Cla, meu: u8, k: f32, d: &[char], s: &mut Vec<ClientMessage>) {
+    fn cla_gerir_ui(
+        &mut self,
+        a: Rect,
+        c: &social::Cla,
+        meu: u8,
+        k: f32,
+        d: &[char],
+        s: &mut Vec<ClientMessage>,
+    ) {
         use social::AcaoCla as A;
         let gap = 14.0 * k;
         let col_w = (a.w - gap) * 0.5;
@@ -1384,16 +1519,31 @@ impl Social {
         let fh = 40.0 * k.min(1.2);
         // ── left: the notice ──
         e::texto(esq.x, esq.y + 16.0 * k, "Clan notice", 16, e::OURO);
-        let caixa = Rect::new(esq.x, esq.y + 30.0 * k, esq.w, (esq.h - 30.0 * k - fh - 12.0).max(fh));
+        let caixa = Rect::new(
+            esq.x,
+            esq.y + 30.0 * k,
+            esq.w,
+            (esq.h - 30.0 * k - fh - 12.0).max(fh),
+        );
         if social::pode_no_cla(meu, A::Aviso, 0) {
             campo(caixa, "", &mut self.aviso_cla, 4, &mut self.foco, d, 200);
             let mudou = self.aviso_cla.trim() != c.aviso.trim();
             if crate::ui::botao(
-                Rect::new(esq.x + esq.w - 170.0 * k, caixa.y + caixa.h + 8.0, 170.0 * k, fh),
+                Rect::new(
+                    esq.x + esq.w - 170.0 * k,
+                    caixa.y + caixa.h + 8.0,
+                    170.0 * k,
+                    fh,
+                ),
                 "Save notice",
                 mudou,
             ) {
-                self.enviar(Pedido::AvisoCla { texto: self.aviso_cla.clone() }, s);
+                self.enviar(
+                    Pedido::AvisoCla {
+                        texto: self.aviso_cla.clone(),
+                    },
+                    s,
+                );
             }
             e::texto(
                 esq.x,
@@ -1404,10 +1554,19 @@ impl Social {
             );
         } else {
             e::cartao(caixa, false, false);
-            let texto = if c.aviso.trim().is_empty() { "No notice yet." } else { c.aviso.as_str() };
+            let texto = if c.aviso.trim().is_empty() {
+                "No notice yet."
+            } else {
+                c.aviso.as_str()
+            };
             texto_em_linhas(
                 texto,
-                Rect::new(caixa.x + 10.0, caixa.y + 6.0, caixa.w - 20.0, caixa.h - 10.0),
+                Rect::new(
+                    caixa.x + 10.0,
+                    caixa.y + 6.0,
+                    caixa.w - 20.0,
+                    caixa.h - 10.0,
+                ),
                 16,
                 e::TEXTO,
                 0,
@@ -1426,8 +1585,17 @@ impl Social {
                 d,
                 32,
             );
-            if crate::ui::botao(Rect::new(dir.x + dir.w - bw, y, bw, fh), "Invite", !self.nome.trim().is_empty()) {
-                self.enviar(Pedido::ConvidarCla { nome: self.nome.trim().into() }, s);
+            if crate::ui::botao(
+                Rect::new(dir.x + dir.w - bw, y, bw, fh),
+                "Invite",
+                !self.nome.trim().is_empty(),
+            ) {
+                self.enviar(
+                    Pedido::ConvidarCla {
+                        nome: self.nome.trim().into(),
+                    },
+                    s,
+                );
             }
             y += fh + 30.0 * k;
         }
@@ -1437,23 +1605,49 @@ impl Social {
             } else {
                 format!("Clan tag (2-5 letters or digits): now [{}]", c.tag)
             };
-            campo(Rect::new(dir.x, y, dir.w - bw - 8.0, fh), &rotulo, &mut self.tag_cla, 7, &mut self.foco, d, social::TAG_MAX);
+            campo(
+                Rect::new(dir.x, y, dir.w - bw - 8.0, fh),
+                &rotulo,
+                &mut self.tag_cla,
+                7,
+                &mut self.foco,
+                d,
+                social::TAG_MAX,
+            );
             let valida = social::tag_valida(&self.tag_cla);
             if crate::ui::botao(
                 Rect::new(dir.x + dir.w - bw, y, bw, fh),
                 "Save tag",
                 valida.as_ref().is_ok_and(|t| *t != c.tag),
             ) {
-                self.enviar(Pedido::TagCla { tag: self.tag_cla.trim().into() }, s);
+                self.enviar(
+                    Pedido::TagCla {
+                        tag: self.tag_cla.trim().into(),
+                    },
+                    s,
+                );
             }
             if let (Err(motivo), false) = (&valida, self.tag_cla.trim().is_empty()) {
                 e::texto_ajustado(motivo, dir.x, y + fh + 16.0 * k, dir.w, 12, e::VERMELHO);
             } else if let Ok(t) = &valida {
-                e::texto_ajustado(&format!("Shown as: [{t}] Name"), dir.x, y + fh + 16.0 * k, dir.w, 12, e::SUAVE);
+                e::texto_ajustado(
+                    &format!("Shown as: [{t}] Name"),
+                    dir.x,
+                    y + fh + 16.0 * k,
+                    dir.w,
+                    12,
+                    e::SUAVE,
+                );
             }
             y += fh + 30.0 * k;
         } else if !c.tag.is_empty() {
-            e::texto(dir.x, y + 4.0, &format!("Clan tag: [{}]", c.tag), 16, e::TEXTO);
+            e::texto(
+                dir.x,
+                y + 4.0,
+                &format!("Clan tag: [{}]", c.tag),
+                16,
+                e::TEXTO,
+            );
             y += 30.0 * k;
         }
         // Ranks, for whoever wonders what an officer can do.
@@ -1472,7 +1666,11 @@ impl Social {
         ) {
             if lider {
                 self.confirmar(
-                    format!("Disband {} and remove all {} members? This cannot be undone.", c.nome, c.membros.len()),
+                    format!(
+                        "Disband {} and remove all {} members? This cannot be undone.",
+                        c.nome,
+                        c.membros.len()
+                    ),
                     Pedido::DissolverCla,
                 );
             } else {
@@ -1496,7 +1694,13 @@ impl Social {
         let fh = 40.0 * k.min(1.2);
         let card = Rect::new(a.x, a.y, a.w, 30.0 * k + fh + 46.0 * k);
         e::cartao(card, false, false);
-        e::texto(card.x + 14.0, card.y + 24.0 * k, "Create a clan", 18, e::OURO);
+        e::texto(
+            card.x + 14.0,
+            card.y + 24.0 * k,
+            "Create a clan",
+            18,
+            e::OURO,
+        );
         let y = card.y + 52.0 * k;
         let bw = 150.0 * k;
         let tag_w = 150.0 * k;
@@ -1526,7 +1730,10 @@ impl Social {
             self.nome_cla.trim().chars().count() >= 3 && valida.is_ok(),
         ) {
             self.enviar(
-                Pedido::CriarCla { nome: self.nome_cla.trim().into(), tag: self.tag_cla.trim().into() },
+                Pedido::CriarCla {
+                    nome: self.nome_cla.trim().into(),
+                    tag: self.tag_cla.trim().into(),
+                },
                 s,
             );
         }
@@ -1541,7 +1748,11 @@ impl Social {
             y + fh + 18.0 * k,
             card.w - 28.0,
             13,
-            if valida.is_err() && !self.tag_cla.trim().is_empty() { e::VERMELHO } else { e::SUAVE },
+            if valida.is_err() && !self.tag_cla.trim().is_empty() {
+                e::VERMELHO
+            } else {
+                e::SUAVE
+            },
         );
         let ty = card.y + card.h + 28.0 * k;
         e::texto(a.x, ty, "Invites received", 18, e::OURO);
@@ -1550,7 +1761,13 @@ impl Social {
         let rh = (48.0 * k).max(e::ALVO_DO_DEDO + 4.0);
         let range = paginacao_em(area, convites.len(), &mut self.pagina, rh, k);
         if convites.is_empty() {
-            e::texto(a.x, area.y + 25.0 * k, "You have no clan invites yet.", 16, e::SUAVE);
+            e::texto(
+                a.x,
+                area.y + 25.0 * k,
+                "You have no clan invites yet.",
+                16,
+                e::SUAVE,
+            );
         }
         let bw = 110.0 * k;
         for (i, cv) in convites[range].iter().enumerate() {
@@ -1566,11 +1783,27 @@ impl Social {
             );
             let bh = 38.0 * k.min(1.15);
             let by = r.y + (r.h - bh) * 0.5;
-            if crate::ui::botao(Rect::new(r.x + r.w - 2.0 * bw - 16.0, by, bw, bh), "Accept", true) {
-                self.enviar(Pedido::ResponderCla { id: cv.id, aceitar: true }, s);
+            if crate::ui::botao(
+                Rect::new(r.x + r.w - 2.0 * bw - 16.0, by, bw, bh),
+                "Accept",
+                true,
+            ) {
+                self.enviar(
+                    Pedido::ResponderCla {
+                        id: cv.id,
+                        aceitar: true,
+                    },
+                    s,
+                );
             }
             if crate::ui::botao(Rect::new(r.x + r.w - bw - 8.0, by, bw, bh), "Decline", true) {
-                self.enviar(Pedido::ResponderCla { id: cv.id, aceitar: false }, s);
+                self.enviar(
+                    Pedido::ResponderCla {
+                        id: cv.id,
+                        aceitar: false,
+                    },
+                    s,
+                );
             }
         }
     }
@@ -1609,7 +1842,11 @@ fn acoes_do_membro(meu: u8, mb: &social::Contato, eu: &str) -> Vec<AcaoMembro> {
         v.push(AcaoMembro::Grupo);
     }
     if pode_no_cla(meu, A::Cargo, mb.cargo) {
-        v.push(if mb.cargo == cargo::OFICIAL { AcaoMembro::Rebaixar } else { AcaoMembro::Promover });
+        v.push(if mb.cargo == cargo::OFICIAL {
+            AcaoMembro::Rebaixar
+        } else {
+            AcaoMembro::Promover
+        });
     }
     if pode_no_cla(meu, A::TransferirLideranca, mb.cargo) {
         v.push(AcaoMembro::Lider);
@@ -1633,7 +1870,11 @@ fn cargo_de(c: &social::Cla, nome: &str) -> u8 {
 
 /// Every member with what the server knows of them; a member missing from
 /// `contatos` (an older server answer) still shows, with only the name.
-fn membros_do_cla(c: &social::Cla, contatos: &[social::Contato], neste_canal: &[String]) -> Vec<social::Contato> {
+fn membros_do_cla(
+    c: &social::Cla,
+    contatos: &[social::Contato],
+    neste_canal: &[String],
+) -> Vec<social::Contato> {
     c.membros
         .iter()
         .map(|n| {
@@ -1665,7 +1906,10 @@ fn onde_esta(c: &social::Contato, agora: i64) -> String {
             format!("{} · Ch {}", crate::hud::nome_da_zona(&c.zona), c.canal)
         }
     } else if c.visto > 0 {
-        format!("Last seen {}", social::visto_ha(c.visto, agora).to_lowercase())
+        format!(
+            "Last seen {}",
+            social::visto_ha(c.visto, agora).to_lowercase()
+        )
     } else {
         "Offline".to_string()
     }
@@ -1681,14 +1925,19 @@ fn agora_unix() -> i64 {
 /// derived from it so each clan keeps its own.
 fn emblema(c: Vec2, raio: f32, tag: &str, nome: &str) {
     let base = if tag.is_empty() { nome } else { tag };
-    let h = base.bytes().fold(7u32, |h, b| h.wrapping_mul(31).wrapping_add(b as u32));
+    let h = base
+        .bytes()
+        .fold(7u32, |h, b| h.wrapping_mul(31).wrapping_add(b as u32));
     let matiz = (h % 360) as f32 / 360.0;
     let cor = macroquad::color::hsl_to_rgb(matiz, 0.45, 0.38);
     draw_circle(c.x, c.y, raio + 2.0, e::BORDA_FORTE);
     draw_circle(c.x, c.y, raio, cor);
     draw_circle_lines(c.x, c.y, raio - 3.0, 1.0, e::alfa(e::OURO, 0.5));
     let texto: String = if tag.is_empty() {
-        nome.chars().next().map(|c| c.to_uppercase().collect()).unwrap_or_default()
+        nome.chars()
+            .next()
+            .map(|c| c.to_uppercase().collect())
+            .unwrap_or_default()
     } else {
         tag.to_string()
     };
@@ -1699,7 +1948,13 @@ fn emblema(c: Vec2, raio: f32, tag: &str, nome: &str) {
         _ => 10,
     };
     let w = e::medir_forte(&texto, tam);
-    e::texto_forte(c.x - w * 0.5, c.y + tam as f32 * e::fator_texto() * 0.36, &texto, tam, e::TEXTO);
+    e::texto_forte(
+        c.x - w * 0.5,
+        c.y + tam as f32 * e::fator_texto() * 0.36,
+        &texto,
+        tam,
+        e::TEXTO,
+    );
 }
 fn botao_fim(a: Rect, y: f32, col: usize, t: &str) -> bool {
     crate::ui::botao(
@@ -1709,7 +1964,13 @@ fn botao_fim(a: Rect, y: f32, col: usize, t: &str) -> bool {
     )
 }
 /// Like `paginacao`, with the row height and button size of a scaled list.
-fn paginacao_em(a: Rect, total: usize, pagina: &mut usize, rh: f32, k: f32) -> std::ops::Range<usize> {
+fn paginacao_em(
+    a: Rect,
+    total: usize,
+    pagina: &mut usize,
+    rh: f32,
+    k: f32,
+) -> std::ops::Range<usize> {
     let bh = 34.0 * k.min(1.2);
     let linhas = ((a.h - bh - 8.0) / rh).floor().max(1.0) as usize;
     let paginas = total.div_ceil(linhas).max(1);
@@ -1720,8 +1981,18 @@ fn paginacao_em(a: Rect, total: usize, pagina: &mut usize, rh: f32, k: f32) -> s
         if crate::ui::botao(Rect::new(a.x, y, bw, bh), "<", *pagina > 0) {
             *pagina -= 1;
         }
-        e::texto(a.x + bw + 14.0, y + bh * 0.68, &format!("{} / {}", *pagina + 1, paginas), 14, e::SUAVE);
-        if crate::ui::botao(Rect::new(a.x + bw + 84.0 * k.min(1.2), y, bw, bh), ">", *pagina + 1 < paginas) {
+        e::texto(
+            a.x + bw + 14.0,
+            y + bh * 0.68,
+            &format!("{} / {}", *pagina + 1, paginas),
+            14,
+            e::SUAVE,
+        );
+        if crate::ui::botao(
+            Rect::new(a.x + bw + 84.0 * k.min(1.2), y, bw, bh),
+            ">",
+            *pagina + 1 < paginas,
+        ) {
             *pagina += 1;
         }
     }
@@ -1829,7 +2100,13 @@ fn texto_em_linhas(texto: &str, r: Rect, tam: u16, cor: Color, desloc: usize) ->
 #[cfg(debug_assertions)]
 fn previa_contatos() -> Vec<social::Contato> {
     let agora = agora_unix();
-    let c = |nome: &str, nivel: u16, conjunto: u8, zona: &str, canal: &str, online: bool, visto: i64| social::Contato {
+    let c = |nome: &str,
+             nivel: u16,
+             conjunto: u8,
+             zona: &str,
+             canal: &str,
+             online: bool,
+             visto: i64| social::Contato {
         nome: nome.into(),
         tag: "TIDE".into(),
         cargo: 0,
@@ -1905,7 +2182,11 @@ pub async fn previa() {
     for (nome, sem_cla) in [("cla-gerir", false), ("cla-criar", true)] {
         if sem_cla {
             ui.estado.cla = None;
-            ui.estado.convites_cla = vec![social::ConviteCla { id: 2, nome: "Storm Wardens".into(), de: "Captain".into() }];
+            ui.estado.convites_cla = vec![social::ConviteCla {
+                id: 2,
+                nome: "Storm Wardens".into(),
+                de: "Captain".into(),
+            }];
             ui.nome_cla = "Storm Wardens".into();
             ui.tag_cla = "ST0RM".into();
         }
@@ -1914,7 +2195,9 @@ pub async fn previa() {
             clear_background(Color::new(0.08, 0.12, 0.16, 1.0));
             ui.desenha("brunji", &[], &vox, &solido);
             unsafe { get_internal_gl().flush() };
-            rt.texture.get_texture_data().export_png(&format!("{saida}/{nome}.png"));
+            rt.texture
+                .get_texture_data()
+                .export_png(&format!("{saida}/{nome}.png"));
             next_frame().await;
         }
     }
@@ -2022,11 +2305,17 @@ mod testes {
         // Bia is missing from `contatos` but is on this channel.
         let mut v = membros_do_cla(&c, &contatos, &["Bia".to_string()]);
         social::ordenar_membros(&mut v);
-        let r: Vec<_> = v.iter().map(|m| (m.nome.as_str(), m.cargo, m.online)).collect();
+        let r: Vec<_> = v
+            .iter()
+            .map(|m| (m.nome.as_str(), m.cargo, m.online))
+            .collect();
         assert_eq!(r, [("Bia", 1, true), ("Caio", 0, true), ("Ana", 2, false)]);
         assert!(onde_esta(&v[1], 0).ends_with("· Ch 2"));
         assert_eq!(onde_esta(&v[2], 0), "Offline");
-        let visto = social::Contato { visto: 100, ..Default::default() };
+        let visto = social::Contato {
+            visto: 100,
+            ..Default::default()
+        };
         assert_eq!(onde_esta(&visto, 100 + 7200), "Last seen 2h ago");
     }
 
@@ -2034,28 +2323,69 @@ mod testes {
     fn marcador_so_com_lugar() {
         let mut ui = Social::default();
         ui.estado.lista_negra = vec![
-            social::Inimigo::visivel("Rubro".into(), true, true, "ilha_gelo".into(), "1".into(), 3.0, 4.0),
-            social::Inimigo::visivel("Limpo".into(), true, false, "ilha_gelo".into(), "1".into(), 3.0, 4.0),
+            social::Inimigo::visivel(
+                "Rubro".into(),
+                true,
+                true,
+                "ilha_gelo".into(),
+                "1".into(),
+                3.0,
+                4.0,
+            ),
+            social::Inimigo::visivel(
+                "Limpo".into(),
+                true,
+                false,
+                "ilha_gelo".into(),
+                "1".into(),
+                3.0,
+                4.0,
+            ),
         ];
         ui.no_mapa = Some("Limpo".into());
         assert!(ui.marcador().is_none(), "no PK: no marker");
         ui.no_mapa = Some("Rubro".into());
-        assert_eq!(ui.marcador(), Some(("Rubro".into(), "ilha_gelo".into(), vec2(3.0, 4.0))));
-        ui.estado.lista_negra[0] = social::Inimigo::visivel("Rubro".into(), false, true, String::new(), String::new(), 0.0, 0.0);
+        assert_eq!(
+            ui.marcador(),
+            Some(("Rubro".into(), "ilha_gelo".into(), vec2(3.0, 4.0)))
+        );
+        ui.estado.lista_negra[0] = social::Inimigo::visivel(
+            "Rubro".into(),
+            false,
+            true,
+            String::new(),
+            String::new(),
+            0.0,
+            0.0,
+        );
         assert!(ui.marcador().is_none(), "offline: the marker goes");
     }
 
     #[test]
     fn acoes_por_cargo() {
         let c = cla();
-        let m = |n: &str, online: bool| social::Contato { nome: n.into(), cargo: cargo_de(&c, n), online, ..Default::default() };
+        let m = |n: &str, online: bool| social::Contato {
+            nome: n.into(),
+            cargo: cargo_de(&c, n),
+            online,
+            ..Default::default()
+        };
         use AcaoMembro::*;
         // The leader sees everything on an officer; an officer on a member: party + kick.
-        assert_eq!(acoes_do_membro(2, &m("Bia", true), "Ana"), [Grupo, Rebaixar, Lider, Expulsar]);
+        assert_eq!(
+            acoes_do_membro(2, &m("Bia", true), "Ana"),
+            [Grupo, Rebaixar, Lider, Expulsar]
+        );
         assert_eq!(acoes_do_membro(1, &m("Caio", false), "Bia"), [Expulsar]);
-        assert!(acoes_do_membro(1, &m("Ana", true), "Bia") == [Grupo], "nobody kicks the leader");
+        assert!(
+            acoes_do_membro(1, &m("Ana", true), "Bia") == [Grupo],
+            "nobody kicks the leader"
+        );
         assert!(acoes_do_membro(0, &m("Bia", false), "Caio").is_empty());
-        assert!(acoes_do_membro(2, &m("Ana", true), "Ana").is_empty(), "no buttons on myself");
+        assert!(
+            acoes_do_membro(2, &m("Ana", true), "Ana").is_empty(),
+            "no buttons on myself"
+        );
     }
 
     /// "Take all" claims BEFORE deleting. Inverted, a letter with an attachment

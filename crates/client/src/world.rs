@@ -292,10 +292,28 @@ impl World {
                 continue;
             }
             if let Some(e) = self.ents.get(&a.alvo) {
-                let som = if eu {crate::sons::Som::Dor} else if a.critico {crate::sons::Som::Critico} else if a.alvo.0 % 2 == 0 {crate::sons::Som::Acerto} else {crate::sons::Som::Acerto2};
-                crate::sons::mundo(som,e.render_pos,self.self_pos(),eu || self.self_id == Some(a.atacante));
+                let som = if eu {
+                    crate::sons::Som::Dor
+                } else if a.critico {
+                    crate::sons::Som::Critico
+                } else if a.alvo.0 % 2 == 0 {
+                    crate::sons::Som::Acerto
+                } else {
+                    crate::sons::Som::Acerto2
+                };
+                crate::sons::mundo(
+                    som,
+                    e.render_pos,
+                    self.self_pos(),
+                    eu || self.self_id == Some(a.atacante),
+                );
                 if e.meta.tag == shared::EntityTag::Enemy && e.state.hp > 0 && a.dano > 0 {
-                    crate::sons::mob(crate::sons::Som::MobDor,e.render_pos,self.self_pos(),self.self_id==Some(a.atacante));
+                    crate::sons::mob(
+                        crate::sons::Som::MobDor,
+                        e.render_pos,
+                        self.self_pos(),
+                        self.self_id == Some(a.atacante),
+                    );
                 }
             }
             if let Some(ent) = self.ents.get_mut(&a.alvo) {
@@ -450,8 +468,25 @@ impl World {
                 let (g, v) = (acao::gesto(st.acao), acao::variante(st.acao));
                 let (ga, va) = (acao::gesto(ent.state.acao), acao::variante(ent.state.acao));
                 if g == acao::GOLPE && (ga != acao::GOLPE || va != v) {
-                    let som = match acao::conjunto(st.acao) {2=>crate::sons::Som::Disparo,3=>crate::sons::Som::Magia,_=>if v%2==0 {crate::sons::Som::Golpe} else {crate::sons::Som::Golpe2}};
-                    if ent.state.pos != [0,0] {crate::sons::mundo(som,ent.render_pos,ouvinte,self.self_id==Some(st.id));}
+                    let som = match acao::conjunto(st.acao) {
+                        2 => crate::sons::Som::Disparo,
+                        3 => crate::sons::Som::Magia,
+                        _ => {
+                            if v % 2 == 0 {
+                                crate::sons::Som::Golpe
+                            } else {
+                                crate::sons::Som::Golpe2
+                            }
+                        }
+                    };
+                    if ent.state.pos != [0, 0] {
+                        crate::sons::mundo(
+                            som,
+                            ent.render_pos,
+                            ouvinte,
+                            self.self_id == Some(st.id),
+                        );
+                    }
                     ent.combo_ant = ent.combo;
                     ent.combo = Some((v, 0.0));
                     // quem golpeia ja' esta' com a arma: nao espera sacar
@@ -476,12 +511,23 @@ impl World {
                 );
                 if tem_vida && caido {
                     if ent.morte.is_none() {
-                        if ent.state.hp > 0 && ent.state.pos != [0,0] {
+                        if ent.state.hp > 0 && ent.state.pos != [0, 0] {
                             if ent.meta.tag == shared::EntityTag::Enemy {
-                                let perto=ouvinte.is_some_and(|p|p.distance(ent.render_pos)<12.0);
-                                crate::sons::mob(crate::sons::Som::MobMorte,ent.render_pos,ouvinte,perto);
+                                let perto =
+                                    ouvinte.is_some_and(|p| p.distance(ent.render_pos) < 12.0);
+                                crate::sons::mob(
+                                    crate::sons::Som::MobMorte,
+                                    ent.render_pos,
+                                    ouvinte,
+                                    perto,
+                                );
                             } else {
-                                crate::sons::mundo(crate::sons::Som::Morte,ent.render_pos,ouvinte,self.self_id == Some(st.id));
+                                crate::sons::mundo(
+                                    crate::sons::Som::Morte,
+                                    ent.render_pos,
+                                    ouvinte,
+                                    self.self_id == Some(st.id),
+                                );
                             }
                         }
                         ent.morte = Some(if ent.state.pos == [0, 0] { 9.0 } else { 0.0 });
@@ -521,21 +567,37 @@ impl World {
         let a = 1.0 - (-SMOOTH_K * dt).exp();
 
         // Ships in view: a body aboard one is drawn on its deck.
-        let navios: HashMap<EntityId, (Vec2, f32, u16)> = self
+        let navios: HashMap<EntityId, (Vec2, f32, u8)> = self
             .ents
             .iter()
             .filter(|(_, e)| e.meta.tag == shared::EntityTag::Navio)
-            .map(|(id, e)| (*id, (e.render_pos, e.yaw, e.meta.kind)))
+            .map(|(id, e)| {
+                (
+                    *id,
+                    (
+                        e.render_pos,
+                        e.yaw,
+                        shared::navio::Visual::do_fio(e.meta.skins).classe,
+                    ),
+                )
+            })
             .collect();
         let conves = &self.conves;
         for ent in self.ents.values_mut() {
-            let no_conves = conves.get(&ent.meta.id).filter(|n| navios.contains_key(&n.navio)).copied();
+            let no_conves = conves
+                .get(&ent.meta.id)
+                .filter(|n| navios.contains_key(&n.navio))
+                .copied();
             if let Some(n) = no_conves {
                 // The deck place chases the server's; the legs walk the deck
                 // step, never the ship's motion.
                 let alvo = mq(n.local_f32());
                 let antes = ent.local.unwrap_or(alvo);
-                let novo = if antes.distance(alvo) > 4.0 { alvo } else { antes + (alvo - antes) * a };
+                let novo = if antes.distance(alvo) > 4.0 {
+                    alvo
+                } else {
+                    antes + (alvo - antes) * a
+                };
                 ent.local = Some(novo);
                 anda_a_fase(ent, (novo - antes).length(), dt);
             } else {
@@ -632,7 +694,11 @@ impl World {
                     }
                 }
             }
-            let apoio = if no_conves.is_some() { ent.render_y } else { chao(ent.render_pos.x, ent.render_pos.y, ent.state.camada) };
+            let apoio = if no_conves.is_some() {
+                ent.render_y
+            } else {
+                chao(ent.render_pos.x, ent.render_pos.y, ent.state.camada)
+            };
             // ── DEGRAU ANTECIPADO ──
             //
             // Quem decide a posicao e' o servidor, e ele poe o corpo em cima
@@ -675,64 +741,64 @@ impl World {
             if no_conves.is_some() {
                 // (the rest of the vertical is the land's)
             } else {
-            ent.pulo_local = (ent.pulo_local - dt).max(0.0);
-            let no_ar_agora = ent.state.flags & ent_flags::PULANDO != 0 || ent.pulo_local > 0.0;
-            if no_ar_agora && !ent.no_ar_antes {
-                // Impulso inicial do arco: `4h/T` poe o pico em `PULO_ALTURA`
-                // na metade de `PULO_DURACAO`.
-                ent.vel_y = 4.0 * shared::PULO_ALTURA / shared::PULO_DURACAO;
-                ent.voando = true;
-            }
-            ent.no_ar_antes = no_ar_agora;
-
-            if ent.voando {
-                // Trapezio e nao Euler: com aceleracao constante, a media das
-                // velocidades do inicio e do fim do passo e' EXATA. Euler
-                // subestimava o pico em 6% e o arco desenhado discordava da
-                // `altura_do_pulo` que o servidor usa pra liberar o degrau —
-                // e o erro mudava com a taxa de quadros do jogador.
-                let v = ent.vel_y - shared::gravidade() * dt;
-                ent.render_y += (ent.vel_y + v) * 0.5 * dt;
-                ent.vel_y = v;
-                // Pousa no que houver embaixo: o piso de cima, o de baixo, ou
-                // o mesmo de onde saiu. Quem decide onde o corpo ESTA' e' o
-                // servidor; a altura so' encontra o chao dele.
-                if ent.render_y <= apoio {
-                    ent.render_y = apoio;
-                    ent.vel_y = 0.0;
-                    ent.voando = false;
+                ent.pulo_local = (ent.pulo_local - dt).max(0.0);
+                let no_ar_agora = ent.state.flags & ent_flags::PULANDO != 0 || ent.pulo_local > 0.0;
+                if no_ar_agora && !ent.no_ar_antes {
+                    // Impulso inicial do arco: `4h/T` poe o pico em `PULO_ALTURA`
+                    // na metade de `PULO_DURACAO`.
+                    ent.vel_y = 4.0 * shared::PULO_ALTURA / shared::PULO_DURACAO;
+                    ent.voando = true;
                 }
-            } else if ent.render_y > alvo_alto + 0.02 {
-                // Andou pra fora de um barranco: cai, nao afunda. Interpolar
-                // aqui comeca rapido e vai freando — o contrario da gravidade.
-                //
-                // A comparacao e' contra o degrau ANTECIPADO e nao contra o
-                // chao de baixo: subindo pra um degrau, o corpo passa alguns
-                // quadros acima do bloco em que ainda pisa, e comparar com o
-                // chao faria a queda comer a subida — o corpo caia de volta e
-                // so' entao era teleportado pro topo.
-                ent.voando = true;
-                ent.vel_y = 0.0;
-            } else {
-                // No chao, subindo degrau: TAXA CONSTANTE, nao exponencial.
-                //
-                // A exponencial anda o grosso do caminho nos dois primeiros
-                // quadros e vai freando — o degrau lia como teleporte com um
-                // rastro. Taxa constante gasta o mesmo tempo em todo o degrau,
-                // e e' isso que faz o passo ler como passo: meio bloco em 125
-                // ms, rapido o bastante pra nao parecer elevador.
-                ent.vel_y = 0.0;
-                // Sobe em direcao ao degrau que vem, com um piso.
-                //
-                // O piso NAO e' o chao. Proibir qualquer afundamento parece
-                // certo e e' o proprio salto: chegando na quina com meio
-                // degrau subido, "nunca abaixo do chao" empurra a outra
-                // metade num quadro so'. O piso e' a metade que a antecipacao
-                // ja' paga do outro lado — abaixo disso e' teleporte de
-                // verdade (nascer, respawn) e ai' sim vale cortar.
-                let piso = apoio - DEGRAU_VISIVEL * ANTECIPACAO * 1.05;
-                ent.render_y = (ent.render_y + SUBIDA * dt).min(alvo_alto).max(piso);
-            }
+                ent.no_ar_antes = no_ar_agora;
+
+                if ent.voando {
+                    // Trapezio e nao Euler: com aceleracao constante, a media das
+                    // velocidades do inicio e do fim do passo e' EXATA. Euler
+                    // subestimava o pico em 6% e o arco desenhado discordava da
+                    // `altura_do_pulo` que o servidor usa pra liberar o degrau —
+                    // e o erro mudava com a taxa de quadros do jogador.
+                    let v = ent.vel_y - shared::gravidade() * dt;
+                    ent.render_y += (ent.vel_y + v) * 0.5 * dt;
+                    ent.vel_y = v;
+                    // Pousa no que houver embaixo: o piso de cima, o de baixo, ou
+                    // o mesmo de onde saiu. Quem decide onde o corpo ESTA' e' o
+                    // servidor; a altura so' encontra o chao dele.
+                    if ent.render_y <= apoio {
+                        ent.render_y = apoio;
+                        ent.vel_y = 0.0;
+                        ent.voando = false;
+                    }
+                } else if ent.render_y > alvo_alto + 0.02 {
+                    // Andou pra fora de um barranco: cai, nao afunda. Interpolar
+                    // aqui comeca rapido e vai freando — o contrario da gravidade.
+                    //
+                    // A comparacao e' contra o degrau ANTECIPADO e nao contra o
+                    // chao de baixo: subindo pra um degrau, o corpo passa alguns
+                    // quadros acima do bloco em que ainda pisa, e comparar com o
+                    // chao faria a queda comer a subida — o corpo caia de volta e
+                    // so' entao era teleportado pro topo.
+                    ent.voando = true;
+                    ent.vel_y = 0.0;
+                } else {
+                    // No chao, subindo degrau: TAXA CONSTANTE, nao exponencial.
+                    //
+                    // A exponencial anda o grosso do caminho nos dois primeiros
+                    // quadros e vai freando — o degrau lia como teleporte com um
+                    // rastro. Taxa constante gasta o mesmo tempo em todo o degrau,
+                    // e e' isso que faz o passo ler como passo: meio bloco em 125
+                    // ms, rapido o bastante pra nao parecer elevador.
+                    ent.vel_y = 0.0;
+                    // Sobe em direcao ao degrau que vem, com um piso.
+                    //
+                    // O piso NAO e' o chao. Proibir qualquer afundamento parece
+                    // certo e e' o proprio salto: chegando na quina com meio
+                    // degrau subido, "nunca abaixo do chao" empurra a outra
+                    // metade num quadro so'. O piso e' a metade que a antecipacao
+                    // ja' paga do outro lado — abaixo disso e' teleporte de
+                    // verdade (nascer, respawn) e ai' sim vale cortar.
+                    let piso = apoio - DEGRAU_VISIVEL * ANTECIPACAO * 1.05;
+                    ent.render_y = (ent.render_y + SUBIDA * dt).min(alvo_alto).max(piso);
+                }
             }
 
             // Quem esta' golpeando olha pra quem golpeia, mesmo andando de
@@ -810,21 +876,34 @@ impl World {
     /// swell, pitch, roll and heel), so the camera riding the body rides the
     /// deck without jitter. Called at the end of `tick`.
     fn poe_nos_conveses(&mut self) {
-        let navios: HashMap<EntityId, (Vec2, f32, u16)> = self
+        let navios: HashMap<EntityId, (Vec2, f32, u8)> = self
             .ents
             .iter()
             .filter(|(_, e)| e.meta.tag == shared::EntityTag::Navio)
-            .map(|(id, e)| (*id, (e.render_pos, e.yaw, e.meta.kind)))
+            .map(|(id, e)| {
+                (
+                    *id,
+                    (
+                        e.render_pos,
+                        e.yaw,
+                        shared::navio::Visual::do_fio(e.meta.skins).classe,
+                    ),
+                )
+            })
             .collect();
         for ent in self.ents.values_mut() {
             let (Some(local), Some(n)) = (ent.local, self.conves.get(&ent.meta.id)) else {
                 continue;
             };
-            let Some((p, yaw, kind)) = navios.get(&n.navio).copied() else {
+            let Some((p, yaw, classe)) = navios.get(&n.navio).copied() else {
                 continue;
             };
-            let classe = shared::navio::classe(kind) as u8;
-            let m = crate::mar_casco::matriz_do_casco(vec3(p.x, 0.0, p.y), yaw, n.navio.0 as u64, classe);
+            let m = crate::mar_casco::matriz_do_casco(
+                vec3(p.x, 0.0, p.y),
+                yaw,
+                n.navio.0 as u64,
+                classe,
+            );
             let q = crate::mar_casco::ponto_do_conves(m, classe, local);
             ent.render_pos = vec2(q.x, q.z);
             ent.render_y = q.y + ent.salto;
@@ -859,7 +938,8 @@ impl World {
 
     /// What is my HULL at sea: the ship I stand on, else my body.
     pub fn casco_do_eu(&self) -> Option<&Ent> {
-        self.navio_do_eu().or_else(|| self.self_id.and_then(|id| self.ents.get(&id)))
+        self.navio_do_eu()
+            .or_else(|| self.self_id.and_then(|id| self.ents.get(&id)))
     }
 
     /// At the helm of my ship (at sea with no deck row yet = at the helm: the
@@ -870,7 +950,10 @@ impl World {
 
     /// I am the captain of the ship I stand on (its name is the captain's).
     pub fn eu_capitao(&self) -> bool {
-        let eu = self.self_id.and_then(|id| self.ents.get(&id)).and_then(|e| e.meta.name.clone());
+        let eu = self
+            .self_id
+            .and_then(|id| self.ents.get(&id))
+            .and_then(|e| e.meta.name.clone());
         match self.navio_do_eu() {
             Some(n) => n.meta.name == eu,
             None => true,
@@ -921,43 +1004,107 @@ mod testes {
         crate::relogio::fixa(Some((1.0, 1.0 / 60.0)));
         let mut w = World::default();
         let meta = |id: u32, tag: EntityTag, kind: u16| EntityMeta {
-            skins: 0, cla: String::new(), pk: Default::default(), auras: 0, id: EntityId(id), tag, name: None,
-            hp_max: 100, faction: None, kind, nivel: 1, desafio: None, aparencia: 0, poder: 0, renascimentos: 0,
+            skins: 0,
+            cla: String::new(),
+            pk: Default::default(),
+            auras: 0,
+            id: EntityId(id),
+            tag,
+            name: None,
+            hp_max: 100,
+            faction: None,
+            kind,
+            nivel: 1,
+            desafio: None,
+            aparencia: 0,
+            poder: 0,
+            renascimentos: 0,
         };
         let navio = shared::item_id::NAVIO_GALEAO;
         w.apply(
-            vec![meta(9, EntityTag::Navio, navio), meta(1, EntityTag::Player, 0)],
             vec![
-                EntityState::quantize(EntityId(9), ::glam::Vec2::new(100.0, 50.0), ::glam::Vec2::ZERO, 100, 0),
-                EntityState::quantize(EntityId(1), ::glam::Vec2::new(100.0, 50.0), ::glam::Vec2::ZERO, 100, ent_flags::SELF),
+                meta(9, EntityTag::Navio, navio),
+                meta(1, EntityTag::Player, 0),
+            ],
+            vec![
+                EntityState::quantize(
+                    EntityId(9),
+                    ::glam::Vec2::new(100.0, 50.0),
+                    ::glam::Vec2::ZERO,
+                    100,
+                    0,
+                ),
+                EntityState::quantize(
+                    EntityId(1),
+                    ::glam::Vec2::new(100.0, 50.0),
+                    ::glam::Vec2::ZERO,
+                    100,
+                    ent_flags::SELF,
+                ),
             ],
             &[],
         );
         let local = ::glam::Vec2::new(1.0, 2.0);
-        w.aplica_conves(&[shared::conves::NoConves::novo(EntityId(1), EntityId(9), local, false)]);
+        w.aplica_conves(&[shared::conves::NoConves::novo(
+            EntityId(1),
+            EntityId(9),
+            local,
+            false,
+        )]);
         for _ in 0..30 {
             w.tick(1.0 / 60.0, &|_, _, _| 0.0);
         }
         let navio_p = w.ents[&EntityId(9)].render_pos;
         let yaw = w.ents[&EntityId(9)].yaw;
         let rumo = ::glam::Vec2::new(yaw.sin(), yaw.cos());
-        let esperado = shared::conves::do_mundo(::glam::Vec2::new(navio_p.x, navio_p.y), rumo, local);
+        let esperado =
+            shared::conves::do_mundo(::glam::Vec2::new(navio_p.x, navio_p.y), rumo, local);
         let eu = &w.ents[&EntityId(1)];
-        assert!(eu.render_pos.distance(vec2(esperado.x, esperado.y)) < 0.4, "{} vs {esperado}", eu.render_pos);
-        assert!(eu.render_y > 0.5, "on the planks, not in the water: {}", eu.render_y);
+        assert!(
+            eu.render_pos.distance(vec2(esperado.x, esperado.y)) < 0.4,
+            "{} vs {esperado}",
+            eu.render_pos
+        );
+        assert!(
+            eu.render_y > 0.5,
+            "on the planks, not in the water: {}",
+            eu.render_y
+        );
         let fase = eu.fase;
         // The ship sails 5 u: the body rides along, its legs still.
-        w.apply(vec![], vec![EntityState::quantize(EntityId(9), ::glam::Vec2::new(105.0, 50.0), ::glam::Vec2::ZERO, 100, 0)], &[]);
+        w.apply(
+            vec![],
+            vec![EntityState::quantize(
+                EntityId(9),
+                ::glam::Vec2::new(105.0, 50.0),
+                ::glam::Vec2::ZERO,
+                100,
+                0,
+            )],
+            &[],
+        );
         for _ in 0..60 {
             w.tick(1.0 / 60.0, &|_, _, _| 0.0);
         }
         let eu = &w.ents[&EntityId(1)];
-        assert!(eu.render_pos.x > esperado.x + 4.5, "the body stayed behind: {}", eu.render_pos);
-        assert!((eu.fase - fase).abs() < 1e-3, "the legs walked the ship's motion");
+        assert!(
+            eu.render_pos.x > esperado.x + 4.5,
+            "the body stayed behind: {}",
+            eu.render_pos
+        );
+        assert!(
+            (eu.fase - fase).abs() < 1e-3,
+            "the legs walked the ship's motion"
+        );
         assert_eq!(w.navio_do_eu().map(|n| n.meta.id), Some(EntityId(9)));
         assert!(!w.eu_no_leme());
         // Off the deck: back to the server's position.
-        w.aplica_conves(&[shared::conves::NoConves { id: EntityId(1), navio: EntityId(0), local: [0, 0], leme: false }]);
+        w.aplica_conves(&[shared::conves::NoConves {
+            id: EntityId(1),
+            navio: EntityId(0),
+            local: [0, 0],
+            leme: false,
+        }]);
         assert!(w.meu_conves().is_none() && w.eu_no_leme());
     }
 
@@ -975,14 +1122,36 @@ mod testes {
             let mut w = World::default();
             w.sincroniza_visual_local(&equipamento, salva);
             for (id, flags) in [(EntityId(1), ent_flags::SELF), (EntityId(2), 0)] {
-                w.apply(vec![EntityMeta { skins: 0, cla: String::new(),
-                    pk: Default::default(), auras: 0, id, tag: EntityTag::Player,
-                    name: None, hp_max: 100, faction: None, kind: 0, nivel: 1,
-                    desafio: None, aparencia: 0,
-                    poder: 0, renascimentos: 0,
-                }], vec![EntityState {
-                    id, pos: [16, 16], vel: [0, 0], hp: 100, flags, acao: 0, rumo: 0, camada: 0,
-                }], &[]);
+                w.apply(
+                    vec![EntityMeta {
+                        skins: 0,
+                        cla: String::new(),
+                        pk: Default::default(),
+                        auras: 0,
+                        id,
+                        tag: EntityTag::Player,
+                        name: None,
+                        hp_max: 100,
+                        faction: None,
+                        kind: 0,
+                        nivel: 1,
+                        desafio: None,
+                        aparencia: 0,
+                        poder: 0,
+                        renascimentos: 0,
+                    }],
+                    vec![EntityState {
+                        id,
+                        pos: [16, 16],
+                        vel: [0, 0],
+                        hp: 100,
+                        flags,
+                        acao: 0,
+                        rumo: 0,
+                        camada: 0,
+                    }],
+                    &[],
+                );
             }
             w.sincroniza_visual_local(&equipamento, salva);
             assert_ne!(w.ents[&EntityId(1)].meta.auras, 0);
@@ -1005,7 +1174,9 @@ mod testes {
         let mut w = World::default();
         for (id, flags) in [(EntityId(1), 0u8), (EntityId(2), ent_flags::SELF)] {
             w.apply(
-                vec![EntityMeta { skins: 0, cla: String::new(),
+                vec![EntityMeta {
+                    skins: 0,
+                    cla: String::new(),
                     pk: Default::default(),
                     auras: 0,
                     id,
@@ -1016,8 +1187,9 @@ mod testes {
                     kind: 0,
                     nivel: 1,
                     desafio: None,
-            aparencia: 0,
-            poder: 0, renascimentos: 0,
+                    aparencia: 0,
+                    poder: 0,
+                    renascimentos: 0,
                 }],
                 vec![EntityState {
                     id,
@@ -1064,7 +1236,9 @@ mod testes {
             st
         };
         w.apply(
-            vec![EntityMeta { skins: 0, cla: String::new(),
+            vec![EntityMeta {
+                skins: 0,
+                cla: String::new(),
                 pk: Default::default(),
                 auras: 0,
                 id,
@@ -1075,8 +1249,9 @@ mod testes {
                 kind: 0,
                 nivel: 1,
                 desafio: None,
-            aparencia: 0,
-            poder: 0, renascimentos: 0,
+                aparencia: 0,
+                poder: 0,
+                renascimentos: 0,
             }],
             vec![estado(1.0)],
             &[],
@@ -1123,7 +1298,9 @@ mod testes {
             (EntityId(2), EntityTag::Player, [16, 48]),
         ] {
             w.apply(
-                vec![EntityMeta { skins: 0, cla: String::new(),
+                vec![EntityMeta {
+                    skins: 0,
+                    cla: String::new(),
                     pk: Default::default(),
                     auras: 0,
                     id,
@@ -1134,8 +1311,9 @@ mod testes {
                     kind: 2,
                     nivel: 1,
                     desafio: None,
-            aparencia: 0,
-            poder: 0, renascimentos: 0,
+                    aparencia: 0,
+                    poder: 0,
+                    renascimentos: 0,
                 }],
                 vec![EntityState {
                     id,
@@ -1190,7 +1368,9 @@ mod testes {
         let mut w = World::default();
         let id = shared::EntityId(1);
         w.apply(
-            vec![EntityMeta { skins: 0, cla: String::new(),
+            vec![EntityMeta {
+                skins: 0,
+                cla: String::new(),
                 pk: Default::default(),
                 auras: 0,
                 id,
@@ -1201,8 +1381,9 @@ mod testes {
                 kind: 0,
                 nivel: 0,
                 desafio: None,
-            aparencia: 0,
-            poder: 0, renascimentos: 0,
+                aparencia: 0,
+                poder: 0,
+                renascimentos: 0,
             }],
             vec![EntityState {
                 id,
@@ -1298,7 +1479,9 @@ mod testes {
             camada: 0,
         };
         w.apply(
-            vec![EntityMeta { skins: 0, cla: String::new(),
+            vec![EntityMeta {
+                skins: 0,
+                cla: String::new(),
                 pk: Default::default(),
                 auras: 0,
                 id,
@@ -1309,8 +1492,9 @@ mod testes {
                 kind: 0,
                 nivel: 0,
                 desafio: None,
-            aparencia: 0,
-            poder: 0, renascimentos: 0,
+                aparencia: 0,
+                poder: 0,
+                renascimentos: 0,
             }],
             vec![estado(0.0)],
             &[],
@@ -1392,7 +1576,9 @@ mod testes {
         let mut w = World::default();
         let id = shared::EntityId(1);
         w.apply(
-            vec![EntityMeta { skins: 0, cla: String::new(),
+            vec![EntityMeta {
+                skins: 0,
+                cla: String::new(),
                 pk: Default::default(),
                 auras: 0,
                 id,
@@ -1403,8 +1589,9 @@ mod testes {
                 kind: 0,
                 nivel: 0,
                 desafio: None,
-            aparencia: 0,
-            poder: 0, renascimentos: 0,
+                aparencia: 0,
+                poder: 0,
+                renascimentos: 0,
             }],
             vec![EntityState {
                 id,

@@ -122,17 +122,36 @@ impl Morte {
             estilo::texto_centro(
                 sw * 0.5,
                 caixa.y + 94.0,
-                &format!("+{}% from PK points: {} XP that cannot be recovered", self.pct_pk, milhar(self.xp_pk)),
+                &format!(
+                    "+{}% from PK points: {} XP that cannot be recovered",
+                    self.pct_pk,
+                    milhar(self.xp_pk)
+                ),
                 14,
                 VERMELHO,
             );
         }
-        estilo::texto_centro(sw * 0.5, caixa.y + 112.0,
-            "Each trained proficiency loses XP on death:", 15, VERMELHO);
-        estilo::texto_centro(sw * 0.5, caixa.y + 135.0,
-            "10% of the next level's cost. Its level can drop.", 14, estilo::TEXTO);
-        estilo::texto_centro(sw * 0.5, caixa.y + 158.0,
-            "Recovering XP does not give proficiency back.", 14, estilo::SUAVE);
+        estilo::texto_centro(
+            sw * 0.5,
+            caixa.y + 112.0,
+            "Each trained proficiency loses XP on death:",
+            15,
+            VERMELHO,
+        );
+        estilo::texto_centro(
+            sw * 0.5,
+            caixa.y + 135.0,
+            "10% of the next level's cost. Its level can drop.",
+            14,
+            estilo::TEXTO,
+        );
+        estilo::texto_centro(
+            sw * 0.5,
+            caixa.y + 158.0,
+            "Recovering XP does not give proficiency back.",
+            14,
+            estilo::SUAVE,
+        );
         if let Some((t, ok)) = &self.aviso {
             estilo::texto_centro(
                 sw * 0.5,

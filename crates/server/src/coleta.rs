@@ -19,8 +19,8 @@ pub fn ao_alcance(pos: Vec2, centro: Vec2, raio_no: f32) -> bool {
 /// The client may stop short of the destination. Even the furthest point of
 /// that tolerance has to stay within gathering range.
 pub fn aproximacao_ao_alcance(pos: Vec2, centro: Vec2, raio_no: f32) -> bool {
-    pos.distance(centro) + shared::COLETA_TOLERANCIA_CHEGADA
-        - raio_no - shared::ENTITY_RADIUS <= shared::COLETA_ALCANCE_UN + FOLGA_ALCANCE
+    pos.distance(centro) + shared::COLETA_TOLERANCIA_CHEGADA - raio_no - shared::ENTITY_RADIUS
+        <= shared::COLETA_ALCANCE_UN + FOLGA_ALCANCE
 }
 
 /// Where to stand to gather: on the side of whoever arrives, in the middle of the range.
@@ -127,7 +127,11 @@ mod testes {
                 assert!(aproximacao_ao_alcance(p, centro, raio));
                 let parada = p + (p - centro).normalize() * shared::COLETA_TOLERANCIA_CHEGADA;
                 assert!(ao_alcance(parada, centro, raio));
-                assert!(!aproximacao_ao_alcance(p + (p - centro).normalize(), centro, raio));
+                assert!(!aproximacao_ao_alcance(
+                    p + (p - centro).normalize(),
+                    centro,
+                    raio
+                ));
             }
         }
     }

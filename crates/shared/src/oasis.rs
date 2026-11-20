@@ -119,8 +119,13 @@ mod testes {
     fn a_lagoa_e_agua_e_a_margem_e_chao() {
         let def = ermo();
         let ilha = Ilha::da_ilha(def);
-        let o = Gerador::da_ilha(def).oasis().expect("the Ermo has an oasis");
-        assert!(ilha.agua(o.centro.x, o.centro.y), "the middle of the pond is dry");
+        let o = Gerador::da_ilha(def)
+            .oasis()
+            .expect("the Ermo has an oasis");
+        assert!(
+            ilha.agua(o.centro.x, o.centro.y),
+            "the middle of the pond is dry"
+        );
         let mut secos = 0;
         for k in 0..16 {
             let a = k as f32 / 16.0 * std::f32::consts::TAU;
@@ -129,13 +134,24 @@ mod testes {
                 secos += 1;
             }
         }
-        assert_eq!(secos, 16, "the shore is under water in {} places", 16 - secos);
-        assert!(!ilha.mar_aberto(o.centro), "the pond is connected to the ocean");
+        assert_eq!(
+            secos,
+            16,
+            "the shore is under water in {} places",
+            16 - secos
+        );
+        assert!(
+            !ilha.mar_aberto(o.centro),
+            "the pond is connected to the ocean"
+        );
         // Away from the city and the port: a place to walk to.
         let cidade = ilha.cidade().expect("the Ermo has a city").centro();
         assert!(o.centro.distance(cidade) >= 150.0, "the oasis is in town");
         if let Some(p) = ilha.porto() {
-            assert!(o.centro.distance(p.centro) >= 150.0, "the oasis is at the port");
+            assert!(
+                o.centro.distance(p.centro) >= 150.0,
+                "the oasis is at the port"
+            );
         }
     }
 

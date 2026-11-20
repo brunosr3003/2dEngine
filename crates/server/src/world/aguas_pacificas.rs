@@ -41,16 +41,21 @@ pub(crate) const SEM_PVP: &str = "Peaceful waters: no PvP here.";
 /// nearest piece of the boundary (`mar::fronteira_pacifica`), on its PvP
 /// side.
 pub(crate) fn saida_das_pacificas(p: Vec2) -> Vec2 {
-    let Some((a, b)) = shared::mar::fronteira_pacifica()
-        .iter()
-        .min_by(|x, y| ((x.0 + x.1) * 0.5).distance_squared(p).total_cmp(&((y.0 + y.1) * 0.5).distance_squared(p)))
-    else {
+    let Some((a, b)) = shared::mar::fronteira_pacifica().iter().min_by(|x, y| {
+        ((x.0 + x.1) * 0.5)
+            .distance_squared(p)
+            .total_cmp(&((y.0 + y.1) * 0.5).distance_squared(p))
+    }) else {
         return Vec2::ZERO;
     };
     let m = (*a + *b) * 0.5;
     let t = (*b - *a).normalize_or_zero();
     let n = Vec2::new(-t.y, t.x);
-    let fora = if shared::mar::aguas_pacificas(m + n * 8.0) { -n } else { n };
+    let fora = if shared::mar::aguas_pacificas(m + n * 8.0) {
+        -n
+    } else {
+        n
+    };
     (m + fora * 10.0 - p).try_normalize().unwrap_or(fora)
 }
 
@@ -84,7 +89,12 @@ impl GameWorld {
             return m;
         }
         let agora = self.sim_time_s;
-        let sids: Vec<SessionId> = self.sessions.iter().filter(|(_, s)| s.logged_in).map(|(id, _)| *id).collect();
+        let sids: Vec<SessionId> = self
+            .sessions
+            .iter()
+            .filter(|(_, s)| s.logged_in)
+            .map(|(id, _)| *id)
+            .collect();
         for sid in sids {
             let s = &self.sessions[&sid];
             // The HULL is what the waters bar (the walkable deck): the
@@ -97,7 +107,9 @@ impl GameWorld {
                     None => continue,
                 },
             };
-            let Some(p) = self.ecs.get::<&Position>(e).ok().map(|p| p.0) else { continue };
+            let Some(p) = self.ecs.get::<&Position>(e).ok().map(|p| p.0) else {
+                continue;
+            };
             let barrado = self.pk_barrado(s);
             let dentro = shared::mar::aguas_pacificas(p);
             let s = self.sessions.get_mut(&sid).unwrap();
@@ -113,7 +125,13 @@ impl GameWorld {
             let primeiro = desde == agora;
             m.insert(e, (false, empurra));
             if primeiro {
-                self.avisa_missao(sid, format!("You have PK: leave the peaceful waters within {} s.", GRACA_S as u32));
+                self.avisa_missao(
+                    sid,
+                    format!(
+                        "You have PK: leave the peaceful waters within {} s.",
+                        GRACA_S as u32
+                    ),
+                );
             }
         }
         m
@@ -125,7 +143,9 @@ impl GameWorld {
         let Some(sid) = self
             .sessions
             .iter()
-            .find(|(id, s)| s.entity == Some(e) || s.conves.is_some_and(|c| c.navio == e && c.capitao == **id))
+            .find(|(id, s)| {
+                s.entity == Some(e) || s.conves.is_some_and(|c| c.navio == e && c.capitao == **id)
+            })
             .map(|(id, _)| *id)
         else {
             return;
@@ -151,15 +171,26 @@ mod testes {
         let sid = SessionId(([127, 0, 0, 1], 47_490).into());
         let (tx, rx) = mpsc::unbounded_channel();
         std::mem::forget(rx);
-        w.on_connect(SessionHandle { id: sid, to_client: tx });
+        w.on_connect(SessionHandle {
+            id: sid,
+            to_client: tx,
+        });
         let eid = EntityId(4_900);
         let e = w.ecs.spawn((
             NetId(eid),
             Position(Vec2::ZERO),
             Velocity(Vec2::ZERO),
             EntityKind::Player,
-            Health { current: 100, max: 100 },
-            PlayerTag { name: "Corsario".into(), player_id: PlayerId(49), attack_anim_pending: None, combo_step_pending: None },
+            Health {
+                current: 100,
+                max: 100,
+            },
+            PlayerTag {
+                name: "Corsario".into(),
+                player_id: PlayerId(49),
+                attack_anim_pending: None,
+                combo_step_pending: None,
+            },
             shared::Solido,
         ));
         let s = w.sessions.get_mut(&sid).unwrap();
@@ -179,13 +210,20 @@ mod testes {
             let m = (*a + *b) * 0.5;
             let t = (*b - *a).normalize_or_zero();
             let n = Vec2::new(-t.y, t.x);
-            let dentro = if shared::mar::aguas_pacificas(m + n * 4.0) { n } else { -n };
+            let dentro = if shared::mar::aguas_pacificas(m + n * 4.0) {
+                n
+            } else {
+                -n
+            };
             let fora = m - dentro * 14.0;
             let ok = (0..=30).all(|k| {
                 let q = fora + dentro * k as f32;
                 shared::mar::agua_livre(q) && !shared::mar::no_corredor(q)
             });
-            if ok && !shared::mar::aguas_pacificas(fora) && shared::mar::aguas_pacificas(fora + dentro * 28.0) {
+            if ok
+                && !shared::mar::aguas_pacificas(fora)
+                && shared::mar::aguas_pacificas(fora + dentro * 28.0)
+            {
                 return (fora, dentro);
             }
         }
@@ -197,8 +235,13 @@ mod testes {
         let t0 = w.sim_time_s;
         while w.sim_time_s - t0 < s {
             n += 1;
-            w.sessions.get_mut(&sid).unwrap().pending_input =
-                Some(shared::protocol::InputFrame { seq: n, tick: n, move_dir: dir, aim: Vec2::ZERO, buttons: 0 });
+            w.sessions.get_mut(&sid).unwrap().pending_input = Some(shared::protocol::InputFrame {
+                seq: n,
+                tick: n,
+                move_dir: dir,
+                aim: Vec2::ZERO,
+                buttons: 0,
+            });
             w.step(shared::TICK_DT);
         }
     }
@@ -214,10 +257,19 @@ mod testes {
             navega(&mut w, sid, dentro, 6.0);
             let p = w.pos_do_casco(sid).unwrap();
             if pk {
-                assert!(!shared::mar::aguas_pacificas(p), "a PK ship got into peaceful waters at {p:?}");
-                assert!(p.distance(fora) > 6.0, "it did not even reach the boundary: {p:?}");
+                assert!(
+                    !shared::mar::aguas_pacificas(p),
+                    "a PK ship got into peaceful waters at {p:?}"
+                );
+                assert!(
+                    p.distance(fora) > 6.0,
+                    "it did not even reach the boundary: {p:?}"
+                );
             } else {
-                assert!(shared::mar::aguas_pacificas(p), "a clean ship was kept out: {p:?}");
+                assert!(
+                    shared::mar::aguas_pacificas(p),
+                    "a clean ship was kept out: {p:?}"
+                );
             }
         }
         // PK COMBAT bars too, not only the red name.
@@ -234,14 +286,29 @@ mod testes {
     #[test]
     fn a_rota_do_pk_contorna_e_recusa_as_aguas_pacificas() {
         let ilhas = shared::mar::ilhas();
-        let bosque = ilhas.iter().find(|i| i.zona == "ilha_inicial").unwrap().fundeadouro();
-        let planalto = ilhas.iter().find(|i| i.zona == "ilha_planalto").unwrap().fundeadouro();
-        let ceu = ilhas.iter().find(|i| i.zona == shared::celeste::ZONA).unwrap().fundeadouro();
+        let bosque = ilhas
+            .iter()
+            .find(|i| i.zona == "ilha_inicial")
+            .unwrap()
+            .fundeadouro();
+        let planalto = ilhas
+            .iter()
+            .find(|i| i.zona == "ilha_planalto")
+            .unwrap()
+            .fundeadouro();
+        let ceu = ilhas
+            .iter()
+            .find(|i| i.zona == shared::celeste::ZONA)
+            .unwrap()
+            .fundeadouro();
         let (mut w, sid, e) = mundo();
         w.ecs.get::<&mut Position>(e).unwrap().0 = planalto;
         w.sessions.get_mut(&sid).unwrap().pk_points = 2;
         w.rota_no_mar(sid, planalto, bosque);
-        assert!(w.sessions[&sid].rota.vazia(), "a PK route into peaceful waters");
+        assert!(
+            w.sessions[&sid].rota.vazia(),
+            "a PK route into peaceful waters"
+        );
         w.rota_no_mar(sid, planalto, ceu);
         let rota: Vec<Vec2> = w.sessions[&sid].rota.pontos().collect();
         assert!(!rota.is_empty(), "no route to Skyreach for a PK captain");
@@ -249,7 +316,10 @@ mod testes {
         for q in &rota {
             for k in 0..=40 {
                 let r = de.lerp(*q, k as f32 / 40.0);
-                assert!(!shared::mar::aguas_pacificas(r), "the PK route crosses peaceful waters at {r:?}");
+                assert!(
+                    !shared::mar::aguas_pacificas(r),
+                    "the PK route crosses peaceful waters at {r:?}"
+                );
             }
             de = *q;
         }
@@ -274,7 +344,10 @@ mod testes {
         assert!(w.sessions[&sid].pk_nas_pacificas_desde.is_some());
         navega(&mut w, sid, Vec2::ZERO, 12.0);
         let p = w.pos_do_casco(sid).unwrap();
-        assert!(!shared::mar::aguas_pacificas(p), "still inside after the grace: {p:?}");
+        assert!(
+            !shared::mar::aguas_pacificas(p),
+            "still inside after the grace: {p:?}"
+        );
         assert!(w.sessions[&sid].pk_nas_pacificas_desde.is_none());
     }
 
@@ -288,15 +361,26 @@ mod testes {
         let b = SessionId(([127, 0, 0, 1], 47_491).into());
         let (tx, rx) = mpsc::unbounded_channel();
         std::mem::forget(rx);
-        w.on_connect(SessionHandle { id: b, to_client: tx });
+        w.on_connect(SessionHandle {
+            id: b,
+            to_client: tx,
+        });
         let eb = EntityId(4_901);
         let ent_b = w.ecs.spawn((
             NetId(eb),
             Position(Vec2::ZERO),
             Velocity(Vec2::ZERO),
             EntityKind::Player,
-            Health { current: 100, max: 100 },
-            PlayerTag { name: "Outro".into(), player_id: PlayerId(50), attack_anim_pending: None, combo_step_pending: None },
+            Health {
+                current: 100,
+                max: 100,
+            },
+            PlayerTag {
+                name: "Outro".into(),
+                player_id: PlayerId(50),
+                attack_anim_pending: None,
+                combo_step_pending: None,
+            },
         ));
         {
             let s = w.sessions.get_mut(&b).unwrap();
@@ -315,7 +399,8 @@ mod testes {
         let eu = w.sessions[&sid].entity_id;
         for (onde, pode) in [(fora + dentro * 26.0, false), (fora - dentro * 4.0, true)] {
             w.ecs.get::<&mut Position>(e).unwrap().0 = onde;
-            w.ecs.get::<&mut Position>(ent_b).unwrap().0 = onde + Vec2::new(0.0, 0.0) + dentro.perp() * 8.0;
+            w.ecs.get::<&mut Position>(ent_b).unwrap().0 =
+                onde + Vec2::new(0.0, 0.0) + dentro.perp() * 8.0;
             assert_eq!(w.can_damage_player(eu, eb), pode, "at {onde:?}");
         }
         // The Long Gun at a ship in peaceful waters: refused, with the reason.
@@ -324,7 +409,10 @@ mod testes {
         w.ecs.get::<&mut Position>(ent_b).unwrap().0 = onde + dentro.perp() * 8.0;
         w.sessions.get_mut(&sid).unwrap().target = Some(eb);
         w.handle_navio(sid, shared::navio::PedidoNavio::Habilidade { id: 1 });
-        assert!(w.sessions[&sid].skill_cds.is_empty(), "the Long Gun fired at a ship in peaceful waters");
+        assert!(
+            w.sessions[&sid].skill_cds.is_empty(),
+            "the Long Gun fired at a ship in peaceful waters"
+        );
     }
 
     /// NEVER TRAPPED: a PK captain on a peaceful island still takes the
@@ -332,12 +420,22 @@ mod testes {
     /// still casts off from its dock (the grace then lets it sail out).
     #[test]
     fn o_pk_volta_pra_casa_pelo_capitao() {
-        assert!(GRACA_S >= 20.0, "the grace must let a ship cast off and leave");
+        assert!(
+            GRACA_S >= 20.0,
+            "the grace must let a ship cast off and leave"
+        );
         let bosque = shared::mar::vista_da_zona("ilha_inicial").unwrap();
         assert!(shared::mar::aguas_pacificas(bosque.fundeadouro()));
         // From the Bosque's dock, the way out by route is open during the grace.
         let saida = saida_das_pacificas(bosque.fundeadouro());
         assert!(saida.length() > 0.5);
-        assert!(navio::caminho_no_mar_com(bosque.fundeadouro(), shared::mar::vista_da_zona("ilha_planalto").unwrap().fundeadouro(), true).is_some());
+        assert!(navio::caminho_no_mar_com(
+            bosque.fundeadouro(),
+            shared::mar::vista_da_zona("ilha_planalto")
+                .unwrap()
+                .fundeadouro(),
+            true
+        )
+        .is_some());
     }
 }

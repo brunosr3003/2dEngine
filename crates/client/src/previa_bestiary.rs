@@ -20,20 +20,33 @@ pub async fn previa(vox: &mut crate::vox::VoxCache, solido: &Material) {
             return v.name;
         }
         match kind {
-            0 => "Wolf", 1 => "Bear", 2 => "Gunman", 3 => "Tiger", 4 => "Mage",
-            5 => "Owlbear", 6 => "Archer", 10 => "Walrus", 11 => "White Bear",
-            12 => "White Tiger", 13 => "Scarab", 14 => "Scarab Queen", 15 => "Rockback",
+            0 => "Wolf",
+            1 => "Bear",
+            2 => "Gunman",
+            3 => "Tiger",
+            4 => "Mage",
+            5 => "Owlbear",
+            6 => "Archer",
+            10 => "Walrus",
+            11 => "White Bear",
+            12 => "White Tiger",
+            13 => "Scarab",
+            14 => "Scarab Queen",
+            15 => "Rockback",
             _ => "?",
         }
     }
-    let saida =
-        std::env::var("MMO_PREVIA_SAIDA").unwrap_or_else(|_| "/tmp/tempest-bestiary-preview".into());
+    let saida = std::env::var("MMO_PREVIA_SAIDA")
+        .unwrap_or_else(|_| "/tmp/tempest-bestiary-preview".into());
     std::fs::create_dir_all(&saida).unwrap();
     next_frame().await;
     let rt = macroquad::texture::render_target_ex(
         screen_width() as u32,
         screen_height() as u32,
-        macroquad::texture::RenderTargetParams { depth: true, sample_count: 1 },
+        macroquad::texture::RenderTargetParams {
+            depth: true,
+            sample_count: 1,
+        },
     );
     rt.texture.set_filter(FilterMode::Linear);
     crate::render3d::define_alvo(Some(rt.clone()));
@@ -51,13 +64,19 @@ pub async fn previa(vox: &mut crate::vox::VoxCache, solido: &Material) {
                 let r = Rect::new(120.0 + j as f32 * cel, y + 4.0, cel - 8.0, linha - 28.0);
                 crate::render3d::vitrine_mob(vox, *kind, false, r, 0.6, solido);
                 crate::render3d::camera_padrao();
-                let cor = if shared::bestiary::variant(*kind).is_some() { YELLOW } else { WHITE };
+                let cor = if shared::bestiary::variant(*kind).is_some() {
+                    YELLOW
+                } else {
+                    WHITE
+                };
                 estilo::texto(r.x, y + linha - 8.0, nome(*kind), 14, cor);
             }
         }
         unsafe { macroquad::window::get_internal_gl().flush() };
         if quadro == 39 {
-            rt.texture.get_texture_data().export_png(&format!("{saida}/bestiary.png"));
+            rt.texture
+                .get_texture_data()
+                .export_png(&format!("{saida}/bestiary.png"));
         }
         next_frame().await;
     }

@@ -10,13 +10,26 @@ use macroquad::prelude::*;
 
 use crate::render3d::VOXEL;
 
-const CASOS: [(u8, &str); 6] = [(1, "t1-green"), (3, "t2-blue"), (5, "t3-purple"), (10, "t4-gold"), (15, "t5-blackhole"), (55, "t5-blackhole-x3")];
+const CASOS: [(u8, &str); 6] = [
+    (1, "t1-green"),
+    (3, "t2-blue"),
+    (5, "t3-purple"),
+    (10, "t4-gold"),
+    (15, "t5-blackhole"),
+    (55, "t5-blackhole-x3"),
+];
 
 pub async fn previa(vox: &mut crate::vox::VoxCache) {
     let saida = std::env::var("MMO_PREVIA_SAIDA").unwrap_or_else(|_| "target/aura_shots".into());
     std::fs::create_dir_all(&saida).unwrap();
     let solido = crate::render3d::material_solido();
-    let veste_padrao = shared::aparencia::Aparencia { rosto: 1, cabelo: 1, cor_cabelo: 1, pele: 1, ..Default::default() };
+    let veste_padrao = shared::aparencia::Aparencia {
+        rosto: 1,
+        cabelo: 1,
+        cor_cabelo: 1,
+        pele: 1,
+        ..Default::default()
+    };
     // Load the body parts first.
     for _ in 0..30 {
         while vox.atende_um_pendente(VOXEL).await {}
@@ -26,15 +39,40 @@ pub async fn previa(vox: &mut crate::vox::VoxCache) {
     let chao = Color::new(0.24, 0.33, 0.20, 1.0);
     // 1. One body per tier, close.
     for (r, nome) in CASOS {
-        let cam = Camera3D { position: vec3(0.0, 3.6, 5.0), target: vec3(0.0, 0.85, 0.0), fovy: 40f32.to_radians(), ..Default::default() };
-        cena(vox, &solido, veste_padrao, &cam, chao, &[(Vec3::ZERO, r)], None);
+        let cam = Camera3D {
+            position: vec3(0.0, 3.6, 5.0),
+            target: vec3(0.0, 0.85, 0.0),
+            fovy: 40f32.to_radians(),
+            ..Default::default()
+        };
+        cena(
+            vox,
+            &solido,
+            veste_padrao,
+            &cam,
+            chao,
+            &[(Vec3::ZERO, r)],
+            None,
+        );
         captura(&format!("{saida}/aura-{nome}.png"));
         next_frame().await;
     }
     // 2. All of them at the game's distance, on grass and in a dark cave.
-    for (fundo, nome) in [(chao, "todas-grama"), (Color::new(0.09, 0.08, 0.10, 1.0), "todas-escuro")] {
-        let cam = Camera3D { position: vec3(0.0, 10.5, 9.0), target: vec3(0.0, 0.6, 0.0), fovy: 40f32.to_radians(), ..Default::default() };
-        let corpos: Vec<(Vec3, u8)> = CASOS.iter().enumerate().map(|(i, (r, _))| (vec3(-6.25 + i as f32 * 2.5, 0.0, 0.0), *r)).collect();
+    for (fundo, nome) in [
+        (chao, "todas-grama"),
+        (Color::new(0.09, 0.08, 0.10, 1.0), "todas-escuro"),
+    ] {
+        let cam = Camera3D {
+            position: vec3(0.0, 10.5, 9.0),
+            target: vec3(0.0, 0.6, 0.0),
+            fovy: 40f32.to_radians(),
+            ..Default::default()
+        };
+        let corpos: Vec<(Vec3, u8)> = CASOS
+            .iter()
+            .enumerate()
+            .map(|(i, (r, _))| (vec3(-6.25 + i as f32 * 2.5, 0.0, 0.0), *r))
+            .collect();
         cena(vox, &solido, veste_padrao, &cam, fundo, &corpos, None);
         captura(&format!("{saida}/aura-{nome}.png"));
         next_frame().await;
@@ -45,9 +83,25 @@ pub async fn previa(vox: &mut crate::vox::VoxCache) {
             let mut e = crate::renascimento_vfx::Renasceu::default();
             e.dispara(r as u32);
             e.passo(f * crate::renascimento_vfx::DURACAO);
-            let cam = Camera3D { position: vec3(0.0, 7.5, 10.5), target: vec3(0.0, 1.6, 0.0), fovy: 45f32.to_radians(), ..Default::default() };
-            cena(vox, &solido, veste_padrao, &cam, chao, &[(Vec3::ZERO, r)], Some(&e));
-            captura(&format!("{saida}/burst-{nome}-{:02}.png", (f * 100.0) as u32));
+            let cam = Camera3D {
+                position: vec3(0.0, 7.5, 10.5),
+                target: vec3(0.0, 1.6, 0.0),
+                fovy: 45f32.to_radians(),
+                ..Default::default()
+            };
+            cena(
+                vox,
+                &solido,
+                veste_padrao,
+                &cam,
+                chao,
+                &[(Vec3::ZERO, r)],
+                Some(&e),
+            );
+            captura(&format!(
+                "{saida}/burst-{nome}-{:02}.png",
+                (f * 100.0) as u32
+            ));
             next_frame().await;
         }
     }
@@ -70,11 +124,18 @@ fn cena(
         for j in -8..8 {
             if (i * 7 + j * 13i32).rem_euclid(5) == 0 {
                 let c = Color::new(chao.r * 0.85, chao.g * 0.85, chao.b * 0.85, 1.0);
-                draw_plane(vec3(i as f32 + 0.5, 0.001, j as f32 + 0.5), vec2(0.5, 0.5), None, c);
+                draw_plane(
+                    vec3(i as f32 + 0.5, 0.001, j as f32 + 0.5),
+                    vec2(0.5, 0.5),
+                    None,
+                    c,
+                );
             }
         }
     }
-    let Some(mut veste) = crate::render3d::vestimenta_de(vox, aparencia.empacota()) else { return };
+    let Some(mut veste) = crate::render3d::vestimenta_de(vox, aparencia.empacota()) else {
+        return;
+    };
     veste.skins = aparencia.empacota_skins();
     gl_use_material(solido);
     solido.set_uniform("Crop", Vec3::ZERO);

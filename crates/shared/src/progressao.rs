@@ -130,8 +130,13 @@ pub fn xp_maximo(mult: u64) -> u64 {
 
 /// (internal level, shown level) at each island's edge; straight lines
 /// between them. Past internal 60 every level shows as "100+".
-pub const ANCORAS_DA_ESCALA: [(f32, f32); 5] =
-    [(1.0, 1.0), (15.0, 30.0), (30.0, 50.0), (42.0, 70.0), (60.0, 100.0)];
+pub const ANCORAS_DA_ESCALA: [(f32, f32); 5] = [
+    (1.0, 1.0),
+    (15.0, 30.0),
+    (30.0, 50.0),
+    (42.0, 70.0),
+    (60.0, 100.0),
+];
 
 /// The shown level of a (possibly fractional) internal level, unclamped
 /// (past internal 60 it keeps one shown level per internal level).
@@ -212,7 +217,10 @@ pub fn xp_do_nivel_exibido(n: u32, mult: u64) -> u64 {
 /// runs from `xp_do_nivel_exibido(n)` to `xp_do_nivel_exibido(n + 1)`).
 pub fn fracao_do_nivel_exibido(xp: u64, mult: u64) -> f32 {
     let n = nivel_exibido(xp, mult);
-    let (a, b) = (xp_do_nivel_exibido(n, mult), xp_do_nivel_exibido(n + 1, mult));
+    let (a, b) = (
+        xp_do_nivel_exibido(n, mult),
+        xp_do_nivel_exibido(n + 1, mult),
+    );
     if b > a {
         (xp.saturating_sub(a) as f32 / (b - a) as f32).clamp(0.0, 1.0)
     } else {
@@ -358,7 +366,8 @@ pub fn xp_da_quest(q: &QuestDef) -> u64 {
             _ => 10,
         } as f64;
         let nivel = q.min_level.max(1);
-        return (BONUS_DO_CONTRATO as f64 * abates * xp_do_abate(BASE_TIPICA, nivel) as f64).round() as u64;
+        return (BONUS_DO_CONTRATO as f64 * abates * xp_do_abate(BASE_TIPICA, nivel) as f64).round()
+            as u64;
     }
     let (a, b) = faixa(q.min_level);
     let soma: u64 = QUESTS
@@ -394,8 +403,12 @@ fn da_historia() -> &'static HashMap<u16, u64> {
         let mut i = 0u32;
         let mut antes_da_primeira_trava = true;
         while desde < TETO {
-            let Some(id) = crate::historia::id_do_passo(i) else { break };
-            let Some(q) = crate::historia::def_da_historia(id) else { break };
+            let Some(id) = crate::historia::id_do_passo(i) else {
+                break;
+            };
+            let Some(q) = crate::historia::def_da_historia(id) else {
+                break;
+            };
             i += 1;
             // Chapters I and II have no level gate: the player finishes them
             // as a tutorial, well before 20. The owner kept them as written
@@ -473,15 +486,30 @@ mod testes {
         }
         let teto = (xp_for_level_with_mult(TETO, DEFAULT_XP_MULTIPLIER) - inicio) as f64;
         let parcela = total as f64 / teto;
-        assert!(parcela <= PARCELA_DA_HISTORIA as f64 + 0.005, "story pays {parcela:.3} of 1-120");
-        assert!(parcela >= PARCELA_DA_HISTORIA as f64 * 0.8, "story pays only {parcela:.3} of 1-120");
+        assert!(
+            parcela <= PARCELA_DA_HISTORIA as f64 + 0.005,
+            "story pays {parcela:.3} of 1-120"
+        );
+        assert!(
+            parcela >= PARCELA_DA_HISTORIA as f64 * 0.8,
+            "story pays only {parcela:.3} of 1-120"
+        );
     }
 
     #[test]
     fn contrato_nunca_paga_mais_que_os_abates() {
-        for q in QUESTS.iter().filter(|q| q.repeatable && !q.daily && q.obj_kind == ok::KILL && q.obj_target == 0) {
+        for q in QUESTS
+            .iter()
+            .filter(|q| q.repeatable && !q.daily && q.obj_kind == ok::KILL && q.obj_target == 0)
+        {
             let abates = q.obj_count as u64 * xp_do_abate(BASE_TIPICA, q.min_level.max(1));
-            assert!(xp_da_quest(q) * 5 < abates, "{} '{}' pays {} for kills worth {abates}", q.id, q.title, xp_da_quest(q));
+            assert!(
+                xp_da_quest(q) * 5 < abates,
+                "{} '{}' pays {} for kills worth {abates}",
+                q.id,
+                q.title,
+                xp_da_quest(q)
+            );
         }
     }
 }
@@ -519,9 +547,16 @@ mod testes_da_escala {
         let fim = crate::constants::xp_for_level_with_mult(NIVEL_MAX, m);
         for n in 2..NIVEL_MAX_EXIBIDO {
             let ini = xp_do_nivel_exibido(n, m);
-            assert!(ini > xp_do_nivel_exibido(n - 1, m), "{n}: the bar has length");
+            assert!(
+                ini > xp_do_nivel_exibido(n - 1, m),
+                "{n}: the bar has length"
+            );
             assert_eq!(nivel_exibido(ini + 1, m), n, "start of {n}");
-            assert_eq!(nivel_exibido(ini.saturating_sub(1), m), n - 1, "just before {n}");
+            assert_eq!(
+                nivel_exibido(ini.saturating_sub(1), m),
+                n - 1,
+                "just before {n}"
+            );
         }
         assert_eq!(nivel_exibido(fim, m), NIVEL_MAX_EXIBIDO);
         assert_eq!(nivel_exibido(fim * 4, m), NIVEL_MAX_EXIBIDO);

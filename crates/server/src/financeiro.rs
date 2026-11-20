@@ -55,7 +55,11 @@ struct Dinheiro {
 
 impl Dinheiro {
     fn micros(&self) -> i64 {
-        let u: i64 = self.units.as_deref().and_then(|u| u.parse().ok()).unwrap_or(0);
+        let u: i64 = self
+            .units
+            .as_deref()
+            .and_then(|u| u.parse().ok())
+            .unwrap_or(0);
         u.saturating_mul(1_000_000) + self.nanos.unwrap_or(0) / 1_000
     }
 }
@@ -238,7 +242,11 @@ mod testes {
         assert_eq!(p.comprador.pais, "ID");
         assert_eq!(p.total.micros(), 19_980_000_000);
         assert_eq!(p.receita.micros(), 12_600_000_000);
-        let br = Dinheiro { moeda: "BRL".into(), units: None, nanos: Some(990_000_000) };
+        let br = Dinheiro {
+            moeda: "BRL".into(),
+            units: None,
+            nanos: Some(990_000_000),
+        };
         assert_eq!(br.micros(), 990_000);
         assert_eq!(centavos(br.micros(), 1.0), 99);
     }

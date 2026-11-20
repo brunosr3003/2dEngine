@@ -57,7 +57,9 @@ impl ViagemUi {
         let w = (560.0 * f).min(seguro.w - 16.0);
         let linhas = destinos.len() + usize::from(colonia);
         // Every island fits (seven since the portal): rows shrink to fit.
-        let linha_h = (74.0 * f).min((seguro.h - 16.0 - 112.0 * f) / linhas.max(1) as f32).max(50.0 * f);
+        let linha_h = (74.0 * f)
+            .min((seguro.h - 16.0 - 112.0 * f) / linhas.max(1) as f32)
+            .max(50.0 * f);
         let h = (96.0 * f + linha_h * linhas as f32 + 16.0 * f).min(seguro.h - 16.0);
         let p = Rect::new(
             seguro.center().x - w * 0.5,
@@ -70,7 +72,13 @@ impl ViagemUi {
         let m = Vec2::from(mouse_position());
         let clicou = crate::foco::clique();
         let x0 = p.x + 20.0 * f;
-        estilo::texto_forte(x0, p.y + 36.0 * f, crate::portal_ilhas_ui::NOME, 20, crate::portal_ilhas_ui::OURO);
+        estilo::texto_forte(
+            x0,
+            p.y + 36.0 * f,
+            crate::portal_ilhas_ui::NOME,
+            20,
+            crate::portal_ilhas_ui::OURO,
+        );
         estilo::texto(
             x0,
             p.y + 62.0 * f,
@@ -110,12 +118,7 @@ impl ViagemUi {
                 let rotulo = rotulo_de_embarque(d);
                 let bw = (estilo::medir_forte(&rotulo, 15) + 28.0 * f).max(124.0 * f);
                 let bh = (40.0 * f).min(r.h - 8.0 * f);
-                let b = Rect::new(
-                    r.x + r.w - bw - 12.0 * f,
-                    r.y + (r.h - bh) * 0.5,
-                    bw,
-                    bh,
-                );
+                let b = Rect::new(r.x + r.w - bw - 12.0 * f, r.y + (r.h - bh) * 0.5, bw, bh);
                 estilo::botao(b, &rotulo, estilo::estado_de(b, false, false), true);
                 if clicou && b.toca(m) {
                     escolha = Some(Escolha::Ilha(d.ilha));
@@ -185,7 +188,10 @@ pub fn rotulo_de_embarque(d: &Destino) -> String {
 
 /// Each island's second line: level and what is missing to go.
 pub fn subtitulo(d: &Destino) -> String {
-    let nivel = format!("Level {}", shared::progressao::texto_de_faixa(d.nivel_min as u32, d.nivel_max as u32));
+    let nivel = format!(
+        "Level {}",
+        shared::progressao::texto_de_faixa(d.nivel_min as u32, d.nivel_max as u32)
+    );
     match d.estado {
         estado::AQUI => format!("{nivel} · you are here"),
         estado::LIBERADA => nivel,
@@ -215,17 +221,29 @@ mod tests {
     fn a_linha_do_navio_conta_as_estrelas() {
         let id = shared::item_id::NAVIO_CHALUPA;
         let mut d = shared::navio::novo(id);
-        assert_eq!(linha_do_navio(id, &d), "Hull 2400 / 2400 · Speed 10.0 · Turning Agile · Cannon ×1.00");
+        assert_eq!(
+            linha_do_navio(id, &d),
+            "Hull 2400 / 2400 · Speed 10.0 · Turning Agile · Cannon ×1.00"
+        );
         d.estrelas = [5, 5, 5];
-        assert_eq!(linha_do_navio(id, &d), "Hull 2400 / 3360 · Speed 11.5 · Turning Agile · Cannon ×1.40");
+        assert_eq!(
+            linha_do_navio(id, &d),
+            "Hull 2400 / 3360 · Speed 11.5 · Turning Agile · Cannon ×1.40"
+        );
         let nau = shared::item_id::NAVIO_NAU;
         assert!(linha_do_navio(nau, &shared::navio::novo(nau)).contains("Turning Heavy"));
     }
 
     #[test]
     fn o_botao_mostra_o_preco() {
-        assert_eq!(rotulo_de_embarque(&d(estado::LIBERADA)), "Board · 100 copper");
-        let gratis = Destino { preco: 0, ..d(estado::LIBERADA) };
+        assert_eq!(
+            rotulo_de_embarque(&d(estado::LIBERADA)),
+            "Board · 100 copper"
+        );
+        let gratis = Destino {
+            preco: 0,
+            ..d(estado::LIBERADA)
+        };
         assert_eq!(rotulo_de_embarque(&gratis), "Board");
     }
 

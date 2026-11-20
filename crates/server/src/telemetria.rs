@@ -395,7 +395,8 @@ pub fn spawn(pool: PgPool) {
             let medidas = drenar_medidas();
             let erros = drenar_erros();
             let personagens = drenar_personagens();
-            if let Err(e) = gravar(&pool, &canal, &contadores, &medidas, &erros, &personagens).await {
+            if let Err(e) = gravar(&pool, &canal, &contadores, &medidas, &erros, &personagens).await
+            {
                 devolver(contadores);
                 devolver_erros(erros);
                 devolver_personagens(personagens);
@@ -497,7 +498,8 @@ async fn gravar(
         .await?;
     }
     if !personagens.is_empty() {
-        let (mut tipos, mut chaves, mut quem, mut valores) = (Vec::new(), Vec::new(), Vec::new(), Vec::new());
+        let (mut tipos, mut chaves, mut quem, mut valores) =
+            (Vec::new(), Vec::new(), Vec::new(), Vec::new());
         for ((t, c, p), v) in personagens {
             tipos.push(t.to_string());
             chaves.push(c.clone());

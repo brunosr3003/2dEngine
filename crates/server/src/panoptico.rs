@@ -650,7 +650,11 @@ pub async fn servir(pool: sqlx::PgPool) -> anyhow::Result<()> {
         if q.get("token").map(String::as_str) != Some(esperado.as_str()) {
             return (StatusCode::FORBIDDEN, "token").into_response();
         }
-        let nome = |k: &str| q.get(k).map(|v| v.trim().to_string()).filter(|v| !v.is_empty());
+        let nome = |k: &str| {
+            q.get(k)
+                .map(|v| v.trim().to_string())
+                .filter(|v| !v.is_empty())
+        };
         let (Some(a), Some(b)) = (nome("a"), nome("b")) else {
             return (StatusCode::BAD_REQUEST, "a and b are required").into_response();
         };
@@ -660,10 +664,18 @@ pub async fn servir(pool: sqlx::PgPool) -> anyhow::Result<()> {
         };
         let (ra, rb) = match (carrega(a.clone()).await, carrega(b.clone()).await) {
             (Ok(Some(x)), Ok(Some(y))) => (x, y),
-            (Ok(None), _) => return (StatusCode::NOT_FOUND, format!("no character {a}")).into_response(),
-            (_, Ok(None)) => return (StatusCode::NOT_FOUND, format!("no character {b}")).into_response(),
+            (Ok(None), _) => {
+                return (StatusCode::NOT_FOUND, format!("no character {a}")).into_response()
+            }
+            (_, Ok(None)) => {
+                return (StatusCode::NOT_FOUND, format!("no character {b}")).into_response()
+            }
             (Err(e), _) | (_, Err(e)) => {
-                return (StatusCode::INTERNAL_SERVER_ERROR, format!("load failed: {e}")).into_response()
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("load failed: {e}"),
+                )
+                    .into_response()
             }
         };
         let catalogo = crate::pvp_sim::catalogo();

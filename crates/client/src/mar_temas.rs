@@ -106,7 +106,9 @@ pub struct Tema {
 }
 
 fn h01(a: i32, b: i32, s: u32) -> f32 {
-    let mut h = (a as u32).wrapping_mul(0x9E37_79B1) ^ (b as u32).wrapping_mul(0x85EB_CA77) ^ s.wrapping_mul(0x27D4_EB2F);
+    let mut h = (a as u32).wrapping_mul(0x9E37_79B1)
+        ^ (b as u32).wrapping_mul(0x85EB_CA77)
+        ^ s.wrapping_mul(0x27D4_EB2F);
     h ^= h >> 15;
     h = h.wrapping_mul(0x2C1B_3C6D);
     h ^= h >> 12;
@@ -143,24 +145,57 @@ pub fn tema(i: &IlhaVista) -> Tema {
             let f = mq(i.farol());
             t.ilhotas = vec![
                 // The floating PIER the sky-lift climbs to, over the quay.
-                Ilhota { c: f - e * 2.0, r: 15.0, topo: 40.0 },
-                Ilhota { c: c - e * (r * 0.15), r: 46.0, topo: 72.0 },
+                Ilhota {
+                    c: f - e * 2.0,
+                    r: 15.0,
+                    topo: 40.0,
+                },
+                Ilhota {
+                    c: c - e * (r * 0.15),
+                    r: 46.0,
+                    topo: 72.0,
+                },
                 // The waterfall's isle, overhanging the sea.
-                Ilhota { c: c - l * (r * 0.82), r: 28.0, topo: 56.0 },
-                Ilhota { c: c + l * (r * 0.35) - e * (r * 0.45), r: 30.0, topo: 92.0 },
-                Ilhota { c: c - e * (r * 0.62) - l * (r * 0.3), r: 22.0, topo: 48.0 },
+                Ilhota {
+                    c: c - l * (r * 0.82),
+                    r: 28.0,
+                    topo: 56.0,
+                },
+                Ilhota {
+                    c: c + l * (r * 0.35) - e * (r * 0.45),
+                    r: 30.0,
+                    topo: 92.0,
+                },
+                Ilhota {
+                    c: c - e * (r * 0.62) - l * (r * 0.3),
+                    r: 22.0,
+                    topo: 48.0,
+                },
             ];
             let q = t.ilhotas[2];
             let borda = q.c - l * (q.r * 0.95);
-            t.cachoeira = Some((vec3(borda.x, q.topo - 1.5, borda.y), vec3(borda.x, 0.0, borda.y)));
+            t.cachoeira = Some((
+                vec3(borda.x, q.topo - 1.5, borda.y),
+                vec3(borda.x, 0.0, borda.y),
+            ));
             for k in [1usize, 3] {
                 let q = t.ilhotas[k];
-                t.luzes.push((vec3(q.c.x, q.topo + q.r * 0.1 + 1.5, q.c.y), vec3(1.0, 0.9, 0.55), k as f32));
+                t.luzes.push((
+                    vec3(q.c.x, q.topo + q.r * 0.1 + 1.5, q.c.y),
+                    vec3(1.0, 0.9, 0.55),
+                    k as f32,
+                ));
             }
         }
         Feitio::Neon => {
-            let (k0, k1) = (((c.x - r) / 30.0).floor() as i32, ((c.x + r) / 30.0).ceil() as i32);
-            let (j0, j1) = (((c.y - r) / 30.0).floor() as i32, ((c.y + r) / 30.0).ceil() as i32);
+            let (k0, k1) = (
+                ((c.x - r) / 30.0).floor() as i32,
+                ((c.x + r) / 30.0).ceil() as i32,
+            );
+            let (j0, j1) = (
+                ((c.y - r) / 30.0).floor() as i32,
+                ((c.y + r) / 30.0).ceil() as i32,
+            );
             for kz in j0..=j1 {
                 for kx in k0..=k1 {
                     let p = vec2(kx as f32 * 30.0 + 18.5, kz as f32 * 30.0 + 18.5);
@@ -170,16 +205,28 @@ pub fn tema(i: &IlhaVista) -> Tema {
                     let a = h01(kx, kz, s);
                     let perto = 1.0 - (p.distance(c) / r).clamp(0.0, 1.0);
                     let h = 14.0 + 38.0 * a * a + 46.0 * perto * perto;
-                    let meia = vec2(5.0 + 5.0 * h01(kx, kz, s ^ 3), 5.0 + 5.0 * h01(kx, kz, s ^ 5));
+                    let meia = vec2(
+                        5.0 + 5.0 * h01(kx, kz, s ^ 3),
+                        5.0 + 5.0 * h01(kx, kz, s ^ 5),
+                    );
                     let neon = (h01(kx, kz, s ^ 9) * 3.0) as usize;
-                    t.torres.push(Torre { c: p, meia, h, neon });
+                    t.torres.push(Torre {
+                        c: p,
+                        meia,
+                        h,
+                        neon,
+                    });
                 }
             }
             // The roof lights blink (aircraft warning), and read the
             // skyline at night and through the haze.
             for (n, tr) in t.torres.iter().enumerate().filter(|(_, tr)| tr.h > 34.0) {
                 let y = chao(tr.c) + tr.h + 1.2;
-                t.luzes.push((vec3(tr.c.x, y, tr.c.y), vec3(1.0, 0.18, 0.12), -(n as f32 * 0.37 + 0.1)));
+                t.luzes.push((
+                    vec3(tr.c.x, y, tr.c.y),
+                    vec3(1.0, 0.18, 0.12),
+                    -(n as f32 * 0.37 + 0.1),
+                ));
             }
         }
         Feitio::Abissal => {
@@ -187,13 +234,24 @@ pub fn tema(i: &IlhaVista) -> Tema {
             for k in 0..10 {
                 let a = k as f32 / 10.0 * std::f32::consts::TAU + i.fase;
                 let costa = i.costa(a);
-                let raio = costa * (mar::FRACAO_DA_LAGOA + (1.0 - mar::FRACAO_DA_LAGOA) * (0.45 + 0.2 * h01(k, 1, s)));
+                let raio = costa
+                    * (mar::FRACAO_DA_LAGOA
+                        + (1.0 - mar::FRACAO_DA_LAGOA) * (0.45 + 0.2 * h01(k, 1, s)));
                 let p = c + vec2(a.cos(), a.sin()) * raio;
                 if !em_terra(p, 3.0) || !longe_do_cais(i, p, 30.0) {
                     continue;
                 }
-                let pico = Pico { c: p, r: 2.0 + 1.6 * h01(k, 2, s), h: 9.0 + 13.0 * h01(k, 3, s), chao: chao(p) };
-                t.luzes.push((vec3(p.x, pico.chao + pico.h + 0.6, p.y), vec3(0.35, 1.0, 0.95), k as f32 * 0.9));
+                let pico = Pico {
+                    c: p,
+                    r: 2.0 + 1.6 * h01(k, 2, s),
+                    h: 9.0 + 13.0 * h01(k, 3, s),
+                    chao: chao(p),
+                };
+                t.luzes.push((
+                    vec3(p.x, pico.chao + pico.h + 0.6, p.y),
+                    vec3(0.35, 1.0, 0.95),
+                    k as f32 * 0.9,
+                ));
                 t.picos.push(pico);
             }
         }
@@ -216,7 +274,12 @@ const LUZ: Vec3 = Vec3::new(0.36, 0.82, 0.44);
 fn tinta(m: Material, luz: f32) -> [u8; 4] {
     let (r, g, b) = m.rgb();
     let k = luz.clamp(0.0, 1.2);
-    [(r as f32 * k).min(255.0) as u8, (g as f32 * k).min(255.0) as u8, (b as f32 * k).min(255.0) as u8, 255]
+    [
+        (r as f32 * k).min(255.0) as u8,
+        (g as f32 * k).min(255.0) as u8,
+        (b as f32 * k).min(255.0) as u8,
+        255,
+    ]
 }
 
 /// Lit by the sea's sun the way the voxel faces are (top 1.0, sides less).
@@ -227,19 +290,32 @@ fn luz_de(fora: Vec3) -> f32 {
 
 impl Obra {
     fn nova() -> Self {
-        Obra { verts: Vec::new(), idx: Vec::new(), prontas: Vec::new() }
+        Obra {
+            verts: Vec::new(),
+            idx: Vec::new(),
+            prontas: Vec::new(),
+        }
     }
 
     fn cabe(&mut self, n: usize) {
         if self.verts.len() + n > 60_000 {
             let v = std::mem::take(&mut self.verts);
             let i = std::mem::take(&mut self.idx);
-            self.prontas.push(Mesh { vertices: v, indices: i, texture: None });
+            self.prontas.push(Mesh {
+                vertices: v,
+                indices: i,
+                texture: None,
+            });
         }
     }
 
     fn v(&mut self, p: Vec3, c: [u8; 4]) -> u16 {
-        self.verts.push(Vertex { position: p, uv: Vec2::ZERO, color: c, normal: Vec4::ZERO });
+        self.verts.push(Vertex {
+            position: p,
+            uv: Vec2::ZERO,
+            color: c,
+            normal: Vec4::ZERO,
+        });
         (self.verts.len() - 1) as u16
     }
 
@@ -247,7 +323,11 @@ impl Obra {
     fn tri(&mut self, a: Vec3, b: Vec3, c: Vec3, fora: Vec3, m: Material) {
         self.cabe(3);
         let cor = tinta(m, luz_de(fora));
-        let (b, c) = if (b - a).cross(c - a).dot(fora) >= 0.0 { (b, c) } else { (c, b) };
+        let (b, c) = if (b - a).cross(c - a).dot(fora) >= 0.0 {
+            (b, c)
+        } else {
+            (c, b)
+        };
         let (ia, ib, ic) = (self.v(a, cor), self.v(b, cor), self.v(c, cor));
         self.idx.extend_from_slice(&[ia, ib, ic]);
     }
@@ -255,28 +335,88 @@ impl Obra {
     fn quad(&mut self, q: [Vec3; 4], fora: Vec3, m: Material) {
         self.cabe(4);
         let cor = tinta(m, luz_de(fora));
-        let q = if (q[1] - q[0]).cross(q[2] - q[0]).dot(fora) >= 0.0 { q } else { [q[0], q[3], q[2], q[1]] };
+        let q = if (q[1] - q[0]).cross(q[2] - q[0]).dot(fora) >= 0.0 {
+            q
+        } else {
+            [q[0], q[3], q[2], q[1]]
+        };
         let b = self.verts.len() as u16;
         for p in q {
             self.v(p, cor);
         }
-        self.idx.extend_from_slice(&[b, b + 1, b + 2, b, b + 2, b + 3]);
+        self.idx
+            .extend_from_slice(&[b, b + 1, b + 2, b, b + 2, b + 3]);
     }
 
     /// A box from `a` to `b` (no floor).
     fn caixa(&mut self, a: Vec3, b: Vec3, m: Material) {
         let (x0, y0, z0, x1, y1, z1) = (a.x, a.y, a.z, b.x, b.y, b.z);
-        self.quad([vec3(x0, y1, z0), vec3(x1, y1, z0), vec3(x1, y1, z1), vec3(x0, y1, z1)], Vec3::Y, m);
-        self.quad([vec3(x0, y0, z0), vec3(x1, y0, z0), vec3(x1, y1, z0), vec3(x0, y1, z0)], -Vec3::Z, m);
-        self.quad([vec3(x0, y0, z1), vec3(x1, y0, z1), vec3(x1, y1, z1), vec3(x0, y1, z1)], Vec3::Z, m);
-        self.quad([vec3(x0, y0, z0), vec3(x0, y0, z1), vec3(x0, y1, z1), vec3(x0, y1, z0)], -Vec3::X, m);
-        self.quad([vec3(x1, y0, z0), vec3(x1, y0, z1), vec3(x1, y1, z1), vec3(x1, y1, z0)], Vec3::X, m);
+        self.quad(
+            [
+                vec3(x0, y1, z0),
+                vec3(x1, y1, z0),
+                vec3(x1, y1, z1),
+                vec3(x0, y1, z1),
+            ],
+            Vec3::Y,
+            m,
+        );
+        self.quad(
+            [
+                vec3(x0, y0, z0),
+                vec3(x1, y0, z0),
+                vec3(x1, y1, z0),
+                vec3(x0, y1, z0),
+            ],
+            -Vec3::Z,
+            m,
+        );
+        self.quad(
+            [
+                vec3(x0, y0, z1),
+                vec3(x1, y0, z1),
+                vec3(x1, y1, z1),
+                vec3(x0, y1, z1),
+            ],
+            Vec3::Z,
+            m,
+        );
+        self.quad(
+            [
+                vec3(x0, y0, z0),
+                vec3(x0, y0, z1),
+                vec3(x0, y1, z1),
+                vec3(x0, y1, z0),
+            ],
+            -Vec3::X,
+            m,
+        );
+        self.quad(
+            [
+                vec3(x1, y0, z0),
+                vec3(x1, y0, z1),
+                vec3(x1, y1, z1),
+                vec3(x1, y1, z0),
+            ],
+            Vec3::X,
+            m,
+        );
     }
 
     /// An upright prism of `lados` sides from `y0` to `y1`, capped with a
     /// point `ponta` above `y1` (0 = flat).
     #[allow(clippy::too_many_arguments)]
-    fn prisma(&mut self, c: Vec2, y0: f32, y1: f32, r: f32, lados: usize, lado: Material, topo: Material, ponta: f32) {
+    fn prisma(
+        &mut self,
+        c: Vec2,
+        y0: f32,
+        y1: f32,
+        r: f32,
+        lados: usize,
+        lado: Material,
+        topo: Material,
+        ponta: f32,
+    ) {
         let pt = |k: usize, y: f32| {
             let a = k as f32 / lados as f32 * std::f32::consts::TAU;
             vec3(c.x + a.cos() * r, y, c.y + a.sin() * r)
@@ -288,7 +428,11 @@ impl Obra {
             let fora = vec3(meio.x - c.x, 0.0, meio.z - c.y);
             self.quad([a, b, b1, a1], fora, lado);
             let tip = vec3(c.x, y1 + ponta, c.y);
-            let fora_topo = if ponta > 0.0 { fora.normalize_or_zero() * ponta + Vec3::Y * r } else { Vec3::Y };
+            let fora_topo = if ponta > 0.0 {
+                fora.normalize_or_zero() * ponta + Vec3::Y * r
+            } else {
+                Vec3::Y
+            };
             self.tri(a1, b1, tip, fora_topo, topo);
         }
     }
@@ -307,23 +451,46 @@ impl Obra {
         let tip = vec3(q.c.x, q.topo - q.r * 1.15, q.c.y);
         for k in 0..N {
             let k1 = k + 1;
-            let (b0, b1) = (anel(k, q.r * 0.97, q.topo, 1), anel(k1 % N, q.r * 0.97, q.topo, 1));
-            let (a0, a1) = (anel(k, q.r, q.topo - 1.6, 1), anel(k1 % N, q.r, q.topo - 1.6, 1));
-            let (c0, c1) = (anel(k, q.r * 0.6, q.topo - q.r * 0.55, 2), anel(k1 % N, q.r * 0.6, q.topo - q.r * 0.55, 2));
+            let (b0, b1) = (
+                anel(k, q.r * 0.97, q.topo, 1),
+                anel(k1 % N, q.r * 0.97, q.topo, 1),
+            );
+            let (a0, a1) = (
+                anel(k, q.r, q.topo - 1.6, 1),
+                anel(k1 % N, q.r, q.topo - 1.6, 1),
+            );
+            let (c0, c1) = (
+                anel(k, q.r * 0.6, q.topo - q.r * 0.55, 2),
+                anel(k1 % N, q.r * 0.6, q.topo - q.r * 0.55, 2),
+            );
             let out = {
                 let m = (a0 + a1) * 0.5;
                 vec3(m.x - q.c.x, 0.0, m.z - q.c.y)
             };
             self.tri(topo_c, b0, b1, Vec3::Y, Material::GramaCeleste);
             self.quad([a0, a1, b1, b0], out, Material::Marmore);
-            self.quad([c0, c1, a1, a0], out.normalize_or_zero() - Vec3::Y * 0.5, Material::MarmoreSombra);
-            self.tri(c0, c1, tip, out.normalize_or_zero() - Vec3::Y, Material::RochaEscura);
+            self.quad(
+                [c0, c1, a1, a0],
+                out.normalize_or_zero() - Vec3::Y * 0.5,
+                Material::MarmoreSombra,
+            );
+            self.tri(
+                c0,
+                c1,
+                tip,
+                out.normalize_or_zero() - Vec3::Y,
+                Material::RochaEscura,
+            );
         }
     }
 
     fn fim(mut self) -> Vec<Mesh> {
         if !self.idx.is_empty() {
-            self.prontas.push(Mesh { vertices: self.verts, indices: self.idx, texture: None });
+            self.prontas.push(Mesh {
+                vertices: self.verts,
+                indices: self.idx,
+                texture: None,
+            });
         }
         self.prontas
     }
@@ -346,27 +513,70 @@ pub fn malha_de_longe(i: &IlhaVista, t: &Tema) -> Vec<Mesh> {
                     let a = k as f32 * 1.7 + q.topo;
                     let p = q.c + vec2(a.cos(), a.sin()) * q.r * 0.45;
                     let y = q.topo + q.r * 0.06;
-                    o.prisma(p, y, y + 2.5, 0.5, 4, Material::TroncoBranco, Material::TroncoBranco, 0.0);
-                    o.prisma(p, y + 2.0, y + 4.0, 2.6, 6, Material::FolhaDourada, Material::FolhaDourada, 3.2);
+                    o.prisma(
+                        p,
+                        y,
+                        y + 2.5,
+                        0.5,
+                        4,
+                        Material::TroncoBranco,
+                        Material::TroncoBranco,
+                        0.0,
+                    );
+                    o.prisma(
+                        p,
+                        y + 2.0,
+                        y + 4.0,
+                        2.6,
+                        6,
+                        Material::FolhaDourada,
+                        Material::FolhaDourada,
+                        3.2,
+                    );
                 }
             }
         }
         Feitio::Neon => {
-            let neons = [Material::NeonRosa, Material::NeonCiano, Material::NeonAmarelo];
+            let neons = [
+                Material::NeonRosa,
+                Material::NeonCiano,
+                Material::NeonAmarelo,
+            ];
             for tr in &t.torres {
                 let y0 = chao(tr.c) - 0.5;
                 let (a, b) = (tr.c - tr.meia, tr.c + tr.meia);
-                let corpo = if tr.neon == 1 { Material::Vidro } else { Material::ConcretoEscuro };
+                let corpo = if tr.neon == 1 {
+                    Material::Vidro
+                } else {
+                    Material::ConcretoEscuro
+                };
                 o.caixa(vec3(a.x, y0, a.y), vec3(b.x, y0 + tr.h, b.y), corpo);
                 // Neon bands round the tower and a crown band at the top.
                 let mut y = y0 + 7.0;
                 while y < y0 + tr.h - 3.0 {
-                    o.caixa(vec3(a.x - 0.15, y, a.y - 0.15), vec3(b.x + 0.15, y + 0.6, b.y + 0.15), neons[tr.neon]);
+                    o.caixa(
+                        vec3(a.x - 0.15, y, a.y - 0.15),
+                        vec3(b.x + 0.15, y + 0.6, b.y + 0.15),
+                        neons[tr.neon],
+                    );
                     y += 9.0;
                 }
-                o.caixa(vec3(a.x - 0.2, y0 + tr.h - 1.4, a.y - 0.2), vec3(b.x + 0.2, y0 + tr.h - 0.6, b.y + 0.2), neons[(tr.neon + 1) % 3]);
+                o.caixa(
+                    vec3(a.x - 0.2, y0 + tr.h - 1.4, a.y - 0.2),
+                    vec3(b.x + 0.2, y0 + tr.h - 0.6, b.y + 0.2),
+                    neons[(tr.neon + 1) % 3],
+                );
                 if tr.h > 34.0 {
-                    o.prisma(tr.c, y0 + tr.h, y0 + tr.h + 1.0, 0.25, 4, Material::RochaEscura, Material::RochaEscura, 0.0);
+                    o.prisma(
+                        tr.c,
+                        y0 + tr.h,
+                        y0 + tr.h + 1.0,
+                        0.25,
+                        4,
+                        Material::RochaEscura,
+                        Material::RochaEscura,
+                        0.0,
+                    );
                 }
             }
             // The two container cranes on the quay, read from afar: legs, a
@@ -374,7 +584,10 @@ pub fn malha_de_longe(i: &IlhaVista, t: &Tema) -> Vec<Mesh> {
             for (x, z) in [(7.0f32, -12.0f32), (-14.0, -14.0)] {
                 let p = |lx: f32, ly: f32, lz: f32| crate::mar_cena::no_mundo(i, vec3(lx, ly, lz));
                 for (dx, dz) in [(0.0, 0.0), (5.0, 0.0), (0.0, 5.0), (5.0, 5.0)] {
-                    let (a, b) = (p(x + dx - 0.4, 1.0, z + dz - 0.4), p(x + dx + 0.4, 14.0, z + dz + 0.4));
+                    let (a, b) = (
+                        p(x + dx - 0.4, 1.0, z + dz - 0.4),
+                        p(x + dx + 0.4, 14.0, z + dz + 0.4),
+                    );
                     o.caixa(a.min(b), a.max(b), Material::PetalaVermelha);
                 }
                 let (a, b) = (p(x - 0.5, 14.0, z - 0.5), p(x + 5.5, 15.4, z + 5.5));
@@ -385,11 +598,38 @@ pub fn malha_de_longe(i: &IlhaVista, t: &Tema) -> Vec<Mesh> {
         }
         Feitio::Abissal => {
             for (k, pc) in t.picos.iter().enumerate() {
-                o.prisma(pc.c, pc.chao - 0.5, pc.chao + pc.h * 0.7, pc.r, 6, Material::Coral, Material::Coral, 0.0);
-                o.prisma(pc.c, pc.chao + pc.h * 0.7, pc.chao + pc.h, pc.r * 0.55, 6, Material::Coral, Material::CristalAzul, pc.r * 0.8);
+                o.prisma(
+                    pc.c,
+                    pc.chao - 0.5,
+                    pc.chao + pc.h * 0.7,
+                    pc.r,
+                    6,
+                    Material::Coral,
+                    Material::Coral,
+                    0.0,
+                );
+                o.prisma(
+                    pc.c,
+                    pc.chao + pc.h * 0.7,
+                    pc.chao + pc.h,
+                    pc.r * 0.55,
+                    6,
+                    Material::Coral,
+                    Material::CristalAzul,
+                    pc.r * 0.8,
+                );
                 // A branch.
                 let d = vec2((k as f32 * 2.1).cos(), (k as f32 * 2.1).sin()) * pc.r * 1.4;
-                o.prisma(pc.c + d, pc.chao - 0.5, pc.chao + pc.h * 0.45, pc.r * 0.5, 5, Material::Coral, Material::CristalAzul, pc.r * 0.6);
+                o.prisma(
+                    pc.c + d,
+                    pc.chao - 0.5,
+                    pc.chao + pc.h * 0.45,
+                    pc.r * 0.5,
+                    5,
+                    Material::Coral,
+                    Material::CristalAzul,
+                    pc.r * 0.6,
+                );
             }
         }
         _ => {}
@@ -442,7 +682,11 @@ struct Paleta {
 fn paleta(f: Feitio) -> Paleta {
     match f {
         Feitio::Celeste => Paleta {
-            tabuas: [Material::Marmore, Material::MarmoreSombra, Material::Marmore],
+            tabuas: [
+                Material::Marmore,
+                Material::MarmoreSombra,
+                Material::Marmore,
+            ],
             borda: Material::FolhaDourada,
             estaca: Material::TroncoBranco,
             poste: Material::TroncoBranco,
@@ -451,7 +695,11 @@ fn paleta(f: Feitio) -> Paleta {
             placa: None,
         },
         Feitio::Neon => Paleta {
-            tabuas: [Material::Concreto, Material::ConcretoEscuro, Material::Concreto],
+            tabuas: [
+                Material::Concreto,
+                Material::ConcretoEscuro,
+                Material::Concreto,
+            ],
             borda: Material::NeonAmarelo,
             estaca: Material::Concreto,
             poste: Material::ConcretoEscuro,
@@ -460,7 +708,11 @@ fn paleta(f: Feitio) -> Paleta {
             placa: Some(Material::NeonCiano),
         },
         _ => Paleta {
-            tabuas: [Material::ConcretoEscuro, Material::RochaAbissal, Material::ConcretoEscuro],
+            tabuas: [
+                Material::ConcretoEscuro,
+                Material::RochaAbissal,
+                Material::ConcretoEscuro,
+            ],
             borda: Material::Arenito,
             estaca: Material::RochaAbissal,
             poste: Material::Arenito,
@@ -484,7 +736,11 @@ fn pier(p: &Paleta) -> Modelo {
         let larg = if z >= cab_z { cab_meia } else { meia };
         let tabua = p.tabuas[z.div_euclid(2).rem_euclid(3) as usize];
         for x in -larg..larg {
-            let m = if x == -larg || x == larg - 1 { p.borda } else { tabua };
+            let m = if x == -larg || x == larg - 1 {
+                p.borda
+            } else {
+                tabua
+            };
             v.poe(x, deck, z, m);
         }
         for x in [-larg, larg - 1] {
@@ -504,20 +760,53 @@ fn pier(p: &Paleta) -> Modelo {
         for s in [-1, 1] {
             let larg = if zl >= cab_z { cab_meia } else { meia };
             let x = if s < 0 { -larg + 1 } else { larg - 2 };
-            bx(&mut v, [x, deck + 1, zl], [x + 1, deck + 12, zl + 1], p.poste);
-            bx(&mut v, [x - 1, deck + 12, zl - 1], [x + 2, deck + 14, zl + 2], p.luz);
-            bx(&mut v, [x - 1, deck + 14, zl - 1], [x + 2, deck + 15, zl + 2], p.poste);
+            bx(
+                &mut v,
+                [x, deck + 1, zl],
+                [x + 1, deck + 12, zl + 1],
+                p.poste,
+            );
+            bx(
+                &mut v,
+                [x - 1, deck + 12, zl - 1],
+                [x + 2, deck + 14, zl + 2],
+                p.luz,
+            );
+            bx(
+                &mut v,
+                [x - 1, deck + 14, zl - 1],
+                [x + 2, deck + 15, zl + 2],
+                p.poste,
+            );
             if let Some(placa) = p.placa {
                 if k < 2 {
                     let xs = if s < 0 { x - 1 } else { x + 1 };
-                    bx(&mut v, [xs, deck + 5, zl - 3], [xs + 1, deck + 10, zl + 4], if s < 0 { placa } else { p.luz });
+                    bx(
+                        &mut v,
+                        [xs, deck + 5, zl - 3],
+                        [xs + 1, deck + 10, zl + 4],
+                        if s < 0 { placa } else { p.luz },
+                    );
                 }
             }
         }
     }
     // Cargo on the head.
-    for (k, (x, zz, h)) in [(cab_meia - 8, cab_z + 3, 3), (cab_meia - 12, cab_z + 2, 3), (-cab_meia + 4, cab_z + 4, 4), (-cab_meia + 8, cab_z + 6, 4)].into_iter().enumerate() {
-        bx(&mut v, [x, deck + 1, zz], [x + 3, deck + 1 + h, zz + 3], p.carga[k / 2]);
+    for (k, (x, zz, h)) in [
+        (cab_meia - 8, cab_z + 3, 3),
+        (cab_meia - 12, cab_z + 2, 3),
+        (-cab_meia + 4, cab_z + 4, 4),
+        (-cab_meia + 8, cab_z + 6, 4),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        bx(
+            &mut v,
+            [x, deck + 1, zz],
+            [x + 3, deck + 1 + h, zz + 3],
+            p.carga[k / 2],
+        );
     }
     malha(&v)
 }
@@ -541,11 +830,21 @@ fn elevador() -> Modelo {
     disco(&mut v, 0, 0, 8.4, b + 2, 1, Material::FolhaDourada);
     let topo = b + 118;
     for (x, z) in [(-6, -6), (4, -6), (-6, 4), (4, 4)] {
-        bx(&mut v, [x, b + 3, z], [x + 2, topo, z + 2], Material::TroncoBranco);
+        bx(
+            &mut v,
+            [x, b + 3, z],
+            [x + 2, topo, z + 2],
+            Material::TroncoBranco,
+        );
     }
     let mut y = b + 14;
     while y < topo {
-        for (a, c) in [([-6, y, -6], [6, y + 1, -5]), ([-6, y, 5], [6, y + 1, 6]), ([-6, y, -6], [-5, y + 1, 6]), ([5, y, -6], [6, y + 1, 6])] {
+        for (a, c) in [
+            ([-6, y, -6], [6, y + 1, -5]),
+            ([-6, y, 5], [6, y + 1, 6]),
+            ([-6, y, -6], [-5, y + 1, 6]),
+            ([5, y, -6], [6, y + 1, 6]),
+        ] {
             bx(&mut v, a, c, Material::TroncoBranco);
         }
         y += 16;
@@ -560,15 +859,41 @@ fn elevador() -> Modelo {
                     continue;
                 }
                 let janela = borda && (4..9).contains(&(y - cab)) && (x.abs() < 2 || z.abs() < 2);
-                v.poe(x, y, z, if janela { Material::JanelaAcesa } else if y == cab + 11 { Material::FolhaDourada } else { Material::Marmore });
+                v.poe(
+                    x,
+                    y,
+                    z,
+                    if janela {
+                        Material::JanelaAcesa
+                    } else if y == cab + 11 {
+                        Material::FolhaDourada
+                    } else {
+                        Material::Marmore
+                    },
+                );
             }
         }
     }
     for x in [-1, 1] {
-        bx(&mut v, [x, cab + 12, 0], [x + 1, topo, 1], Material::RochaEscura);
-        bx(&mut v, [x, b + 3, 0], [x + 1, cab, 1], Material::RochaEscura);
+        bx(
+            &mut v,
+            [x, cab + 12, 0],
+            [x + 1, topo, 1],
+            Material::RochaEscura,
+        );
+        bx(
+            &mut v,
+            [x, b + 3, 0],
+            [x + 1, cab, 1],
+            Material::RochaEscura,
+        );
     }
-    bx(&mut v, [-5, topo, -5], [5, topo + 6, 5], Material::FolhaDourada);
+    bx(
+        &mut v,
+        [-5, topo, -5],
+        [5, topo + 6, 5],
+        Material::FolhaDourada,
+    );
     malha(&v)
 }
 
@@ -582,10 +907,27 @@ fn cais_celeste() -> Modelo {
     for k in 0..6 {
         let a = k as f32 / 6.0 * std::f32::consts::TAU;
         let (x, z) = (cx + (a.cos() * 9.0) as i32, cz + (a.sin() * 9.0) as i32);
-        bx(&mut v, [x, b + 1, z], [x + 2, b + 16, z + 2], Material::Marmore);
+        bx(
+            &mut v,
+            [x, b + 1, z],
+            [x + 2, b + 16, z + 2],
+            Material::Marmore,
+        );
     }
     for (k, r) in [11.0f32, 10.0, 8.5, 6.5, 4.0, 1.5].into_iter().enumerate() {
-        disco(&mut v, cx, cz, r, b + 16 + k as i32, 1, if k == 0 { Material::Marmore } else { Material::FolhaDourada });
+        disco(
+            &mut v,
+            cx,
+            cz,
+            r,
+            b + 16 + k as i32,
+            1,
+            if k == 0 {
+                Material::Marmore
+            } else {
+                Material::FolhaDourada
+            },
+        );
     }
     for (x, z) in [(14, -16), (-16, -14), (-18, -30)] {
         bx(&mut v, [x, b, z], [x + 4, b + 3, z + 4], Material::Marmore);
@@ -608,12 +950,21 @@ fn mastro_neon() -> Modelo {
     disco(&mut v, 0, 0, 8.0, b + 3, 1, Material::NeonAmarelo);
     let topo = b + 86;
     for (x, z) in [(-3, -3), (2, -3), (-3, 2), (2, 2)] {
-        bx(&mut v, [x, b + 4, z], [x + 1, topo, z + 1], Material::ConcretoEscuro);
+        bx(
+            &mut v,
+            [x, b + 4, z],
+            [x + 1, topo, z + 1],
+            Material::ConcretoEscuro,
+        );
     }
     let mut y = b + 10;
     let mut k = 0;
     while y < topo {
-        let m = if k % 2 == 0 { Material::NeonRosa } else { Material::NeonCiano };
+        let m = if k % 2 == 0 {
+            Material::NeonRosa
+        } else {
+            Material::NeonCiano
+        };
         for z in -4i32..=4 {
             for x in -4i32..=4 {
                 if x.abs() == 4 || z.abs() == 4 {
@@ -627,8 +978,18 @@ fn mastro_neon() -> Modelo {
     // The sign: a lit panel facing the pier.
     bx(&mut v, [-8, b + 36, 3], [8, b + 48, 4], Material::NeonCiano);
     bx(&mut v, [-7, b + 38, 4], [7, b + 46, 5], Material::NeonRosa);
-    bx(&mut v, [-3, topo, -3], [3, topo + 6, 3], Material::JanelaAcesa);
-    bx(&mut v, [-3, topo + 6, -3], [3, topo + 7, 3], Material::ConcretoEscuro);
+    bx(
+        &mut v,
+        [-3, topo, -3],
+        [3, topo + 6, 3],
+        Material::JanelaAcesa,
+    );
+    bx(
+        &mut v,
+        [-3, topo + 6, -3],
+        [3, topo + 7, 3],
+        Material::ConcretoEscuro,
+    );
     malha(&v)
 }
 
@@ -640,14 +1001,46 @@ fn cais_neon() -> Modelo {
     let b = vx(mar::ALTURA_DO_MOLHE);
     for (x0, z0) in [(28, -48), (-56, -56)] {
         for (dx, dz) in [(0, 0), (18, 0), (0, 18), (18, 18)] {
-            bx(&mut v, [x0 + dx, b, z0 + dz], [x0 + dx + 3, b + 52, z0 + dz + 3], Material::PetalaVermelha);
+            bx(
+                &mut v,
+                [x0 + dx, b, z0 + dz],
+                [x0 + dx + 3, b + 52, z0 + dz + 3],
+                Material::PetalaVermelha,
+            );
         }
-        bx(&mut v, [x0 - 1, b + 52, z0 - 1], [x0 + 22, b + 57, z0 + 22], Material::NeonAmarelo);
-        bx(&mut v, [x0 + 8, b + 50, z0 - 16], [x0 + 12, b + 54, z0 + 70], Material::PetalaVermelha);
-        bx(&mut v, [x0 + 7, b + 40, z0 + 40], [x0 + 13, b + 46, z0 + 46], Material::ConcretoEscuro);
-        bx(&mut v, [x0 + 9, b + 46, z0 + 42], [x0 + 11, b + 50, z0 + 44], Material::RochaEscura);
+        bx(
+            &mut v,
+            [x0 - 1, b + 52, z0 - 1],
+            [x0 + 22, b + 57, z0 + 22],
+            Material::NeonAmarelo,
+        );
+        bx(
+            &mut v,
+            [x0 + 8, b + 50, z0 - 16],
+            [x0 + 12, b + 54, z0 + 70],
+            Material::PetalaVermelha,
+        );
+        bx(
+            &mut v,
+            [x0 + 7, b + 40, z0 + 40],
+            [x0 + 13, b + 46, z0 + 46],
+            Material::ConcretoEscuro,
+        );
+        bx(
+            &mut v,
+            [x0 + 9, b + 46, z0 + 42],
+            [x0 + 11, b + 50, z0 + 44],
+            Material::RochaEscura,
+        );
     }
-    let cores = [Material::PetalaVermelha, Material::CristalAzul, Material::NeonAmarelo, Material::GramaEscura, Material::Arenito, Material::Concreto];
+    let cores = [
+        Material::PetalaVermelha,
+        Material::CristalAzul,
+        Material::NeonAmarelo,
+        Material::GramaEscura,
+        Material::Arenito,
+        Material::Concreto,
+    ];
     let mut n = 0usize;
     for (x0, z0) in [(-22, -88), (-22, -58), (14, -88), (36, -86)] {
         let altura = 1 + (n % 3);
@@ -656,7 +1049,12 @@ fn cais_neon() -> Modelo {
             let y = b + k as i32 * 9;
             bx(&mut v, [x0, y, z0], [x0 + 10, y + 9, z0 + 24], m);
             for z in (z0..z0 + 24).step_by(3) {
-                bx(&mut v, [x0 - 1, y + 1, z], [x0 + 11, y + 8, z + 1], Material::RochaEscura);
+                bx(
+                    &mut v,
+                    [x0 - 1, y + 1, z],
+                    [x0 + 11, y + 8, z + 1],
+                    Material::RochaEscura,
+                );
             }
         }
         n += 1;
@@ -676,19 +1074,43 @@ fn sino() -> Modelo {
     let topo = b + 58;
     bx(&mut v, [-2, b + 3, -2], [2, topo, 2], Material::Arenito);
     bx(&mut v, [-2, topo, -2], [24, topo + 3, 2], Material::Arenito);
-    bx(&mut v, [-3, topo - 12, -1], [12, topo - 11, 1], Material::Arenito);
+    bx(
+        &mut v,
+        [-3, topo - 12, -1],
+        [12, topo - 11, 1],
+        Material::Arenito,
+    );
     // The cable and the BELL.
-    bx(&mut v, [19, topo - 12, 0], [20, topo, 1], Material::RochaEscura);
+    bx(
+        &mut v,
+        [19, topo - 12, 0],
+        [20, topo, 1],
+        Material::RochaEscura,
+    );
     let base_sino = topo - 30;
     for y in 0..18 {
         let r = 7.5 - (y as f32 / 18.0).powf(1.6) * 4.5;
-        let m = if y % 6 == 0 { Material::RochaEscura } else { Material::Arenito };
+        let m = if y % 6 == 0 {
+            Material::RochaEscura
+        } else {
+            Material::Arenito
+        };
         disco(&mut v, 19, 0, r, base_sino + y, 1, m);
     }
     for (x, z) in [(26, 0), (12, 0), (19, 7), (19, -7)] {
-        bx(&mut v, [x - 1, base_sino + 5, z - 1], [x + 1, base_sino + 8, z + 1], Material::NeonCiano);
+        bx(
+            &mut v,
+            [x - 1, base_sino + 5, z - 1],
+            [x + 1, base_sino + 8, z + 1],
+            Material::NeonCiano,
+        );
     }
-    bx(&mut v, [-3, topo + 3, -3], [3, topo + 7, 3], Material::NeonCiano);
+    bx(
+        &mut v,
+        [-3, topo + 3, -3],
+        [3, topo + 7, 3],
+        Material::NeonCiano,
+    );
     malha(&v)
 }
 
@@ -697,7 +1119,10 @@ fn sino() -> Modelo {
 fn cais_abissal() -> Modelo {
     let mut v = Volume::novo([-30, 0, -90], [80, 44, 92]);
     let b = vx(mar::ALTURA_DO_MOLHE);
-    for (k, (x, z)) in [(20, -60), (34, -40), (-24, -44), (-20, -76), (40, -76)].into_iter().enumerate() {
+    for (k, (x, z)) in [(20, -60), (34, -40), (-24, -44), (-20, -76), (40, -76)]
+        .into_iter()
+        .enumerate()
+    {
         let h = 18 + (k as i32 * 7) % 14;
         disco(&mut v, x, z, 3.0, b, h, Material::Coral);
         disco(&mut v, x + 3, z, 1.6, b + h / 2, h / 2, Material::Coral);
@@ -730,7 +1155,11 @@ pub fn pecas(f: Feitio) -> Option<Vec<(Modelo, Vec3)>> {
         Feitio::Neon => (mastro_neon(), cais_neon()),
         _ => (sino(), cais_abissal()),
     };
-    Some(vec![(pier(&p), Vec3::ZERO), (marco, farol), (cais, Vec3::ZERO)])
+    Some(vec![
+        (pier(&p), Vec3::ZERO),
+        (marco, farol),
+        (cais, Vec3::ZERO),
+    ])
 }
 
 // ───────────────────────────── per-frame lights ─────────────────────────────
@@ -745,13 +1174,25 @@ fn cor8(c: Vec3, a: f32) -> [u8; 4] {
 }
 
 fn vert(p: Vec3, c: [u8; 4]) -> Vertex {
-    Vertex { position: p, uv: Vec2::ZERO, color: c, normal: Vec4::ZERO }
+    Vertex {
+        position: p,
+        uv: Vec2::ZERO,
+        color: c,
+        normal: Vec4::ZERO,
+    }
 }
 
 /// THE WATERFALL off Skyreach's isle: a ribbon facing the eye from the rim
 /// to the sea, in bands that run down, and a foam glow where it lands.
 /// Additive.
-pub fn cachoeira(verts: &mut Vec<Vertex>, idx: &mut Vec<u16>, olho: Vec3, topo: Vec3, fundo: Vec3, tempo: f32) {
+pub fn cachoeira(
+    verts: &mut Vec<Vertex>,
+    idx: &mut Vec<u16>,
+    olho: Vec3,
+    topo: Vec3,
+    fundo: Vec3,
+    tempo: f32,
+) {
     let f = vec3(olho.x - topo.x, 0.0, olho.z - topo.z).normalize_or_zero();
     let lado = vec3(-f.z, 0.0, f.x);
     const N: usize = 16;
@@ -770,7 +1211,20 @@ pub fn cachoeira(verts: &mut Vec<Vertex>, idx: &mut Vec<u16>, olho: Vec3, topo: 
     }
     for k in 0..N as u16 {
         let (a, b) = (base + k * 3, base + (k + 1) * 3);
-        idx.extend_from_slice(&[a, b, b + 1, a, b + 1, a + 1, a + 1, b + 1, b + 2, a + 1, b + 2, a + 2]);
+        idx.extend_from_slice(&[
+            a,
+            b,
+            b + 1,
+            a,
+            b + 1,
+            a + 1,
+            a + 1,
+            b + 1,
+            b + 2,
+            a + 1,
+            b + 2,
+            a + 2,
+        ]);
     }
     // The foam where it lands: a flat glowing disc that breathes.
     let b0 = verts.len() as u16;
@@ -779,7 +1233,10 @@ pub fn cachoeira(verts: &mut Vec<Vertex>, idx: &mut Vec<u16>, olho: Vec3, topo: 
     verts.push(vert(vec3(fundo.x, y, fundo.z), cor8(cor, 0.55)));
     for k in 0..16 {
         let a = k as f32 / 16.0 * std::f32::consts::TAU;
-        verts.push(vert(vec3(fundo.x + a.cos() * r, y, fundo.z + a.sin() * r), cor8(cor, 0.0)));
+        verts.push(vert(
+            vec3(fundo.x + a.cos() * r, y, fundo.z + a.sin() * r),
+            cor8(cor, 0.0),
+        ));
     }
     for k in 0..16u16 {
         idx.extend_from_slice(&[b0, b0 + 1 + k, b0 + 1 + (k + 1) % 16]);
@@ -789,7 +1246,14 @@ pub fn cachoeira(verts: &mut Vec<Vertex>, idx: &mut Vec<u16>, olho: Vec3, topo: 
 /// THE WHIRLPOOL in Abyssia's lagoon: four glowing arms spiralling into the
 /// eye, turning, and a light column over it — the dock's beacon from afar.
 /// Additive.
-pub fn redemoinho(verts: &mut Vec<Vertex>, idx: &mut Vec<u16>, olho: Vec3, c: Vec3, tempo: f32, raio: f32) {
+pub fn redemoinho(
+    verts: &mut Vec<Vertex>,
+    idx: &mut Vec<u16>,
+    olho: Vec3,
+    c: Vec3,
+    tempo: f32,
+    raio: f32,
+) {
     let y = crate::agua::ALTURA_DA_AGUA + crate::agua::AMPLITUDE_MAX * 0.75 + 0.1;
     let cor = vec3(0.3, 1.0, 0.92);
     for braco in 0..4 {
@@ -808,7 +1272,12 @@ pub fn redemoinho(verts: &mut Vec<Vertex>, idx: &mut Vec<u16>, olho: Vec3, c: Ve
             verts.push(vert(p + d * larg, cor8(cor, al)));
         }
         for k in 0..N as u16 {
-            let (a0, b0, a1, b1) = (base + k * 2, base + k * 2 + 1, base + k * 2 + 2, base + k * 2 + 3);
+            let (a0, b0, a1, b1) = (
+                base + k * 2,
+                base + k * 2 + 1,
+                base + k * 2 + 2,
+                base + k * 2 + 3,
+            );
             idx.extend_from_slice(&[a0, b0, b1, a0, b1, a1]);
         }
     }
@@ -817,7 +1286,10 @@ pub fn redemoinho(verts: &mut Vec<Vertex>, idx: &mut Vec<u16>, olho: Vec3, c: Ve
     verts.push(vert(vec3(c.x, y, c.z), cor8(vec3(0.6, 1.0, 1.0), 0.8)));
     for k in 0..16 {
         let a = k as f32 / 16.0 * std::f32::consts::TAU;
-        verts.push(vert(vec3(c.x + a.cos() * 6.0, y, c.z + a.sin() * 6.0), cor8(cor, 0.0)));
+        verts.push(vert(
+            vec3(c.x + a.cos() * 6.0, y, c.z + a.sin() * 6.0),
+            cor8(cor, 0.0),
+        ));
     }
     for k in 0..16u16 {
         idx.extend_from_slice(&[b0, b0 + 1 + k, b0 + 1 + (k + 1) % 16]);
@@ -833,7 +1305,20 @@ pub fn redemoinho(verts: &mut Vec<Vertex>, idx: &mut Vec<u16>, olho: Vec3, c: Ve
     verts.push(vert(vec3(c.x, y + alto, c.z) - lado * 1.2, cor8(cor, 0.0)));
     verts.push(vert(vec3(c.x, y + alto, c.z), cor8(cor, 0.0)));
     verts.push(vert(vec3(c.x, y + alto, c.z) + lado * 1.2, cor8(cor, 0.0)));
-    idx.extend_from_slice(&[b1, b1 + 1, b1 + 4, b1, b1 + 4, b1 + 3, b1 + 1, b1 + 2, b1 + 5, b1 + 1, b1 + 5, b1 + 4]);
+    idx.extend_from_slice(&[
+        b1,
+        b1 + 1,
+        b1 + 4,
+        b1,
+        b1 + 4,
+        b1 + 3,
+        b1 + 1,
+        b1 + 2,
+        b1 + 5,
+        b1 + 1,
+        b1 + 5,
+        b1 + 4,
+    ]);
 }
 
 #[cfg(test)]
@@ -848,8 +1333,16 @@ mod testes {
         for i in mar::ilhas().iter().filter(|i| e_tema(i.feitio)) {
             let t = tema(i);
             let longe: usize = malha_de_longe(i, &t).iter().map(|m| m.vertices.len()).sum();
-            let doca: usize = pecas(i.feitio).unwrap().iter().map(|(m, _)| m.verts.len()).sum();
-            println!("{}: landmarks {longe} vertices, dock {doca} vertices, {} lights", i.nome, t.luzes.len());
+            let doca: usize = pecas(i.feitio)
+                .unwrap()
+                .iter()
+                .map(|(m, _)| m.verts.len())
+                .sum();
+            println!(
+                "{}: landmarks {longe} vertices, dock {doca} vertices, {} lights",
+                i.nome,
+                t.luzes.len()
+            );
             assert!(longe > 100, "{}: no landmarks", i.nome);
             assert!(longe < 8_000, "{}: {longe} landmark vertices", i.nome);
             assert!(doca < 40_000, "{}: {doca} dock vertices", i.nome);
@@ -868,10 +1361,16 @@ mod testes {
         let ceu = tema(v(shared::celeste::ZONA));
         assert!(ceu.ilhotas.len() >= 4);
         let (_, fundo) = ceu.cachoeira.expect("Skyreach's waterfall");
-        assert!(mar::navegavel(fundo.x, fundo.z), "the waterfall falls on land at {fundo:?}");
+        assert!(
+            mar::navegavel(fundo.x, fundo.z),
+            "the waterfall falls on land at {fundo:?}"
+        );
         let kogen = tema(v(shared::kogen::ZONA));
         assert!(kogen.torres.len() >= 8, "{} towers", kogen.torres.len());
-        assert!(kogen.torres.iter().any(|t| t.h > 60.0), "no tall tower in the skyline");
+        assert!(
+            kogen.torres.iter().any(|t| t.h > 60.0),
+            "no tall tower in the skyline"
+        );
         let atol = v(shared::abissal::ZONA);
         let a = tema(atol);
         let olho = a.redemoinho.expect("the whirlpool");
@@ -879,8 +1378,16 @@ mod testes {
         assert!(a.picos.len() >= 5);
         for (z, t) in [(shared::kogen::ZONA, &kogen), (shared::abissal::ZONA, &a)] {
             let i = v(z);
-            for p in t.torres.iter().map(|t| t.c).chain(t.picos.iter().map(|p| p.c)) {
-                assert!(!mar::navegavel(p.x, p.y), "{z}: a landmark in the water at {p:?}");
+            for p in t
+                .torres
+                .iter()
+                .map(|t| t.c)
+                .chain(t.picos.iter().map(|p| p.c))
+            {
+                assert!(
+                    !mar::navegavel(p.x, p.y),
+                    "{z}: a landmark in the water at {p:?}"
+                );
                 assert!(longe_do_cais(i, p, 20.0), "{z}: a landmark on the dock");
             }
         }

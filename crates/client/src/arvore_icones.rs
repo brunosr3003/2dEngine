@@ -106,10 +106,15 @@ pub fn do_efeito(e: Efeito) -> Glifo {
 /// A keystone's glyph: a skull for the ones that cost health, else its
 /// main stat's.
 pub fn da_chave(efeitos: &[(Efeito, f32)]) -> Glifo {
-    if efeitos.iter().any(|&(e, v)| (e == Efeito::VidaPct || e == Efeito::SempreMarcado) && v < 0.0) {
+    if efeitos
+        .iter()
+        .any(|&(e, v)| (e == Efeito::VidaPct || e == Efeito::SempreMarcado) && v < 0.0)
+    {
         return Glifo::Caveira;
     }
-    efeitos.first().map_or(Glifo::Estrela, |&(e, _)| do_efeito(e))
+    efeitos
+        .first()
+        .map_or(Glifo::Estrela, |&(e, _)| do_efeito(e))
 }
 
 /// Draws `g` centred on `c`, fitting a circle of radius `r`, in `cor`.
@@ -126,7 +131,12 @@ pub fn desenha(g: Glifo, c: Vec2, r: f32, cor: Color) {
     match g {
         Glifo::Espada => {
             // A broad blade, a wide guard, grip and pommel.
-            quad(p(-0.15, 0.22), p(-0.15, -0.58), p(0.15, -0.58), p(0.15, 0.22));
+            quad(
+                p(-0.15, 0.22),
+                p(-0.15, -0.58),
+                p(0.15, -0.58),
+                p(0.15, 0.22),
+            );
             tri(p(-0.15, -0.58), p(0.0, -0.92), p(0.15, -0.58));
             estilo::traco(p(0.0, -0.70), p(0.0, 0.16), w(0.05), fundo);
             linha(p(-0.50, 0.30), p(0.50, 0.30), 0.17);
@@ -136,7 +146,12 @@ pub fn desenha(g: Glifo, c: Vec2, r: f32, cor: Color) {
         Glifo::Escudo | Glifo::EscudoBarra => {
             let topo = [p(-0.62, -0.62), p(0.0, -0.78), p(0.62, -0.62)];
             tri(topo[0], topo[1], topo[2]);
-            quad(p(-0.62, -0.62), p(0.62, -0.62), p(0.52, 0.10), p(-0.52, 0.10));
+            quad(
+                p(-0.62, -0.62),
+                p(0.62, -0.62),
+                p(0.52, 0.10),
+                p(-0.52, 0.10),
+            );
             tri(p(-0.52, 0.10), p(0.52, 0.10), p(0.0, 0.84));
             if g == Glifo::EscudoBarra {
                 linha(p(-0.40, -0.12), p(0.40, -0.12), 0.14);
@@ -174,7 +189,12 @@ pub fn desenha(g: Glifo, c: Vec2, r: f32, cor: Color) {
         }
         Glifo::Bota => {
             // Shaft with a cuff, a rounded toe, a heel and the sole.
-            quad(p(-0.22, -0.66), p(0.20, -0.66), p(0.16, 0.24), p(-0.26, 0.24));
+            quad(
+                p(-0.22, -0.66),
+                p(0.20, -0.66),
+                p(0.16, 0.24),
+                p(-0.26, 0.24),
+            );
             linha(p(-0.30, -0.70), p(0.26, -0.70), 0.16);
             quad(p(-0.26, 0.14), p(0.40, 0.20), p(0.52, 0.62), p(-0.26, 0.62));
             draw_circle(p(0.44, 0.44).x, p(0.44, 0.44).y, 0.19 * r, cor);
@@ -186,7 +206,12 @@ pub fn desenha(g: Glifo, c: Vec2, r: f32, cor: Color) {
         }
         Glifo::Coracao | Glifo::CoracaoMais => {
             let k = if g == Glifo::CoracaoMais { 0.86 } else { 1.0 };
-            let q = |x: f32, y: f32| p(x * k - if k < 1.0 { 0.12 } else { 0.0 }, y * k + if k < 1.0 { 0.06 } else { 0.0 });
+            let q = |x: f32, y: f32| {
+                p(
+                    x * k - if k < 1.0 { 0.12 } else { 0.0 },
+                    y * k + if k < 1.0 { 0.06 } else { 0.0 },
+                )
+            };
             let lobo = 0.36 * r * k;
             let (a, b) = (q(-0.34, -0.26), q(0.34, -0.26));
             draw_circle(a.x, a.y, lobo, cor);
@@ -214,10 +239,19 @@ pub fn desenha(g: Glifo, c: Vec2, r: f32, cor: Color) {
             let dx = if g == Glifo::GotaMais { -0.12 } else { 0.0 };
             let base = p(dx, 0.28 * k);
             draw_circle(base.x, base.y, 0.50 * r * k, cor);
-            tri(p(dx, -0.86 * k), p(dx - 0.46 * k, 0.12 * k), p(dx + 0.46 * k, 0.12 * k));
+            tri(
+                p(dx, -0.86 * k),
+                p(dx - 0.46 * k, 0.12 * k),
+                p(dx + 0.46 * k, 0.12 * k),
+            );
             // Shine.
             let s = p(dx - 0.18 * k, 0.24 * k);
-            draw_circle(s.x, s.y, 0.12 * r * k, Color::new(1.0, 1.0, 1.0, 0.35 * cor.a));
+            draw_circle(
+                s.x,
+                s.y,
+                0.12 * r * k,
+                Color::new(1.0, 1.0, 1.0, 0.35 * cor.a),
+            );
             if g == Glifo::GotaMais {
                 let m = p(0.58, 0.50);
                 draw_circle(m.x, m.y, 0.34 * r, fundo);
@@ -244,11 +278,21 @@ pub fn desenha(g: Glifo, c: Vec2, r: f32, cor: Color) {
         Glifo::Raio => {
             tri(p(0.18, -0.92), p(-0.46, 0.10), p(0.02, 0.10));
             tri(p(-0.02, -0.10), p(0.46, -0.10), p(-0.18, 0.92));
-            quad(p(-0.10, -0.10), p(0.30, -0.10), p(0.10, 0.10), p(-0.30, 0.10));
+            quad(
+                p(-0.10, -0.10),
+                p(0.30, -0.10),
+                p(0.10, 0.10),
+                p(-0.30, 0.10),
+            );
         }
         Glifo::Mira => {
             draw_circle_lines(c.x, c.y, 0.58 * r, w(0.11), cor);
-            for (a, b) in [((0.0, -0.92), (0.0, -0.34)), ((0.0, 0.34), (0.0, 0.92)), ((-0.92, 0.0), (-0.34, 0.0)), ((0.34, 0.0), (0.92, 0.0))] {
+            for (a, b) in [
+                ((0.0, -0.92), (0.0, -0.34)),
+                ((0.0, 0.34), (0.0, 0.92)),
+                ((-0.92, 0.0), (-0.34, 0.0)),
+                ((0.34, 0.0), (0.92, 0.0)),
+            ] {
                 linha(p(a.0, a.1), p(b.0, b.1), 0.11);
             }
             draw_circle(c.x, c.y, 0.12 * r, cor);
@@ -262,9 +306,19 @@ pub fn desenha(g: Glifo, c: Vec2, r: f32, cor: Color) {
             tri(p(0.72, 0.16), p(0.50, 0.40), p(0.78, 0.44));
         }
         Glifo::Bau => {
-            quad(p(-0.74, -0.10), p(0.74, -0.10), p(0.74, 0.66), p(-0.74, 0.66));
+            quad(
+                p(-0.74, -0.10),
+                p(0.74, -0.10),
+                p(0.74, 0.66),
+                p(-0.74, 0.66),
+            );
             // The rounded lid.
-            quad(p(-0.74, -0.10), p(-0.60, -0.48), p(0.60, -0.48), p(0.74, -0.10));
+            quad(
+                p(-0.74, -0.10),
+                p(-0.60, -0.48),
+                p(0.60, -0.48),
+                p(0.74, -0.10),
+            );
             tri(p(-0.60, -0.48), p(0.0, -0.66), p(0.60, -0.48));
             estilo::traco(p(-0.74, -0.08), p(0.74, -0.08), w(0.08), fundo);
             let fecho = Rect::new(c.x - 0.12 * r, c.y - 0.18 * r, 0.24 * r, 0.30 * r);
@@ -278,15 +332,41 @@ pub fn desenha(g: Glifo, c: Vec2, r: f32, cor: Color) {
             tri(p(0.66, 0.10), p(0.46, 0.30), p(0.74, 0.44));
         }
         Glifo::Cristal => {
-            let pts = [p(0.0, -0.92), p(0.50, -0.28), p(0.30, 0.82), p(-0.30, 0.82), p(-0.50, -0.28)];
+            let pts = [
+                p(0.0, -0.92),
+                p(0.50, -0.28),
+                p(0.30, 0.82),
+                p(-0.30, 0.82),
+                p(-0.50, -0.28),
+            ];
             tri(pts[0], pts[1], pts[4]);
             quad(pts[4], pts[1], pts[2], pts[3]);
-            estilo::traco(pts[0], p(0.0, 0.82), w(0.05), Color::new(1.0, 1.0, 1.0, 0.35 * cor.a));
-            estilo::traco(pts[4], pts[1], w(0.05), Color::new(0.0, 0.0, 0.0, 0.35 * cor.a));
+            estilo::traco(
+                pts[0],
+                p(0.0, 0.82),
+                w(0.05),
+                Color::new(1.0, 1.0, 1.0, 0.35 * cor.a),
+            );
+            estilo::traco(
+                pts[4],
+                pts[1],
+                w(0.05),
+                Color::new(0.0, 0.0, 0.0, 0.35 * cor.a),
+            );
         }
         Glifo::Lingote => {
-            quad(p(-0.80, 0.50), p(0.80, 0.50), p(0.52, -0.10), p(-0.52, -0.10));
-            quad(p(-0.52, -0.10), p(0.52, -0.10), p(0.34, -0.44), p(-0.34, -0.44));
+            quad(
+                p(-0.80, 0.50),
+                p(0.80, 0.50),
+                p(0.52, -0.10),
+                p(-0.52, -0.10),
+            );
+            quad(
+                p(-0.52, -0.10),
+                p(0.52, -0.10),
+                p(0.34, -0.44),
+                p(-0.34, -0.44),
+            );
             estilo::traco(p(-0.66, 0.20), p(0.66, 0.20), w(0.05), fundo);
         }
         Glifo::Trevo => {
@@ -299,7 +379,12 @@ pub fn desenha(g: Glifo, c: Vec2, r: f32, cor: Color) {
         }
         Glifo::Seta => {
             tri(p(0.0, -0.92), p(-0.66, -0.12), p(0.66, -0.12));
-            quad(p(-0.24, -0.14), p(0.24, -0.14), p(0.24, 0.58), p(-0.24, 0.58));
+            quad(
+                p(-0.24, -0.14),
+                p(0.24, -0.14),
+                p(0.24, 0.58),
+                p(-0.24, 0.58),
+            );
             linha(p(-0.56, 0.80), p(0.56, 0.80), 0.12);
         }
         Glifo::Asa => {
@@ -359,7 +444,13 @@ mod tests {
         }
         // Each stat of the web reads differently: 22 stats, 22 glyphs.
         assert!(usados.len() >= 20, "{usados:?}");
-        assert_eq!(da_chave(&[(Efeito::DanoCritico, 0.3), (Efeito::VidaPct, -0.15)]), Glifo::Caveira);
-        assert_eq!(da_chave(&[(Efeito::DefesaPct, 0.25), (Efeito::AtaquePct, -0.08)]), Glifo::Escudo);
+        assert_eq!(
+            da_chave(&[(Efeito::DanoCritico, 0.3), (Efeito::VidaPct, -0.15)]),
+            Glifo::Caveira
+        );
+        assert_eq!(
+            da_chave(&[(Efeito::DefesaPct, 0.25), (Efeito::AtaquePct, -0.08)]),
+            Glifo::Escudo
+        );
     }
 }

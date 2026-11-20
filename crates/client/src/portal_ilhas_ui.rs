@@ -75,7 +75,13 @@ impl PortalUi {
     /// The walk-in: stepping into the ring asks for the travel menu. Runs
     /// every frame (also when a panel hides the banner). `menu_aberto` = the
     /// travel menu is already up.
-    pub fn passo(&mut self, zona: &str, eu: Option<Vec2>, menu_aberto: bool, agora: f64) -> Option<ClientMessage> {
+    pub fn passo(
+        &mut self,
+        zona: &str,
+        eu: Option<Vec2>,
+        menu_aberto: bool,
+        agora: f64,
+    ) -> Option<ClientMessage> {
         if self.zona != zona {
             self.zona = zona.to_string();
             self.armado = false;
@@ -95,7 +101,12 @@ impl PortalUi {
     }
 
     /// The banner when close: the name, what it does and "Travel".
-    pub fn desenha_tarja(&mut self, zona: &str, eu: Option<Vec2>, agora: f64) -> Option<ClientMessage> {
+    pub fn desenha_tarja(
+        &mut self,
+        zona: &str,
+        eu: Option<Vec2>,
+        agora: f64,
+    ) -> Option<ClientMessage> {
         self.retangulo = None;
         let (p, _) = sitio(zona)?;
         let d = eu?.distance(p);
@@ -106,14 +117,35 @@ impl PortalUi {
         let seguro = crate::hud_layout::tela_segura();
         let w = 340.0 * f;
         let h = 92.0 * f;
-        let r = Rect::new(seguro.center().x - w * 0.5, seguro.y + seguro.h - h - 108.0 * f, w, h);
+        let r = Rect::new(
+            seguro.center().x - w * 0.5,
+            seguro.y + seguro.h - h - 108.0 * f,
+            w,
+            h,
+        );
         estilo::painel_destaque(r, AZUL);
         self.retangulo = Some(r);
         estilo::texto_centro(r.center().x, r.y + 24.0 * f, NOME, 17, OURO);
-        estilo::texto_centro(r.center().x, r.y + 44.0 * f, "Travel to the other islands", 13, estilo::SUAVE);
+        estilo::texto_centro(
+            r.center().x,
+            r.y + 44.0 * f,
+            "Travel to the other islands",
+            13,
+            estilo::SUAVE,
+        );
         let m = Vec2::from(mouse_position());
-        let botao = Rect::new(r.x + 12.0 * f, r.y + r.h - 38.0 * f, r.w - 24.0 * f, 28.0 * f);
-        estilo::botao(botao, "Travel", estilo::estado_de(botao, false, false), true);
+        let botao = Rect::new(
+            r.x + 12.0 * f,
+            r.y + r.h - 38.0 * f,
+            r.w - 24.0 * f,
+            28.0 * f,
+        );
+        estilo::botao(
+            botao,
+            "Travel",
+            estilo::estado_de(botao, false, false),
+            true,
+        );
         if crate::foco::clique() && botao.toca(m) && agora - self.pedido_em > 0.4 {
             self.pedido_em = agora;
             return Some(ClientMessage::AbrirPortal);
@@ -122,7 +154,13 @@ impl PortalUi {
     }
 
     /// The label over the portal ("Island Portal"), fading with distance.
-    pub fn desenha_rotulo(&self, zona: &str, cam: &Camera3D, altura: &dyn Fn(f32, f32) -> f32, eu: Option<Vec2>) {
+    pub fn desenha_rotulo(
+        &self,
+        zona: &str,
+        cam: &Camera3D,
+        altura: &dyn Fn(f32, f32) -> f32,
+        eu: Option<Vec2>,
+    ) {
         let (Some((p, _)), Some(eu)) = (sitio(zona), eu) else {
             return;
         };
@@ -159,7 +197,8 @@ pub fn desenha_virado(p: Vec3, girado: bool, perto: bool, t: f32) {
     let g = |v: Vec3| if girado { vec3(v.z, v.y, v.x) } else { v };
     // Seen from any side (`cubo_dos_lados`: `draw_cube` alone loses its
     // back face under the world material's culling).
-    let cubo = |c: Vec3, s: Vec3, cor: Color| crate::render3d::cubo_dos_lados(p + g(c - p), g(s), cor);
+    let cubo =
+        |c: Vec3, s: Vec3, cor: Color| crate::render3d::cubo_dos_lados(p + g(c - p), g(s), cor);
     let pedra = Color::from_rgba(70, 104, 132, 255);
     let pedra_escura = Color::from_rgba(44, 68, 94, 255);
     let ouro = Color::from_rgba(226, 184, 84, 255);
@@ -171,7 +210,17 @@ pub fn desenha_virado(p: Vec3, girado: bool, perto: bool, t: f32) {
     for k in 0..18 {
         let a = k as f32 / 18.0 * TAU;
         let q = p + vec3(a.cos() * 2.25, 0.15, a.sin() * 1.35);
-        cubo(q, vec3(0.58, 0.3, 0.5), if k % 3 == 0 { ouro_escuro } else if k % 2 == 0 { pedra } else { pedra_escura });
+        cubo(
+            q,
+            vec3(0.58, 0.3, 0.5),
+            if k % 3 == 0 {
+                ouro_escuro
+            } else if k % 2 == 0 {
+                pedra
+            } else {
+                pedra_escura
+            },
+        );
     }
     // The compass rose inlaid in gold: four long points, four short.
     for k in 0..8 {
@@ -181,12 +230,20 @@ pub fn desenha_virado(p: Vec3, girado: bool, perto: bool, t: f32) {
         for i in 0..n {
             let r = 0.18 + i as f32 * 0.24;
             let lado = 0.2 * (1.0 - i as f32 / (n as f32 + 1.0));
-            cubo(p + vec3(a.cos() * r, 0.205, a.sin() * r * 0.6), vec3(lado, 0.02, lado), ouro);
+            cubo(
+                p + vec3(a.cos() * r, 0.205, a.sin() * r * 0.6),
+                vec3(lado, 0.02, lado),
+                ouro,
+            );
         }
     }
     // The tide pooled on the dais: a slow breathing glow.
     let pulso = 0.5 + 0.5 * (t * 1.2 * vel).sin();
-    cubo(p + vec3(0.0, 0.23, 0.0), vec3(3.0, 0.02, 1.5), com(AZUL, (0.18 + 0.18 * pulso * brilho) / 2.0));
+    cubo(
+        p + vec3(0.0, 0.23, 0.0),
+        vec3(3.0, 0.02, 1.5),
+        com(AZUL, (0.18 + 0.18 * pulso * brilho) / 2.0),
+    );
     // Two pillars holding the ring, gold-capped.
     for lado in [-1.0f32, 1.0] {
         let x = lado * 1.95;
@@ -205,7 +262,12 @@ pub fn desenha_virado(p: Vec3, girado: bool, perto: bool, t: f32) {
         let onda = (t * 0.55 * vel - a / TAU * 2.0).rem_euclid(1.0);
         let aceso = runa && onda < 0.35;
         let c = if aceso {
-            Color::new(AZUL.r + (1.0 - AZUL.r) * 0.4, AZUL.g + (1.0 - AZUL.g) * 0.4, 1.0, 1.0)
+            Color::new(
+                AZUL.r + (1.0 - AZUL.r) * 0.4,
+                AZUL.g + (1.0 - AZUL.g) * 0.4,
+                1.0,
+                1.0,
+            )
         } else if runa {
             com(AZUL, 1.0)
         } else if k % 2 == 0 {
@@ -226,7 +288,11 @@ pub fn desenha_virado(p: Vec3, girado: bool, perto: bool, t: f32) {
         for i in 0..3 {
             let r = 2.15 + i as f32 * 0.16;
             let lado = 0.26 - i as f32 * 0.07;
-            cubo(centro + vec3(a.cos() * r, a.sin() * r, 0.0), vec3(lado, lado, lado), ouro);
+            cubo(
+                centro + vec3(a.cos() * r, a.sin() * r, 0.0),
+                vec3(lado, lado, lado),
+                ouro,
+            );
         }
     }
     // THE CORE: layers of sea light, and the swirl — motes on a slow
@@ -234,7 +300,11 @@ pub fn desenha_virado(p: Vec3, girado: bool, perto: bool, t: f32) {
     for k in 0..4 {
         let r = 1.42 - k as f32 * 0.3;
         let a = (0.10 + 0.07 * k as f32) * brilho * (0.82 + 0.18 * pulso);
-        cubo(centro, vec3(r * 2.0, r * 2.0, 0.04 + k as f32 * 0.02), com(AZUL, a / 3.5));
+        cubo(
+            centro,
+            vec3(r * 2.0, r * 2.0, 0.04 + k as f32 * 0.02),
+            com(AZUL, a / 3.5),
+        );
     }
     let motes = if perto { 40 } else { 28 };
     for k in 0..motes {
@@ -250,7 +320,12 @@ pub fn desenha_virado(p: Vec3, girado: bool, perto: bool, t: f32) {
         cubo(
             q,
             vec3(lado, lado, lado.max(0.3)),
-            Color::new(base.r + (1.0 - base.r) * branco, base.g + (1.0 - base.g) * branco, base.b + (1.0 - base.b) * branco, 0.9 * brilho),
+            Color::new(
+                base.r + (1.0 - base.r) * branco,
+                base.g + (1.0 - base.g) * branco,
+                base.b + (1.0 - base.b) * branco,
+                0.9 * brilho,
+            ),
         );
     }
     for onda in 0..3 {
@@ -259,32 +334,75 @@ pub fn desenha_virado(p: Vec3, girado: bool, perto: bool, t: f32) {
             let a = a0 + i as f32 * 0.11;
             let r = 1.05 + 0.08 * (i as f32 * 0.9 + t * 2.0).sin();
             let q = centro + vec3(a.cos() * r, a.sin() * r, 0.0);
-            cubo(q, vec3(0.1, 0.1, 0.3), Color::new(0.85, 0.95, 1.0, 0.75 * brilho * (1.0 - i as f32 / 10.0)));
+            cubo(
+                q,
+                vec3(0.1, 0.1, 0.3),
+                Color::new(0.85, 0.95, 1.0, 0.75 * brilho * (1.0 - i as f32 / 10.0)),
+            );
         }
     }
     // THE FLOATING ISLAND over the ring, bobbing and turning slowly: a
     // grassy top, a rocky underside, a palm and a gold flag.
     let ilha = centro + vec3(0.0, 2.75 + 0.14 * (t * 1.1).sin(), 0.0);
     let giro = t * 0.45;
-    let gira = |x: f32, z: f32| vec3(x * giro.cos() - z * giro.sin(), 0.0, x * giro.sin() + z * giro.cos());
+    let gira = |x: f32, z: f32| {
+        vec3(
+            x * giro.cos() - z * giro.sin(),
+            0.0,
+            x * giro.sin() + z * giro.cos(),
+        )
+    };
     let grama = Color::from_rgba(96, 178, 92, 255);
     let areia = Color::from_rgba(226, 204, 146, 255);
     let rocha = Color::from_rgba(120, 96, 72, 255);
-    for (x, z) in [(-0.3f32, -0.3f32), (0.3, -0.3), (-0.3, 0.3), (0.3, 0.3), (0.0, -0.45), (0.0, 0.45), (-0.45, 0.0), (0.45, 0.0)] {
-        cubo(ilha + gira(x, z), vec3(0.34, 0.16, 0.34), if x.abs() + z.abs() > 0.5 { areia } else { grama });
+    for (x, z) in [
+        (-0.3f32, -0.3f32),
+        (0.3, -0.3),
+        (-0.3, 0.3),
+        (0.3, 0.3),
+        (0.0, -0.45),
+        (0.0, 0.45),
+        (-0.45, 0.0),
+        (0.45, 0.0),
+    ] {
+        cubo(
+            ilha + gira(x, z),
+            vec3(0.34, 0.16, 0.34),
+            if x.abs() + z.abs() > 0.5 {
+                areia
+            } else {
+                grama
+            },
+        );
     }
     cubo(ilha + vec3(0.0, -0.18, 0.0), vec3(0.62, 0.22, 0.62), rocha);
     cubo(ilha + vec3(0.0, -0.38, 0.0), vec3(0.36, 0.2, 0.36), rocha);
     cubo(ilha + vec3(0.0, -0.54, 0.0), vec3(0.14, 0.14, 0.14), rocha);
     let palmeira = ilha + gira(0.12, 0.08);
-    cubo(palmeira + vec3(0.0, 0.28, 0.0), vec3(0.07, 0.42, 0.07), Color::from_rgba(130, 92, 54, 255));
+    cubo(
+        palmeira + vec3(0.0, 0.28, 0.0),
+        vec3(0.07, 0.42, 0.07),
+        Color::from_rgba(130, 92, 54, 255),
+    );
     for k in 0..4 {
         let a = k as f32 / 4.0 * TAU + giro;
-        cubo(palmeira + vec3(a.cos() * 0.16, 0.5, a.sin() * 0.16), vec3(0.22, 0.05, 0.08), Color::from_rgba(70, 150, 70, 255));
+        cubo(
+            palmeira + vec3(a.cos() * 0.16, 0.5, a.sin() * 0.16),
+            vec3(0.22, 0.05, 0.08),
+            Color::from_rgba(70, 150, 70, 255),
+        );
     }
     let mastro = ilha + gira(-0.2, -0.1);
-    cubo(mastro + vec3(0.0, 0.3, 0.0), vec3(0.035, 0.46, 0.035), ouro_escuro);
-    cubo(mastro + gira(0.08, 0.0) + vec3(0.0, 0.46, 0.0), vec3(0.14, 0.09, 0.03), ouro);
+    cubo(
+        mastro + vec3(0.0, 0.3, 0.0),
+        vec3(0.035, 0.46, 0.035),
+        ouro_escuro,
+    );
+    cubo(
+        mastro + gira(0.08, 0.0) + vec3(0.0, 0.46, 0.0),
+        vec3(0.14, 0.09, 0.03),
+        ouro,
+    );
     // Gold and sea sparks rising round the dais.
     let faiscas = if perto { 18 } else { 12 };
     for k in 0..faiscas {
@@ -293,7 +411,14 @@ pub fn desenha_virado(p: Vec3, girado: bool, perto: bool, t: f32) {
         let a = f * TAU + t * 0.3;
         let q = p + vec3(a.cos() * 2.1, 0.3 + subida * 4.0, a.sin() * 1.2);
         let lado = 0.08 * (1.0 - subida) + 0.03;
-        cubo(q, vec3(lado, lado, lado), com(if k % 2 == 0 { OURO } else { AZUL }, (1.0 - subida) * brilho));
+        cubo(
+            q,
+            vec3(lado, lado, lado),
+            com(
+                if k % 2 == 0 { OURO } else { AZUL },
+                (1.0 - subida) * brilho,
+            ),
+        );
     }
 }
 
@@ -312,13 +437,22 @@ mod testes {
         assert!(ui.passo(zona, Some(p), false, 10.0).is_none());
         // Arrived at the arrival point, then walked in: opens once.
         assert!(ui.passo(zona, Some(chegada), false, 11.0).is_none());
-        assert!(matches!(ui.passo(zona, Some(p), false, 12.0), Some(ClientMessage::AbrirPortal)));
-        assert!(ui.passo(zona, Some(p), false, 14.0).is_none(), "standing in it does not spam");
+        assert!(matches!(
+            ui.passo(zona, Some(p), false, 12.0),
+            Some(ClientMessage::AbrirPortal)
+        ));
+        assert!(
+            ui.passo(zona, Some(p), false, 14.0).is_none(),
+            "standing in it does not spam"
+        );
         // Out and back in with the menu open: nothing; closed: opens.
         ui.passo(zona, Some(chegada), false, 15.0);
         assert!(ui.passo(zona, Some(p), true, 16.0).is_none());
         ui.passo(zona, Some(chegada), false, 17.0);
-        assert!(matches!(ui.passo(zona, Some(p + vec2(pi::ALCANCE - 0.2, 0.0)), false, 18.0), Some(ClientMessage::AbrirPortal)));
+        assert!(matches!(
+            ui.passo(zona, Some(p + vec2(pi::ALCANCE - 0.2, 0.0)), false, 18.0),
+            Some(ClientMessage::AbrirPortal)
+        ));
         // The auto quest stops within 3 u of the point (`auto_missao`): that
         // is inside the ring.
         assert!(pi::ALCANCE > 3.0);

@@ -339,7 +339,6 @@ pub struct NavioData {
     pub conves: Option<Tesouro>,
 
     // ───────────────── NOVO SISTEMA (18/11/2026, docs/BARCOS.md) ─────────────────
-
     /// Tipo do barco novo (0-8 = TipoBarco::id, None = barco antigo).
     /// Appended; barcos antigos leem None.
     #[serde(default)]
@@ -349,6 +348,10 @@ pub struct NavioData {
     /// Somados aos stats base do tipo. Appended; barcos antigos leem [0,0,0,0].
     #[serde(default)]
     pub pontos: [u8; 4],
+
+    /// Tier do barco novo, 1..=4. Zero em barcos ainda não migrados.
+    #[serde(default)]
+    pub tier: u8,
 }
 
 /// A COLOSSUS CHEST on a ship's deck (naval phase 4, `shared::navio`).
@@ -996,12 +999,20 @@ mod testes_do_refino {
         i.refinement = 12;
         let set = 7.0 * crit_da_peca(&i);
         let pontos = 297.0 * crate::constants::CRIT_CHANCE_PER_DES;
-        assert!((0.78..=0.83).contains(&(set + pontos)), "{:.2}", set + pontos);
+        assert!(
+            (0.78..=0.83).contains(&(set + pontos)),
+            "{:.2}",
+            set + pontos
+        );
         let mut roxo = ItemInstance::vazia_de_grau(4);
         roxo.tier = 4;
         roxo.refinement = 4;
         let nivel_51 = 7.0 * crit_da_peca(&roxo) + 150.0 * crate::constants::CRIT_CHANCE_PER_DES;
-        assert!(nivel_51 < 0.45, "a level 51 in purple +4 has {:.2}", nivel_51);
+        assert!(
+            nivel_51 < 0.45,
+            "a level 51 in purple +4 has {:.2}",
+            nivel_51
+        );
     }
     use super::*;
 
@@ -1012,9 +1023,17 @@ mod testes_do_refino {
         let t2a = ItemInstance::roll_em(item_template(ARMADURA_PESADA), 5, 1, 2, || 0.0).unwrap();
         let t2b = ItemInstance::roll_em(item_template(ARMADURA_PESADA), 5, 1, 2, || 0.99).unwrap();
         assert_eq!((t2a.hp_max, t2a.defense), (t2b.hp_max, t2b.defense));
-        assert!(t2a.defense >= t1.defense, "{} vs {}", t2a.defense, t1.defense);
+        assert!(
+            t2a.defense >= t1.defense,
+            "{} vs {}",
+            t2a.defense,
+            t1.defense
+        );
         assert!(t2a.hp_max >= t1.hp_max);
-        assert_eq!(t2a.attack_damage, 0, "atributo que a peca nao tem continua zero");
+        assert_eq!(
+            t2a.attack_damage, 0,
+            "atributo que a peca nao tem continua zero"
+        );
     }
 
     #[test]
@@ -1022,7 +1041,11 @@ mod testes_do_refino {
         use crate::constants::item_id::KATANA;
         let a = ItemInstance::roll_for(KATANA, 40, || 0.0).unwrap();
         let b = ItemInstance::roll_for(KATANA, 40, || 0.99).unwrap();
-        assert_eq!((a.attack_damage, a.dex), (b.attack_damage, b.dex), "sem sorte");
+        assert_eq!(
+            (a.attack_damage, a.dex),
+            (b.attack_damage, b.dex),
+            "sem sorte"
+        );
         assert!(a.affixes.iter().all(|x| x.is_empty()), "sem afixo");
         // Peca antiga (roll alto + afixo) volta pro fixo, mantendo o refino.
         let mut velha = a;
@@ -1030,9 +1053,19 @@ mod testes_do_refino {
         velha.refinement = 6;
         velha.vinculado = true;
         velha.socketed_gems[0] = 321;
-        velha.affixes[0] = AffixSlot { name_id: 1, stat: 2, tier: 1, value: 4, value_pct: 0.0, is_prefix: true };
+        velha.affixes[0] = AffixSlot {
+            name_id: 1,
+            stat: 2,
+            tier: 1,
+            value: 4,
+            value_pct: 0.0,
+            is_prefix: true,
+        };
         assert!(velha.fixar(item_template(KATANA)));
-        assert_eq!((velha.attack_damage, velha.refinement), (a.attack_damage, 6));
+        assert_eq!(
+            (velha.attack_damage, velha.refinement),
+            (a.attack_damage, 6)
+        );
         assert!(velha.vinculado);
         assert_eq!(velha.socketed_gems[0], 321);
         assert!(velha.affixes.iter().all(|x| x.is_empty()));
@@ -1043,10 +1076,17 @@ mod testes_do_refino {
     fn faixas_do_roll_cercam_o_que_o_craft_rola() {
         use crate::constants::item_id::KATANA;
         let f = faixas_do_roll(KATANA, 5);
-        assert_eq!(f.iter().map(|x| x.0).collect::<Vec<_>>(), vec!["Attack", "Dexterity"]);
+        assert_eq!(
+            f.iter().map(|x| x.0).collect::<Vec<_>>(),
+            vec!["Attack", "Dexterity"]
+        );
         for r in [0.0f32, 0.3, 0.7, 0.999] {
             let i = ItemInstance::roll_for(KATANA, 5, || r).unwrap();
-            assert!((f[0].1..=f[0].2).contains(&i.attack_damage), "{r}: {}", i.attack_damage);
+            assert!(
+                (f[0].1..=f[0].2).contains(&i.attack_damage),
+                "{r}: {}",
+                i.attack_damage
+            );
             assert!((f[1].1..=f[1].2).contains(&i.dex));
         }
         assert!(faixas_do_roll(crate::constants::item_id::COPPER, 5).is_empty());
@@ -1062,7 +1102,12 @@ mod testes_do_refino {
         let soma = |b: &crate::constants::EquipBonus| {
             b.hp_max + b.mp_max + b.attack_damage * 10 + b.defense * 8 + (b.dex + b.wis) * 5
         };
-        for (id, ilvl) in [(ARMADURA_MEDIA, 18u16), (KATANA, 18), (ARMADURA_MEDIA, 35), (KATANA, 60)] {
+        for (id, ilvl) in [
+            (ARMADURA_MEDIA, 18u16),
+            (KATANA, 18),
+            (ARMADURA_MEDIA, 35),
+            (KATANA, 60),
+        ] {
             let mut p = ItemInstance::roll_for(id, ilvl, || 0.5).unwrap();
             let base = p.effective_bonus();
             let mut antes = soma(&base);
@@ -1079,7 +1124,10 @@ mod testes_do_refino {
             }
             let teto = p.effective_bonus();
             let razao = soma(&teto) as f32 / soma(&base) as f32;
-            assert!((razao - 1.48).abs() < 0.04, "{id} nv{ilvl}: +12 vale {razao:.2}x");
+            assert!(
+                (razao - 1.48).abs() < 0.04,
+                "{id} nv{ilvl}: +12 vale {razao:.2}x"
+            );
         }
     }
 
@@ -1092,11 +1140,20 @@ mod testes_do_refino {
             let mut atk = 0;
             let mut def = 0;
             let mut hp = 0;
-            for id in [KATANA, BAINHA, ARMADURA_MEDIA, BRINCO, AMULETO, BRACELETE, CINTO] {
+            for id in [
+                KATANA,
+                BAINHA,
+                ARMADURA_MEDIA,
+                BRINCO,
+                AMULETO,
+                BRACELETE,
+                CINTO,
+            ] {
                 let p = ItemInstance::roll_for(id, ilvl, || 0.5).unwrap();
                 let b = p.effective_bonus();
                 // A destreza vira ataque na katana (`ladder::ATTACK_PER_DEX`).
-                atk += b.attack_damage + (b.dex as f32 * crate::ladder::ATTACK_PER_DEX).round() as i32;
+                atk +=
+                    b.attack_damage + (b.dex as f32 * crate::ladder::ATTACK_PER_DEX).round() as i32;
                 def += b.defense;
                 hp += b.hp_max;
             }
@@ -1107,15 +1164,27 @@ mod testes_do_refino {
                 crate::ladder::item_defense(n),
                 crate::ladder::item_health(n),
             );
-            assert!((atk as f32 - ea).abs() <= folga(ea), "nv{ilvl}: ataque {atk} vs {ea:.0}");
-            assert!((def as f32 - ed).abs() <= folga(ed), "nv{ilvl}: defesa {def} vs {ed:.0}");
-            assert!((hp as f32 - ev).abs() <= folga(ev), "nv{ilvl}: vida {hp} vs {ev:.0}");
+            assert!(
+                (atk as f32 - ea).abs() <= folga(ea),
+                "nv{ilvl}: ataque {atk} vs {ea:.0}"
+            );
+            assert!(
+                (def as f32 - ed).abs() <= folga(ed),
+                "nv{ilvl}: defesa {def} vs {ed:.0}"
+            );
+            assert!(
+                (hp as f32 - ev).abs() <= folga(ev),
+                "nv{ilvl}: vida {hp} vs {ev:.0}"
+            );
         }
         // Uma cor acima da natural vale a razao das cores.
         let verde = ItemInstance::roll_em(item_template(ARMADURA_MEDIA), 18, 2, 1, || 0.5).unwrap();
         let azul = ItemInstance::roll_em(item_template(ARMADURA_MEDIA), 18, 3, 1, || 0.5).unwrap();
         let r = azul.defense as f32 / verde.defense as f32;
-        assert!((r - 1.2 / 0.9).abs() < 0.08, "azul no nivel de verde: {r:.2}x");
+        assert!(
+            (r - 1.2 / 0.9).abs() < 0.08,
+            "azul no nivel de verde: {r:.2}x"
+        );
     }
 }
 
@@ -1140,7 +1209,8 @@ mod testes_das_estrelas {
         assert_eq!((a.estrelas, a.refinement, a.tier), (0, 2, 1));
         let mut com = i;
         com.estrelas = 4;
-        let volta: ItemInstance = serde_json::from_str(&serde_json::to_string(&com).unwrap()).unwrap();
+        let volta: ItemInstance =
+            serde_json::from_str(&serde_json::to_string(&com).unwrap()).unwrap();
         assert_eq!(volta.estrelas, 4);
     }
 }

@@ -21,7 +21,9 @@ pub const FIRMEZA_MAX: f32 = 100.0;
 pub const QUEDA_MONTARIA_MS: u64 = 5_000;
 
 pub fn perda_de_firmeza(dano: i32, hp_max: i32) -> f32 {
-    if dano <= 0 { return 0.0; }
+    if dano <= 0 {
+        return 0.0;
+    }
     (100.0 * dano as f32 / hp_max.max(1) as f32).max(15.0)
 }
 
@@ -34,7 +36,9 @@ mod testes_firmeza {
         assert_eq!(perda_de_firmeza(1, 1000), 15.0);
         assert_eq!(perda_de_firmeza(300, 1000), 30.0);
         let mut firmeza = FIRMEZA_MAX;
-        for _ in 0..7 { firmeza = (firmeza - perda_de_firmeza(1, 1000)).max(0.0); }
+        for _ in 0..7 {
+            firmeza = (firmeza - perda_de_firmeza(1, 1000)).max(0.0);
+        }
         assert_eq!(firmeza, 0.0);
     }
 }
@@ -64,9 +68,21 @@ pub fn mult_de_montaria(montado: bool, equipada: Option<u16>) -> Option<f32> {
     )
 }
 
-pub fn mult_de_montaria_evoluida(montado: bool, equipada: Option<u16>, inst: Option<&crate::items::ItemInstance>) -> Option<f32> {
-    if !montado { return None; }
-    Some(equipada.and_then(crate::montarias::de_item).map_or(VEL_MONTADO, |(_, grau)| crate::montarias::velocidade_da_instancia(grau, inst)))
+pub fn mult_de_montaria_evoluida(
+    montado: bool,
+    equipada: Option<u16>,
+    inst: Option<&crate::items::ItemInstance>,
+) -> Option<f32> {
+    if !montado {
+        return None;
+    }
+    Some(
+        equipada
+            .and_then(crate::montarias::de_item)
+            .map_or(VEL_MONTADO, |(_, grau)| {
+                crate::montarias::velocidade_da_instancia(grau, inst)
+            }),
+    )
 }
 
 /// O instante da ultima luta (golpe, skill ou pancada) desmonta quem montou
@@ -184,7 +200,8 @@ pub const ITENS_DA_LOJA: [ItemDaLoja; 9] = [
         preco_tp: 150,
     },
     // SHIP COSMETICS (docs/NAVEGACAO.md, naval phase 2): used from the bag,
-    // they dress the ship in the Ship slot. Cosmetic only, TP only.
+    // they dress the ship in the Ship slot. Also stocked by the Naval
+    // Quartermaster for Naval Tokens.
     navio_cosmetico(2, 0),
     navio_cosmetico(3, 1),
     navio_cosmetico(4, 2),
@@ -212,14 +229,17 @@ const fn figura_de_proa(id: u16, i: usize) -> ItemDaLoja {
         id,
         item_id: f.0,
         nome: f.1,
-        descricao: "A figurehead for your ship's bow. Use it from the bag on the ship in the Ship slot.",
+        descricao:
+            "A figurehead for your ship's bow. Use it from the bag on the ship in the Ship slot.",
         preco_tp: f.2,
     }
 }
 
 /// The TP shop's ship cosmetics (sails and figureheads).
 pub fn cosmeticos_de_navio() -> impl Iterator<Item = &'static ItemDaLoja> {
-    ITENS_DA_LOJA.iter().filter(|x| crate::navio::cosmetico(x.item_id).is_some())
+    ITENS_DA_LOJA
+        .iter()
+        .filter(|x| crate::navio::cosmetico(x.item_id).is_some())
 }
 
 pub fn item_da_loja(id: u16) -> Option<&'static ItemDaLoja> {
@@ -708,7 +728,6 @@ impl RecusaCompra {
     }
 }
 
-
 /// Um id de pedido aceitavel: 8..=64 chars [A-Za-z0-9_-].
 pub fn pedido_valido(id: &str) -> bool {
     (8..=PEDIDO_ID_MAX).contains(&id.len())
@@ -836,18 +855,24 @@ pub struct OfertaRelampago {
 /// Prêmio já decidido pelo servidor, usado na revelação animada do cliente.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum PremioInvocacao {
-    Chave { item_id: u16, cor: u8 },
+    Chave {
+        item_id: u16,
+        cor: u8,
+    },
     /// Montaria: o item_id ja' diz especie e cor.
-    Montaria { item_id: u16 },
+    Montaria {
+        item_id: u16,
+    },
     Tomo {
         skill_id: u32,
         grau: crate::skills::GrauTomo,
         quantidade: u16,
     },
     /// Pet coletor: o item_id ja' diz especie e grau.
-    Pet { item_id: u16 },
+    Pet {
+        item_id: u16,
+    },
 }
-
 
 /// Maximo de unidades num lote. Noventa e nove porque o preco total tem que
 /// caber na cabeca do jogador antes de ele confirmar — lote de mil e' pedido
@@ -938,7 +963,10 @@ pub enum AvisoLoja {
     Montando {
         segundos: f32,
     },
-    MontariaCombate { firmeza: u8, bloqueio_segundos: f32 },
+    MontariaCombate {
+        firmeza: u8,
+        bloqueio_segundos: f32,
+    },
     Invocacao {
         premio: PremioInvocacao,
     },
@@ -973,7 +1001,10 @@ mod tests {
         // As faixas estao em ordem decrescente — `desconto_pct` pega a
         // primeira que couber, e fora de ordem ela pegaria a errada.
         for par in DESCONTO_DO_LOTE.windows(2) {
-            assert!(par[0].0 > par[1].0, "faixas fora de ordem: {DESCONTO_DO_LOTE:?}");
+            assert!(
+                par[0].0 > par[1].0,
+                "faixas fora de ordem: {DESCONTO_DO_LOTE:?}"
+            );
             assert!(par[0].1 > par[1].1, "% fora de ordem: {DESCONTO_DO_LOTE:?}");
         }
         assert!(
@@ -1114,11 +1145,11 @@ mod tests {
         // O maior banca uma rodada inteira de atributos de um personagem novo.
         let maior = ENERGIAS[ENERGIAS.len() - 1];
         assert!(maior.qtd >= crate::custo_energia_de_varios(0, 60));
-        assert_eq!(pode_comprar(Produto::Energia(1), 1, 39), Err(RecusaCompra::SemSaldo));
         assert_eq!(
-            pode_comprar(Produto::Energia(1), 1, 40),
-            Ok(40)
+            pode_comprar(Produto::Energia(1), 1, 39),
+            Err(RecusaCompra::SemSaldo)
         );
+        assert_eq!(pode_comprar(Produto::Energia(1), 1, 40), Ok(40));
         assert_eq!(
             pode_comprar(Produto::Energia(99), 1, 9_999),
             Err(RecusaCompra::ProdutoInvalido)
@@ -1138,7 +1169,11 @@ mod tests {
         }
         assert_eq!(Produto::de_codigo("energia:99"), None);
         assert_eq!(Produto::de_codigo("skin:101"), None, "skin nao existe mais");
-        assert_eq!(Produto::de_codigo("montaria:1"), None, "montaria virou item");
+        assert_eq!(
+            Produto::de_codigo("montaria:1"),
+            None,
+            "montaria virou item"
+        );
         assert_eq!(Produto::de_codigo("lixo"), None);
     }
 
@@ -1155,7 +1190,10 @@ mod tests {
             pode_comprar(Produto::PergaminhoMontaria(1), 1, 499),
             Err(RecusaCompra::SemSaldo)
         );
-        assert_eq!(pode_comprar(Produto::PergaminhoMontaria(1), 1, 500), Ok(500));
+        assert_eq!(
+            pode_comprar(Produto::PergaminhoMontaria(1), 1, 500),
+            Ok(500)
+        );
         assert_eq!(
             pode_comprar(Produto::PergaminhoPet(99), 1, 9999),
             Err(RecusaCompra::ProdutoInvalido)
@@ -1222,7 +1260,11 @@ mod tests {
         // A COR da montaria equipada e' que manda no multiplicador.
         let cinza = crate::item_id::montaria_no_grau(crate::item_id::MONTARIA_BASE, 1);
         let laranja = crate::item_id::montaria_no_grau(crate::item_id::MONTARIA_BASE, 5);
-        assert_eq!(mult_de_montaria(false, Some(laranja)), None, "a pe' e' a pe'");
+        assert_eq!(
+            mult_de_montaria(false, Some(laranja)),
+            None,
+            "a pe' e' a pe'"
+        );
         assert_eq!(mult_de_montaria(true, Some(cinza)), Some(VEL_MONTADO));
         assert_eq!(
             mult_de_montaria(true, Some(laranja)),
@@ -1290,7 +1332,10 @@ mod tests {
             "o lote maior não é o melhor por passe: {por_passe:?}"
         );
         por_passe.dedup();
-        assert!(por_passe.len() > 1, "todos os lotes têm o mesmo preço unitário");
+        assert!(
+            por_passe.len() > 1,
+            "todos os lotes têm o mesmo preço unitário"
+        );
     }
 
     /// PRODUTO NOVO NÃO PODE COLIDIR COM OS ANTIGOS NO BANCO.
@@ -1352,5 +1397,4 @@ mod tests {
         assert_eq!(Produto::PasseMagico(2).codigo(), "passe-magico:2");
         assert_eq!(Produto::Skin(2).codigo(), "skin:2");
     }
-
 }

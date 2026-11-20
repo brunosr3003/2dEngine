@@ -227,7 +227,11 @@ impl Terreno {
             sem_mar: aerea,
             ilhas_aereas: aerea.then(|| {
                 let nuvens = crate::ilhas_aereas::IlhasAereas::nova();
-                if celeste { nuvens.com_raizes_celestes() } else { nuvens }
+                if celeste {
+                    nuvens.com_raizes_celestes()
+                } else {
+                    nuvens
+                }
             }),
             arvores: Vec::new(),
             plantas: Vec::new(),
@@ -288,7 +292,10 @@ impl Terreno {
         if t.ger.e_mar() {
             for tier in 0..=4u8 {
                 for k in 0..VARIANTES {
-                    t.destrocos.push(crate::vegetacao::destroco(tier, k as u32 * 29 + tier as u32 * 97));
+                    t.destrocos.push(crate::vegetacao::destroco(
+                        tier,
+                        k as u32 * 29 + tier as u32 * 97,
+                    ));
                 }
             }
             t.props_do_mar = crate::mar_cena::props();
@@ -308,14 +315,31 @@ impl Terreno {
 
     fn material_do_tema(&self, altura: f32, declive: i32, agua: bool, mancha: f32) -> Material {
         if self.ger.e_arena() && !agua {
-            if let Some(mat) = self.dungeon_visual.and_then(|id| crate::dungeon_cenario::piso(id, mancha)) {
+            if let Some(mat) = self
+                .dungeon_visual
+                .and_then(|id| crate::dungeon_cenario::piso(id, mancha))
+            {
                 return mat;
             }
             return match self.bioma_visual {
-                Bioma::Gelo => if mancha > 0.82 { Material::Gelo } else { Material::Neve },
-                Bioma::Deserto => if mancha > 0.86 { Material::Arenito } else { Material::Areia },
+                Bioma::Gelo => {
+                    if mancha > 0.82 {
+                        Material::Gelo
+                    } else {
+                        Material::Neve
+                    }
+                }
+                Bioma::Deserto => {
+                    if mancha > 0.86 {
+                        Material::Arenito
+                    } else {
+                        Material::Areia
+                    }
+                }
                 Bioma::Montanha => Material::Rocha,
-                Bioma::Floresta | Bioma::Celeste | Bioma::Neon | Bioma::Abissal => material_variado(self.bioma_visual, altura, declive, false, mancha),
+                Bioma::Floresta | Bioma::Celeste | Bioma::Neon | Bioma::Abissal => {
+                    material_variado(self.bioma_visual, altura, declive, false, mancha)
+                }
             };
         }
         material_variado(self.bioma_visual, altura, declive, agua, mancha)
@@ -526,7 +550,8 @@ impl Terreno {
             // plateaus outside the generated chunks showed as bare discs.
             cenario.desenha(&|x, z| {
                 let b = |v: f32| (v / shared::terreno::BLOCO).floor() as i32;
-                self.pedacos.contains_key(&(b(x).div_euclid(CHUNK), b(z).div_euclid(CHUNK)))
+                self.pedacos
+                    .contains_key(&(b(x).div_euclid(CHUNK), b(z).div_euclid(CHUNK)))
             });
         }
         let visiveis: Vec<(&Pedaco, f32)> = self
@@ -537,27 +562,42 @@ impl Terreno {
             .filter(|(_, f)| *f > 0.0)
             .collect();
         let programa = crate::gpu_estatica::Programa::Solido { recorte, recorte_z };
-        crate::gpu_estatica::desenha(programa, visiveis.iter().filter(|(_, f)| *f >= 1.0).flat_map(|(p, _)| p.malhas.iter()));
+        crate::gpu_estatica::desenha(
+            programa,
+            visiveis
+                .iter()
+                .filter(|(_, f)| *f >= 1.0)
+                .flat_map(|(p, _)| p.malhas.iter()),
+        );
         // THE OPEN SEA'S DRAW BAND (`mar_cena::faixa_de_desenho`): the
         // chunks near the edge of what is loaded fade out over the far
         // island meshes under them, never a hard edge.
         for (p, f) in visiveis.iter().filter(|(_, f)| *f < 1.0) {
-            crate::gpu_estatica::com_some(1.0 - f, || crate::gpu_estatica::desenha(programa, p.malhas.iter()));
+            crate::gpu_estatica::com_some(1.0 - f, || {
+                crate::gpu_estatica::desenha(programa, p.malhas.iter())
+            });
         }
         if let Some(t) = &self.transito {
             let perto = vec2(cam.target.x, cam.target.z);
-            t.borrow_mut().desenha(perto, get_frame_time().min(0.1), &|x, z| self.altura(x, z));
+            t.borrow_mut()
+                .desenha(perto, get_frame_time().min(0.1), &|x, z| self.altura(x, z));
         }
         if let Some(pl) = self.ger.planalto() {
-            let agora = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0,|d| d.as_secs() as i64);
-            if let Some((_,c)) = pl.campo(agora) {
-                if vec2(c.x-cam.target.x,c.y-cam.target.z).length()<180.0 {
+            let agora = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |d| d.as_secs() as i64);
+            if let Some((_, c)) = pl.campo(agora) {
+                if vec2(c.x - cam.target.x, c.y - cam.target.z).length() < 180.0 {
                     for i in 0..64 {
-                        let angulo = i as f32*std::f32::consts::TAU/64.0;
-                        let proximo = (i+1) as f32*std::f32::consts::TAU/64.0;
-                        let a = vec2(c.x,c.y)+vec2(angulo.cos(),angulo.sin())*32.0;
-                        let b = vec2(c.x,c.y)+vec2(proximo.cos(),proximo.sin())*32.0;
-                        draw_line_3d(vec3(a.x,self.ger.altura(a.x,a.y)+0.15,a.y),vec3(b.x,self.ger.altura(b.x,b.y)+0.15,b.y),SKYBLUE);
+                        let angulo = i as f32 * std::f32::consts::TAU / 64.0;
+                        let proximo = (i + 1) as f32 * std::f32::consts::TAU / 64.0;
+                        let a = vec2(c.x, c.y) + vec2(angulo.cos(), angulo.sin()) * 32.0;
+                        let b = vec2(c.x, c.y) + vec2(proximo.cos(), proximo.sin()) * 32.0;
+                        draw_line_3d(
+                            vec3(a.x, self.ger.altura(a.x, a.y) + 0.15, a.y),
+                            vec3(b.x, self.ger.altura(b.x, b.y) + 0.15, b.y),
+                            SKYBLUE,
+                        );
                     }
                 }
             }
@@ -570,7 +610,10 @@ impl Terreno {
             crate::gpu_estatica::Programa::Sombra,
             self.pedacos
                 .iter()
-                .filter(|((cx, cz), _)| pedaco_visivel(cam, self.centro_do_pedaco(*cx, *cz)) && self.presenca_no_mar(*cx, *cz) >= 1.0)
+                .filter(|((cx, cz), _)| {
+                    pedaco_visivel(cam, self.centro_do_pedaco(*cx, *cz))
+                        && self.presenca_no_mar(*cx, *cz) >= 1.0
+                })
                 .flat_map(|(_, p)| p.sombras.iter()),
         );
     }
@@ -615,7 +658,9 @@ impl Terreno {
     pub fn destrocos_visiveis(&self, cam: &Camera3D) -> Vec<(Vec3, usize)> {
         self.pedacos
             .iter()
-            .filter(|((cx, cz), p)| !p.boiando.is_empty() && pedaco_visivel(cam, self.centro_do_pedaco(*cx, *cz)))
+            .filter(|((cx, cz), p)| {
+                !p.boiando.is_empty() && pedaco_visivel(cam, self.centro_do_pedaco(*cx, *cz))
+            })
             .flat_map(|(_, p)| p.boiando.iter().copied())
             .collect()
     }
@@ -643,18 +688,29 @@ impl Terreno {
     pub fn energias_visiveis(&self, cam: &Camera3D) -> Vec<Vec3> {
         self.pedacos
             .iter()
-            .filter(|((cx, cz), p)| !p.energias.is_empty() && pedaco_visivel(cam, self.centro_do_pedaco(*cx, *cz)))
+            .filter(|((cx, cz), p)| {
+                !p.energias.is_empty() && pedaco_visivel(cam, self.centro_do_pedaco(*cx, *cz))
+            })
             .flat_map(|(_, p)| p.energias.iter().copied())
             .collect()
     }
 
     /// A superficie do mar dos pedacos visiveis. Quem chama ja' pos o
     /// material da agua (ver `agua::desenha`).
-    pub fn sem_oceano(&self) -> bool { self.sem_mar }
+    pub fn sem_oceano(&self) -> bool {
+        self.sem_mar
+    }
 
     /// The water of the chunks at most `ate` chunks (along either axis) from
     /// chunk `centro` (the open sea: the far fill covers the rest).
-    pub fn desenha_agua_ate(&self, cam: &Camera3D, tempo: f32, ondas: f32, centro: (i32, i32), ate: i32) {
+    pub fn desenha_agua_ate(
+        &self,
+        cam: &Camera3D,
+        tempo: f32,
+        ondas: f32,
+        centro: (i32, i32),
+        ate: i32,
+    ) {
         crate::gpu_estatica::desenha(
             crate::gpu_estatica::Programa::Agua { tempo, ondas },
             self.pedacos
@@ -673,7 +729,9 @@ impl Terreno {
             crate::gpu_estatica::Programa::Agua { tempo, ondas },
             self.pedacos
                 .iter()
-                .filter(|((cx, cz), p)| !p.agua.is_empty() && pedaco_visivel(cam, self.centro_do_pedaco(*cx, *cz)))
+                .filter(|((cx, cz), p)| {
+                    !p.agua.is_empty() && pedaco_visivel(cam, self.centro_do_pedaco(*cx, *cz))
+                })
                 .flat_map(|(_, p)| p.agua.iter()),
         );
     }
@@ -686,7 +744,12 @@ impl Terreno {
     /// uma estrutura de colisao.
     /// `onde_o_raio_bate`, telling the floor too: on Kōgen-tō a ray that
     /// meets an expressway deck before the street lands on the deck.
-    pub fn onde_o_raio_bate_no_andar(&self, origem: Vec3, dir: Vec3, alcance: f32) -> Option<(Vec2, u8)> {
+    pub fn onde_o_raio_bate_no_andar(
+        &self,
+        origem: Vec3,
+        dir: Vec3,
+        alcance: f32,
+    ) -> Option<(Vec2, u8)> {
         if self.ger.e_kogen() {
             let passo = 0.25;
             let mut t = 0.0f32;
@@ -703,7 +766,8 @@ impl Terreno {
                 }
             }
         }
-        self.onde_o_raio_bate(origem, dir, alcance).map(|p| (p, shared::terreno::CAMADA_CHAO))
+        self.onde_o_raio_bate(origem, dir, alcance)
+            .map(|p| (p, shared::terreno::CAMADA_CHAO))
     }
 
     pub fn onde_o_raio_bate(&self, origem: Vec3, dir: Vec3, alcance: f32) -> Option<Vec2> {
@@ -1002,7 +1066,9 @@ impl Terreno {
                     // under the island"). Next to a deck, the island's cliff
                     // goes all the way down, from under the deck.
                     let deck_ao_lado = self.ger.e_aerea()
-                        && self.ger.na_ponte_magica(cx * CHUNK + ix + dx, cz * CHUNK + iz + dz)
+                        && self
+                            .ger
+                            .na_ponte_magica(cx * CHUNK + ix + dx, cz * CHUNK + iz + dz)
                         && !self.ger.na_ponte_magica(cx * CHUNK + ix, cz * CHUNK + iz);
                     if hv >= h && !deck_ao_lado {
                         continue;
@@ -1010,14 +1076,26 @@ impl Terreno {
                     // O pe' da parede para na linha d'agua: penhasco na costa
                     // desceria ate' o fundo do talude, geometria que ninguem ve'.
                     let piso = if deck_ao_lado {
-                        if self.ger.e_magica() { 7 } else { -2 }
+                        if self.ger.e_magica() {
+                            7
+                        } else {
+                            -2
+                        }
                     } else if self.ger.e_aerea() && eh_agua(ix + dx, iz + dz) {
                         let ponte = self.ger.na_ponte_magica(cx * CHUNK + ix, cz * CHUNK + iz);
                         // Bridges and cloud paths are thin decks. Skyreach's
                         // islands keep their cliff down to the sea line, where
                         // the rock root hanging below takes over.
-                        hv.max(if ponte { h - 2 } else if self.ger.e_magica() { 7 } else { -2 })
-                    } else { hv.max(((NIVEL_DO_MAR / BLOCO) as i32) - 2) };
+                        hv.max(if ponte {
+                            h - 2
+                        } else if self.ger.e_magica() {
+                            7
+                        } else {
+                            -2
+                        })
+                    } else {
+                        hv.max(((NIVEL_DO_MAR / BLOCO) as i32) - 2)
+                    };
                     let topo_mat = self.material_do_tema(
                         topo,
                         declive_col(&em, ix, iz),
@@ -1033,7 +1111,10 @@ impl Terreno {
                     // courses (`planta::Planta::pedra`), not the islet's soil.
                     let (gx, gz) = (cx * CHUNK + ix, cz * CHUNK + iz);
                     let porao = if self.ger.e_arena() {
-                        shared::planta::complexo_em(::glam::Vec2::new(gx as f32 * BLOCO, gz as f32 * BLOCO))
+                        shared::planta::complexo_em(::glam::Vec2::new(
+                            gx as f32 * BLOCO,
+                            gz as f32 * BLOCO,
+                        ))
                     } else {
                         None
                     };
@@ -1047,17 +1128,37 @@ impl Terreno {
                     let q_kogen = ::glam::Vec2::new(gx as f32 * BLOCO, gz as f32 * BLOCO);
                     let predio = self.ger.e_kogen()
                         && !self.ger.na_cidade(gx, gz)
-                        && matches!(shared::kogen::chao_em(q_kogen), shared::kogen::Chao::Predio { .. });
+                        && matches!(
+                            shared::kogen::chao_em(q_kogen),
+                            shared::kogen::Chao::Predio { .. }
+                        );
                     // Abyssia's Coral Palace and its pillar.
                     let palacio = self.ger.e_abissal() && shared::abissal::e_palacio(q_kogen);
                     let mar = self.ger.e_mar();
                     let faixa = |prof: i32| match porao {
                         // The sea's islands: strata of their own palette.
                         _ if mar => shared::mar::material_da_parede(gx, gz, h, prof),
-                        _ if predio => shared::kogen::fachada(q_kogen, gx, gz, prof, h - shared::kogen::NIVEL_CHAO),
-                        _ if palacio => shared::abissal::fachada(q_kogen, gx, gz, h - prof - shared::abissal::NIVEL_CHAO),
+                        _ if predio => shared::kogen::fachada(
+                            q_kogen,
+                            gx,
+                            gz,
+                            prof,
+                            h - shared::kogen::NIVEL_CHAO,
+                        ),
+                        _ if palacio => shared::abissal::fachada(
+                            q_kogen,
+                            gx,
+                            gz,
+                            h - prof - shared::abissal::NIVEL_CHAO,
+                        ),
                         // A cloud path's edge: white on top, shaded below.
-                        _ if nuvem => if prof == 0 { Material::Nuvem } else { Material::NuvemSombra },
+                        _ if nuvem => {
+                            if prof == 0 {
+                                Material::Nuvem
+                            } else {
+                                Material::NuvemSombra
+                            }
+                        }
                         Some(pl) => pl.pedra(gx, gz, prof),
                         None if castelo => {
                             let h = (gx as u32).wrapping_mul(73_856_093)
@@ -1137,16 +1238,16 @@ impl Terreno {
             let mut bases = vec![4.0; lado * lado];
             for iz in 0..lado {
                 for ix in 0..lado {
-                    bases[iz * lado + ix] = base_da_ilhota(
-                        cx * CHUNK + ix as i32 - 1,
-                        cz * CHUNK + iz as i32 - 1,
-                    );
+                    bases[iz * lado + ix] =
+                        base_da_ilhota(cx * CHUNK + ix as i32 - 1, cz * CHUNK + iz as i32 - 1);
                 }
             }
             let base = |x: i32, z: i32| bases[(z + 1) as usize * lado + (x + 1) as usize];
             for iz in 0..n as i32 {
                 for ix in 0..n as i32 {
-                    if eh_agua(ix, iz) { continue; }
+                    if eh_agua(ix, iz) {
+                        continue;
+                    }
                     let bx = cx * CHUNK + ix;
                     let bz = cz * CHUNK + iz;
                     let x0 = bx as f32 * BLOCO - BLOCO * 0.5;
@@ -1158,26 +1259,61 @@ impl Terreno {
                     let cor = |luz: f32| {
                         let profundidade = ((4.0 - y0) / 42.0).clamp(0.0, 1.0);
                         let c = (vec3(150.0, 158.0, 172.0) - Vec3::splat(profundidade * 25.0)
-                            + Vec3::splat(grao)) * luz;
+                            + Vec3::splat(grao))
+                            * luz;
                         [c.x as u8, c.y as u8, c.z as u8, 255]
                     };
-                    quad(&mut verts, &mut idx, &mut malhas,
-                        [vec3(x0,y0,z0),vec3(x1,y0,z0),vec3(x1,y0,z1),vec3(x0,y0,z1)],
-                        -Vec3::Y, cor(0.72));
-                    for (dx,dz) in [(1,0),(-1,0),(0,1),(0,-1)] {
-                        let y1 = if eh_agua(ix+dx,iz+dz) {
-                            if self.ger.na_ponte_magica(bx,bz) { 7.0 } else { 4.0 }
-                        } else { base(ix+dx,iz+dz) };
-                        if y1 <= y0 { continue; }
-                        let p = if dx != 0 {
-                            let x = if dx > 0 {x1} else {x0};
-                            [vec3(x,y0,z0),vec3(x,y0,z1),vec3(x,y1,z1),vec3(x,y1,z0)]
+                    quad(
+                        &mut verts,
+                        &mut idx,
+                        &mut malhas,
+                        [
+                            vec3(x0, y0, z0),
+                            vec3(x1, y0, z0),
+                            vec3(x1, y0, z1),
+                            vec3(x0, y0, z1),
+                        ],
+                        -Vec3::Y,
+                        cor(0.72),
+                    );
+                    for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+                        let y1 = if eh_agua(ix + dx, iz + dz) {
+                            if self.ger.na_ponte_magica(bx, bz) {
+                                7.0
+                            } else {
+                                4.0
+                            }
                         } else {
-                            let z = if dz > 0 {z1} else {z0};
-                            [vec3(x0,y0,z),vec3(x1,y0,z),vec3(x1,y1,z),vec3(x0,y1,z)]
+                            base(ix + dx, iz + dz)
                         };
-                        quad(&mut verts, &mut idx, &mut malhas,p,
-                            vec3(dx as f32,0.0,dz as f32),cor(if dx!=0 {0.92} else {0.82}));
+                        if y1 <= y0 {
+                            continue;
+                        }
+                        let p = if dx != 0 {
+                            let x = if dx > 0 { x1 } else { x0 };
+                            [
+                                vec3(x, y0, z0),
+                                vec3(x, y0, z1),
+                                vec3(x, y1, z1),
+                                vec3(x, y1, z0),
+                            ]
+                        } else {
+                            let z = if dz > 0 { z1 } else { z0 };
+                            [
+                                vec3(x0, y0, z),
+                                vec3(x1, y0, z),
+                                vec3(x1, y1, z),
+                                vec3(x0, y1, z),
+                            ]
+                        };
+                        quad(
+                            &mut verts,
+                            &mut idx,
+                            &mut malhas,
+                            p,
+                            vec3(dx as f32, 0.0, dz as f32),
+                            cor(if dx != 0 { 0.92 } else { 0.82 }),
+                        );
                     }
                 }
             }
@@ -1266,10 +1402,21 @@ impl Terreno {
                             continue;
                         }
                         let (bx, bz) = (cx * CHUNK + ix, cz * CHUNK + iz);
-                        if let Some((k, escala, giro)) = crate::mar_cena::prop_da_coluna(bx, bz, forracao) {
+                        if let Some((k, escala, giro)) =
+                            crate::mar_cena::prop_da_coluna(bx, bz, forracao)
+                        {
                             let topo = (em(ix, iz) + 1) as f32 * BLOCO;
                             if let Some(m) = self.props_do_mar.get(k) {
-                                crate::mar_cena::instancia_girada(m, vec3(bx as f32 * BLOCO, topo, bz as f32 * BLOCO), escala, giro, &mut verts, &mut idx, &mut malhas, MAX_QUADS);
+                                crate::mar_cena::instancia_girada(
+                                    m,
+                                    vec3(bx as f32 * BLOCO, topo, bz as f32 * BLOCO),
+                                    escala,
+                                    giro,
+                                    &mut verts,
+                                    &mut idx,
+                                    &mut malhas,
+                                    MAX_QUADS,
+                                );
                             }
                         }
                     }
@@ -1435,24 +1582,57 @@ impl Terreno {
                     let (x1, z1) = (x0 + BLOCO, z0 + BLOCO);
                     let topo = (d + 1) as f32 * BLOCO;
                     let fundo = ((d - 1).max(chao + 1) + 0) as f32 * BLOCO;
-                    quad(&mut verts, &mut idx, &mut malhas,
-                        [vec3(x0, topo, z0), vec3(x1, topo, z0), vec3(x1, topo, z1), vec3(x0, topo, z1)],
-                        Vec3::Y, self.cor(Material::Asfalto, gx, gz, d, 1.0, 1.0));
+                    quad(
+                        &mut verts,
+                        &mut idx,
+                        &mut malhas,
+                        [
+                            vec3(x0, topo, z0),
+                            vec3(x1, topo, z0),
+                            vec3(x1, topo, z1),
+                            vec3(x0, topo, z1),
+                        ],
+                        Vec3::Y,
+                        self.cor(Material::Asfalto, gx, gz, d, 1.0, 1.0),
+                    );
                     if fundo > (chao + 1) as f32 * BLOCO + 0.01 {
-                        quad(&mut verts, &mut idx, &mut malhas,
-                            [vec3(x0, fundo, z0), vec3(x0, fundo, z1), vec3(x1, fundo, z1), vec3(x1, fundo, z0)],
-                            -Vec3::Y, self.cor(Material::ConcretoEscuro, gx, gz, d, 0.55, 1.0));
+                        quad(
+                            &mut verts,
+                            &mut idx,
+                            &mut malhas,
+                            [
+                                vec3(x0, fundo, z0),
+                                vec3(x0, fundo, z1),
+                                vec3(x1, fundo, z1),
+                                vec3(x1, fundo, z0),
+                            ],
+                            -Vec3::Y,
+                            self.cor(Material::ConcretoEscuro, gx, gz, d, 0.55, 1.0),
+                        );
                     }
                     for (dx, dz) in [(1i32, 0i32), (-1, 0), (0, 1), (0, -1)] {
                         let viz = deck(gx + dx, gz + dz);
                         let nrm = vec3(dx as f32, 0.0, dz as f32);
                         // The face on this column's edge towards (dx, dz).
                         let face = |y0: f32, y1: f32, recuo: f32| -> [Vec3; 4] {
-                            let (ex, ez) = (gx as f32 * BLOCO + dx as f32 * (BLOCO * 0.5 - recuo), gz as f32 * BLOCO + dz as f32 * (BLOCO * 0.5 - recuo));
+                            let (ex, ez) = (
+                                gx as f32 * BLOCO + dx as f32 * (BLOCO * 0.5 - recuo),
+                                gz as f32 * BLOCO + dz as f32 * (BLOCO * 0.5 - recuo),
+                            );
                             if dx != 0 {
-                                [vec3(ex, y0, z0), vec3(ex, y0, z1), vec3(ex, y1, z1), vec3(ex, y1, z0)]
+                                [
+                                    vec3(ex, y0, z0),
+                                    vec3(ex, y0, z1),
+                                    vec3(ex, y1, z1),
+                                    vec3(ex, y1, z0),
+                                ]
                             } else {
-                                [vec3(x0, y0, ez), vec3(x1, y0, ez), vec3(x1, y1, ez), vec3(x0, y1, ez)]
+                                [
+                                    vec3(x0, y0, ez),
+                                    vec3(x1, y0, ez),
+                                    vec3(x1, y1, ez),
+                                    vec3(x0, y1, ez),
+                                ]
                             }
                         };
                         match viz {
@@ -1460,35 +1640,82 @@ impl Terreno {
                             Some(v) if (v - d).abs() <= 1 => {
                                 if v < d {
                                     let y0 = (v + 1) as f32 * BLOCO;
-                                    quad(&mut verts, &mut idx, &mut malhas, face(y0, topo, 0.0), nrm,
-                                        self.cor(Material::Concreto, gx, gz, d, 0.8, 1.0));
+                                    quad(
+                                        &mut verts,
+                                        &mut idx,
+                                        &mut malhas,
+                                        face(y0, topo, 0.0),
+                                        nrm,
+                                        self.cor(Material::Concreto, gx, gz, d, 0.8, 1.0),
+                                    );
                                 }
                             }
                             // The edge: the deck's side and a rail one block tall.
                             _ => {
-                                let base = viz.map_or(fundo, |v| ((v + 1) as f32 * BLOCO).max(fundo));
-                                quad(&mut verts, &mut idx, &mut malhas, face(base, topo + BLOCO, 0.0), nrm,
-                                    self.cor(Material::Concreto, gx, gz, d, 0.75, 1.0));
-                                quad(&mut verts, &mut idx, &mut malhas, face(topo, topo + BLOCO, 0.12), -nrm,
-                                    self.cor(Material::Concreto, gx, gz, d, 0.9, 1.0));
+                                let base =
+                                    viz.map_or(fundo, |v| ((v + 1) as f32 * BLOCO).max(fundo));
+                                quad(
+                                    &mut verts,
+                                    &mut idx,
+                                    &mut malhas,
+                                    face(base, topo + BLOCO, 0.0),
+                                    nrm,
+                                    self.cor(Material::Concreto, gx, gz, d, 0.75, 1.0),
+                                );
+                                quad(
+                                    &mut verts,
+                                    &mut idx,
+                                    &mut malhas,
+                                    face(topo, topo + BLOCO, 0.12),
+                                    -nrm,
+                                    self.cor(Material::Concreto, gx, gz, d, 0.9, 1.0),
+                                );
                                 // The rail's top, with a neon strip every few columns.
-                                let (ax, az) = (gx as f32 * BLOCO + dx as f32 * BLOCO * 0.5, gz as f32 * BLOCO + dz as f32 * BLOCO * 0.5);
+                                let (ax, az) = (
+                                    gx as f32 * BLOCO + dx as f32 * BLOCO * 0.5,
+                                    gz as f32 * BLOCO + dz as f32 * BLOCO * 0.5,
+                                );
                                 let (bx, bz) = (ax - dx as f32 * 0.12, az - dz as f32 * 0.12);
                                 let y = topo + BLOCO;
                                 let pts = if dx != 0 {
-                                    [vec3(ax.min(bx), y, z0), vec3(ax.max(bx), y, z0), vec3(ax.max(bx), y, z1), vec3(ax.min(bx), y, z1)]
+                                    [
+                                        vec3(ax.min(bx), y, z0),
+                                        vec3(ax.max(bx), y, z0),
+                                        vec3(ax.max(bx), y, z1),
+                                        vec3(ax.min(bx), y, z1),
+                                    ]
                                 } else {
-                                    [vec3(x0, y, az.min(bz)), vec3(x1, y, az.min(bz)), vec3(x1, y, az.max(bz)), vec3(x0, y, az.max(bz))]
+                                    [
+                                        vec3(x0, y, az.min(bz)),
+                                        vec3(x1, y, az.min(bz)),
+                                        vec3(x1, y, az.max(bz)),
+                                        vec3(x0, y, az.max(bz)),
+                                    ]
                                 };
-                                let neon = if (gx + gz).rem_euclid(6) < 3 { Material::NeonCiano } else { Material::Concreto };
-                                quad(&mut verts, &mut idx, &mut malhas, pts, Vec3::Y, self.cor(neon, gx, gz, d, 1.0, 1.0));
+                                let neon = if (gx + gz).rem_euclid(6) < 3 {
+                                    Material::NeonCiano
+                                } else {
+                                    Material::Concreto
+                                };
+                                quad(
+                                    &mut verts,
+                                    &mut idx,
+                                    &mut malhas,
+                                    pts,
+                                    Vec3::Y,
+                                    self.cor(neon, gx, gz, d, 1.0, 1.0),
+                                );
                             }
                         }
                     }
                     // A pillar every five units, where the deck is wide and high.
                     let alto = d - chao > shared::terreno::VAO_LIVRE;
-                    if alto && gx.rem_euclid(10) == 0 && gz.rem_euclid(10) == 0
-                        && [(1, 0), (-1, 0), (0, 1), (0, -1)].iter().all(|(a, b)| deck(gx + a, gz + b).is_some())
+                    if alto
+                        && gx.rem_euclid(10) == 0
+                        && gz.rem_euclid(10) == 0
+                        && [(1, 0), (-1, 0), (0, 1), (0, -1)]
+                            .iter()
+                            .all(|(a, b)| deck(gx + a, gz + b).is_some())
                     {
                         let y0 = (chao + 1) as f32 * BLOCO;
                         let r = BLOCO * 0.5;
@@ -1496,12 +1723,28 @@ impl Terreno {
                         for (dx, dz) in [(1.0f32, 0.0f32), (-1.0, 0.0), (0.0, 1.0), (0.0, -1.0)] {
                             let (ex, ez) = (px + dx * r, pz + dz * r);
                             let pts = if dx != 0.0 {
-                                [vec3(ex, y0, pz - r), vec3(ex, y0, pz + r), vec3(ex, fundo, pz + r), vec3(ex, fundo, pz - r)]
+                                [
+                                    vec3(ex, y0, pz - r),
+                                    vec3(ex, y0, pz + r),
+                                    vec3(ex, fundo, pz + r),
+                                    vec3(ex, fundo, pz - r),
+                                ]
                             } else {
-                                [vec3(px - r, y0, ez), vec3(px + r, y0, ez), vec3(px + r, fundo, ez), vec3(px - r, fundo, ez)]
+                                [
+                                    vec3(px - r, y0, ez),
+                                    vec3(px + r, y0, ez),
+                                    vec3(px + r, fundo, ez),
+                                    vec3(px - r, fundo, ez),
+                                ]
                             };
-                            quad(&mut verts, &mut idx, &mut malhas, pts, vec3(dx, 0.0, dz),
-                                self.cor(Material::Concreto, gx, gz, chao, 0.7, 1.0));
+                            quad(
+                                &mut verts,
+                                &mut idx,
+                                &mut malhas,
+                                pts,
+                                vec3(dx, 0.0, dz),
+                                self.cor(Material::Concreto, gx, gz, chao, 0.7, 1.0),
+                            );
                         }
                     }
                 }
@@ -1525,10 +1768,14 @@ impl Terreno {
         Pedaco {
             malhas: malhas.into_iter().map(MalhaEstatica::nova).collect(),
             sombras: sombras.into_iter().map(MalhaEstatica::nova).collect(),
-            agua: (if self.sem_mar { Vec::new() } else { crate::agua::malhas_do_pedaco(&self.ger, cx, cz) })
-                .into_iter()
-                .map(MalhaEstatica::nova)
-                .collect(),
+            agua: (if self.sem_mar {
+                Vec::new()
+            } else {
+                crate::agua::malhas_do_pedaco(&self.ger, cx, cz)
+            })
+            .into_iter()
+            .map(MalhaEstatica::nova)
+            .collect(),
             energias,
             forracao,
             boiando,
@@ -1570,7 +1817,11 @@ impl Terreno {
 fn base_da_ilhota(bx: i32, bz: i32) -> f32 {
     let p = ::glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO);
     let Some(i) = shared::magica::ilhota_em(p) else {
-        return if shared::magica::na_ponte(p) { 7.0 } else { 4.0 };
+        return if shared::magica::na_ponte(p) {
+            7.0
+        } else {
+            4.0
+        };
     };
     let d = p - i.centro;
     let r = shared::magica::raio_da_ilhota(&i, d.y.atan2(d.x));
@@ -1719,7 +1970,14 @@ pub async fn previa_das_sombras() {
     let saida = std::env::var("MMO_PREVIA_SAIDA").unwrap_or_else(|_| "/tmp/tempest-sombras".into());
     std::fs::create_dir_all(&saida).unwrap();
     next_frame().await;
-    let rt = render_target_ex(1280, 800, RenderTargetParams { depth: true, sample_count: 1 });
+    let rt = render_target_ex(
+        1280,
+        800,
+        RenderTargetParams {
+            depth: true,
+            sample_count: 1,
+        },
+    );
     crate::render3d::define_alvo(Some(rt.clone()));
     let solido = crate::render3d::material_solido();
     let def = &shared::terreno::ARQUIPELAGO[0];
@@ -1768,7 +2026,10 @@ pub async fn previa_das_sombras() {
                 }
             }
         }
-        println!("[shadow preview] peak {k} at ({:.0},{:.0}) height {h:.1}", centro.x, centro.y);
+        println!(
+            "[shadow preview] peak {k} at ({:.0},{:.0}) height {h:.1}",
+            centro.x, centro.y
+        );
     }
 }
 
@@ -1776,10 +2037,18 @@ pub async fn previa_das_sombras() {
 /// out at the lowest tilt each view distance allows, and at each grass density.
 #[cfg(debug_assertions)]
 pub async fn previa_dos_graficos() {
-    let saida = std::env::var("MMO_PREVIA_SAIDA").unwrap_or_else(|_| "/tmp/tempest-graficos".into());
+    let saida =
+        std::env::var("MMO_PREVIA_SAIDA").unwrap_or_else(|_| "/tmp/tempest-graficos".into());
     std::fs::create_dir_all(&saida).unwrap();
     next_frame().await;
-    let rt = render_target_ex(1280, 800, RenderTargetParams { depth: true, sample_count: 1 });
+    let rt = render_target_ex(
+        1280,
+        800,
+        RenderTargetParams {
+            depth: true,
+            sample_count: 1,
+        },
+    );
     crate::render3d::define_alvo(Some(rt.clone()));
     let solido = crate::render3d::material_solido();
     let def = &shared::terreno::ARQUIPELAGO[0];
@@ -1811,7 +2080,9 @@ pub async fn previa_dos_graficos() {
             crate::agua::desenha(&t, &cam, 0.0);
             macroquad::material::gl_use_default_material();
             unsafe { get_internal_gl().flush() };
-            rt.texture.get_texture_data().export_png(&format!("{saida}/{nome}.png"));
+            rt.texture
+                .get_texture_data()
+                .export_png(&format!("{saida}/{nome}.png"));
             next_frame().await;
             println!("[graphics preview] {nome}: radius {raio}, cover {forracao}%, pitch {:.1}°, {n} chunks drawn", pitch.to_degrees());
         }
@@ -1826,17 +2097,35 @@ pub async fn previa_celeste(vox: &mut crate::vox::VoxCache) {
     let saida = std::env::var("MMO_PREVIA_SAIDA").unwrap_or_else(|_| "/tmp/tempest-celeste".into());
     std::fs::create_dir_all(&saida).unwrap();
     next_frame().await;
-    let rt = render_target_ex(1280, 800, RenderTargetParams { depth: true, sample_count: 1 });
+    let rt = render_target_ex(
+        1280,
+        800,
+        RenderTargetParams {
+            depth: true,
+            sample_count: 1,
+        },
+    );
     crate::render3d::define_alvo(Some(rt.clone()));
     let def = &shared::celeste::DEF;
     let g = shared::terreno::Gerador::da_ilha(def);
     let mut t = Terreno::novo(def);
     let mut casas = crate::construcoes::Construcoes::para(Some(def));
-    for _ in 0..600 { casas.acompanhar(); if casas.prontas() { break; } next_frame().await; }
+    for _ in 0..600 {
+        casas.acompanhar();
+        if casas.prontas() {
+            break;
+        }
+        next_frame().await;
+    }
     let solido = crate::render3d::material_solido();
     let p = &shared::celeste::PLATOS;
     // Shared's glam is another version than the client's: carry plain floats.
-    let meio = |i: usize, j: usize| ((p[i].centro.x + p[j].centro.x) * 0.5, (p[i].centro.y + p[j].centro.y) * 0.5);
+    let meio = |i: usize, j: usize| {
+        (
+            (p[i].centro.x + p[j].centro.x) * 0.5,
+            (p[i].centro.y + p[j].centro.y) * 0.5,
+        )
+    };
     let mut vistas: Vec<(String, (f32, f32), f32)> = [0usize, 2, 5, 8, 11]
         .iter()
         .map(|&i| (format!("plato-{i}"), (p[i].centro.x, p[i].centro.y), 140.0))
@@ -1854,7 +2143,10 @@ pub async fn previa_celeste(vox: &mut crate::vox::VoxCache) {
         let chao = g.altura(c.x, c.y).max(12.0);
         t.atualiza(centro, if distancia > 400.0 { 40 } else { 16 }, 4000);
         let (pos, alvo) = if distancia < 0.0 {
-            let (a, b) = (vec2(p[0].centro.x, p[0].centro.y), vec2(p[1].centro.x, p[1].centro.y));
+            let (a, b) = (
+                vec2(p[0].centro.x, p[0].centro.y),
+                vec2(p[1].centro.x, p[1].centro.y),
+            );
             // The landing: the first column of path, scanning a ring round
             // island 1 just past its radius.
             let mut borda = b + (a - b).normalize() * p[1].raio;
@@ -1862,7 +2154,10 @@ pub async fn previa_celeste(vox: &mut crate::vox::VoxCache) {
                 let ang = k as f32 / 720.0 * std::f32::consts::TAU;
                 for rr in [1.02f32, 1.06, 1.10] {
                     let q = b + vec2(ang.cos(), ang.sin()) * p[1].raio * rr;
-                    let (bx, bz) = ((q.x / shared::terreno::BLOCO).round() as i32, (q.y / shared::terreno::BLOCO).round() as i32);
+                    let (bx, bz) = (
+                        (q.x / shared::terreno::BLOCO).round() as i32,
+                        (q.y / shared::terreno::BLOCO).round() as i32,
+                    );
                     if g.na_ponte_magica(bx, bz) {
                         borda = q;
                         break 'achar;
@@ -1873,9 +2168,23 @@ pub async fn previa_celeste(vox: &mut crate::vox::VoxCache) {
             let h = g.altura(borda.x, borda.y);
             let lado = vec2(-dir.y, dir.x);
             t.atualiza(borda, 16, 4000);
-            (vec3(borda.x + lado.x * 22.0 + dir.x * 14.0, h - 7.0, borda.y + lado.y * 22.0 + dir.y * 14.0), vec3(borda.x - dir.x * 2.0, h - 4.0, borda.y - dir.y * 2.0))
+            (
+                vec3(
+                    borda.x + lado.x * 22.0 + dir.x * 14.0,
+                    h - 7.0,
+                    borda.y + lado.y * 22.0 + dir.y * 14.0,
+                ),
+                vec3(borda.x - dir.x * 2.0, h - 4.0, borda.y - dir.y * 2.0),
+            )
         } else {
-            (vec3(centro.x + distancia * 0.45, chao + distancia * 0.65, centro.y + distancia), vec3(centro.x, chao, centro.y))
+            (
+                vec3(
+                    centro.x + distancia * 0.45,
+                    chao + distancia * 0.65,
+                    centro.y + distancia,
+                ),
+                vec3(centro.x, chao, centro.y),
+            )
         };
         for _ in 0..3 {
             let cam = Camera3D {
@@ -1895,7 +2204,9 @@ pub async fn previa_celeste(vox: &mut crate::vox::VoxCache) {
             crate::agua::desenha(&t, &cam, 0.0);
             macroquad::material::gl_use_default_material();
             unsafe { get_internal_gl().flush() };
-            rt.texture.get_texture_data().export_png(&format!("{saida}/{nome}.png"));
+            rt.texture
+                .get_texture_data()
+                .export_png(&format!("{saida}/{nome}.png"));
             next_frame().await;
         }
     }
@@ -1910,7 +2221,9 @@ pub async fn previa_celeste(vox: &mut crate::vox::VoxCache) {
         unsafe { get_internal_gl().flush() };
         next_frame().await;
     }
-    rt.texture.get_texture_data().export_png(&format!("{saida}/mapa.png"));
+    rt.texture
+        .get_texture_data()
+        .export_png(&format!("{saida}/mapa.png"));
     // The World tab: the fifth island on the archipelago map.
     mapa.no_mundo = true;
     for _ in 0..10 {
@@ -1921,10 +2234,19 @@ pub async fn previa_celeste(vox: &mut crate::vox::VoxCache) {
         unsafe { get_internal_gl().flush() };
         next_frame().await;
     }
-    rt.texture.get_texture_data().export_png(&format!("{saida}/mundo.png"));
+    rt.texture
+        .get_texture_data()
+        .export_png(&format!("{saida}/mundo.png"));
     // The winged creatures, side by side, two angles each.
-    let bichos = ["bichos/seraph_wolf", "bichos/seraph_lynx", "bichos/seraph_bear", "bichos/seraph_owlbear",
-        "bichos/pegasus_stag", "humanoides/seraph_archer", "humanoides/seraph_mage"];
+    let bichos = [
+        "bichos/seraph_wolf",
+        "bichos/seraph_lynx",
+        "bichos/seraph_bear",
+        "bichos/seraph_owlbear",
+        "bichos/pegasus_stag",
+        "humanoides/seraph_archer",
+        "humanoides/seraph_mage",
+    ];
     for _ in 0..8 {
         crate::render3d::camera_padrao();
         clear_background(Color::from_rgba(150, 186, 214, 255));
@@ -1939,13 +2261,21 @@ pub async fn previa_celeste(vox: &mut crate::vox::VoxCache) {
                 }
             }
             crate::render3d::camera_padrao();
-            draw_text(nome.trim_start_matches("bichos/"), k as f32 * w + 10.0, 28.0, 24.0, WHITE);
+            draw_text(
+                nome.trim_start_matches("bichos/"),
+                k as f32 * w + 10.0,
+                28.0,
+                24.0,
+                WHITE,
+            );
         }
         unsafe { get_internal_gl().flush() };
         next_frame().await;
         vox.atende_um_pendente(crate::render3d::VOXEL).await;
     }
-    rt.texture.get_texture_data().export_png(&format!("{saida}/bichos.png"));
+    rt.texture
+        .get_texture_data()
+        .export_png(&format!("{saida}/bichos.png"));
     crate::render3d::define_alvo(None);
 }
 
@@ -1969,15 +2299,26 @@ pub async fn previa_do_planalto() {
     let pl = g.planalto().unwrap();
     let mut t = Terreno::novo(def);
     let mut casas = crate::construcoes::Construcoes::para(Some(def));
-    for _ in 0..600 { casas.acompanhar(); if casas.prontas() { break; } next_frame().await; }
+    for _ in 0..600 {
+        casas.acompanhar();
+        if casas.prontas() {
+            break;
+        }
+        next_frame().await;
+    }
     let solido = crate::render3d::material_solido();
-    let vistas = std::iter::once(("abrigo".to_string(),g.cidade().unwrap().centro()))
-        .chain(std::iter::once(("forte".to_string(),pl.forte.centro)))
-        .chain(pl.regioes.iter().enumerate().map(|(i,r)|(format!("regiao-{i}"),r.centro)));
-    for (nome,c) in vistas {
-        let centro = vec2(c.x,c.y);
+    let vistas = std::iter::once(("abrigo".to_string(), g.cidade().unwrap().centro()))
+        .chain(std::iter::once(("forte".to_string(), pl.forte.centro)))
+        .chain(
+            pl.regioes
+                .iter()
+                .enumerate()
+                .map(|(i, r)| (format!("regiao-{i}"), r.centro)),
+        );
+    for (nome, c) in vistas {
+        let centro = vec2(c.x, c.y);
         let distancia = 150.0;
-        let chao = g.altura(c.x,c.y);
+        let chao = g.altura(c.x, c.y);
         t.atualiza(centro, 16, 2000);
         for _ in 0..3 {
             let cam = Camera3D {
@@ -1997,7 +2338,7 @@ pub async fn previa_do_planalto() {
             macroquad::material::gl_use_material(&solido);
             t.desenha(&cam, Vec3::ZERO, 0.0);
             t.desenha_sombras(&cam);
-            casas.desenha(&cam,None,Vec3::ZERO,0.0);
+            casas.desenha(&cam, None, Vec3::ZERO, 0.0);
             crate::agua::desenha(&t, &cam, 0.0);
             macroquad::material::gl_use_default_material();
             unsafe { get_internal_gl().flush() };
@@ -2034,7 +2375,6 @@ pub async fn previa_do_planalto() {
         .get_texture_data()
         .export_png(&format!("{saida}/mapa.png"));
     crate::render3d::define_alvo(None);
-
 }
 
 /// Maior desnivel entre a coluna e os quatro vizinhos.
@@ -2808,7 +3148,14 @@ pub async fn previa_do_oasis() {
     let saida = std::env::var("MMO_PREVIA_SAIDA").unwrap_or_else(|_| "/tmp/tempest-oasis".into());
     std::fs::create_dir_all(&saida).unwrap();
     next_frame().await;
-    let rt = render_target_ex(1280, 800, RenderTargetParams { depth: true, sample_count: 1 });
+    let rt = render_target_ex(
+        1280,
+        800,
+        RenderTargetParams {
+            depth: true,
+            sample_count: 1,
+        },
+    );
     crate::render3d::define_alvo(Some(rt.clone()));
     let def = shared::terreno::def_da_zona(shared::oasis::ZONA).unwrap();
     let g = shared::terreno::Gerador::da_ilha(def);
@@ -2821,7 +3168,11 @@ pub async fn previa_do_oasis() {
         t.atualiza(centro, 16, 4000);
         for _ in 0..3 {
             let cam = Camera3D {
-                position: vec3(centro.x + distancia * 0.35, chao + distancia * 0.7, centro.y + distancia),
+                position: vec3(
+                    centro.x + distancia * 0.35,
+                    chao + distancia * 0.7,
+                    centro.y + distancia,
+                ),
                 target: vec3(centro.x, chao, centro.y),
                 up: Vec3::Y,
                 render_target: Some(rt.clone()),
@@ -2836,7 +3187,9 @@ pub async fn previa_do_oasis() {
             crate::agua::desenha(&t, &cam, 0.0);
             macroquad::material::gl_use_default_material();
             unsafe { get_internal_gl().flush() };
-            rt.texture.get_texture_data().export_png(&format!("{saida}/{nome}.png"));
+            rt.texture
+                .get_texture_data()
+                .export_png(&format!("{saida}/{nome}.png"));
             next_frame().await;
         }
     }
@@ -2855,7 +3208,9 @@ pub async fn previa_do_oasis() {
     clear_background(Color::from_rgba(18, 24, 34, 255));
     mapa.desenha_grande(&mundo, 40, &crate::mundo_ui::Mundo::default(), 0);
     unsafe { get_internal_gl().flush() };
-    rt.texture.get_texture_data().export_png(&format!("{saida}/oasis-mapa.png"));
+    rt.texture
+        .get_texture_data()
+        .export_png(&format!("{saida}/oasis-mapa.png"));
 }
 
 /// Preview of the chests (`MMO_PREVIA_BAUS=1`; PNG in `MMO_PREVIA_SAIDA`): the
@@ -2864,14 +3219,27 @@ pub async fn previa_do_oasis() {
 pub async fn previa_baus(vox: &mut crate::vox::VoxCache) {
     let saida = std::env::var("MMO_PREVIA_SAIDA").unwrap_or_else(|_| "/tmp/tempest-baus".into());
     std::fs::create_dir_all(&saida).unwrap();
-    let rt = render_target_ex(1280, 800, RenderTargetParams { depth: true, sample_count: 1 });
+    let rt = render_target_ex(
+        1280,
+        800,
+        RenderTargetParams {
+            depth: true,
+            sample_count: 1,
+        },
+    );
     crate::render3d::define_alvo(Some(rt.clone()));
     let mut world = crate::world::World::default();
-    let papeis = [shared::dungeon::PAPEL_BAU, shared::forte::PAPEL_VERDE, shared::forte::PAPEL_AZUL, shared::forte::PAPEL_ROXO];
+    let papeis = [
+        shared::dungeon::PAPEL_BAU,
+        shared::forte::PAPEL_VERDE,
+        shared::forte::PAPEL_AZUL,
+        shared::forte::PAPEL_ROXO,
+    ];
     let metas: Vec<shared::EntityMeta> = papeis
         .iter()
         .enumerate()
-        .map(|(k, p)| shared::EntityMeta { cla: String::new(),
+        .map(|(k, p)| shared::EntityMeta {
+            cla: String::new(),
             pk: Default::default(),
             auras: 0,
             id: shared::EntityId(100 + k as u32),
@@ -2884,7 +3252,8 @@ pub async fn previa_baus(vox: &mut crate::vox::VoxCache) {
             desafio: None,
             aparencia: 0,
             skins: 0,
-            poder: 0, renascimentos: 0,
+            poder: 0,
+            renascimentos: 0,
         })
         .collect();
     let states: Vec<shared::EntityState> = (0..4)
@@ -2904,21 +3273,28 @@ pub async fn previa_baus(vox: &mut crate::vox::VoxCache) {
     let solido = crate::render3d::material_solido();
     for _ in 0..6 {
         world.tick(0.016, &|x, z, _| chao(x, z));
-        let mut vista = crate::render3d::Vista::nova(Vec2::new(3.75, 0.0), 0.6, 9.0, 0.5, 0.0, &chao);
+        let mut vista =
+            crate::render3d::Vista::nova(Vec2::new(3.75, 0.0), 0.6, 9.0, 0.5, 0.0, &chao);
         vista.cam.render_target = Some(rt.clone());
         set_camera(&vista.cam);
         clear_background(Color::from_rgba(150, 186, 214, 255));
-        draw_plane(vec3(3.75, 0.0, 0.0), vec2(12.0, 8.0), None, Color::from_rgba(110, 140, 90, 255));
+        draw_plane(
+            vec3(3.75, 0.0, 0.0),
+            vec2(12.0, 8.0),
+            None,
+            Color::from_rgba(110, 140, 90, 255),
+        );
         gl_use_material(&solido);
         crate::render3d::draw_entities(&mut world, vox, None, &vista);
         gl_use_default_material();
         unsafe { get_internal_gl().flush() };
-        rt.texture.get_texture_data().export_png(&format!("{saida}/baus.png"));
+        rt.texture
+            .get_texture_data()
+            .export_png(&format!("{saida}/baus.png"));
         next_frame().await;
     }
     crate::render3d::define_alvo(None);
 }
-
 
 /// MMO_PREVIA_ABISSAL: the bubble kingdom and each hunting ring.
 #[cfg(debug_assertions)]
@@ -2926,26 +3302,79 @@ pub async fn previa_abissal() {
     let saida = std::env::var("MMO_PREVIA_SAIDA").unwrap_or_else(|_| "/tmp/tempest-abissal".into());
     std::fs::create_dir_all(&saida).unwrap();
     next_frame().await;
-    let rt = render_target_ex(1280, 800, RenderTargetParams { depth: true, sample_count: 1 });
+    let rt = render_target_ex(
+        1280,
+        800,
+        RenderTargetParams {
+            depth: true,
+            sample_count: 1,
+        },
+    );
     crate::render3d::define_alvo(Some(rt.clone()));
     crate::render3d::define_noite(true);
     crate::render3d::define_abismo(true);
     let def = &shared::abissal::DEF;
     let mut t = Terreno::novo(def);
     let mut casas = crate::construcoes::Construcoes::para(Some(def));
-    for _ in 0..600 { casas.acompanhar(); if casas.prontas() { break; } next_frame().await; }
+    for _ in 0..600 {
+        casas.acompanhar();
+        if casas.prontas() {
+            break;
+        }
+        next_frame().await;
+    }
     let solido = crate::render3d::material_solido();
     let ponto = |p: ::glam::Vec2| vec2(p.x, p.y);
     let vistas = [
-        ("reino", ponto(shared::abissal::centro_da_cidade()), 175.0, 0.75),
+        (
+            "reino",
+            ponto(shared::abissal::centro_da_cidade()),
+            175.0,
+            0.75,
+        ),
         ("palacio", ponto(shared::abissal::PALACIO), 85.0, 0.75),
-        ("doca", ponto(shared::abissal::doca_do_submarino()), 70.0, 0.55),
-        ("kelp", ponto(shared::abissal::ponto(91).unwrap()), 85.0, 0.55),
-        ("naufragios", ponto(shared::abissal::ponto(92).unwrap()), 110.0, 0.6),
-        ("fossa", ponto(shared::abissal::ponto(93).unwrap()), 100.0, 0.55),
-        ("borda", ponto(shared::abissal::ponto(94).unwrap()), 110.0, 0.55),
-        ("povoado", ponto(shared::abissal::POVOADOS[0].centro), 45.0, 0.7),
-        ("energia", ponto(shared::abissal::CAMPOS_ENERGIA[0]), 35.0, 0.65),
+        (
+            "doca",
+            ponto(shared::abissal::doca_do_submarino()),
+            70.0,
+            0.55,
+        ),
+        (
+            "kelp",
+            ponto(shared::abissal::ponto(91).unwrap()),
+            85.0,
+            0.55,
+        ),
+        (
+            "naufragios",
+            ponto(shared::abissal::ponto(92).unwrap()),
+            110.0,
+            0.6,
+        ),
+        (
+            "fossa",
+            ponto(shared::abissal::ponto(93).unwrap()),
+            100.0,
+            0.55,
+        ),
+        (
+            "borda",
+            ponto(shared::abissal::ponto(94).unwrap()),
+            110.0,
+            0.55,
+        ),
+        (
+            "povoado",
+            ponto(shared::abissal::POVOADOS[0].centro),
+            45.0,
+            0.7,
+        ),
+        (
+            "energia",
+            ponto(shared::abissal::CAMPOS_ENERGIA[0]),
+            35.0,
+            0.65,
+        ),
         ("hydra", ponto(shared::abissal::arenas()[3]), 60.0, 0.65),
         ("aerea", vec2(0.0, 0.0), 500.0, 0.8),
     ];
@@ -2954,7 +3383,11 @@ pub async fn previa_abissal() {
         for _ in 0..3 {
             let chao = t.altura(centro.x, centro.y);
             let cam = Camera3D {
-                position: vec3(centro.x + distancia * 0.45, chao + distancia * alto, centro.y + distancia),
+                position: vec3(
+                    centro.x + distancia * 0.45,
+                    chao + distancia * alto,
+                    centro.y + distancia,
+                ),
                 target: vec3(centro.x, chao, centro.y),
                 up: Vec3::Y,
                 render_target: Some(rt.clone()),
@@ -2966,24 +3399,37 @@ pub async fn previa_abissal() {
             solido.set_uniform("LuzDia", -2.0f32);
             crate::gpu_estatica::define_luz_dia(-2.0);
             crate::gpu_estatica::define_neblina(centro, -(distancia * 2.5), distancia * 6.0);
-            solido.set_uniform("Neblina", vec4(centro.x, centro.y, -(distancia * 2.5), distancia * 6.0));
+            solido.set_uniform(
+                "Neblina",
+                vec4(centro.x, centro.y, -(distancia * 2.5), distancia * 6.0),
+            );
             crate::luzes::preparar(true, centro, &|x, z| t.altura(x, z));
             macroquad::material::gl_use_material(&solido);
             t.desenha(&cam, Vec3::ZERO, 0.0);
             t.desenha_sombras(&cam);
             casas.desenha(&cam, None, Vec3::ZERO, 0.0);
             if nome == "energia" {
-                for (i,kind) in [70,72,75,76,90,91,92].iter().enumerate() {
-                    crate::marinhos::desenha(*kind,vec3(centro.x-12.+i as f32*4.,chao+0.5,centro.y),0.4,i as u64,1.0);
+                for (i, kind) in [70, 72, 75, 76, 90, 91, 92].iter().enumerate() {
+                    crate::marinhos::desenha(
+                        *kind,
+                        vec3(centro.x - 12. + i as f32 * 4., chao + 0.5, centro.y),
+                        0.4,
+                        i as u64,
+                        1.0,
+                    );
                 }
             }
-            if nome == "hydra" {crate::marinhos::desenha(93,vec3(centro.x,chao,centro.y),0.4,93,2.8);}
+            if nome == "hydra" {
+                crate::marinhos::desenha(93, vec3(centro.x, chao, centro.y), 0.4, 93, 2.8);
+            }
             crate::agua::desenha(&t, &cam, 0.0);
             crate::luzes::desenha_halos(&cam, &|x, z| t.altura(x, z));
             crate::abismo::desenha(&cam, &|x, z| t.altura(x, z));
             macroquad::material::gl_use_default_material();
             unsafe { get_internal_gl().flush() };
-            rt.texture.get_texture_data().export_png(&format!("{saida}/{nome}.png"));
+            rt.texture
+                .get_texture_data()
+                .export_png(&format!("{saida}/{nome}.png"));
             next_frame().await;
         }
     }
@@ -2999,53 +3445,153 @@ pub async fn previa_kogen(vox: &mut crate::vox::VoxCache) {
     let saida = std::env::var("MMO_PREVIA_SAIDA").unwrap_or_else(|_| "/tmp/tempest-kogen".into());
     std::fs::create_dir_all(&saida).unwrap();
     next_frame().await;
-    let rt = render_target_ex(1280, 800, RenderTargetParams { depth: true, sample_count: 1 });
+    let rt = render_target_ex(
+        1280,
+        800,
+        RenderTargetParams {
+            depth: true,
+            sample_count: 1,
+        },
+    );
     crate::render3d::define_alvo(Some(rt.clone()));
     let def = &shared::kogen::DEF;
     crate::render3d::define_noite(true);
     let g = shared::terreno::Gerador::da_ilha(def);
     let mut t = Terreno::novo(def);
     let mut casas = crate::construcoes::Construcoes::para(Some(def));
-    for _ in 0..600 { casas.acompanhar(); if casas.prontas() { break; } next_frame().await; }
+    for _ in 0..600 {
+        casas.acompanhar();
+        if casas.prontas() {
+            break;
+        }
+        next_frame().await;
+    }
     let solido = crate::render3d::material_solido();
     let hub = shared::kogen::centro_da_cidade();
-    let marco = |m: shared::kogen::Marco| { let c = m.centro(); (c.x, c.y) };
+    let marco = |m: shared::kogen::Marco| {
+        let c = m.centro();
+        (c.x, c.y)
+    };
     use shared::kogen::Marco as Mc;
     // (name, centre, camera distance, camera height factor)
     let vistas: Vec<(&str, (f32, f32), f32, f32)> = vec![
-        ("shibuya-cruzamento", { let c = shared::kogen::cruzamento(); (c.x, c.y) }, 90.0, 1.1),
+        (
+            "shibuya-cruzamento",
+            {
+                let c = shared::kogen::cruzamento();
+                (c.x, c.y)
+            },
+            90.0,
+            1.1,
+        ),
         ("pagoda-floresta", marco(Mc::Pagoda), 120.0, 0.55),
         ("spire", marco(Mc::Skytree), 220.0, 0.55),
         ("tocho", marco(Mc::Prefeitura), 180.0, 0.5),
         ("nishi-shinjuku", marco(Mc::Casulo), 160.0, 0.45),
-        ("kabukicho", { let c = shared::kogen::arenas()[1]; (c.x, c.y) }, 120.0, 0.5),
+        (
+            "kabukicho",
+            {
+                let c = shared::kogen::arenas()[1];
+                (c.x, c.y)
+            },
+            120.0,
+            0.5,
+        ),
         ("torre-de-toquio", marco(Mc::TorreDeToquio), 130.0, 0.4),
         ("hub", (hub.x, hub.y), 120.0, 0.65),
         ("onibus", (hub.x + 30.0, hub.y), 28.0, 0.45),
-        ("expressa", { let c = perto_de_deck(vec2(145.0, 120.0), 12); (c.x, c.y) }, 70.0, 0.45),
-        ("transito", { let v = crate::transito::Transito::novo().meio_de_avenida().unwrap_or_default(); (v.x, v.y) }, 30.0, 0.6),
-        ("rampa", { let c = perto_de_deck(vec2(200.0, 163.0), 1); (c.x, c.y) }, 50.0, 0.5),
+        (
+            "expressa",
+            {
+                let c = perto_de_deck(vec2(145.0, 120.0), 12);
+                (c.x, c.y)
+            },
+            70.0,
+            0.45,
+        ),
+        (
+            "transito",
+            {
+                let v = crate::transito::Transito::novo()
+                    .meio_de_avenida()
+                    .unwrap_or_default();
+                (v.x, v.y)
+            },
+            30.0,
+            0.6,
+        ),
+        (
+            "rampa",
+            {
+                let c = perto_de_deck(vec2(200.0, 163.0), 1);
+                (c.x, c.y)
+            },
+            50.0,
+            0.5,
+        ),
         ("luzes-rua", perto_de_luz(vec2(0.0, 250.0)), 26.0, 0.55),
-        ("luzes-kabukicho", perto_de_luz({ let a = shared::kogen::arenas()[1]; vec2(a.x, a.y - 40.0) }), 40.0, 0.6),
-        ("torre-neon", { let c = shared::kogen::ESPIRAL_CENTRO; (c.x, c.y) }, 190.0, 0.55),
-        ("torre-neon-rampa", { let c = shared::kogen::paradas_da_espiral()[3].0; (c.x, c.y) }, 34.0, 0.6),
-        ("torre-neon-topo", { let c = shared::kogen::topo_da_espiral(); (c.x, c.y) }, 60.0, 0.7),
+        (
+            "luzes-kabukicho",
+            perto_de_luz({
+                let a = shared::kogen::arenas()[1];
+                vec2(a.x, a.y - 40.0)
+            }),
+            40.0,
+            0.6,
+        ),
+        (
+            "torre-neon",
+            {
+                let c = shared::kogen::ESPIRAL_CENTRO;
+                (c.x, c.y)
+            },
+            190.0,
+            0.55,
+        ),
+        (
+            "torre-neon-rampa",
+            {
+                let c = shared::kogen::paradas_da_espiral()[3].0;
+                (c.x, c.y)
+            },
+            34.0,
+            0.6,
+        ),
+        (
+            "torre-neon-topo",
+            {
+                let c = shared::kogen::topo_da_espiral();
+                (c.x, c.y)
+            },
+            60.0,
+            0.7,
+        ),
         ("aerea-sul", (0.0, 300.0), 500.0, 0.8),
         ("aerea-norte", (0.0, -300.0), 500.0, 0.8),
     ];
     // MMO_PREVIA_VISTAS=a,b renders only those.
-    let so: Option<Vec<String>> = std::env::var("MMO_PREVIA_VISTAS").ok().map(|v| v.split(',').map(String::from).collect());
+    let so: Option<Vec<String>> = std::env::var("MMO_PREVIA_VISTAS")
+        .ok()
+        .map(|v| v.split(',').map(String::from).collect());
     for (nome, (cx, cy), distancia, alto) in vistas {
         if so.as_ref().is_some_and(|s| !s.iter().any(|n| n == nome)) {
             continue;
         }
         let centro = vec2(cx, cy);
         let rente = shared::kogen::NIVEL_CHAO as f32 * shared::terreno::BLOCO + 2.0;
-        let chao = if nome.starts_with("torre-neon-") { g.altura(cx, cy) } else { g.altura(cx, cy).min(rente) };
+        let chao = if nome.starts_with("torre-neon-") {
+            g.altura(cx, cy)
+        } else {
+            g.altura(cx, cy).min(rente)
+        };
         t.atualiza(centro, if distancia > 400.0 { 40 } else { 18 }, 6000);
         for _ in 0..3 {
             let cam = Camera3D {
-                position: vec3(centro.x + distancia * 0.45, chao + distancia * alto, centro.y + distancia),
+                position: vec3(
+                    centro.x + distancia * 0.45,
+                    chao + distancia * alto,
+                    centro.y + distancia,
+                ),
                 target: vec3(centro.x, chao, centro.y),
                 up: Vec3::Y,
                 render_target: Some(rt.clone()),
@@ -3057,7 +3603,10 @@ pub async fn previa_kogen(vox: &mut crate::vox::VoxCache) {
             solido.set_uniform("LuzDia", -1.0f32);
             crate::gpu_estatica::define_luz_dia(-1.0);
             crate::gpu_estatica::define_neblina(centro, -(distancia * 2.5), distancia * 6.0);
-            solido.set_uniform("Neblina", vec4(centro.x, centro.y, -(distancia * 2.5), distancia * 6.0));
+            solido.set_uniform(
+                "Neblina",
+                vec4(centro.x, centro.y, -(distancia * 2.5), distancia * 6.0),
+            );
             crate::luzes::preparar(true, centro, &|x, z| t.altura(x, z));
             macroquad::material::gl_use_material(&solido);
             t.desenha(&cam, Vec3::ZERO, 0.0);
@@ -3067,7 +3616,9 @@ pub async fn previa_kogen(vox: &mut crate::vox::VoxCache) {
             crate::luzes::desenha_halos(&cam, &|x, z| t.altura(x, z));
             macroquad::material::gl_use_default_material();
             unsafe { get_internal_gl().flush() };
-            rt.texture.get_texture_data().export_png(&format!("{saida}/{nome}.png"));
+            rt.texture
+                .get_texture_data()
+                .export_png(&format!("{saida}/{nome}.png"));
             next_frame().await;
         }
     }
@@ -3082,14 +3633,31 @@ pub async fn previa_kogen(vox: &mut crate::vox::VoxCache) {
         unsafe { get_internal_gl().flush() };
         next_frame().await;
     }
-    rt.texture.get_texture_data().export_png(&format!("{saida}/mapa.png"));
+    rt.texture
+        .get_texture_data()
+        .export_png(&format!("{saida}/mapa.png"));
     // The robots, side by side, two angles each.
-    let robos = ["bichos/mech_hound", "humanoides/gunner_bot", "bichos/volt_panther", "humanoides/laser_sentry",
-        "bichos/iron_bear", "humanoides/tesla_unit", "bichos/dynamo_owlbear", "bichos/mech_dragon"];
-    for (_, nome) in crate::render3d::RIGS_DE_GENTE.iter().filter(|(k, _)| (57..=61).contains(k)) {
-        vox.load_rig(nome, crate::render3d::VOXEL, crate::rig::pivo).await;
+    let robos = [
+        "bichos/mech_hound",
+        "humanoides/gunner_bot",
+        "bichos/volt_panther",
+        "humanoides/laser_sentry",
+        "bichos/iron_bear",
+        "humanoides/tesla_unit",
+        "bichos/dynamo_owlbear",
+        "bichos/mech_dragon",
+    ];
+    for (_, nome) in crate::render3d::RIGS_DE_GENTE
+        .iter()
+        .filter(|(k, _)| (57..=61).contains(k))
+    {
+        vox.load_rig(nome, crate::render3d::VOXEL, crate::rig::pivo)
+            .await;
     }
-    for (nome, altura) in crate::bicho::BICHOS.iter().filter(|(n, _)| robos.contains(n)) {
+    for (nome, altura) in crate::bicho::BICHOS
+        .iter()
+        .filter(|(n, _)| robos.contains(n))
+    {
         vox.load_na_altura(nome, *altura).await;
     }
     let solido = crate::render3d::material_solido();
@@ -3109,13 +3677,21 @@ pub async fn previa_kogen(vox: &mut crate::vox::VoxCache) {
                 }
             }
             crate::render3d::camera_padrao();
-            draw_text(nome.split('/').last().unwrap_or(nome), k as f32 * w + 6.0, 28.0, 22.0, WHITE);
+            draw_text(
+                nome.split('/').last().unwrap_or(nome),
+                k as f32 * w + 6.0,
+                28.0,
+                22.0,
+                WHITE,
+            );
         }
         unsafe { get_internal_gl().flush() };
         next_frame().await;
         vox.atende_um_pendente(crate::render3d::VOXEL).await;
     }
-    rt.texture.get_texture_data().export_png(&format!("{saida}/robos.png"));
+    rt.texture
+        .get_texture_data()
+        .export_png(&format!("{saida}/robos.png"));
     crate::render3d::define_alvo(None);
 }
 
@@ -3146,9 +3722,10 @@ fn perto_de_deck(q: Vec2, minimo: i32) -> Vec2 {
         for i in -r..=r {
             for (dx, dz) in [(i, -r), (i, r), (-r, i), (r, i)] {
                 let (x, z) = (bx + dx, bz + dz);
-                if shared::kogen::deck_da_coluna(x, z).is_some_and(|d| d - shared::kogen::NIVEL_CHAO >= minimo
-                    && (minimo > 1 || d - shared::kogen::NIVEL_CHAO == 1))
-                {
+                if shared::kogen::deck_da_coluna(x, z).is_some_and(|d| {
+                    d - shared::kogen::NIVEL_CHAO >= minimo
+                        && (minimo > 1 || d - shared::kogen::NIVEL_CHAO == 1)
+                }) {
                     return vec2(x as f32, z as f32) * BLOCO;
                 }
             }

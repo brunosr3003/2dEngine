@@ -35,9 +35,8 @@
 pub const ROSTOS: u8 = 3;
 pub const CABELOS: u8 = 3;
 /// As cores de cabelo de `tools/voxrender/npcs.py` (`CABELOS`).
-pub const CORES_DE_CABELO: [&str; 6] = [
-    "castanho", "preto", "ruivo", "loiro", "grisalho", "branco",
-];
+pub const CORES_DE_CABELO: [&str; 6] =
+    ["castanho", "preto", "ruivo", "loiro", "grisalho", "branco"];
 /// Os tons de pele de `npcs.py` (`PELES`).
 pub const TONS_DE_PELE: [&str; 4] = ["clara", "media", "morena", "escura"];
 
@@ -87,7 +86,8 @@ pub const CHAPEUS: [(&str, &str); 14] = [
 ];
 
 /// Price in TP of each hat, same order as `CHAPEUS`. 0 = free.
-pub const PRECO_DOS_CHAPEUS: [u64; CHAPEUS.len()] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 200, 300, 300, 200, 500];
+pub const PRECO_DOS_CHAPEUS: [u64; CHAPEUS.len()] =
+    [0, 0, 0, 0, 0, 0, 0, 0, 0, 200, 300, 300, 200, 500];
 
 /// The first WEAPON skin id. Wardrobe id and bag item id are the same, as
 /// with hats. 600-619.
@@ -115,20 +115,90 @@ pub struct SkinDeArma {
 /// Append only: the position is the id. All paid — the owner: "there will be
 /// no free weapon or mount skin".
 pub const SKINS_DE_ARMA: [SkinDeArma; 14] = [
-    SkinDeArma { sufixo: "solar", nome: "Sunforged", conjunto: 0, preco: 400 },
-    SkinDeArma { sufixo: "abissal", nome: "Abyssal", conjunto: 0, preco: 400 },
-    SkinDeArma { sufixo: "real", nome: "Royal Guard", conjunto: 0, preco: 600 },
-    SkinDeArma { sufixo: "sakura", nome: "Sakura", conjunto: 1, preco: 400 },
-    SkinDeArma { sufixo: "tempestade", nome: "Stormcaller", conjunto: 1, preco: 400 },
-    SkinDeArma { sufixo: "lua", nome: "Crimson Moon", conjunto: 1, preco: 600 },
-    SkinDeArma { sufixo: "dourada", nome: "Gilded Pistols", conjunto: 2, preco: 400 },
-    SkinDeArma { sufixo: "coral", nome: "Reef Pistols", conjunto: 2, preco: 400 },
-    SkinDeArma { sufixo: "relampago", nome: "Thunder Pistols", conjunto: 2, preco: 600 },
-    SkinDeArma { sufixo: "brasa", nome: "Ember Ring", conjunto: 3, preco: 400 },
-    SkinDeArma { sufixo: "gelo", nome: "Frost Ring", conjunto: 3, preco: 400 },
-    SkinDeArma { sufixo: "verdejante", nome: "Verdant Ring", conjunto: 3, preco: 400 },
-    SkinDeArma { sufixo: "solar", nome: "Solar Ring", conjunto: 3, preco: 600 },
-    SkinDeArma { sufixo: "vazio", nome: "Void Ring", conjunto: 3, preco: 600 },
+    SkinDeArma {
+        sufixo: "solar",
+        nome: "Sunforged",
+        conjunto: 0,
+        preco: 400,
+    },
+    SkinDeArma {
+        sufixo: "abissal",
+        nome: "Abyssal",
+        conjunto: 0,
+        preco: 400,
+    },
+    SkinDeArma {
+        sufixo: "real",
+        nome: "Royal Guard",
+        conjunto: 0,
+        preco: 600,
+    },
+    SkinDeArma {
+        sufixo: "sakura",
+        nome: "Sakura",
+        conjunto: 1,
+        preco: 400,
+    },
+    SkinDeArma {
+        sufixo: "tempestade",
+        nome: "Stormcaller",
+        conjunto: 1,
+        preco: 400,
+    },
+    SkinDeArma {
+        sufixo: "lua",
+        nome: "Crimson Moon",
+        conjunto: 1,
+        preco: 600,
+    },
+    SkinDeArma {
+        sufixo: "dourada",
+        nome: "Gilded Pistols",
+        conjunto: 2,
+        preco: 400,
+    },
+    SkinDeArma {
+        sufixo: "coral",
+        nome: "Reef Pistols",
+        conjunto: 2,
+        preco: 400,
+    },
+    SkinDeArma {
+        sufixo: "relampago",
+        nome: "Thunder Pistols",
+        conjunto: 2,
+        preco: 600,
+    },
+    SkinDeArma {
+        sufixo: "brasa",
+        nome: "Ember Ring",
+        conjunto: 3,
+        preco: 400,
+    },
+    SkinDeArma {
+        sufixo: "gelo",
+        nome: "Frost Ring",
+        conjunto: 3,
+        preco: 400,
+    },
+    SkinDeArma {
+        sufixo: "verdejante",
+        nome: "Verdant Ring",
+        conjunto: 3,
+        preco: 400,
+    },
+    SkinDeArma {
+        sufixo: "solar",
+        nome: "Solar Ring",
+        conjunto: 3,
+        preco: 600,
+    },
+    SkinDeArma {
+        sufixo: "vazio",
+        nome: "Void Ring",
+        conjunto: 3,
+        preco: 600,
+    },
 ];
 
 /// Mount skins: a coat for WHATEVER mount is ridden, swapped by palette index
@@ -164,7 +234,9 @@ pub fn sufixo_da_arma(a: &Aparencia, conjunto: u8) -> Option<&'static str> {
 
 /// The file suffix of the mount skin worn, if any.
 pub fn sufixo_da_montaria(a: &Aparencia) -> Option<&'static str> {
-    SKINS_DE_MONTARIA.get(a.montaria.checked_sub(1)? as usize).map(|m| m.0)
+    SKINS_DE_MONTARIA
+        .get(a.montaria.checked_sub(1)? as usize)
+        .map(|m| m.0)
 }
 
 /// The BAG ITEM of an outfit skin starts here, apart from the wardrobe id.
@@ -280,12 +352,18 @@ fn todas() -> impl Iterator<Item = u16> {
 
 /// The free outfits, in id order — what the creation screen offers.
 pub fn roupas_gratis() -> Vec<u16> {
-    (0..ROUPAS.len() as u16).map(|i| ROUPA_BASE + i).filter(|id| gratuita(*id)).collect()
+    (0..ROUPAS.len() as u16)
+        .map(|i| ROUPA_BASE + i)
+        .filter(|id| gratuita(*id))
+        .collect()
 }
 
 /// The free hats, in id order.
 pub fn chapeus_gratis() -> Vec<u16> {
-    (0..CHAPEUS.len() as u16).map(|i| CHAPEU_BASE + i).filter(|id| gratuita(*id)).collect()
+    (0..CHAPEUS.len() as u16)
+        .map(|i| CHAPEU_BASE + i)
+        .filter(|id| gratuita(*id))
+        .collect()
 }
 
 /// O caminho inverso: que chapeu este indice de `cabelo` representa.
@@ -391,7 +469,11 @@ impl Aparencia {
     /// The wardrobe ids of the weapon and mount skins worn — what the
     /// server checks against the unlocked ones.
     pub fn skins_extras(&self) -> Vec<u16> {
-        let armas = self.armas.iter().filter(|i| **i != 0).map(|i| ARMA_SKIN_BASE + *i as u16 - 1);
+        let armas = self
+            .armas
+            .iter()
+            .filter(|i| **i != 0)
+            .map(|i| ARMA_SKIN_BASE + *i as u16 - 1);
         let montaria = (self.montaria != 0).then(|| MONTARIA_SKIN_BASE + self.montaria as u16 - 1);
         armas.chain(montaria).collect()
     }
@@ -473,11 +555,46 @@ mod testes {
     #[test]
     fn empacota_e_desempacota_sem_perder_nada() {
         for a in [
-            Aparencia { rosto: 7, cabelo: 15, cor_cabelo: 7, pele: 7, roupa: 4095, ..Default::default() },
-            Aparencia { rosto: 7, cabelo: 63, cor_cabelo: 7, pele: 7, roupa: 4095, ..Default::default() },
-            Aparencia { rosto: 1, cabelo: CABELOS + CHAPEUS.len() as u8, cor_cabelo: 0, pele: 0, roupa: 0, ..Default::default() },
-            Aparencia { rosto: 2, cabelo: 1, cor_cabelo: 5, pele: 3, roupa: 480, ..Default::default() },
-            Aparencia { rosto: 0, cabelo: 0, cor_cabelo: 0, pele: 0, roupa: 1, ..Default::default() },
+            Aparencia {
+                rosto: 7,
+                cabelo: 15,
+                cor_cabelo: 7,
+                pele: 7,
+                roupa: 4095,
+                ..Default::default()
+            },
+            Aparencia {
+                rosto: 7,
+                cabelo: 63,
+                cor_cabelo: 7,
+                pele: 7,
+                roupa: 4095,
+                ..Default::default()
+            },
+            Aparencia {
+                rosto: 1,
+                cabelo: CABELOS + CHAPEUS.len() as u8,
+                cor_cabelo: 0,
+                pele: 0,
+                roupa: 0,
+                ..Default::default()
+            },
+            Aparencia {
+                rosto: 2,
+                cabelo: 1,
+                cor_cabelo: 5,
+                pele: 3,
+                roupa: 480,
+                ..Default::default()
+            },
+            Aparencia {
+                rosto: 0,
+                cabelo: 0,
+                cor_cabelo: 0,
+                pele: 0,
+                roupa: 1,
+                ..Default::default()
+            },
         ] {
             assert_eq!(Aparencia::desempacota(a.empacota()), a, "{a:?}");
         }
@@ -488,7 +605,10 @@ mod testes {
     #[test]
     fn um_campo_nunca_mexe_no_outro() {
         let base = Aparencia::default();
-        let so_roupa = Aparencia { roupa: 4095, ..base };
+        let so_roupa = Aparencia {
+            roupa: 4095,
+            ..base
+        };
         assert_eq!(Aparencia::desempacota(so_roupa.empacota()).rosto, 0);
         assert_eq!(Aparencia::desempacota(so_roupa.empacota()).cabelo, 0);
         let so_rosto = Aparencia { rosto: 7, ..base };
@@ -500,7 +620,14 @@ mod testes {
     /// personagem que não desenha.
     #[test]
     fn valor_absurdo_vira_o_padrao_em_vez_de_sumir() {
-        let a = Aparencia { rosto: 200, cabelo: 200, cor_cabelo: 200, pele: 200, roupa: 9999, ..Default::default() };
+        let a = Aparencia {
+            rosto: 200,
+            cabelo: 200,
+            cor_cabelo: 200,
+            pele: 200,
+            roupa: 9999,
+            ..Default::default()
+        };
         let s = a.saneada();
         assert!(s.rosto < ROSTOS && (s.cor_cabelo as usize) < CORES_DE_CABELO.len());
         assert!((s.pele as usize) < TONS_DE_PELE.len());
@@ -545,8 +672,14 @@ mod testes_das_skins {
         }
         // And the packed field holds them all: 6 bits (4 + the spare 25-26).
         let ultimo = cabelo_do_chapeu(CHAPEU_BASE + CHAPEUS.len() as u16 - 1).unwrap();
-        assert!(ultimo <= 63, "the last hat ({ultimo}) does not fit in 6 bits");
-        let a = Aparencia { cabelo: ultimo, ..Default::default() };
+        assert!(
+            ultimo <= 63,
+            "the last hat ({ultimo}) does not fit in 6 bits"
+        );
+        let a = Aparencia {
+            cabelo: ultimo,
+            ..Default::default()
+        };
         assert_eq!(Aparencia::desempacota(a.empacota()).cabelo, ultimo);
     }
 
@@ -564,14 +697,29 @@ mod testes_das_skins {
             a_venda().len() + gratuitas().len(),
             ROUPAS.len() + CHAPEUS.len() + SKINS_DE_ARMA.len() + SKINS_DE_MONTARIA.len()
         );
-        assert!(CHAPEU_BASE + CHAPEUS.len() as u16 <= 520, "520+ are accessories");
+        assert!(
+            CHAPEU_BASE + CHAPEUS.len() as u16 <= 520,
+            "520+ are accessories"
+        );
         assert!(ITEM_ROUPA_BASE + ROUPAS.len() as u16 <= 600);
         let pago = chapeu_do_cabelo(CABELOS + 1 + 13).unwrap();
         assert!(!gratuita(pago), "Crown");
-        let criado = Aparencia { roupa: ROUPA_BASE + 8, cabelo: CABELOS + 1 + 13, ..Default::default() }
-            .so_gratis();
-        assert_eq!((criado.roupa, criado.cabelo), (0, 0), "no paid skin at creation");
-        let livre = Aparencia { roupa: ROUPA_BASE + 4, cabelo: CABELOS + 1 + 8, ..Default::default() };
+        let criado = Aparencia {
+            roupa: ROUPA_BASE + 8,
+            cabelo: CABELOS + 1 + 13,
+            ..Default::default()
+        }
+        .so_gratis();
+        assert_eq!(
+            (criado.roupa, criado.cabelo),
+            (0, 0),
+            "no paid skin at creation"
+        );
+        let livre = Aparencia {
+            roupa: ROUPA_BASE + 4,
+            cabelo: CABELOS + 1 + 8,
+            ..Default::default()
+        };
         assert_eq!(livre.so_gratis(), livre);
     }
 
@@ -582,28 +730,58 @@ mod testes_das_skins {
     fn skins_de_arma_e_montaria() {
         for i in 0..SKINS_DE_ARMA.len() as u16 {
             let id = ARMA_SKIN_BASE + i;
-            assert!(!gratuita(id) && preco_da_skin(id).is_some(), "weapon skin {id} free");
+            assert!(
+                !gratuita(id) && preco_da_skin(id).is_some(),
+                "weapon skin {id} free"
+            );
             assert_eq!(skin_do_item(item_da_skin(id)), Some(id));
             assert!((SKINS_DE_ARMA[i as usize].conjunto as usize) < CONJUNTOS_COM_SKIN);
         }
         for i in 0..SKINS_DE_MONTARIA.len() as u16 {
             let id = MONTARIA_SKIN_BASE + i;
-            assert!(!gratuita(id) && preco_da_skin(id).is_some(), "mount skin {id} free");
+            assert!(
+                !gratuita(id) && preco_da_skin(id).is_some(),
+                "mount skin {id} free"
+            );
             assert_eq!(skin_do_item(id), Some(id));
         }
         assert!(ARMA_SKIN_BASE + SKINS_DE_ARMA.len() as u16 <= MONTARIA_SKIN_BASE);
         assert!(ITEM_ROUPA_BASE + ROUPAS.len() as u16 <= ARMA_SKIN_BASE);
         // Sakura (katana) on the sword slot is cut; on the katana slot it stays.
-        let errada = Aparencia { armas: [4, 4, 0, 4], montaria: 2, ..Default::default() }.saneada();
+        let errada = Aparencia {
+            armas: [4, 4, 0, 4],
+            montaria: 2,
+            ..Default::default()
+        }
+        .saneada();
         assert_eq!(errada.armas, [0, 4, 0, 0]);
-        let anel = Aparencia { armas: [0, 0, 0, 10], ..Default::default() }.saneada();
-        assert_eq!(sufixo_da_arma(&anel, 3), Some("brasa"), "Ember Ring on the ring slot");
+        let anel = Aparencia {
+            armas: [0, 0, 0, 10],
+            ..Default::default()
+        }
+        .saneada();
+        assert_eq!(
+            sufixo_da_arma(&anel, 3),
+            Some("brasa"),
+            "Ember Ring on the ring slot"
+        );
         assert_eq!(sufixo_da_arma(&errada, 1), Some("sakura"));
         assert_eq!(sufixo_da_montaria(&errada), Some("obsidiana"));
-        assert_eq!(errada.skins_extras(), vec![ARMA_SKIN_BASE + 3, MONTARIA_SKIN_BASE + 1]);
+        assert_eq!(
+            errada.skins_extras(),
+            vec![ARMA_SKIN_BASE + 3, MONTARIA_SKIN_BASE + 1]
+        );
         let ida = Aparencia::default().com_skins(errada.empacota_skins());
         assert_eq!((ida.armas, ida.montaria), (errada.armas, errada.montaria));
-        assert_eq!(Aparencia { montaria: 99, ..Default::default() }.saneada().montaria, 0);
+        assert_eq!(
+            Aparencia {
+                montaria: 99,
+                ..Default::default()
+            }
+            .saneada()
+            .montaria,
+            0
+        );
     }
 
     /// Toda roupa da tabela tem arquivo, e nenhum id fora dela inventa um.
@@ -614,7 +792,11 @@ mod testes_das_skins {
             assert_eq!(arquivo_da_roupa(id), Some(ROUPAS[i as usize].0));
             assert!(nome_da_skin(id).is_some());
         }
-        assert_eq!(arquivo_da_roupa(0), None, "o padrão não tem arquivo de skin");
+        assert_eq!(
+            arquivo_da_roupa(0),
+            None,
+            "o padrão não tem arquivo de skin"
+        );
         assert_eq!(arquivo_da_roupa(ROUPA_BASE + 99), None);
         // Chapéu não é roupa, mesmo tendo nome.
         assert_eq!(arquivo_da_roupa(CHAPEU_BASE), None);
@@ -644,13 +826,19 @@ mod testes_do_item_da_skin {
             .collect();
         for skin in a_venda() {
             let item = item_da_skin(skin);
-            assert!(!chaves.contains(&item), "skin {skin} sells as item {item}, a Porão key");
+            assert!(
+                !chaves.contains(&item),
+                "skin {skin} sells as item {item}, a Porão key"
+            );
             assert_eq!(skin_do_item(item), Some(skin));
         }
         for chave in chaves {
             assert_eq!(skin_do_item(chave), None, "key {chave} would unlock a skin");
         }
-        assert_eq!(item_da_skin(ROUPA_BASE + 3), ITEM_ROUPA_BASE + 3, "Storm Captain");
+        assert_eq!(
+            item_da_skin(ROUPA_BASE + 3),
+            ITEM_ROUPA_BASE + 3,
+            "Storm Captain"
+        );
     }
 }
-

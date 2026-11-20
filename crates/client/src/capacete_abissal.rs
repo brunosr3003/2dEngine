@@ -287,7 +287,8 @@ pub async fn previa(vox: &crate::vox::VoxCache) {
     crate::gpu_estatica::define_neblina(Vec2::ZERO, 0., 0.);
     let mut world = crate::world::World::default();
     let id = shared::EntityId(1);
-    let meta = shared::EntityMeta { cla: String::new(),
+    let meta = shared::EntityMeta {
+        cla: String::new(),
         id,
         tag: shared::EntityTag::Player,
         name: None,
@@ -300,7 +301,8 @@ pub async fn previa(vox: &crate::vox::VoxCache) {
         skins: 0,
         auras: 0,
         pk: Default::default(),
-        poder: 0, renascimentos: 0,
+        poder: 0,
+        renascimentos: 0,
     };
     let state = shared::EntityState::quantize(id, ::glam::Vec2::ZERO, ::glam::Vec2::ZERO, 100, 0);
     world.apply(vec![meta], vec![state], &[]);

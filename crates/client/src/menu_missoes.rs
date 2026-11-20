@@ -97,7 +97,10 @@ pub fn recompensa_de(d: &QuestDef, nomes: &HashMap<u16, String>) -> String {
     if d.reward_item != 0 && d.reward_item_qty > 0 {
         partes.push(format!("{}x {}", d.reward_item_qty, nome(d.reward_item)));
     }
-    if d.reward_item2 != 0 && d.reward_item2_qty > 0 && crate::pocoes_xp::mostrar(d.reward_item2, d.daily) {
+    if d.reward_item2 != 0
+        && d.reward_item2_qty > 0
+        && crate::pocoes_xp::mostrar(d.reward_item2, d.daily)
+    {
         partes.push(format!("{}x {}", d.reward_item2_qty, nome(d.reward_item2)));
     }
     // O cartão tem uma só linha e corta o final. Os itens precisam aparecer
@@ -117,7 +120,9 @@ pub fn recompensa_de(d: &QuestDef, nomes: &HashMap<u16, String>) -> String {
 /// The island name when `d` lives on another one than `zona` (the card
 /// starts with "On <island> · ").
 fn em_outra_ilha(d: &QuestDef, zona: Option<&str>) -> Option<String> {
-    zona_da_missao(d.id).filter(|z| Some(*z) != zona).map(nome_da_zona)
+    zona_da_missao(d.id)
+        .filter(|z| Some(*z) != zona)
+        .map(nome_da_zona)
 }
 
 fn nome_da_zona(z: &str) -> String {
@@ -203,7 +208,10 @@ pub fn clique_de(d: &QuestDef, e: &Estado) -> Clique {
 /// The lock line for an INTERNAL level: the number on the shown scale
 /// (15/11/2026).
 pub fn motivo_de_nivel(interno: u32) -> String {
-    format!("Requires level {}", shared::progressao::texto_de_nivel(interno))
+    format!(
+        "Requires level {}",
+        shared::progressao::texto_de_nivel(interno)
+    )
 }
 
 /// The internal level behind a `motivo_de_nivel` line. The shown number goes
@@ -232,7 +240,10 @@ pub fn automatizavel(d: &QuestDef) -> bool {
 pub fn tem_atalho_manual(d: &QuestDef) -> bool {
     use shared::quests::objective_kind as o;
     !automatizavel(d)
-        && matches!(d.obj_kind, o::CRAFT | o::REFINE | o::DUNGEON | o::TREASURE | o::TUTORIAL)
+        && matches!(
+            d.obj_kind,
+            o::CRAFT | o::REFINE | o::DUNGEON | o::TREASURE | o::TUTORIAL
+        )
 }
 
 pub fn pode_ir(d: &QuestDef, e: &Estado) -> bool {
@@ -395,9 +406,16 @@ pub fn nome_da_cadeia(raiz: u16) -> Option<&'static str> {
 pub fn linhas(log: &[QuestNet]) -> Vec<Linha> {
     let lista = lista_do_menu(log);
     let mut v = Vec::new();
-    if log.iter().any(|q| q.id == 905 && q.status == shared::quests::quest_status::ACTIVE) {
+    if log
+        .iter()
+        .any(|q| q.id == 905 && q.status == shared::quests::quest_status::ACTIVE)
+    {
         if let Some(d) = shared::quests::quest_by_id(905) {
-            v.push(Linha { nome: "Learn how quests work".into(), passos: vec![d], historia: true });
+            v.push(Linha {
+                nome: "Learn how quests work".into(),
+                passos: vec![d],
+                historia: true,
+            });
         }
     }
     let hist: Vec<&'static QuestDef> = lista
@@ -566,9 +584,7 @@ pub fn tipo_de(l: &Linha) -> Tipo {
 
 /// A linha passa pelo filtro de tipo?
 pub fn cabe_no_tipo(l: &Linha, t: Tipo) -> bool {
-    t == Tipo::Todos
-        || tipo_de(l) == t
-        || (t == Tipo::Secundarias && tipo_de(l) == Tipo::Moradores)
+    t == Tipo::Todos || tipo_de(l) == t || (t == Tipo::Secundarias && tipo_de(l) == Tipo::Moradores)
 }
 
 const MAPAS: [Option<&str>; 8] = [
@@ -656,15 +672,21 @@ fn caminho_manual(d: &QuestDef) -> String {
         },
         obj::REFINE => format!("Menu › Forge: try refining {} time(s)", d.obj_count),
         obj::DUNGEON => {
-            let onde = if d.obj_target == 0 { "any dungeon".to_string() }
-                else { shared::dungeon::conteudo(d.obj_target)
-                    .map_or_else(|| "the dungeon named".to_string(), |c| c.nome.to_string()) };
+            let onde = if d.obj_target == 0 {
+                "any dungeon".to_string()
+            } else {
+                shared::dungeon::conteudo(d.obj_target)
+                    .map_or_else(|| "the dungeon named".to_string(), |c| c.nome.to_string())
+            };
             format!("Menu › Dungeons: conclua {} vez(es) {onde}", d.obj_count)
         }
         obj::TREASURE => "Map: find and open the chest named".into(),
         obj::PVP_KILL => format!("PvP combat: defeat {} rival(s)", d.obj_count),
         obj::TUTORIAL => shared::quests::tutorial::instrucao(d.obj_target).to_string(),
-        obj::NIVEL => format!("Reach level {}", shared::progressao::texto_de_nivel(d.obj_count)),
+        obj::NIVEL => format!(
+            "Reach level {}",
+            shared::progressao::texto_de_nivel(d.obj_count)
+        ),
         obj::RAID => "Complete the raid named".into(),
         obj::ENCHANT => "Enchant the gear named".into(),
         _ => "Follow the quest description".into(),
@@ -679,7 +701,11 @@ fn quebrar_linhas(texto: &str, largura: f32) -> Vec<String> {
     let mut linhas = Vec::new();
     let mut linha = String::new();
     for palavra in texto.split_whitespace() {
-        let tentativa = if linha.is_empty() { palavra.to_string() } else { format!("{linha} {palavra}") };
+        let tentativa = if linha.is_empty() {
+            palavra.to_string()
+        } else {
+            format!("{linha} {palavra}")
+        };
         if !linha.is_empty() && estilo::medir(&tentativa, 13) > largura {
             linhas.push(std::mem::take(&mut linha));
             linha.push_str(palavra);
@@ -687,7 +713,9 @@ fn quebrar_linhas(texto: &str, largura: f32) -> Vec<String> {
             linha = tentativa;
         }
     }
-    if !linha.is_empty() { linhas.push(linha); }
+    if !linha.is_empty() {
+        linhas.push(linha);
+    }
     linhas
 }
 
@@ -941,7 +969,9 @@ impl MenuMissoes {
     /// The answer to the last Take, over the foot of the list: the quest's
     /// name on top, what the server said under it.
     fn desenha_aviso(&mut self) {
-        let Some((msg, ate)) = &self.aviso else { return };
+        let Some((msg, ate)) = &self.aviso else {
+            return;
+        };
         if get_time() >= *ate {
             self.aviso = None;
             return;
@@ -958,7 +988,11 @@ impl MenuMissoes {
         let mut linhas: Vec<String> = vec![String::new()];
         for palavra in motivo.split_whitespace() {
             let atual = linhas.last_mut().unwrap();
-            let teste = if atual.is_empty() { palavra.to_string() } else { format!("{atual} {palavra}") };
+            let teste = if atual.is_empty() {
+                palavra.to_string()
+            } else {
+                format!("{atual} {palavra}")
+            };
             if !atual.is_empty() && estilo::medir(&teste, 15) > largura && linhas.len() < 2 {
                 linhas.push(palavra.to_string());
             } else {
@@ -973,7 +1007,14 @@ impl MenuMissoes {
             estilo::ret_arredondado(r, 8.0, Color::new(0.07, 0.10, 0.14, 0.96));
             estilo::borda_arredondada(r, 8.0, 1.5, estilo::OURO);
             if !titulo.is_empty() {
-                estilo::texto_ajustado(&titulo, r.x + 14.0, r.y + 26.0 * f, largura, 17, estilo::OURO);
+                estilo::texto_ajustado(
+                    &titulo,
+                    r.x + 14.0,
+                    r.y + 26.0 * f,
+                    largura,
+                    17,
+                    estilo::OURO,
+                );
             }
             for (i, l) in linhas.iter().enumerate() {
                 let y = r.y + topo + 26.0 * f + i as f32 * 24.0 * f;
@@ -1020,7 +1061,9 @@ impl MenuMissoes {
         let conta = |a: Aba| {
             todas
                 .iter()
-                .filter(|(l, r)| aba_de(r) == a && cabe_no_tipo(l, tipo) && cabe_no_mapa(l, r, self.mapa))
+                .filter(|(l, r)| {
+                    aba_de(r) == a && cabe_no_tipo(l, tipo) && cabe_no_mapa(l, r, self.mapa)
+                })
                 .count()
         };
         let aba = *self.aba.get_or_insert(if conta(Aba::EmAndamento) > 0 {
@@ -1051,7 +1094,10 @@ impl MenuMissoes {
             if *tp == self.tipo {
                 estilo::ret_arredondado(r, 6.0, estilo::alfa(estilo::ACENTO, 0.28));
             }
-            let n = todas.iter().filter(|(l, r)| cabe_no_tipo(l, *tp) && cabe_no_mapa(l, r, self.mapa)).count();
+            let n = todas
+                .iter()
+                .filter(|(l, r)| cabe_no_tipo(l, *tp) && cabe_no_mapa(l, r, self.mapa))
+                .count();
             // Tipo sem nenhuma linha fica APAGADO em vez de sumir: a faixa
             // mudar de tamanho conforme o progresso faria o botão trocar de
             // lugar debaixo do dedo.
@@ -1066,8 +1112,12 @@ impl MenuMissoes {
         estilo::texto(p.x + 18.0, ya + 4.0 * f, "MAPS", 14, estilo::SUAVE);
         let passo_mapa = ((p.h - 90.0 * f) / MAPAS.len() as f32).clamp(27.0 * f, 43.0 * f);
         for (k, mapa) in MAPAS.iter().enumerate() {
-            let r = Rect::new(p.x + 12.0, ya + 22.0 * f + k as f32 * passo_mapa,
-                lateral - 12.0, passo_mapa - 4.0 * f);
+            let r = Rect::new(
+                p.x + 12.0,
+                ya + 22.0 * f + k as f32 * passo_mapa,
+                lateral - 12.0,
+                passo_mapa - 4.0 * f,
+            );
             if *mapa == self.mapa {
                 estilo::ret_arredondado(r, 6.0, estilo::alfa(estilo::OURO, 0.22));
             }
@@ -1080,7 +1130,14 @@ impl MenuMissoes {
             let nome = mapa.map_or("All".to_string(), nome_da_zona);
             // On a wooden button: light, not ink (`sem_pergaminho`).
             estilo::sem_pergaminho(|| {
-                estilo::texto_ajustado(&nome, r.x + 8.0, r.y + r.h * 0.68, r.w - 16.0, 15, estilo::TEXTO)
+                estilo::texto_ajustado(
+                    &nome,
+                    r.x + 8.0,
+                    r.y + r.h * 0.68,
+                    r.w - 16.0,
+                    15,
+                    estilo::TEXTO,
+                )
             });
         }
 
@@ -1107,7 +1164,9 @@ impl MenuMissoes {
         );
         let mut da_aba: Vec<&(Linha, Resumo)> = todas
             .iter()
-            .filter(|(l, r)| aba_de(r) == aba && cabe_no_tipo(l, self.tipo) && cabe_no_mapa(l, r, self.mapa))
+            .filter(|(l, r)| {
+                aba_de(r) == aba && cabe_no_tipo(l, self.tipo) && cabe_no_mapa(l, r, self.mapa)
+            })
             .collect();
         // This island's first: the others are a voyage away.
         da_aba.sort_by_key(|(_, r)| r.atual.is_some_and(|d| em_outra_ilha(d, c.zona).is_some()));
@@ -1131,7 +1190,9 @@ impl MenuMissoes {
         let altura = |l: &Linha| {
             CARTAO * f
                 + if self.expandida.as_deref() == Some(l.nome.as_str()) {
-                    let detalhe = todas.iter().find(|(outra, _)| outra.nome == l.nome)
+                    let detalhe = todas
+                        .iter()
+                        .find(|(outra, _)| outra.nome == l.nome)
                         .and_then(|(_, r)| r.atual)
                         .filter(|d| !automatizavel(d))
                         .map_or(0.0, |d| {
@@ -1287,7 +1348,8 @@ impl MenuMissoes {
                 } else if matches!(r.estado, Estado::Disponivel) {
                     "Take"
                 } else if matches!(&r.estado, Estado::Bloqueada(m) if nivel_bloqueado(m).is_some())
-                    || d.obj_kind == shared::quests::objective_kind::NIVEL && !auto {
+                    || d.obj_kind == shared::quests::objective_kind::NIVEL && !auto
+                {
                     "How to level"
                 } else if !auto && tem_atalho_manual(d) {
                     "Open"
@@ -1298,9 +1360,12 @@ impl MenuMissoes {
                 };
                 let _ = crate::ui::botao(ir, rotulo, true);
                 if tocou(ir) {
-                    if auto || tem_atalho_manual(d) || matches!(r.estado, Estado::Disponivel)
+                    if auto
+                        || tem_atalho_manual(d)
+                        || matches!(r.estado, Estado::Disponivel)
                         || d.obj_kind == shared::quests::objective_kind::NIVEL
-                        || matches!(&r.estado, Estado::Bloqueada(m) if nivel_bloqueado(m).is_some()) {
+                        || matches!(&r.estado, Estado::Bloqueada(m) if nivel_bloqueado(m).is_some())
+                    {
                         saida = Some(clique_de(d, &r.estado));
                     } else {
                         alternar = Some(l.nome.clone());
@@ -1318,10 +1383,17 @@ impl MenuMissoes {
                     let h = linhas.len() as f32 * 20.0 * f + 12.0 * f;
                     estilo::ret_arredondado(
                         Rect::new(card.x + 12.0 * f, py, card.w - 24.0 * f, h),
-                        5.0, Color::new(0.08, 0.15, 0.22, 0.95));
+                        5.0,
+                        Color::new(0.08, 0.15, 0.22, 0.95),
+                    );
                     for (i, linha) in linhas.iter().enumerate() {
-                        estilo::texto(card.x + 20.0 * f, py + (20.0 + i as f32 * 20.0) * f,
-                            linha, 13, if i == 0 { estilo::OURO } else { estilo::TEXTO });
+                        estilo::texto(
+                            card.x + 20.0 * f,
+                            py + (20.0 + i as f32 * 20.0) * f,
+                            linha,
+                            13,
+                            if i == 0 { estilo::OURO } else { estilo::TEXTO },
+                        );
                     }
                     py += h;
                 }
@@ -1354,7 +1426,9 @@ impl MenuMissoes {
         self.rolagem.desenha(area, total);
         if let Some(id) = marca_pedida {
             if !self.alterna_marca(id) {
-                saida = Some(Clique::Aviso(format!("The queue already has {FILA_MAX} quests.")));
+                saida = Some(Clique::Aviso(format!(
+                    "The queue already has {FILA_MAX} quests."
+                )));
             }
         }
         if let Some(nome) = alternar {
@@ -1441,7 +1515,8 @@ pub(crate) static NOMES_DE_TESTE: std::sync::LazyLock<HashMap<u16, String>> =
 #[cfg(debug_assertions)]
 pub async fn previa_menu() {
     use macroquad::prelude::*;
-    let saida = std::env::var("MMO_PREVIA_SAIDA").unwrap_or_else(|_| "/tmp/tempest-menu-missoes".into());
+    let saida =
+        std::env::var("MMO_PREVIA_SAIDA").unwrap_or_else(|_| "/tmp/tempest-menu-missoes".into());
     std::fs::create_dir_all(&saida).unwrap();
     let rt = render_target(1920, 1080);
     crate::render3d::define_alvo(Some(rt.clone()));
@@ -1459,7 +1534,11 @@ pub async fn previa_menu() {
         tem: &nada,
         nomes: &nomes,
     };
-    for (nome, aba, mapa) in [("disponiveis", Aba::Disponiveis, None), ("travadas", Aba::Bloqueadas, None), ("ermo", Aba::Disponiveis, Some("ilha_deserto"))] {
+    for (nome, aba, mapa) in [
+        ("disponiveis", Aba::Disponiveis, None),
+        ("travadas", Aba::Bloqueadas, None),
+        ("ermo", Aba::Disponiveis, Some("ilha_deserto")),
+    ] {
         let mut m = MenuMissoes::default();
         m.abrir();
         m.aba = Some(aba);
@@ -1475,7 +1554,9 @@ pub async fn previa_menu() {
             clear_background(Color::new(0.08, 0.12, 0.16, 1.));
             m.desenha(&c);
             unsafe { get_internal_gl().flush() };
-            rt.texture.get_texture_data().export_png(&format!("{saida}/{nome}.png"));
+            rt.texture
+                .get_texture_data()
+                .export_png(&format!("{saida}/{nome}.png"));
             next_frame().await;
         }
     }
@@ -1534,7 +1615,10 @@ mod tests {
         // the auto quest sails there); the card says where.
         let fora = ctx(&[], &vazio, 1, Some("ilha_gelo"));
         assert_eq!(estado(d501, &fora), Estado::Disponivel);
-        assert_eq!(em_outra_ilha(d501, Some("ilha_gelo")).as_deref(), Some("Bosque"));
+        assert_eq!(
+            em_outra_ilha(d501, Some("ilha_gelo")).as_deref(),
+            Some("Bosque")
+        );
         assert_eq!(em_outra_ilha(d501, Some("ilha_inicial")), None);
     }
 
@@ -1565,7 +1649,7 @@ mod tests {
             Clique::AutoMissao(501)
         );
         match clique_de(d501, &Estado::Bloqueada(vec![motivo_de_nivel(3)])) {
-            Clique::OpcoesDeNivel(3) => {},
+            Clique::OpcoesDeNivel(3) => {}
             outro => panic!("bloqueada andou: {outro:?}"),
         }
         assert!(matches!(
@@ -1578,10 +1662,18 @@ mod tests {
     fn todos_os_passos_da_historia_tem_acao_compativel() {
         use shared::quests::{objective_kind as o, tutorial as t};
         for d in shared::historia::PASSOS {
-            let mundo = matches!(d.obj_kind, o::TALK | o::KILL | o::GATHER | o::LUGAR | o::VIAGEM | o::TER)
-                || (d.obj_kind == o::TUTORIAL && d.obj_target == t::COLETA_ENERGIA);
+            let mundo = matches!(
+                d.obj_kind,
+                o::TALK | o::KILL | o::GATHER | o::LUGAR | o::VIAGEM | o::TER
+            ) || (d.obj_kind == o::TUTORIAL && d.obj_target == t::COLETA_ENERGIA);
             assert_eq!(automatizavel(d), mundo, "{}: {}", d.id, d.title);
-            let clique = clique_de(d, &Estado::EmAndamento { feito: 0, total: d.obj_count });
+            let clique = clique_de(
+                d,
+                &Estado::EmAndamento {
+                    feito: 0,
+                    total: d.obj_count,
+                },
+            );
             if mundo {
                 assert_eq!(clique, Clique::AutoMissao(d.id));
             } else if d.obj_kind == o::NIVEL {
@@ -1598,9 +1690,24 @@ mod tests {
         assert!(automatizavel(d));
         assert!(pode_iniciar_auto(d, quest_status::ACTIVE));
         assert!(!tem_atalho_manual(d));
-        assert_eq!(clique_de(d, &Estado::EmAndamento { feito: 0, total: d.obj_count }), Clique::AutoMissao(d.id));
-        for acao in [shared::quests::tutorial::PONTO_ATRIBUTO, shared::quests::tutorial::EVOLUIR_SKILL] {
-            assert!(!automatizavel(&QuestDef { obj_target: acao, ..*d }));
+        assert_eq!(
+            clique_de(
+                d,
+                &Estado::EmAndamento {
+                    feito: 0,
+                    total: d.obj_count
+                }
+            ),
+            Clique::AutoMissao(d.id)
+        );
+        for acao in [
+            shared::quests::tutorial::PONTO_ATRIBUTO,
+            shared::quests::tutorial::EVOLUIR_SKILL,
+        ] {
+            assert!(!automatizavel(&QuestDef {
+                obj_target: acao,
+                ..*d
+            }));
         }
     }
 
@@ -1609,12 +1716,27 @@ mod tests {
         use shared::quests::objective_kind as obj;
         let base = *quest_by_id(502).unwrap();
         assert!(automatizavel(&base));
-        for tipo in [obj::CRAFT, obj::REFINE, obj::DUNGEON, obj::RAID,
-            obj::PVP_KILL, obj::ENCHANT, obj::TREASURE, obj::TUTORIAL, obj::NIVEL] {
-            let d = QuestDef { obj_kind: tipo, ..base };
+        for tipo in [
+            obj::CRAFT,
+            obj::REFINE,
+            obj::DUNGEON,
+            obj::RAID,
+            obj::PVP_KILL,
+            obj::ENCHANT,
+            obj::TREASURE,
+            obj::TUTORIAL,
+            obj::NIVEL,
+        ] {
+            let d = QuestDef {
+                obj_kind: tipo,
+                ..base
+            };
             assert!(!automatizavel(&d), "tipo {tipo} entrou no auto");
             let acao = clique_de(&d, &Estado::EmAndamento { feito: 0, total: 1 });
-            assert!(matches!(acao, Clique::Aviso(_) | Clique::OpcoesDeNivel(_) | Clique::AbrirManual(_)));
+            assert!(matches!(
+                acao,
+                Clique::Aviso(_) | Clique::OpcoesDeNivel(_) | Clique::AbrirManual(_)
+            ));
             assert_eq!(clique_de(&d, &Estado::Pronta), Clique::AutoMissao(d.id));
             assert!(!pode_iniciar_auto(&d, quest_status::ACTIVE));
             assert!(pode_iniciar_auto(&d, quest_status::READY));
@@ -1623,12 +1745,15 @@ mod tests {
 
     #[test]
     fn atalho_individual_nao_libera_fila_manual() {
-        for id in [524,523] {
-            let d=quest_by_id(id).unwrap();
-            assert_eq!(clique_de(d,&Estado::EmAndamento {feito:0,total:1}),Clique::AbrirManual(id));
+        for id in [524, 523] {
+            let d = quest_by_id(id).unwrap();
+            assert_eq!(
+                clique_de(d, &Estado::EmAndamento { feito: 0, total: 1 }),
+                Clique::AbrirManual(id)
+            );
             assert!(!automatizavel(d));
-            assert!(!pode_iniciar_auto(d,quest_status::ACTIVE));
-            assert_eq!(clique_de(d,&Estado::Pronta),Clique::AutoMissao(id));
+            assert!(!pode_iniciar_auto(d, quest_status::ACTIVE));
+            assert_eq!(clique_de(d, &Estado::Pronta), Clique::AutoMissao(id));
         }
     }
 
@@ -1772,7 +1897,10 @@ mod tests {
         ] {
             assert!(nomes.contains(&n), "{n} fora do menu: {nomes:?}");
         }
-        let chefes = ls.iter().find(|l| l.nome == "The bosses of the Grove").unwrap();
+        let chefes = ls
+            .iter()
+            .find(|l| l.nome == "The bosses of the Grove")
+            .unwrap();
         assert_eq!(
             chefes.passos.iter().map(|d| d.id).collect::<Vec<_>>(),
             vec![511, 512, 513, 514, 515]
@@ -1934,8 +2062,14 @@ mod testes_da_trava {
     #[test]
     fn filtro_de_mapa_separa_ilhas_sem_esconder_historia_atual() {
         let ls = linhas(&[]);
-        let bos = ls.iter().find(|l| l.passos.iter().any(|d| d.id == 501)).unwrap();
-        let gelo = ls.iter().find(|l| l.passos.iter().any(|d| d.id == 810)).unwrap();
+        let bos = ls
+            .iter()
+            .find(|l| l.passos.iter().any(|d| d.id == 501))
+            .unwrap();
+        let gelo = ls
+            .iter()
+            .find(|l| l.passos.iter().any(|d| d.id == 810))
+            .unwrap();
         let resumo = |l: &Linha| Resumo {
             atual: l.passos.first().copied(),
             estado: Estado::Disponivel,

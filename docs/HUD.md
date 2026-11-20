@@ -603,12 +603,20 @@ o diálogo, que bloqueia abrir painel.
   Alt+Enter tela cheia. Zoom da câmera só na roda (R/F saíram da câmera).
 
 **Pendente:** moldura única `painel.rs` com abas laterais e ← (os painéis
-ainda usam a moldura própria), painéis Ficha/Habilidades/Configurações, fusão
-Personagem (Bolsa+Atributos+Habilidades) e Missões (diário+todas em abas),
-chat com abas e campo de digitação, aba Grupo com party frames, selo NOVO,
-toast de loot raro, economia de energia, escala da UI configurável.
+ainda usam molduras próprias), fusão completa de Personagem
+(Bolsa+Atributos+Habilidades) e Missões (diário+todas em abas), chat com abas,
+selo NOVO propagado e toast de loot raro.
+
+**Feito depois da lista original:** painéis de Ficha/Habilidades/Configurações,
+aba Grupo com party frames (`social_hud.rs`), modo economia de energia
+(`economia.rs`) e escala configurável/persistida da UI (`config_interface.rs`,
+`Preferencias::escala_ui`).
 
 ## 6. Tarefas de implementação (em ordem)
+
+> Esta tabela preserva a ordem do plano original. O estado atual é o da seção
+> 5.1 acima; vários passos da tabela já foram entregues por implementações que
+> não criaram literalmente os módulos `telas.rs`/`painel.rs` imaginados aqui.
 
 | # | Tarefa | Pronto quando |
 |---|---|---|

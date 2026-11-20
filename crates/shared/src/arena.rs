@@ -309,12 +309,24 @@ mod testes {
         let chao = ALTURA;
         for p in &crate::planta::PLANTAS {
             let e = p.centro(p.entrada());
-            assert!(!ilha.agua(e.x, e.y), "plan {}: the entrance is under water", p.conteudo);
+            assert!(
+                !ilha.agua(e.x, e.y),
+                "plan {}: the entrance is under water",
+                p.conteudo
+            );
             let h = ilha.altura(e.x, e.y);
-            assert!((h - chao).abs() < 0.01, "plan {}: entrance floor at {h}, expected {chao}", p.conteudo);
+            assert!(
+                (h - chao).abs() < 0.01,
+                "plan {}: entrance floor at {h}, expected {chao}",
+                p.conteudo
+            );
             // Halfway to the Gruta islet: sea.
             let meio = p.ancora * 0.62;
-            assert!(ilha.agua(meio.x, meio.y), "plan {}: no sea between it and the Gruta islet", p.conteudo);
+            assert!(
+                ilha.agua(meio.x, meio.y),
+                "plan {}: no sea between it and the Gruta islet",
+                p.conteudo
+            );
         }
     }
 
@@ -338,7 +350,10 @@ mod testes {
     fn a_ilhota_fica_longe_das_outras() {
         let meu = glam::Vec2::new(DEF.centro[0], DEF.centro[1]);
         let raio = |d: &DefIlha| d.raio_blocos as f32 * crate::terreno::BLOCO;
-        for d in crate::terreno::ARQUIPELAGO.iter().chain([&crate::magica::DEF]) {
+        for d in crate::terreno::ARQUIPELAGO
+            .iter()
+            .chain([&crate::magica::DEF])
+        {
             let outro = glam::Vec2::new(d.centro[0], d.centro[1]);
             let minimo = raio(&DEF) + raio(d);
             assert!(
@@ -387,17 +402,13 @@ mod testes {
                         estorvos += 1;
                     }
                     let topo = ger.bloco_em(bx, bz);
-                    if crate::terreno::arvore_da_coluna(
-                        def.bioma, bx, bz, topo, 0, &ger, false,
-                    )
-                    .is_some()
+                    if crate::terreno::arvore_da_coluna(def.bioma, bx, bz, topo, 0, &ger, false)
+                        .is_some()
                     {
                         arvores += 1;
                     }
-                    if crate::terreno::planta_da_coluna(
-                        def.bioma, bx, bz, topo, 0, &ger, false,
-                    )
-                    .is_some()
+                    if crate::terreno::planta_da_coluna(def.bioma, bx, bz, topo, 0, &ger, false)
+                        .is_some()
                     {
                         plantas += 1;
                     }
@@ -406,7 +417,10 @@ mod testes {
             }
             bz += passo;
         }
-        assert!(seco > 100, "a ilhota quase não tem terra seca ({seco} amostras)");
+        assert!(
+            seco > 100,
+            "a ilhota quase não tem terra seca ({seco} amostras)"
+        );
         // E A CHEGADA É CHÃO. Sem isto o handoff largaria o jogador na água —
         // e o sintoma apareceria como "entrei na dungeon e afundei", que
         // ninguém liga a este arquivo.

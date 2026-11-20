@@ -221,7 +221,15 @@ impl Rolagem {
         self.sem_barra = true;
         let deitada = Rect::new(area.y, area.x, area.h, area.w);
         let virar = |v: Vec2| vec2(v.y, v.x);
-        let toque = self.passo(deitada, total, passo_da_roda, Entrada { mouse: virar(e.mouse), ..e });
+        let toque = self.passo(
+            deitada,
+            total,
+            passo_da_roda,
+            Entrada {
+                mouse: virar(e.mouse),
+                ..e
+            },
+        );
         toque.map(virar)
     }
 
@@ -354,7 +362,10 @@ mod tests {
         // A finger landing stops it, and that touch is not a tap on a row.
         r.passo(AREA, 5000.0, 40.0, quadro(50.0, 100.0, true, true, false));
         let parado = r.pos;
-        assert_eq!(r.passo(AREA, 5000.0, 40.0, quadro(50.0, 100.0, false, false, true)), None);
+        assert_eq!(
+            r.passo(AREA, 5000.0, 40.0, quadro(50.0, 100.0, false, false, true)),
+            None
+        );
         assert_eq!(r.pos, parado);
     }
 
@@ -365,7 +376,10 @@ mod tests {
         r.passo_horizontal(faixa, 900.0, 40.0, e(250.0, 20.0, true, true, false));
         r.passo_horizontal(faixa, 900.0, 40.0, e(150.0, 22.0, false, true, false));
         assert_eq!(r.pos, 100.0, "swiped left 100, the row moved 100");
-        assert_eq!(r.passo_horizontal(faixa, 900.0, 40.0, e(150.0, 22.0, false, false, true)), None);
+        assert_eq!(
+            r.passo_horizontal(faixa, 900.0, 40.0, e(150.0, 22.0, false, false, true)),
+            None
+        );
         // A tap near the right end is a tap, never a grab of a bar.
         r.passo_horizontal(faixa, 900.0, 40.0, e(295.0, 20.0, true, true, false));
         assert_eq!(

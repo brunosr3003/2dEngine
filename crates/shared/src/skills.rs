@@ -506,7 +506,10 @@ pub fn despertar(skill_id: u32, tier: u8) -> &'static str {
 /// Energia por ciclo de um cristal, conforme a ilha. O índice é a ilha do
 /// arquipélago; canais sem ilha usam o primeiro valor.
 pub fn energia_por_coleta(indice_da_ilha: usize) -> u64 {
-    [30, 70, 150, 300].get(indice_da_ilha).copied().unwrap_or(30)
+    [30, 70, 150, 300]
+        .get(indice_da_ilha)
+        .copied()
+        .unwrap_or(30)
 }
 
 /// Energy of one gather at the place's (internal) level (owner, 15/11/2026:
@@ -1107,7 +1110,14 @@ mod testes_da_trava {
         };
         // SOLTAM: o barril arremessado, os projéteis e a bênção que cai em
         // você no impacto.
-        for n in ["Barrel", "True Shot", "Cutting Wind", "Life Drain", "Aura", "Judgement"] {
+        for n in [
+            "Barrel",
+            "True Shot",
+            "Cutting Wind",
+            "Life Drain",
+            "Aura",
+            "Judgement",
+        ] {
             let s = por_nome(n);
             assert!(s.sai_da_mao(), "'{n}' devia soltar o corpo");
             assert_eq!(
@@ -1222,8 +1232,14 @@ mod testes_do_mago_e_da_int {
         let dreno = skill(10);
         assert_eq!(dreno.ordem, 1, "the drain unlocks with the ring");
         assert!(dreno.dano > 0 && dreno.cura == 0 && dreno.forma == Forma::Projetil);
-        assert!(skill(11).cura > 0 && skill(11).dano == 0, "Aura stays the area heal");
-        assert!(skill(12).dano > 0 && skill(12).cura == 0, "Judgement stays damage");
+        assert!(
+            skill(11).cura > 0 && skill(11).dano == 0,
+            "Aura stays the area heal"
+        );
+        assert!(
+            skill(12).dano > 0 && skill(12).cura == 0,
+            "Judgement stays damage"
+        );
         assert!(roubo_do_dreno(1) < roubo_do_dreno(8) && roubo_do_dreno(8) < roubo_do_dreno(10));
     }
 
@@ -1236,9 +1252,20 @@ mod testes_do_mago_e_da_int {
         assert_eq!(espera_efetiva(18.0, 0), 18.0, "below base never lengthens");
         let cem = espera_efetiva(18.0, base + 100);
         assert!((cem - 16.2).abs() < 1e-4, "100 INT = -10%: {cem}");
-        assert!((espera_efetiva(18.0, base + 5_000) - 14.4).abs() < 1e-4, "cap: -20%");
+        assert!(
+            (espera_efetiva(18.0, base + 5_000) - 14.4).abs() < 1e-4,
+            "cap: -20%"
+        );
         assert_eq!(espera_efetiva(4.5, base + 5_000), 4.0, "floor at 4 s");
-        assert_eq!(espera_efetiva(4.0, base + 5_000), 4.0, "True Shot keeps 4 s");
-        assert_eq!(espera_efetiva(2.0, base + 5_000), 2.0, "under the floor keeps its own");
+        assert_eq!(
+            espera_efetiva(4.0, base + 5_000),
+            4.0,
+            "True Shot keeps 4 s"
+        );
+        assert_eq!(
+            espera_efetiva(2.0, base + 5_000),
+            2.0,
+            "under the floor keeps its own"
+        );
     }
 }

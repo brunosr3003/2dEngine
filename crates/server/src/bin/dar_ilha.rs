@@ -33,11 +33,12 @@ async fn main() -> Result<()> {
         .with_context(|| format!("{passo} não é um passo da história"))?;
 
     let pool = sqlx::PgPool::connect(&std::env::var("DATABASE_URL")?).await?;
-    let atual: Option<String> = sqlx::query_scalar("SELECT colonia_json FROM characters WHERE name=$1")
-        .bind(&nome)
-        .fetch_optional(&pool)
-        .await?
-        .context("personagem não existe")?;
+    let atual: Option<String> =
+        sqlx::query_scalar("SELECT colonia_json FROM characters WHERE name=$1")
+            .bind(&nome)
+            .fetch_optional(&pool)
+            .await?
+            .context("personagem não existe")?;
     // The colony goes back to ZERO, and does not merely gain the deed.
     //
     // Before, this only touched `tem` and the clock: the residents and the level
@@ -62,11 +63,13 @@ async fn main() -> Result<()> {
     // The story: the MARKER holds the index, and the step in progress holds the
     // id. The two have to move together, or `garantir_historia` realigns the
     // marker by the old step and undoes this.
-    sqlx::query("DELETE FROM character_quests WHERE char_name=$1 AND (quest_id=$2 OR quest_id>=700)")
-        .bind(&nome)
-        .bind(shared::historia::ID_MARCO as i32)
-        .execute(&pool)
-        .await?;
+    sqlx::query(
+        "DELETE FROM character_quests WHERE char_name=$1 AND (quest_id=$2 OR quest_id>=700)",
+    )
+    .bind(&nome)
+    .bind(shared::historia::ID_MARCO as i32)
+    .execute(&pool)
+    .await?;
     sqlx::query(
         "INSERT INTO character_quests(char_name, quest_id, status, progress, cooldown_until) \
          VALUES ($1,$2,$3,$4,0)",

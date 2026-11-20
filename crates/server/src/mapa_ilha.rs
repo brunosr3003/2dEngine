@@ -238,7 +238,16 @@ mod testes {
         assert_eq!(recursos.len(), MAX_REGIOES, "o teto de regioes nao segurou");
         let kinds: Vec<u16> = (0..8).collect();
         let zonas: Vec<_> = (0..60)
-            .map(|i| zona_no_mapa(Vec2::new(i as f32 * 20.0, 0.0), 45.0, 1 + i, 3 + i, &kinds, false))
+            .map(|i| {
+                zona_no_mapa(
+                    Vec2::new(i as f32 * 20.0, 0.0),
+                    45.0,
+                    1 + i,
+                    3 + i,
+                    &kinds,
+                    false,
+                )
+            })
             .collect();
         let nomes = kinds
             .iter()

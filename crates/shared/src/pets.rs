@@ -430,7 +430,11 @@ pub fn todas_as_skills() -> Vec<SkillDePet> {
                 _ => "+4 RES.",
             },
             efeito: Efeito::PontoEm(
-                if crate::stat_ativo(i) { i } else { stat_idx::DES },
+                if crate::stat_ativo(i) {
+                    i
+                } else {
+                    stat_idx::DES
+                },
                 PONTOS_DA_SKILL_DE_ATRIBUTO,
             ),
             preco_tp: 450,
@@ -479,7 +483,10 @@ pub fn regen_de_mana(d: &crate::items::PetData) -> f32 {
 }
 
 fn soma_efeito<T: Copy>(d: &crate::items::PetData, f: impl Fn(Efeito) -> Option<T>) -> Vec<T> {
-    skills_ativas(d).iter().filter_map(|s| f(s.efeito)).collect()
+    skills_ativas(d)
+        .iter()
+        .filter_map(|s| f(s.efeito))
+        .collect()
 }
 
 /// Quantos pontos de atributo o pet do grau `grau` entrega no nivel `nivel`.
@@ -492,16 +499,23 @@ pub fn pontos(grau: u8, nivel: u8) -> u32 {
 }
 
 /// Tier e refino amplificam os pontos naturais e as skills do pet.
-pub fn pontos_por_stat_da_instancia(item_id: u16, inst: Option<&crate::items::ItemInstance>) -> [u32; STAT_COUNT] {
+pub fn pontos_por_stat_da_instancia(
+    item_id: u16,
+    inst: Option<&crate::items::ItemInstance>,
+) -> [u32; STAT_COUNT] {
     let d = dados(inst);
     let af = inst.and_then(|i| i.afinidade);
-    let mult = inst.map_or(1.0, |i| 1.0 + 0.18 * (i.tier().saturating_sub(1)) as f32 + 0.05 * i.refinement as f32);
+    let mult = inst.map_or(1.0, |i| {
+        1.0 + 0.18 * (i.tier().saturating_sub(1)) as f32 + 0.05 * i.refinement as f32
+    });
     pontos_por_stat(item_id, &d, af).map(|p| (p as f32 * mult).round() as u32)
 }
 
 /// Multiplicador da velocidade de coleta produzido pela evolução do pet.
 pub fn mult_coleta(inst: Option<&crate::items::ItemInstance>) -> f32 {
-    inst.map_or(1.0, |i| 1.0 + 0.10 * (i.tier().saturating_sub(1)) as f32 + 0.025 * i.refinement as f32)
+    inst.map_or(1.0, |i| {
+        1.0 + 0.10 * (i.tier().saturating_sub(1)) as f32 + 0.025 * i.refinement as f32
+    })
 }
 
 /// Os pontos do pet, ja' repartidos pelos seis atributos. A sobra da divisao
@@ -672,7 +686,10 @@ mod testes {
                     "{r:?} fora da tabela"
                 );
                 assert_ne!(r[0], r[1], "principal e secundario iguais: {r:?}");
-                assert!(crate::stat_ativo(r[0] as usize) && crate::stat_ativo(r[1] as usize), "rolled the retired SPD: {r:?}");
+                assert!(
+                    crate::stat_ativo(r[0] as usize) && crate::stat_ativo(r[1] as usize),
+                    "rolled the retired SPD: {r:?}"
+                );
                 let p = pesos_de(r);
                 assert_eq!(
                     p.iter().map(|x| *x as u16).sum::<u16>(),
@@ -911,7 +928,14 @@ mod testes {
         // O resto do reparto so' cresce pelo NIVEL, nao pela skill escolhida.
         assert_eq!(
             com[stat_idx::INT],
-            pontos_por_stat(coruja, &PetData { skills: [0; 3], ..d }, None)[stat_idx::INT]
+            pontos_por_stat(
+                coruja,
+                &PetData {
+                    skills: [0; 3],
+                    ..d
+                },
+                None
+            )[stat_idx::INT]
         );
     }
 
@@ -920,7 +944,11 @@ mod testes {
         let mut ids = std::collections::HashSet::new();
         for s in todas_as_skills() {
             assert!(ids.insert(s.item_id), "id repetido em {}", s.nome);
-            assert!(item_id::e_skill_de_pet(s.item_id), "{} fora da faixa", s.nome);
+            assert!(
+                item_id::e_skill_de_pet(s.item_id),
+                "{} fora da faixa",
+                s.nome
+            );
             assert!(s.preco_tp > 0);
             assert_eq!(skill(s.item_id).map(|x| x.nome), Some(s.nome));
         }
@@ -941,7 +969,10 @@ mod testes {
             assert!(chance_de_combinar(destino) < chance_de_combinar(destino - 1));
             assert!(cobre_de_combinar(destino - 1) > cobre_de_combinar(destino - 2));
         }
-        assert!(chance_de_combinar(GRAU_MAX) > 0, "o topo tem que ser possivel");
+        assert!(
+            chance_de_combinar(GRAU_MAX) > 0,
+            "o topo tem que ser possivel"
+        );
         assert!(chance_de_combinar(2) < 100, "nenhum degrau e' garantido");
     }
 }

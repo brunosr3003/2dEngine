@@ -127,9 +127,14 @@ async fn semear(pool: &PgPool) -> anyhow::Result<()> {
     // stays. Without this the live game kept "Investida" and the 35 cone.
     for (id, velha) in [
         (1u32, "forma = 'linha' AND dano = 25 AND raio = 1"),
-        (2u32, "forma = 'cone' AND alcance = 3.5 AND dano IN (35, 41)"),
+        (
+            2u32,
+            "forma = 'cone' AND alcance = 3.5 AND dano IN (35, 41)",
+        ),
     ] {
-        let Some(nova) = shared::skills::playtest().into_iter().find(|s| s.id == id) else { continue };
+        let Some(nova) = shared::skills::playtest().into_iter().find(|s| s.id == id) else {
+            continue;
+        };
         let mudou = sqlx::query(&format!(
             "UPDATE skills SET nome = $1, forma = $2, custo_mp = $3, espera_s = $4,
                     conjuracao_s = $5, dano = $6, cura = $7, alcance = $8, raio = $9

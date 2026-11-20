@@ -29,7 +29,9 @@ pub struct Email {
 
 impl Email {
     pub fn do_ambiente(http: reqwest::Client) -> Option<Self> {
-        let chave = std::env::var("RESEND_API_KEY").ok().filter(|v| !v.is_empty())?;
+        let chave = std::env::var("RESEND_API_KEY")
+            .ok()
+            .filter(|v| !v.is_empty())?;
         let remetente = std::env::var("EMAIL_REMETENTE")
             .ok()
             .filter(|v| !v.is_empty())
@@ -122,8 +124,10 @@ impl Email {
                 &t("Alguém pediu para redefinir a senha desta conta."),
                 &t("Choose a new password"),
                 &link,
-                &t("O link vale por 1 hora e só pode ser usado uma vez. Se não foi você, \
-                 pode ignorar — sua senha continua a mesma."),
+                &t(
+                    "O link vale por 1 hora e só pode ser usado uma vez. Se não foi você, \
+                 pode ignorar — sua senha continua a mesma.",
+                ),
                 &t("If the button doesn't work:"),
             ),
         )
@@ -182,10 +186,16 @@ mod testes {
     fn o_corpo_do_email_acompanha_o_idioma() {
         let en = pagina(
             &shared::idioma::tr_em(Idioma::En, "Hello,"),
-            &shared::idioma::tr_em(Idioma::En, "Falta confirmar seu e-mail para a conta ficar completa."),
+            &shared::idioma::tr_em(
+                Idioma::En,
+                "Falta confirmar seu e-mail para a conta ficar completa.",
+            ),
             &shared::idioma::tr_em(Idioma::En, "Confirm my account"),
             "https://x/y",
-            &shared::idioma::tr_em(Idioma::En, "O link vale por 48 horas. Se não foi você que criou a conta, é só ignorar."),
+            &shared::idioma::tr_em(
+                Idioma::En,
+                "O link vale por 48 horas. Se não foi você que criou a conta, é só ignorar.",
+            ),
             &shared::idioma::tr_em(Idioma::En, "If the button doesn't work:"),
         );
         assert!(en.contains("Hello,"), "saudação não traduziu: {en}");

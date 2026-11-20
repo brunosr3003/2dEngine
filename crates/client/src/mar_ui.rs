@@ -64,6 +64,64 @@ pub fn desenha_casco(p: Vec3, yaw: f32, semente: u64, v: Visual, vel: f32) {
     crate::mar_casco::desenha_navio(p, yaw, semente, v, Some(vel));
 }
 
+/// A DEFEATED HULL (naval PvP phase 2): the ship stays boardable, with fire
+/// on the planks, smoke rising from the masts and a slow drift. The smoke is
+/// deliberately oversized so the wreck reads from far away.
+pub fn desenha_casco_derrotado(p: Vec3, yaw: f32, semente: u64, v: Visual, vel: f32) {
+    desenha_casco(p, yaw, semente, v, vel * 0.15);
+    let t = get_time() as f32;
+    let frente2 = vec2(yaw.sin(), yaw.cos());
+    let lado2 = vec2(frente2.y, -frente2.x);
+    let frente = |d: f32| vec3(frente2.x, 0.0, frente2.y) * d;
+    let lado = |d: f32| vec3(lado2.x, 0.0, lado2.y) * d;
+    let fogo = Color::from_rgba(238, 104, 38, 235);
+    let brasa = Color::from_rgba(255, 188, 62, 245);
+    let carvao = Color::from_rgba(38, 28, 24, 235);
+    for k in 0..4 {
+        let d = (k as f32 - 1.5) * 1.15 + ((semente as f32 + k as f32) % 0.4);
+        let q = p + frente(d) + lado(((k % 2) as f32 - 0.5) * 1.15);
+        let pulsa = 0.78 + 0.16 * (t * 7.0 + k as f32).sin();
+        draw_cube(
+            q + vec3(0.0, 0.55, 0.0),
+            vec3(0.46, 0.52, 0.46) * pulsa,
+            None,
+            fogo,
+        );
+        draw_cube(
+            q + vec3(0.0, 0.86, 0.0),
+            vec3(0.26, 0.32, 0.26) * (1.4 - pulsa * 0.35),
+            None,
+            brasa,
+        );
+        draw_cube(
+            q + vec3(0.0, 0.18, 0.0),
+            vec3(0.72, 0.12, 0.62),
+            None,
+            carvao,
+        );
+    }
+    // Torn, blackened canvas strips on the masts.
+    let topo = crate::mar_casco::topo_do_mastro(p, yaw, semente, v);
+    for k in 0..2 {
+        draw_cube(
+            topo + vec3(0.0, -0.35 - k as f32 * 0.45, 0.0) + lado(0.28 * (k as f32 - 0.5)),
+            vec3(0.08, 0.62, 0.08),
+            None,
+            carvao,
+        );
+    }
+    for k in 0..5 {
+        let sobe = (t * 0.65 + k as f32 * 0.31).fract();
+        let centro = topo
+            + vec3(0.0, 0.5 + sobe * 4.8, 0.0)
+            + lado(((k % 2) as f32 - 0.5) * (0.4 + sobe))
+            + frente(((k as f32) - 2.0) * 0.22);
+        let raio = 0.35 + sobe * 0.85;
+        let alfa = (0.34 * (1.0 - sobe)).max(0.04);
+        draw_sphere(centro, raio, None, Color::new(0.18, 0.19, 0.20, alfa));
+    }
+}
+
 /// The ship's hull from the equipped instance: (points, full, damaged). The
 /// full hull counts the hull stars (`navio::casco_total`).
 pub fn casco_de(eq: &shared::Equipment) -> Option<(u16, u16, bool)> {
@@ -87,34 +145,131 @@ pub fn botao_atracar(z: &crate::hud_layout::Zonas, eu: Option<(f32, f32)>) -> Op
     let rotulo = format!("Dock at {}", cais.nome);
     let h = z.faixa.h * 1.5;
     let w = estilo::medir_forte(&rotulo, 18) + h * 1.4;
-    let r = Rect::new(z.faixa.center().x - w * 0.5, z.faixa.y - 8.0 * z.s - h * 2.3, w, h);
+    let r = Rect::new(
+        z.faixa.center().x - w * 0.5,
+        z.faixa.y - 8.0 * z.s - h * 2.3,
+        w,
+        h,
+    );
     estilo::botao(r, &rotulo, estilo::estado_de(r, false, false), true);
     (crate::foco::clique() && r.contains(Vec2::from(mouse_position()))).then_some(cais.ilha as u8)
+}
+
+/// NAVAL DEFEAT ACTIONS on the ship under my feet: the captain of a defeated
+/// hull may abandon it (real naval death) or repair the sail by the broken
+/// mast; anyone aboard an enemy wreck may start/cancel the 10 s salvage.
+pub fn botoes_navais(
+    z: &crate::hud_layout::Zonas,
+    w: &crate::world::World,
+    coleta: Option<u8>,
+) -> Option<nv::PedidoNavio> {
+    if !no_mar() {
+        return None;
+    }
+    let navio = w.navio_do_eu()?;
+    if navio.state.hp > 0 {
+        return None;
+    }
+    let h = z.faixa.h * 1.5;
+    let mut pedido = None;
+    let botao = |rotulo: &str, linha: f32, dica: &str| {
+        let wpx = estilo::medir_forte(rotulo, 18) + h * 1.4;
+        let r = Rect::new(
+            z.faixa.center().x - wpx * 0.5,
+            z.faixa.y - 8.0 * z.s - h * (2.4 + linha * 1.25),
+            wpx,
+            h,
+        );
+        let sobre = r.contains(Vec2::from(mouse_position()));
+        estilo::botao(r, rotulo, estilo::estado_de(r, false, false), true);
+        if sobre {
+            crate::hud::dica(r, dica);
+            crate::foco::clique()
+        } else {
+            false
+        }
+    };
+    if w.eu_capitao() {
+        if botao(
+            "Abandon ship",
+            0.0,
+            "Give up the wreck now: the crew returns to the dock and takes the naval death penalty.",
+        ) {
+            pedido = Some(nv::PedidoNavio::Afundar);
+        }
+        let perto_do_mastro = w.meu_conves().is_some_and(|n| {
+            let classe = nv::Visual::do_fio(navio.meta.skins).classe as usize;
+            n.local_f32().distance(
+                shared::conves::mastros(classe)
+                    .next()
+                    .unwrap_or(::glam::Vec2::ZERO),
+            ) <= 1.8
+        });
+        if perto_do_mastro {
+            let reparando = coleta == Some(nv::TIPO_COLETA_REPARO_VELA);
+            if botao(
+                if reparando { "Cancel repair" } else { "Repair sail" },
+                1.0,
+                "Channel 45 s by the mast. Damage, moving away or dying interrupts it; success leaves the hull at 10%.",
+            ) {
+                pedido = Some(nv::PedidoNavio::RepararVela { iniciar: !reparando });
+            }
+        }
+    } else if w.meu_conves().is_some() {
+        let saqueando = coleta == Some(nv::TIPO_COLETA_SAQUE);
+        if botao(
+            if saqueando { "Cancel salvage" } else { "Loot wreck" },
+            0.0,
+            "Channel 10 s aboard the defeated ship. Stay alive and aboard; the reward is generated once per wreck.",
+        ) {
+            pedido = Some(nv::PedidoNavio::Saquear);
+        }
+    }
+    pedido
 }
 
 /// What the HELM TOGGLE does now (`botao_do_leme`): ("tooltip", "label",
 /// request). At the wheel: leave it; the captain near the wheel: take it;
 /// crew with a ship of their own: back to it. `None` = nothing to do here
 /// (the button is not drawn).
-pub fn acao_do_leme(w: &crate::world::World, tem_navio: bool) -> Option<(&'static str, &'static str, nv::PedidoNavio)> {
+pub fn acao_do_leme(
+    w: &crate::world::World,
+    tem_navio: bool,
+) -> Option<(&'static str, &'static str, nv::PedidoNavio)> {
     let eu_id = w.self_id?;
     let (n, navio) = (w.meu_conves()?, w.navio_do_eu()?);
     if w.eu_capitao() {
         if n.leme {
-            return Some(("Leave the helm", "LEAVE", nv::PedidoNavio::Leme { pegar: false }));
+            return Some((
+                "Leave the helm",
+                "LEAVE",
+                nv::PedidoNavio::Leme { pegar: false },
+            ));
         }
-        let classe = nv::classe(navio.meta.kind);
+        let classe = nv::Visual::do_fio(navio.meta.skins).classe as usize;
         if n.local_f32().distance(shared::conves::roda(classe)) <= shared::conves::ALCANCE_DO_LEME {
-            return Some(("Take the helm", "HELM", nv::PedidoNavio::Leme { pegar: true }));
+            return Some((
+                "Take the helm",
+                "HELM",
+                nv::PedidoNavio::Leme { pegar: true },
+            ));
         }
         return None;
     }
-    tem_navio.then_some(("Back to my ship", "MY SHIP", nv::PedidoNavio::Embarcar { capitao: eu_id }))
+    tem_navio.then_some((
+        "Back to my ship",
+        "MY SHIP",
+        nv::PedidoNavio::Embarcar { capitao: eu_id },
+    ))
 }
 
-/// "Board <name>'s ship": only beside a party member's ship, only for the
-/// captain of my own (or with no deck yet).
-pub fn pedido_de_embarque(w: &crate::world::World, grupo: &[String]) -> Option<(String, nv::PedidoNavio)> {
+/// "Board <name>'s ship" beside a party ship; "Board <name>'s wreck" beside
+/// any defeated hull (naval PvP). Only the captain of a ship (or someone with
+/// no deck yet) jumps across.
+pub fn pedido_de_embarque(
+    w: &crate::world::World,
+    grupo: &[String],
+) -> Option<(String, nv::PedidoNavio)> {
     let eu = w.ents.get(&w.self_id?)?;
     if !w.eu_capitao() {
         return None;
@@ -124,10 +279,37 @@ pub fn pedido_de_embarque(w: &crate::world::World, grupo: &[String]) -> Option<(
     w.ents
         .values()
         .filter(|e| e.meta.tag == shared::EntityTag::Navio && Some(e.meta.id) != meu_navio)
-        .filter(|e| e.render_pos.distance(aqui) <= shared::conves::ALCANCE_DO_EMBARQUE)
-        .filter_map(|e| Some((e, e.meta.name.as_ref().filter(|n| grupo.iter().any(|g| g.eq_ignore_ascii_case(n)))?)))
-        .min_by(|a, b| a.0.render_pos.distance(aqui).total_cmp(&b.0.render_pos.distance(aqui)))
-        .map(|(e, nome)| (format!("Board {nome}'s ship"), nv::PedidoNavio::Embarcar { capitao: e.meta.id }))
+        .filter(|e| {
+            let alcance = if e.state.hp <= 0 {
+                nv::ABORDAGEM_ALCANCE
+            } else {
+                shared::conves::ALCANCE_DO_EMBARQUE
+            };
+            e.render_pos.distance(aqui) <= alcance
+        })
+        .filter_map(|e| {
+            let nome = e.meta.name.as_ref()?;
+            let derrotado = e.state.hp <= 0;
+            if !derrotado && !grupo.iter().any(|g| g.eq_ignore_ascii_case(nome)) {
+                return None;
+            }
+            Some((e, nome.clone(), derrotado))
+        })
+        .min_by(|a, b| {
+            a.0.render_pos
+                .distance(aqui)
+                .total_cmp(&b.0.render_pos.distance(aqui))
+        })
+        .map(|(e, nome, derrotado)| {
+            (
+                if derrotado {
+                    format!("Board {nome}'s wreck")
+                } else {
+                    format!("Board {nome}'s ship")
+                },
+                nv::PedidoNavio::Embarcar { capitao: e.meta.id },
+            )
+        })
 }
 
 /// A ship's wheel: a rim, eight spokes with handles, the hub.
@@ -137,7 +319,14 @@ pub fn icone_do_leme(c: Vec2, r: f32, cor: Color) {
     for k in 0..8 {
         let a = k as f32 / 8.0 * std::f32::consts::TAU;
         let d = vec2(a.cos(), a.sin());
-        draw_line(c.x + d.x * r * 0.18, c.y + d.y * r * 0.18, c.x + d.x * r, c.y + d.y * r, esp * 0.8, cor);
+        draw_line(
+            c.x + d.x * r * 0.18,
+            c.y + d.y * r * 0.18,
+            c.x + d.x * r,
+            c.y + d.y * r,
+            esp * 0.8,
+            cor,
+        );
         draw_circle(c.x + d.x * r, c.y + d.y * r, esp * 0.75, cor);
     }
     draw_circle(c.x, c.y, r * 0.2, cor);
@@ -174,9 +363,19 @@ pub fn botao_do_leme(
         let sobre = r.contains(Vec2::from(mouse_position()));
         let no_leme = matches!(p, nv::PedidoNavio::Leme { pegar: false });
         estilo::cartao(r, sobre, no_leme);
-        let cor = if no_leme || sobre { estilo::OURO } else { estilo::TEXTO };
+        let cor = if no_leme || sobre {
+            estilo::OURO
+        } else {
+            estilo::TEXTO
+        };
         icone_do_leme(r.center() - vec2(0.0, r.h * 0.08), r.w * 0.27, cor);
-        estilo::texto(r.x + r.w * 0.5 - estilo::medir(rotulo, (r.w * 0.17) as u16) * 0.5, r.y + r.h * 0.93, rotulo, (r.w * 0.17) as u16, cor);
+        estilo::texto(
+            r.x + r.w * 0.5 - estilo::medir(rotulo, (r.w * 0.17) as u16) * 0.5,
+            r.y + r.h * 0.93,
+            rotulo,
+            (r.w * 0.17) as u16,
+            cor,
+        );
         if sobre {
             crate::hud::dica(r, dica);
         }
@@ -187,7 +386,9 @@ pub fn botao_do_leme(
     if let Some((rotulo, p)) = pedido_de_embarque(w, grupo) {
         let h = r.h * 0.62;
         let largura = estilo::medir_forte(&rotulo, (h * 0.5) as u16) + h * 0.9;
-        let x = (r.center().x - largura * 0.5).max(4.0).min(screen_width() - largura - 4.0);
+        let x = (r.center().x - largura * 0.5)
+            .max(4.0)
+            .min(screen_width() - largura - 4.0);
         let pill = Rect::new(x, r.y - h - 6.0 * z.s, largura, h);
         estilo::botao(pill, &rotulo, estilo::estado_de(pill, false, false), true);
         if crate::foco::clique() && pill.contains(Vec2::from(mouse_position())) {
@@ -222,17 +423,29 @@ pub fn linha_de_perigo(tesouro: bool, marcado: bool, sem_lei: bool) -> Option<&'
 
 /// On land with a Colossus Chest on deck: "Open the Colossus Chest · ×N".
 /// `bonus` = the Corsair's treasure passive. `true` when tapped.
-pub fn botao_abrir_tesouro(z: &crate::hud_layout::Zonas, eq: &shared::Equipment, bonus: f32) -> bool {
+pub fn botao_abrir_tesouro(
+    z: &crate::hud_layout::Zonas,
+    eq: &shared::Equipment,
+    bonus: f32,
+) -> bool {
     if no_mar() {
         return false;
     }
     let Some(t) = tesouro_no_conves(eq) else {
         return false;
     };
-    let rotulo = format!("Open the Colossus Chest · ×{:.1}", nv::mult_do_tesouro(&t, bonus));
+    let rotulo = format!(
+        "Open the Colossus Chest · ×{:.1}",
+        nv::mult_do_tesouro(&t, bonus)
+    );
     let h = z.faixa.h * 1.5;
     let w = estilo::medir_forte(&rotulo, 18) + h * 1.4;
-    let r = Rect::new(z.faixa.center().x - w * 0.5, z.faixa.y - 8.0 * z.s - h * 2.3, w, h);
+    let r = Rect::new(
+        z.faixa.center().x - w * 0.5,
+        z.faixa.y - 8.0 * z.s - h * 2.3,
+        w,
+        h,
+    );
     estilo::botao(r, &rotulo, estilo::estado_de(r, false, false), true);
     crate::foco::clique() && r.contains(Vec2::from(mouse_position()))
 }
@@ -244,16 +457,41 @@ pub fn desenha_marca(p: Vec3, yaw: f32, semente: u64, v: Visual) {
     let k = 1.0;
     let (fx, fz) = (yaw.sin(), yaw.cos());
     let topo = crate::mar_casco::topo_do_mastro(p, yaw, semente, v) + vec3(0.0, 0.5, 0.0);
-    draw_cube(topo, vec3(0.08, 1.0, 0.08) * k, None, Color::from_rgba(40, 30, 22, 255));
+    draw_cube(
+        topo,
+        vec3(0.08, 1.0, 0.08) * k,
+        None,
+        Color::from_rgba(40, 30, 22, 255),
+    );
     let ondula = 0.06 * (t * 3.0).sin();
     let bandeira = topo + vec3(0.0, 0.25 * k + ondula, 0.0) + vec3(fz, 0.0, -fx) * 0.45 * k;
-    draw_cube(bandeira, vec3(0.9, 0.6, 0.06) * k, None, Color::from_rgba(18, 16, 20, 255));
+    draw_cube(
+        bandeira,
+        vec3(0.9, 0.6, 0.06) * k,
+        None,
+        Color::from_rgba(18, 16, 20, 255),
+    );
     let osso = Color::from_rgba(236, 232, 220, 255);
-    draw_cube(bandeira + vec3(0.0, 0.06 * k, 0.0), vec3(0.3, 0.26, 0.1) * k, None, osso);
-    draw_cube(bandeira + vec3(0.0, -0.14 * k, 0.0), vec3(0.18, 0.1, 0.1) * k, None, osso);
+    draw_cube(
+        bandeira + vec3(0.0, 0.06 * k, 0.0),
+        vec3(0.3, 0.26, 0.1) * k,
+        None,
+        osso,
+    );
+    draw_cube(
+        bandeira + vec3(0.0, -0.14 * k, 0.0),
+        vec3(0.18, 0.1, 0.1) * k,
+        None,
+        osso,
+    );
     let olho = Color::from_rgba(18, 16, 20, 255);
     for lado in [-1.0f32, 1.0] {
-        draw_cube(bandeira + vec3(fz, 0.0, -fx) * 0.07 * k * lado + vec3(0.0, 0.08 * k, 0.0), vec3(0.08, 0.08, 0.12) * k, None, olho);
+        draw_cube(
+            bandeira + vec3(fz, 0.0, -fx) * 0.07 * k * lado + vec3(0.0, 0.08 * k, 0.0),
+            vec3(0.08, 0.08, 0.12) * k,
+            None,
+            olho,
+        );
     }
 }
 
@@ -270,32 +508,124 @@ pub fn icone_do_item(id: u16, r: Rect, alfa: f32) -> bool {
         let classe = nv::classe(id);
         // Hull: a trapezoid of two triangles; masts and sails by class.
         let base = c.y + s * 0.45;
-        draw_triangle(vec2(c.x - s, base - s * 0.35), vec2(c.x + s, base - s * 0.35), vec2(c.x + s * 0.7, base), madeira);
-        draw_triangle(vec2(c.x - s, base - s * 0.35), vec2(c.x + s * 0.7, base), vec2(c.x - s * 0.7, base), madeira);
+        draw_triangle(
+            vec2(c.x - s, base - s * 0.35),
+            vec2(c.x + s, base - s * 0.35),
+            vec2(c.x + s * 0.7, base),
+            madeira,
+        );
+        draw_triangle(
+            vec2(c.x - s, base - s * 0.35),
+            vec2(c.x + s * 0.7, base),
+            vec2(c.x - s * 0.7, base),
+            madeira,
+        );
         let mastros = nv::CASCOS[classe].mastros as usize;
         for k in 0..mastros {
             let x = c.x + (k as f32 - (mastros as f32 - 1.0) * 0.5) * s * 0.6;
             draw_line(x, base - s * 0.35, x, c.y - s * 0.95, s * 0.08, escura);
-            draw_triangle(vec2(x + s * 0.04, c.y - s * 0.85), vec2(x + s * 0.04, c.y - s * 0.05), vec2(x + s * 0.4, c.y - s * 0.1), a(Color::from_rgba(236, 228, 206, 255)));
+            draw_triangle(
+                vec2(x + s * 0.04, c.y - s * 0.85),
+                vec2(x + s * 0.04, c.y - s * 0.05),
+                vec2(x + s * 0.4, c.y - s * 0.1),
+                a(Color::from_rgba(236, 228, 206, 255)),
+            );
         }
         return true;
     }
     if id == shared::item_id::PRANCHA_DE_NAUFRAGIO {
         for k in 0..3 {
             let y = c.y - s * 0.6 + k as f32 * s * 0.45;
-            draw_rectangle(c.x - s * 0.9, y, s * 1.8, s * 0.32, if k == 1 { escura } else { madeira });
-            draw_circle(c.x - s * 0.7, y + s * 0.16, s * 0.05, a(Color::from_rgba(40, 36, 34, 255)));
-            draw_circle(c.x + s * 0.7, y + s * 0.16, s * 0.05, a(Color::from_rgba(40, 36, 34, 255)));
+            draw_rectangle(
+                c.x - s * 0.9,
+                y,
+                s * 1.8,
+                s * 0.32,
+                if k == 1 { escura } else { madeira },
+            );
+            draw_circle(
+                c.x - s * 0.7,
+                y + s * 0.16,
+                s * 0.05,
+                a(Color::from_rgba(40, 36, 34, 255)),
+            );
+            draw_circle(
+                c.x + s * 0.7,
+                y + s * 0.16,
+                s * 0.05,
+                a(Color::from_rgba(40, 36, 34, 255)),
+            );
         }
         // Sea-green stain: it came out of the water.
-        draw_circle(c.x + s * 0.3, c.y + s * 0.3, s * 0.18, a(Color::new(0.3, 0.6, 0.55, 0.6)));
+        draw_circle(
+            c.x + s * 0.3,
+            c.y + s * 0.3,
+            s * 0.18,
+            a(Color::new(0.3, 0.6, 0.55, 0.6)),
+        );
+        return true;
+    }
+    if id == shared::item_id::NAVAL_TOKEN {
+        draw_circle(c.x, c.y, s * 0.82, a(Color::from_rgba(38, 86, 118, 255)));
+        draw_circle_lines(
+            c.x,
+            c.y,
+            s * 0.62,
+            s * 0.12,
+            a(Color::from_rgba(126, 196, 220, 255)),
+        );
+        draw_line(
+            c.x - s * 0.28,
+            c.y,
+            c.x + s * 0.28,
+            c.y,
+            s * 0.12,
+            a(Color::from_rgba(220, 240, 246, 255)),
+        );
+        draw_line(
+            c.x,
+            c.y - s * 0.28,
+            c.x,
+            c.y + s * 0.28,
+            s * 0.12,
+            a(Color::from_rgba(220, 240, 246, 255)),
+        );
+        return true;
+    }
+    if id == shared::item_id::FRAGMENTO_NAVAL {
+        draw_triangle(
+            vec2(c.x - s * 0.65, c.y + s * 0.55),
+            vec2(c.x + s * 0.1, c.y - s * 0.75),
+            vec2(c.x + s * 0.65, c.y + s * 0.45),
+            a(Color::from_rgba(82, 132, 154, 255)),
+        );
+        draw_line(
+            c.x - s * 0.1,
+            c.y + s * 0.3,
+            c.x + s * 0.15,
+            c.y - s * 0.25,
+            s * 0.1,
+            a(Color::from_rgba(190, 225, 235, 255)),
+        );
         return true;
     }
     match nv::cosmetico(id) {
         Some(nv::Cosmetico::Vela(v)) => {
-            draw_line(c.x - s * 0.5, c.y - s, c.x - s * 0.5, c.y + s, s * 0.1, escura);
+            draw_line(
+                c.x - s * 0.5,
+                c.y - s,
+                c.x - s * 0.5,
+                c.y + s,
+                s * 0.1,
+                escura,
+            );
             let pano = a(rgb(nv::cor_da_vela(v)));
-            draw_triangle(vec2(c.x - s * 0.42, c.y - s * 0.9), vec2(c.x - s * 0.42, c.y + s * 0.6), vec2(c.x + s * 0.85, c.y + s * 0.5), pano);
+            draw_triangle(
+                vec2(c.x - s * 0.42, c.y - s * 0.9),
+                vec2(c.x - s * 0.42, c.y + s * 0.6),
+                vec2(c.x + s * 0.85, c.y + s * 0.5),
+                pano,
+            );
             true
         }
         Some(nv::Cosmetico::Figura(f)) => {
@@ -330,24 +660,27 @@ pub struct ContextoNavio {
     pub no_costado: bool,
 }
 
-/// THE SHIP'S BAR (docs/NAVEGACAO.md, phase 2): at sea, skill slots 1-4
-/// are the ship's — Broadside, Long Gun, Emergency Repair, Smoke. Same
+/// THE SHIP'S BAR (docs/NAVEGACAO.md, phase 2): at sea, skill slots 1-5
+/// are Broadside, Long Gun, Emergency Repair, Smoke and Chain Shot. Same
 /// gestures as the weapon bar: tap to fire, drag up for AUTO (the attacks
 /// only), drag down for manual. Cooldowns come in the usual `SkillsState`.
 #[derive(Default)]
 pub struct BarraDoNavio {
     arrasto: Arrasto,
     pub automaticas: HashSet<u8>,
-    tentar_apos: [f64; 4],
+    tentar_apos: [f64; 5],
     pendente_ate: f64,
 }
 
-/// Slot `i` (0..4): the three weapon-skill slots and the jump's.
+/// Slot `i` (0..5): the first three weapon-skill slots, the jump's old
+/// position, then the fourth weapon-skill slot.
 pub fn retangulo(i: usize) -> Rect {
     if i < 3 {
         crate::habilidades::retangulo(i)
-    } else {
+    } else if i == 3 {
         crate::hud_layout::atual().pulo
+    } else {
+        crate::habilidades::retangulo(3)
     }
 }
 
@@ -363,7 +696,7 @@ fn alcanca(h: &nv::HabilidadeDoNavio, d: Option<f32>) -> bool {
 impl BarraDoNavio {
     pub fn pega_mouse(&self) -> bool {
         let m = Vec2::from(mouse_position());
-        self.arrasto.inicio.is_some() || (0..4).any(|i| retangulo(i).toca(m))
+        self.arrasto.inicio.is_some() || (0..5).any(|i| retangulo(i).toca(m))
     }
 
     pub fn cancela_arrasto(&mut self) {
@@ -383,7 +716,7 @@ impl BarraDoNavio {
         let mut gesto = None;
         if entrada {
             if crate::foco::clique() {
-                if let Some(i) = (0..4).find(|i| retangulo(*i).toca(mouse)) {
+                if let Some(i) = (0..5).find(|i| retangulo(*i).toca(mouse)) {
                     self.arrasto.pressiona(nv::id_de_skill(i as u8), mouse);
                 }
             }
@@ -415,7 +748,7 @@ impl BarraDoNavio {
             return None;
         }
         let manual = if entrada {
-            (0..4)
+            (0..5)
                 .find(|i| crate::desktop::skill_pressionada(*i))
                 .map(|i| i as u8)
                 .or(match gesto {
@@ -433,9 +766,13 @@ impl BarraDoNavio {
                 Some("Wait for the current action to finish")
             } else if espera(h, hab, agora) > 0.0 {
                 Some("Skill on cooldown")
-            } else if h.efeito == nv::Efeito::Canhonaco && !alcanca(h, c.distancia_alvo) {
-                Some("Select an enemy in range of the long gun")
-            } else if h.efeito == nv::Efeito::Canhonaco && !c.no_costado {
+            } else if matches!(h.efeito, nv::Efeito::Canhonaco | nv::Efeito::Corrente)
+                && !alcanca(h, c.distancia_alvo)
+            {
+                Some("Select an enemy in range of this cannon")
+            } else if matches!(h.efeito, nv::Efeito::Canhonaco | nv::Efeito::Corrente)
+                && !c.no_costado
+            {
                 Some("Turn your side to the target to fire")
             } else {
                 None
@@ -455,7 +792,12 @@ impl BarraDoNavio {
 
     /// AUTO: the attack skills switched on, whenever the selected enemy is
     /// in reach and the cooldown is over.
-    fn automatico(&mut self, c: ContextoNavio, hab: &crate::habilidades::Habilidades, agora: f64) -> Option<u8> {
+    fn automatico(
+        &mut self,
+        c: ContextoNavio,
+        hab: &crate::habilidades::Habilidades,
+        agora: f64,
+    ) -> Option<u8> {
         // AUTO COMBAT at sea: the SERVER's pilot fires (`PedidoNavio::Piloto`,
         // `world/piloto_do_mar.rs`), on the beam and on time; a request from
         // here too would only be refused on the cooldown.
@@ -470,7 +812,8 @@ impl BarraDoNavio {
                 && alcanca(h, c.distancia_alvo)
                 // A Broadside with the target dead ahead or astern would
                 // spend its cooldown on the water.
-                && (h.efeito != nv::Efeito::Bordada || c.no_costado)
+                && (!matches!(h.efeito, nv::Efeito::Bordada | nv::Efeito::Canhonaco | nv::Efeito::Corrente)
+                    || c.no_costado)
         })?;
         self.pendente_ate = agora + 0.4;
         self.tentar_apos[h.id as usize] = agora + 1.5;
@@ -489,8 +832,19 @@ impl BarraDoNavio {
             let cd = espera(h, hab, agora);
             let auto = self.automaticas.contains(&h.id);
             let cor = cor_da_habilidade(h.efeito);
-            let e = estilo::estado(r.toca(m), is_mouse_button_down(MouseButton::Left), false, false);
-            estilo::botao_redondo(c, raio, if auto { estilo::AUTO } else { cor }, e, cd == 0.0 && auto);
+            let e = estilo::estado(
+                r.toca(m),
+                is_mouse_button_down(MouseButton::Left),
+                false,
+                false,
+            );
+            estilo::botao_redondo(
+                c,
+                raio,
+                if auto { estilo::AUTO } else { cor },
+                e,
+                cd == 0.0 && auto,
+            );
             // The atlas art, like the land skills (`gerar_icones_ui.py`,
             // ids 300..303); the stroke icon only if it is missing.
             let alfa = if cd > 0.0 { 0.4 } else { 1.0 };
@@ -500,9 +854,23 @@ impl BarraDoNavio {
             if cd > 0.0 {
                 let f = (cd as f32 / h.espera_s.max(0.01)).min(1.0);
                 estilo::setor(c, raio - 3.0, f, Color::new(0.0, 0.0, 0.0, 0.62));
-                estilo::arco(c, raio - 2.0, -std::f32::consts::FRAC_PI_2, f, 2.0, estilo::OURO);
+                estilo::arco(
+                    c,
+                    raio - 2.0,
+                    -std::f32::consts::FRAC_PI_2,
+                    f,
+                    2.0,
+                    estilo::OURO,
+                );
                 let t = format!("{cd:.1}");
-                estilo::texto_sombra(c.x - estilo::medir_forte(&t, 22) * 0.5, c.y + 8.0, &t, 22, WHITE, true);
+                estilo::texto_sombra(
+                    c.x - estilo::medir_forte(&t, 22) * 0.5,
+                    c.y + 8.0,
+                    &t,
+                    22,
+                    WHITE,
+                    true,
+                );
             }
             crate::hud_layout::chip(r, &(i + 1).to_string());
             if auto {
@@ -511,10 +879,17 @@ impl BarraDoNavio {
                 estilo::borda_arredondada(pilula, 8.5, 1.0, estilo::alfa(estilo::AUTO, 0.7));
                 estilo::texto_centro_forte(c.x, r.y + r.h + 3.0, "AUTO", 11, estilo::AUTO);
             }
-            let arrastando = self.arrasto.inicio.is_some_and(|(id, _)| id == nv::id_de_skill(h.id));
+            let arrastando = self
+                .arrasto
+                .inicio
+                .is_some_and(|(id, _)| id == nv::id_de_skill(h.id));
             if arrastando {
                 let (_, inicio) = self.arrasto.inicio.unwrap();
-                let texto = if m.y > inicio.y + 20.0 { "Release: MANUAL" } else { "Release: AUTO" };
+                let texto = if m.y > inicio.y + 20.0 {
+                    "Release: MANUAL"
+                } else {
+                    "Release: AUTO"
+                };
                 estilo::painel(Rect::new(c.x - 82.0, r.y - 74.0, 164.0, 31.0));
                 estilo::texto_centro(c.x, r.y - 53.0, texto, 15, estilo::AUTO);
             } else if r.toca(m) && self.arrasto.inicio.is_none() {
@@ -522,7 +897,14 @@ impl BarraDoNavio {
                 let x = (r.x + r.w - w).clamp(12.0, screen_width() - w - 12.0);
                 estilo::painel(Rect::new(x, r.y - 122.0, w, 88.0));
                 estilo::texto(x + 12.0, r.y - 98.0, h.nome, 19, cor);
-                estilo::texto_ajustado(h.descricao, x + 12.0, r.y - 77.0, w - 24.0, 14, estilo::TEXTO);
+                estilo::texto_ajustado(
+                    h.descricao,
+                    x + 12.0,
+                    r.y - 77.0,
+                    w - 24.0,
+                    14,
+                    estilo::TEXTO,
+                );
                 let rodape = if h.auto {
                     format!("{:.0}s · no mana · drag up: AUTO", h.espera_s)
                 } else {
@@ -540,6 +922,7 @@ fn cor_da_habilidade(e: nv::Efeito) -> Color {
         nv::Efeito::Canhonaco => Color::from_rgba(196, 72, 52, 255),
         nv::Efeito::Reparo => Color::from_rgba(92, 176, 96, 255),
         nv::Efeito::Fumaca => Color::from_rgba(150, 150, 160, 255),
+        nv::Efeito::Corrente => Color::from_rgba(94, 150, 178, 255),
     }
 }
 
@@ -554,13 +937,23 @@ pub fn icone_da_habilidade(e: nv::Efeito, c: Vec2, r: f32, alfa: f32) {
         nv::Efeito::Bordada => {
             // A hull from above, bow up, firing out of BOTH sides.
             draw_rectangle(c.x - r * 0.24, c.y - r * 0.35, r * 0.48, r * 1.1, madeira);
-            draw_triangle(vec2(c.x - r * 0.24, c.y - r * 0.35), vec2(c.x + r * 0.24, c.y - r * 0.35), vec2(c.x, c.y - r * 0.85), madeira);
+            draw_triangle(
+                vec2(c.x - r * 0.24, c.y - r * 0.35),
+                vec2(c.x + r * 0.24, c.y - r * 0.35),
+                vec2(c.x, c.y - r * 0.85),
+                madeira,
+            );
             draw_line(c.x, c.y - r * 0.7, c.x, c.y + r * 0.7, r * 0.06, ferro);
             for lado in [-1.0f32, 1.0] {
                 for k in [-0.15f32, 0.2, 0.55] {
                     let y = c.y + k * r;
                     let x0 = c.x + lado * r * 0.26;
-                    draw_triangle(vec2(x0, y - r * 0.1), vec2(x0, y + r * 0.1), vec2(x0 + lado * r * 0.36, y), fogo);
+                    draw_triangle(
+                        vec2(x0, y - r * 0.1),
+                        vec2(x0, y + r * 0.1),
+                        vec2(x0 + lado * r * 0.36, y),
+                        fogo,
+                    );
                     draw_circle(x0 + lado * r * 0.6, y, r * 0.1, ferro);
                 }
             }
@@ -576,13 +969,27 @@ pub fn icone_da_habilidade(e: nv::Efeito, c: Vec2, r: f32, alfa: f32) {
             draw_circle(ponta.x + r * 0.32, ponta.y - r * 0.22, r * 0.15, claro);
             for k in 0..3 {
                 let o = k as f32 * r * 0.12;
-                draw_line(ponta.x - r * 0.05 + o, ponta.y - r * 0.42 + o * 0.6, ponta.x + r * 0.15 + o, ponta.y - r * 0.55 + o * 0.6, r * 0.05, fogo);
+                draw_line(
+                    ponta.x - r * 0.05 + o,
+                    ponta.y - r * 0.42 + o * 0.6,
+                    ponta.x + r * 0.15 + o,
+                    ponta.y - r * 0.55 + o * 0.6,
+                    r * 0.05,
+                    fogo,
+                );
             }
         }
         nv::Efeito::Reparo => {
             // A plank and a hammer, and the green cross of a heal.
             draw_rectangle(c.x - r * 0.75, c.y + r * 0.2, r * 1.5, r * 0.32, madeira);
-            draw_line(c.x - r * 0.55, c.y + r * 0.1, c.x + r * 0.35, c.y - r * 0.6, r * 0.12, Color::new(0.62, 0.45, 0.26, alfa));
+            draw_line(
+                c.x - r * 0.55,
+                c.y + r * 0.1,
+                c.x + r * 0.35,
+                c.y - r * 0.6,
+                r * 0.12,
+                Color::new(0.62, 0.45, 0.26, alfa),
+            );
             draw_rectangle(c.x + r * 0.2, c.y - r * 0.8, r * 0.38, r * 0.24, ferro);
             let verde = Color::new(0.45, 0.95, 0.5, alfa);
             draw_rectangle(c.x - r * 0.7, c.y - r * 0.62, r * 0.14, r * 0.46, verde);
@@ -590,10 +997,38 @@ pub fn icone_da_habilidade(e: nv::Efeito, c: Vec2, r: f32, alfa: f32) {
         }
         nv::Efeito::Fumaca => {
             // A ship vanishing into the cloud.
-            draw_triangle(vec2(c.x - r * 0.55, c.y + r * 0.35), vec2(c.x + r * 0.55, c.y + r * 0.35), vec2(c.x + r * 0.35, c.y + r * 0.6), Color::new(0.35, 0.24, 0.14, alfa * 0.6));
-            for (dx, dy, rr) in [(-0.4f32, 0.05f32, 0.36f32), (0.32, 0.1, 0.32), (0.0, -0.3, 0.4), (0.45, -0.35, 0.22)] {
-                draw_circle(c.x + dx * r, c.y + dy * r, rr * r, Color::new(0.86, 0.86, 0.9, alfa * 0.92));
+            draw_triangle(
+                vec2(c.x - r * 0.55, c.y + r * 0.35),
+                vec2(c.x + r * 0.55, c.y + r * 0.35),
+                vec2(c.x + r * 0.35, c.y + r * 0.6),
+                Color::new(0.35, 0.24, 0.14, alfa * 0.6),
+            );
+            for (dx, dy, rr) in [
+                (-0.4f32, 0.05f32, 0.36f32),
+                (0.32, 0.1, 0.32),
+                (0.0, -0.3, 0.4),
+                (0.45, -0.35, 0.22),
+            ] {
+                draw_circle(
+                    c.x + dx * r,
+                    c.y + dy * r,
+                    rr * r,
+                    Color::new(0.86, 0.86, 0.9, alfa * 0.92),
+                );
             }
+        }
+        nv::Efeito::Corrente => {
+            // Two cannonballs joined by a short chain.
+            let a = c + vec2(-r * 0.42, r * 0.18);
+            let b = c + vec2(r * 0.42, -r * 0.18);
+            draw_line(a.x, a.y, b.x, b.y, r * 0.14, claro);
+            for k in 0..5 {
+                let t = k as f32 / 4.0;
+                let p = a.lerp(b, t);
+                draw_circle_lines(p.x, p.y, r * 0.13, r * 0.06, claro);
+            }
+            draw_circle(a.x, a.y, r * 0.28, ferro);
+            draw_circle(b.x, b.y, r * 0.28, ferro);
         }
     }
 }
@@ -614,7 +1049,11 @@ mod testes {
         let mut eq = shared::Equipment::default();
         assert!(casco_de(&eq).is_none());
         let id = shared::item_id::NAVIO_CHALUPA;
-        eq.set(shared::EquipSlot::Navio, Some(id), Some(nv::instancia_nova(id)));
+        eq.set(
+            shared::EquipSlot::Navio,
+            Some(id),
+            Some(nv::instancia_nova(id)),
+        );
         assert_eq!(casco_de(&eq), Some((2400, 2400, false)));
         // Hull stars raise the full hull the bar shows.
         let mut inst = nv::instancia_nova(id);
@@ -635,9 +1074,16 @@ mod testes {
         inst.navio.as_mut().unwrap().conves = Some(nv::tesouro_novo(10, 12, Some(0)));
         eq.set(shared::EquipSlot::Navio, Some(id), Some(inst));
         assert!(tesouro_no_conves(&eq).is_some());
-        assert_eq!(linha_de_perigo(true, true, true), Some("You carry treasure — anyone can attack you"));
-        assert!(linha_de_perigo(false, true, false).unwrap().starts_with("Marked"));
-        assert!(linha_de_perigo(false, false, true).unwrap().starts_with("Lawless"));
+        assert_eq!(
+            linha_de_perigo(true, true, true),
+            Some("You carry treasure — anyone can attack you")
+        );
+        assert!(linha_de_perigo(false, true, false)
+            .unwrap()
+            .starts_with("Marked"));
+        assert!(linha_de_perigo(false, false, true)
+            .unwrap()
+            .starts_with("Lawless"));
         assert_eq!(linha_de_perigo(false, false, false), None);
     }
 
@@ -645,8 +1091,11 @@ mod testes {
     fn so_os_canhoes_vao_pro_auto_e_pedem_alcance() {
         let bordada = &nv::HABILIDADES[0];
         let proa = &nv::HABILIDADES[1];
+        let corrente = &nv::HABILIDADES[4];
         assert!(alcanca(bordada, Some(10.0)) && !alcanca(bordada, Some(14.0)));
         assert!(alcanca(proa, Some(20.0)) && !alcanca(proa, None));
+        assert!(alcanca(corrente, Some(18.0)) && !alcanca(corrente, Some(18.1)));
         assert!(!nv::HABILIDADES[2].auto && !nv::HABILIDADES[3].auto);
+        assert!(corrente.auto);
     }
 }

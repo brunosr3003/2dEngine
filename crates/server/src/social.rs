@@ -45,7 +45,13 @@ pub async fn init(pool: &PgPool) -> Result<()> {
 /// The kill letter: a SYSTEM official letter (no staff behind it, no
 /// attachments) to `para`, remembering `matador` for its "Add to blacklist".
 /// Only the newest `shared::pk::MAX_CARTAS_DE_ABATE` are kept.
-pub async fn carta_de_abate(pool: &PgPool, para: &str, matador: &str, assunto: &str, texto: &str) -> Result<()> {
+pub async fn carta_de_abate(
+    pool: &PgPool,
+    para: &str,
+    matador: &str,
+    assunto: &str,
+    texto: &str,
+) -> Result<()> {
     let mut tx = pool.begin().await?;
     let envio = format!("pk-{}-{:016x}", crate::presenca::agora(), fastrand::u64(..));
     let id: i64 = sqlx::query_scalar(
@@ -59,11 +65,13 @@ pub async fn carta_de_abate(pool: &PgPool, para: &str, matador: &str, assunto: &
     .bind(matador)
     .fetch_one(&mut *tx)
     .await?;
-    sqlx::query("INSERT INTO social_oficiais(campanha,para) SELECT $1,name FROM characters WHERE name=$2")
-        .bind(id)
-        .bind(para)
-        .execute(&mut *tx)
-        .await?;
+    sqlx::query(
+        "INSERT INTO social_oficiais(campanha,para) SELECT $1,name FROM characters WHERE name=$2",
+    )
+    .bind(id)
+    .bind(para)
+    .execute(&mut *tx)
+    .await?;
     sqlx::query(
         "UPDATE social_oficiais SET apagada=TRUE WHERE id IN (
             SELECT o.id FROM social_oficiais o JOIN social_campanhas c ON c.id=o.campanha
@@ -78,7 +86,14 @@ pub async fn carta_de_abate(pool: &PgPool, para: &str, matador: &str, assunto: &
 }
 
 /// This channel keeps `nome`'s body for `segundos` (a PK logout).
-pub async fn permanencia_comeca(pool: &PgPool, nome: &str, zona: &str, canal: &str, host: &str, segundos: i64) -> Result<()> {
+pub async fn permanencia_comeca(
+    pool: &PgPool,
+    nome: &str,
+    zona: &str,
+    canal: &str,
+    host: &str,
+    segundos: i64,
+) -> Result<()> {
     sqlx::query(
         "INSERT INTO pk_permanencia(nome,zona,canal,host,ate) VALUES($1,$2,$3,$4,extract(epoch FROM now())::bigint + $5)
          ON CONFLICT(nome) DO UPDATE SET zona=EXCLUDED.zona, canal=EXCLUDED.canal, host=EXCLUDED.host, ate=EXCLUDED.ate",
@@ -105,7 +120,12 @@ pub async fn permanencia_fim(pool: &PgPool, nome: &str, zona: &str, canal: &str)
 }
 
 /// Is `nome`'s body still lingering on ANOTHER live channel? (zone, host).
-pub async fn permanencia_remota(pool: &PgPool, nome: &str, zona: &str, canal: &str) -> Result<Option<(String, String)>> {
+pub async fn permanencia_remota(
+    pool: &PgPool,
+    nome: &str,
+    zona: &str,
+    canal: &str,
+) -> Result<Option<(String, String)>> {
     Ok(sqlx::query_as(
         "SELECT p.zona, p.host FROM pk_permanencia p
           WHERE p.nome=$1 AND p.ate > extract(epoch FROM now())::bigint AND NOT (p.zona=$2 AND p.canal=$3)
@@ -143,7 +163,14 @@ async fn meu_cargo(db: &mut PgConnection, eu: &str) -> Result<Option<(i64, u8)>>
     let r: Option<(i64, String, i16)> = sqlx::query_as("SELECT c.id,c.lider,m.cargo FROM social_clas c JOIN social_membros m ON m.cla=c.id WHERE m.nome=$1")
         .bind(eu).fetch_optional(db).await?;
     Ok(r.map(|(id, lider, cargo)| {
-        (id, if lider == eu { shared::social::cargo::LIDER } else { cargo.clamp(0, 1) as u8 })
+        (
+            id,
+            if lider == eu {
+                shared::social::cargo::LIDER
+            } else {
+                cargo.clamp(0, 1) as u8
+            },
+        )
     }))
 }
 /// My clan id, after checking my rank may do `acao` to a target of rank `alvo`.
@@ -162,8 +189,13 @@ async fn validar_tag(db: &mut PgConnection, tag: &str, fora: i64) -> Result<Stri
     if !tag_limpa(&tag, &crate::chat_global::palavras()) {
         bail!("That clan tag is not allowed.");
     }
-    let existe: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM social_clas WHERE lower(tag)=lower($1) AND id<>$2)")
-        .bind(&tag).bind(fora).fetch_one(db).await?;
+    let existe: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM social_clas WHERE lower(tag)=lower($1) AND id<>$2)",
+    )
+    .bind(&tag)
+    .bind(fora)
+    .fetch_one(db)
+    .await?;
     if existe {
         bail!("Another clan already uses that tag.");
     }
@@ -265,7 +297,9 @@ pub async fn executar(pool: &PgPool, eu: &str, pedido: &Pedido) -> Result<()> {
             assunto,
             texto,
         } => {
-            if !texto_valido(assunto, 1, 60) || !shared::social::corpo_de_carta_valido(texto, 1, 1000) {
+            if !texto_valido(assunto, 1, 60)
+                || !shared::social::corpo_de_carta_valido(texto, 1, 1000)
+            {
                 bail!("Preencha assunto (até 60) e mensagem (até 1000 caracteres).");
             }
             let para = alvo(&mut tx, eu, para).await?;
@@ -421,7 +455,9 @@ pub async fn executar(pool: &PgPool, eu: &str, pedido: &Pedido) -> Result<()> {
                 .execute(&mut *tx)
                 .await?;
         }
-        Pedido::ExpulsarCla { nome } | Pedido::LiderCla { nome } | Pedido::CargoCla { nome, .. } => {
+        Pedido::ExpulsarCla { nome }
+        | Pedido::LiderCla { nome }
+        | Pedido::CargoCla { nome, .. } => {
             let nome = alvo(&mut tx, eu, nome).await?;
             let Some((cla_alvo, cargo_alvo)) = meu_cargo(&mut tx, &nome).await? else {
                 bail!("That character does not belong to your clan.");
@@ -437,7 +473,11 @@ pub async fn executar(pool: &PgPool, eu: &str, pedido: &Pedido) -> Result<()> {
             }
             if let Pedido::CargoCla { oficial, .. } = pedido {
                 sqlx::query("UPDATE social_membros SET cargo=$1 WHERE nome=$2 AND cla=$3")
-                    .bind(if *oficial { cargo::OFICIAL as i16 } else { cargo::MEMBRO as i16 })
+                    .bind(if *oficial {
+                        cargo::OFICIAL as i16
+                    } else {
+                        cargo::MEMBRO as i16
+                    })
                     .bind(&nome)
                     .bind(id)
                     .execute(&mut *tx)
@@ -483,13 +523,20 @@ pub async fn executar(pool: &PgPool, eu: &str, pedido: &Pedido) -> Result<()> {
         }
         Pedido::AdicionarListaNegra { nome } => {
             let outro = alvo(&mut tx, eu, nome).await?;
-            let existe: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM social_blacklist WHERE dono=$1 AND alvo=$2)")
-                .bind(eu).bind(&outro).fetch_one(&mut *tx).await?;
+            let existe: bool = sqlx::query_scalar(
+                "SELECT EXISTS(SELECT 1 FROM social_blacklist WHERE dono=$1 AND alvo=$2)",
+            )
+            .bind(eu)
+            .bind(&outro)
+            .fetch_one(&mut *tx)
+            .await?;
             if existe {
                 bail!("That character is already on your blacklist.");
             }
             let n: i64 = sqlx::query_scalar("SELECT count(*) FROM social_blacklist WHERE dono=$1")
-                .bind(eu).fetch_one(&mut *tx).await?;
+                .bind(eu)
+                .fetch_one(&mut *tx)
+                .await?;
             if n >= shared::pk::MAX_LISTA_NEGRA as i64 {
                 bail!("Your blacklist is full (50 names).");
             }
@@ -685,11 +732,20 @@ async fn contatos(db: &mut PgConnection, e: &Estado) -> Result<Vec<Contato>> {
                 nome: r.get("nome"),
                 tag: r.get("tag"),
                 cargo,
-                nivel: r.get::<Option<i32>, _>("nivel").unwrap_or(0).clamp(0, u16::MAX as i32) as u16,
-                conjunto: r.get::<Option<i16>, _>("conjunto").map_or(SEM_CONJUNTO, |c| c.clamp(0, 255) as u8),
+                nivel: r
+                    .get::<Option<i32>, _>("nivel")
+                    .unwrap_or(0)
+                    .clamp(0, u16::MAX as i32) as u16,
+                conjunto: r
+                    .get::<Option<i16>, _>("conjunto")
+                    .map_or(SEM_CONJUNTO, |c| c.clamp(0, 255) as u8),
                 zona: r.get::<Option<String>, _>("zona").unwrap_or_default(),
                 canal: r.get::<Option<String>, _>("canal").unwrap_or_default(),
-                online: esta_online(r.get::<Option<bool>, _>("online").unwrap_or(false), visto, agora),
+                online: esta_online(
+                    r.get::<Option<bool>, _>("online").unwrap_or(false),
+                    visto,
+                    agora,
+                ),
                 visto,
             }
         })
@@ -722,7 +778,10 @@ pub async fn bater_presenca(
     let nomes: Vec<&str> = presentes.iter().map(|p| p.nome.as_str()).collect();
     let niveis: Vec<i32> = presentes.iter().map(|p| p.nivel as i32).collect();
     let conjuntos: Vec<i16> = presentes.iter().map(|p| p.conjunto as i16).collect();
-    let pks: Vec<i32> = presentes.iter().map(|p| p.pk.min(i32::MAX as u32) as i32).collect();
+    let pks: Vec<i32> = presentes
+        .iter()
+        .map(|p| p.pk.min(i32::MAX as u32) as i32)
+        .collect();
     let xs: Vec<f32> = presentes.iter().map(|p| p.x).collect();
     let ys: Vec<f32> = presentes.iter().map(|p| p.y).collect();
     sqlx::query(
@@ -911,64 +970,215 @@ mod tests {
         .await
         .is_err());
         let id = estado(p, "Ana").await?.cla.unwrap().id;
-        assert_eq!(estado(p, "Ana").await?.cla.unwrap().tag, "MAR", "stored upper case");
+        assert_eq!(
+            estado(p, "Ana").await?.cla.unwrap().tag,
+            "MAR",
+            "stored upper case"
+        );
         assert!(
-            executar(p, "Bia", &Pedido::CriarCla { nome: "Outro".into(), tag: "Mar".into() })
-                .await
-                .is_err(),
+            executar(
+                p,
+                "Bia",
+                &Pedido::CriarCla {
+                    nome: "Outro".into(),
+                    tag: "Mar".into()
+                }
+            )
+            .await
+            .is_err(),
             "tag unique, any case"
         );
         // Presence across channels: Ana's row written by "another channel";
         // a stale channel's logout does not knock her offline.
-        bater_presenca(p, "ilha_gelo", "2", &[Presente { nome: "Ana".into(), nivel: 30, conjunto: 1, pk: 2, x: 5.0, y: 6.0 }]).await?;
+        bater_presenca(
+            p,
+            "ilha_gelo",
+            "2",
+            &[Presente {
+                nome: "Ana".into(),
+                nivel: 30,
+                conjunto: 1,
+                pk: 2,
+                x: 5.0,
+                y: 6.0,
+            }],
+        )
+        .await?;
         // The blacklist: add, duplicate, place only online with PK, remove, cap.
-        executar(p, "Dani", &Pedido::AdicionarListaNegra { nome: "ana".into() }).await?;
-        assert!(executar(p, "Dani", &Pedido::AdicionarListaNegra { nome: "Ana".into() }).await.is_err(), "twice");
-        assert!(executar(p, "Dani", &Pedido::AdicionarListaNegra { nome: "Dani".into() }).await.is_err(), "myself");
+        executar(
+            p,
+            "Dani",
+            &Pedido::AdicionarListaNegra { nome: "ana".into() },
+        )
+        .await?;
+        assert!(
+            executar(
+                p,
+                "Dani",
+                &Pedido::AdicionarListaNegra { nome: "Ana".into() }
+            )
+            .await
+            .is_err(),
+            "twice"
+        );
+        assert!(
+            executar(
+                p,
+                "Dani",
+                &Pedido::AdicionarListaNegra {
+                    nome: "Dani".into()
+                }
+            )
+            .await
+            .is_err(),
+            "myself"
+        );
         let ln = estado(p, "Dani").await?.lista_negra;
         assert_eq!(ln.len(), 1);
-        assert!(ln[0].localizado() && ln[0].zona == "ilha_gelo" && ln[0].x == 5.0, "online with PK: {ln:?}");
-        bater_presenca(p, "ilha_gelo", "2", &[Presente { nome: "Ana".into(), nivel: 30, conjunto: 1, pk: 0, x: 5.0, y: 6.0 }]).await?;
+        assert!(
+            ln[0].localizado() && ln[0].zona == "ilha_gelo" && ln[0].x == 5.0,
+            "online with PK: {ln:?}"
+        );
+        bater_presenca(
+            p,
+            "ilha_gelo",
+            "2",
+            &[Presente {
+                nome: "Ana".into(),
+                nivel: 30,
+                conjunto: 1,
+                pk: 0,
+                x: 5.0,
+                y: 6.0,
+            }],
+        )
+        .await?;
         let ln = estado(p, "Dani").await?.lista_negra;
-        assert!(ln[0].online && !ln[0].pk && ln[0].zona.is_empty(), "no PK: no place");
+        assert!(
+            ln[0].online && !ln[0].pk && ln[0].zona.is_empty(),
+            "no PK: no place"
+        );
         executar(p, "Dani", &Pedido::RemoverListaNegra { nome: "Ana".into() }).await?;
         assert!(estado(p, "Dani").await?.lista_negra.is_empty());
         for i in 0..=shared::pk::MAX_LISTA_NEGRA {
-            sqlx::query("INSERT INTO characters VALUES($1,1)").bind(format!("Lista{i}")).execute(p).await?;
+            sqlx::query("INSERT INTO characters VALUES($1,1)")
+                .bind(format!("Lista{i}"))
+                .execute(p)
+                .await?;
         }
         for i in 0..shared::pk::MAX_LISTA_NEGRA {
-            executar(p, "Caio", &Pedido::AdicionarListaNegra { nome: format!("Lista{i}") }).await?;
+            executar(
+                p,
+                "Caio",
+                &Pedido::AdicionarListaNegra {
+                    nome: format!("Lista{i}"),
+                },
+            )
+            .await?;
         }
-        let cheia = executar(p, "Caio", &Pedido::AdicionarListaNegra { nome: format!("Lista{}", shared::pk::MAX_LISTA_NEGRA) }).await;
+        let cheia = executar(
+            p,
+            "Caio",
+            &Pedido::AdicionarListaNegra {
+                nome: format!("Lista{}", shared::pk::MAX_LISTA_NEGRA),
+            },
+        )
+        .await;
         assert!(cheia.is_err(), "the cap");
-        assert_eq!(estado(p, "Caio").await?.lista_negra.len(), shared::pk::MAX_LISTA_NEGRA);
-        assert!(executar(p, "Dani", &Pedido::RemoverListaNegra { nome: "Ana".into() }).await.is_err());
+        assert_eq!(
+            estado(p, "Caio").await?.lista_negra.len(),
+            shared::pk::MAX_LISTA_NEGRA
+        );
+        assert!(
+            executar(p, "Dani", &Pedido::RemoverListaNegra { nome: "Ana".into() })
+                .await
+                .is_err()
+        );
         // The kill letter: a system letter that names the killer.
         carta_de_abate(p, "Bia", "Ana", "You were killed by Ana", "Ana killed you.").await?;
         let e = estado(p, "Bia").await?;
         assert_eq!(e.matadores.len(), 1);
-        assert!(e.oficiais.iter().any(|c| c.id == e.matadores[0].0 && c.de == "Tempest · System"));
+        assert!(e
+            .oficiais
+            .iter()
+            .any(|c| c.id == e.matadores[0].0 && c.de == "Tempest · System"));
         // The linger record: seen from another channel only while that one is alive.
         permanencia_comeca(p, "Ana", "ilha_gelo", "2", "h:1", 120).await?;
-        assert!(permanencia_remota(p, "Ana", "ilha_gelo", "2").await.is_err() || permanencia_remota(p, "Ana", "ilha_gelo", "2").await?.is_none(), "own channel");
+        assert!(
+            permanencia_remota(p, "Ana", "ilha_gelo", "2")
+                .await
+                .is_err()
+                || permanencia_remota(p, "Ana", "ilha_gelo", "2")
+                    .await?
+                    .is_none(),
+            "own channel"
+        );
         permanencia_fim(p, "Ana", "ilha_gelo", "2").await?;
         sair_presenca(p, "Ana", "overworld", "1").await?;
-        executar(p, "Ana", &Pedido::ConvidarCla { nome: "Dani".into() }).await?;
+        executar(
+            p,
+            "Ana",
+            &Pedido::ConvidarCla {
+                nome: "Dani".into(),
+            },
+        )
+        .await?;
         executar(p, "Dani", &Pedido::ResponderCla { id, aceitar: true }).await?;
-        let ana = estado(p, "Dani").await?.contatos.into_iter().find(|c| c.nome == "Ana").unwrap();
+        let ana = estado(p, "Dani")
+            .await?
+            .contatos
+            .into_iter()
+            .find(|c| c.nome == "Ana")
+            .unwrap();
         assert!(ana.online && ana.zona == "ilha_gelo" && ana.nivel == 30);
         assert!(ana.cargo == cargo::LIDER && ana.tag == "MAR");
-        assert!(executar(p, "Dani", &Pedido::TagCla { tag: "NEW".into() }).await.is_err(), "only the leader");
-        executar(p, "Ana", &Pedido::CargoCla { nome: "Dani".into(), oficial: true }).await?;
+        assert!(
+            executar(p, "Dani", &Pedido::TagCla { tag: "NEW".into() })
+                .await
+                .is_err(),
+            "only the leader"
+        );
+        executar(
+            p,
+            "Ana",
+            &Pedido::CargoCla {
+                nome: "Dani".into(),
+                oficial: true,
+            },
+        )
+        .await?;
         assert_eq!(estado(p, "Ana").await?.cla.unwrap().oficiais, vec!["Dani"]);
         executar(p, "Ana", &Pedido::TagCla { tag: "sea".into() }).await?;
         assert_eq!(estado(p, "Dani").await?.cla.unwrap().tag, "SEA");
-        executar(p, "Dani", &Pedido::AvisoCla { texto: "Officer notice".into() }).await?;
-        assert!(executar(p, "Dani", &Pedido::ExpulsarCla { nome: "Ana".into() }).await.is_err());
+        executar(
+            p,
+            "Dani",
+            &Pedido::AvisoCla {
+                texto: "Officer notice".into(),
+            },
+        )
+        .await?;
+        assert!(
+            executar(p, "Dani", &Pedido::ExpulsarCla { nome: "Ana".into() })
+                .await
+                .is_err()
+        );
         sair_presenca(p, "Ana", "ilha_gelo", "2").await?;
-        let ana = estado(p, "Dani").await?.contatos.into_iter().find(|c| c.nome == "Ana").unwrap();
+        let ana = estado(p, "Dani")
+            .await?
+            .contatos
+            .into_iter()
+            .find(|c| c.nome == "Ana")
+            .unwrap();
         assert!(!ana.online);
-        executar(p, "Ana", &Pedido::ExpulsarCla { nome: "Dani".into() }).await?;
+        executar(
+            p,
+            "Ana",
+            &Pedido::ExpulsarCla {
+                nome: "Dani".into(),
+            },
+        )
+        .await?;
         assert!(
             executar(p, "Caio", &Pedido::ResponderCla { id, aceitar: true })
                 .await

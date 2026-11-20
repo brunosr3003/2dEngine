@@ -428,7 +428,10 @@ mod testes {
         // Tier IV: so' com as duas +8, e ai' vira a cor de cima no Tier I.
         assert!(conferir_aprimorar(p(1, 4, 8), p(1, 4, 7)).is_err());
         assert_eq!(conferir_aprimorar(p(1, 4, 8), p(1, 4, 12)), Ok((2, 1)));
-        assert!(conferir_aprimorar(p(5, 4, 12), p(5, 4, 12)).is_err(), "topo");
+        assert!(
+            conferir_aprimorar(p(5, 4, 12), p(5, 4, 12)).is_err(),
+            "topo"
+        );
         // Diferentes nao fundem.
         assert!(conferir_aprimorar(p(1, 1, 0), p(2, 1, 0)).is_err());
         assert!(conferir_aprimorar(p(1, 1, 0), p(1, 2, 0)).is_err());

@@ -34,8 +34,8 @@
 //!     --n 4 --minutos 30 --trilha /tmp/bots.jsonl
 //! ```
 
-mod progresso;
 mod caca;
+mod progresso;
 mod trilha;
 
 use std::collections::HashMap;
@@ -96,13 +96,16 @@ fn cfg() -> Cfg {
         trilha: pega("--trilha", "/tmp/jogadorbot.jsonl"),
         // O prefixo separa uma corrida da outra no banco. Sem ele, rodar duas
         // vezes bate em "username já existe" e o bot morre no cadastro.
-        prefixo: pega(
-            "--prefixo",
-            &format!("bot{}", std::process::id() % 10_000),
-        ),
-        character_name: std::env::var("BOT_CHARACTER_NAME").ok().filter(|s| !s.trim().is_empty()),
-        starting_weapon: std::env::var("BOT_STARTING_WEAPON").ok().and_then(|s| s.parse().ok()),
-        outfit: std::env::var("BOT_OUTFIT").ok().and_then(|s| s.parse().ok()),
+        prefixo: pega("--prefixo", &format!("bot{}", std::process::id() % 10_000)),
+        character_name: std::env::var("BOT_CHARACTER_NAME")
+            .ok()
+            .filter(|s| !s.trim().is_empty()),
+        starting_weapon: std::env::var("BOT_STARTING_WEAPON")
+            .ok()
+            .and_then(|s| s.parse().ok()),
+        outfit: std::env::var("BOT_OUTFIT")
+            .ok()
+            .and_then(|s| s.parse().ok()),
     }
 }
 
@@ -128,7 +131,17 @@ async fn main() -> Result<()> {
             // onda de argon2, e a fila de login existe justamente pra isso não
             // roubar o tick de quem já está dentro.
             tokio::time::sleep(Duration::from_millis(400 * i as u64)).await;
-            let cfg = Cfg { host, api, n: 1, minutos: 0, trilha: String::new(), prefixo: String::new(), character_name, starting_weapon, outfit };
+            let cfg = Cfg {
+                host,
+                api,
+                n: 1,
+                minutos: 0,
+                trilha: String::new(),
+                prefixo: String::new(),
+                character_name,
+                starting_weapon,
+                outfit,
+            };
             if let Err(e) = vive(&cfg, &nome, ate, &t).await {
                 t.registra(Evento {
                     bot: &nome,
@@ -447,9 +460,8 @@ fn envia(m: &ClientMessage) -> Result<Message> {
 
 /// Cria a conta pelo `/api/register`, igual ao jogo faz.
 async fn cadastra(api: &str, nome: &str) -> Result<()> {
-    let corpo = format!(
-        r#"{{"username":"{nome}","email":"{nome}@bot.local","password":"senhadebot123"}}"#
-    );
+    let corpo =
+        format!(r#"{{"username":"{nome}","email":"{nome}@bot.local","password":"senhadebot123"}}"#);
     let r = reqwest::Client::new()
         .post(format!("{api}/api/register"))
         .header("content-type", "application/json")
@@ -462,7 +474,11 @@ async fn cadastra(api: &str, nome: &str) -> Result<()> {
     if r.status().is_success() || r.status().as_u16() == 409 {
         return Ok(());
     }
-    Err(anyhow!("register {}: {}", r.status(), r.text().await.unwrap_or_default()))
+    Err(anyhow!(
+        "register {}: {}",
+        r.status(),
+        r.text().await.unwrap_or_default()
+    ))
 }
 
 /// Cadastra e vive, seguindo o bot de zona em zona até o prazo acabar.
@@ -483,7 +499,11 @@ async fn vive(cfg: &Cfg, nome: &str, ate: Instant, t: &Trilha) -> Result<()> {
         fase: Fase::Cadastrando,
         acao: "conta_criada",
         ok: reg.is_ok(),
-        detalhe: reg.as_ref().err().map(|e| format!("{e:#}")).unwrap_or_default(),
+        detalhe: reg
+            .as_ref()
+            .err()
+            .map(|e| format!("{e:#}"))
+            .unwrap_or_default(),
         nivel: 0,
         xp: 0,
         ouro: 0,
@@ -501,13 +521,26 @@ async fn vive(cfg: &Cfg, nome: &str, ate: Instant, t: &Trilha) -> Result<()> {
             return Ok(());
         }
         onde = proximo;
-        t.registra(ev(nome, &eu, "reconectou", true, format!("{onde} (viagem {})", viagem + 1)));
+        t.registra(ev(
+            nome,
+            &eu,
+            "reconectou",
+            true,
+            format!("{onde} (viagem {})", viagem + 1),
+        ));
     }
     Ok(())
 }
 
 /// Uma conexão, do handshake até o fim ou até o servidor mandar trocar de zona.
-async fn sessao(host: &str, nome: &str, ate: Instant, t: &Trilha, eu: &mut Eu, cfg: &Cfg) -> Result<()> {
+async fn sessao(
+    host: &str,
+    nome: &str,
+    ate: Instant,
+    t: &Trilha,
+    eu: &mut Eu,
+    cfg: &Cfg,
+) -> Result<()> {
     let url = format!("ws://{host}/ws");
     let (mut ws, _) = tokio_tungstenite::connect_async(&url).await?;
     ws.send(envia(&ClientMessage::Handshake {
@@ -653,13 +686,20 @@ async fn anda_ao_no(ws: &mut Ws, eu: &mut Eu, alvo: glam::Vec2) -> Result<bool> 
     if let Some((destino, desde, origem)) = eu.coleta_rota {
         if destino.distance(alvo) < 1.0 {
             if desde.elapsed() > Duration::from_secs(15) {
-                if eu.pos.distance(origem) < 1.0 { eu.coleta_rota = None; return Ok(false); }
+                if eu.pos.distance(origem) < 1.0 {
+                    eu.coleta_rota = None;
+                    return Ok(false);
+                }
                 eu.coleta_rota = Some((alvo, Instant::now(), eu.pos));
             }
             return Ok(true);
         }
     }
-    ws.send(envia(&ClientMessage::MoverPara { x: alvo.x, z: alvo.y })?).await?;
+    ws.send(envia(&ClientMessage::MoverPara {
+        x: alvo.x,
+        z: alvo.y,
+    })?)
+    .await?;
     eu.coleta_rota = Some((alvo, Instant::now(), eu.pos));
     Ok(true)
 }
@@ -724,12 +764,24 @@ fn passo_nao_deu(
     let n = eu.passos_a_toa.entry((quest, acao)).or_default();
     *n += 1;
     let vezes = *n;
-    t.registra(ev(nome, eu, acao, false, format!("{detalhe} (tentativa {vezes})")));
+    t.registra(ev(
+        nome,
+        eu,
+        acao,
+        false,
+        format!("{detalhe} (tentativa {vezes})"),
+    ));
     if vezes >= 3 {
         eu.passos_a_toa.remove(&(quest, acao));
         eu.desistiu.insert(quest, Instant::now());
         eu.destino = None;
-        t.registra(ev(nome, eu, "passo_emperrado", false, format!("#{quest} em '{acao}'")));
+        t.registra(ev(
+            nome,
+            eu,
+            "passo_emperrado",
+            false,
+            format!("#{quest} em '{acao}'"),
+        ));
     }
 }
 
@@ -753,8 +805,7 @@ fn pocoes_de_vida(eu: &Eu) -> Vec<(u16, u32)> {
     eu.bolsa
         .iter()
         .filter(|(id, _)| {
-            shared::pocoes::cura_de(**id)
-                .is_some_and(|c| c.grupo == shared::pocoes::Grupo::Vida)
+            shared::pocoes::cura_de(**id).is_some_and(|c| c.grupo == shared::pocoes::Grupo::Vida)
         })
         .map(|(id, q)| (*id, *q))
         .collect()
@@ -854,9 +905,8 @@ fn ev<'a>(bot: &'a str, eu: &Eu, acao: &'a str, ok: bool, detalhe: String) -> Ev
     }
 }
 
-type Ws = tokio_tungstenite::WebSocketStream<
-    tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
->;
+type Ws =
+    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
 async fn recebe(
     msg: ServerMessage,
@@ -885,7 +935,9 @@ async fn recebe(
             ..
         } => {
             let m = match chars.first() {
-                Some(c) => ClientMessage::SelectCharacter { name: c.name.clone() },
+                Some(c) => ClientMessage::SelectCharacter {
+                    name: c.name.clone(),
+                },
                 None => {
                     // CADA BOT COM CARA E CLASSE PRÓPRIAS.
                     //
@@ -905,19 +957,31 @@ async fn recebe(
                     let ap = aparencia_de(nome, cfg.outfit);
                     // A CLASSE é a arma inicial, e o bot pegava sempre a
                     // primeira: doze do mesmo estilo de luta.
-                    let arma = if let Some(arma) = cfg.starting_weapon.filter(|w| available_weapons.contains(w)) {
+                    let arma = if let Some(arma) = cfg
+                        .starting_weapon
+                        .filter(|w| available_weapons.contains(w))
+                    {
                         arma
                     } else if available_weapons.is_empty() {
                         0
                     } else {
                         available_weapons[(semente / 17) as usize % available_weapons.len()]
                     };
-                    t.registra(ev(nome, eu, "aparencia", true, format!(
-                        "rosto {} cabelo {} cor {} pele {} arma {arma}",
-                        ap.rosto, ap.cabelo, ap.cor_cabelo, ap.pele
-                    )));
+                    t.registra(ev(
+                        nome,
+                        eu,
+                        "aparencia",
+                        true,
+                        format!(
+                            "rosto {} cabelo {} cor {} pele {} arma {arma}",
+                            ap.rosto, ap.cabelo, ap.cor_cabelo, ap.pele
+                        ),
+                    ));
                     ClientMessage::CreateCharacter {
-                        name: cfg.character_name.clone().unwrap_or_else(|| format!("{nome}c")),
+                        name: cfg
+                            .character_name
+                            .clone()
+                            .unwrap_or_else(|| format!("{nome}c")),
                         aparencia: ap,
                         starting_weapon: arma,
                         faction: Default::default(),
@@ -929,16 +993,26 @@ async fn recebe(
             t.registra(ev(
                 nome,
                 eu,
-                if criando { "personagem_criado" } else { "personagem_escolhido" },
+                if criando {
+                    "personagem_criado"
+                } else {
+                    "personagem_escolhido"
+                },
                 true,
                 String::new(),
             ));
-            return Ok(Some(if criando { Fase::CriandoPersonagem } else { Fase::Logando }));
+            return Ok(Some(if criando {
+                Fase::CriandoPersonagem
+            } else {
+                Fase::Logando
+            }));
         }
         ServerMessage::CharacterCreationFailed { reason } => {
             return Err(anyhow!("criação do personagem falhou: {reason}"));
         }
-        ServerMessage::LoginOk { entity_id, spawn, .. } => {
+        ServerMessage::LoginOk {
+            entity_id, spawn, ..
+        } => {
             eu.entidade = Some(entity_id);
             eu.pos = glam::Vec2::new(spawn[0], spawn[1]);
             eu.morto = false;
@@ -1004,24 +1078,27 @@ async fn recebe(
             // craft e mercado, e perderia.
             if !eu.morto && eu.hp_max > 0 {
                 let fracao = eu.hp as f32 / eu.hp_max as f32;
-                let na_recarga = eu.bebeu_em.is_some_and(|t| {
-                    Instant::now().duration_since(t) < Duration::from_secs(8)
-                });
+                let na_recarga = eu
+                    .bebeu_em
+                    .is_some_and(|t| Instant::now().duration_since(t) < Duration::from_secs(8));
                 if fracao < BEBE_ABAIXO_DE && !na_recarga {
                     let familia = pocoes_de_vida(eu);
                     // A MENOR que cobre o que falta: usar a melhor poção pra
                     // curar um arranhão é jogá-la fora, e `escolher` já sabe
                     // disso — é a mesma conta do auto da barra do jogador.
                     if let Some(item) = shared::pocoes::escolher(&familia, 1.0 - fracao) {
-                        if let Some((slot, _)) =
-                            eu.slots.iter().find(|(_, sl)| sl.item_id == item)
+                        if let Some((slot, _)) = eu.slots.iter().find(|(_, sl)| sl.item_id == item)
                         {
                             let slot = *slot;
                             eu.bebeu_em = Some(Instant::now());
                             ws.send(envia(&ClientMessage::UseItem { slot })?).await?;
-                            t.registra(ev(nome, eu, "bebeu", true, format!(
-                                "item {item} com {:.0}% de vida", fracao * 100.0
-                            )));
+                            t.registra(ev(
+                                nome,
+                                eu,
+                                "bebeu",
+                                true,
+                                format!("item {item} com {:.0}% de vida", fracao * 100.0),
+                            ));
                         }
                     }
                 }
@@ -1031,7 +1108,8 @@ async fn recebe(
                 .conhecidos
                 .iter()
                 .filter(|(id, tag)| {
-                    Some(**id) != eu.entidade && matches!(tag, shared::EntityTag::Enemy)
+                    Some(**id) != eu.entidade
+                        && matches!(tag, shared::EntityTag::Enemy)
                         && eu.vidas.get(id).copied().unwrap_or(0) > 0
                 })
                 .filter_map(|(id, _)| eu.posicoes.get(id).map(|p| (*id, *p)))
@@ -1085,7 +1163,8 @@ async fn recebe(
             let mut comprou = 0u32;
             for (slot_idx, item, preco, _) in balcao {
                 while faltam > 0 && cobre >= preco {
-                    ws.send(envia(&ClientMessage::ShopBuy { slot_idx })?).await?;
+                    ws.send(envia(&ClientMessage::ShopBuy { slot_idx })?)
+                        .await?;
                     cobre -= preco;
                     faltam -= 1;
                     comprou += 1;
@@ -1097,9 +1176,13 @@ async fn recebe(
                 // que prova a compra é a bolsa, que chega depois no
                 // `InventoryUpdate`. Contar isto como progresso seria repetir
                 // o erro do `refinou`.
-                t.registra(ev(nome, eu, "comprou_pocao", true, format!(
-                    "{comprou} pedida(s), tinha {tenho}, sobra {cobre} de cobre"
-                )));
+                t.registra(ev(
+                    nome,
+                    eu,
+                    "comprou_pocao",
+                    true,
+                    format!("{comprou} pedida(s), tinha {tenho}, sobra {cobre} de cobre"),
+                ));
             }
         }
         // A VIDA MÁXIMA só vem por aqui, e o bot ignorava a mensagem inteira
@@ -1108,7 +1191,9 @@ async fn recebe(
             eu.hp_max = stats.hp_max.max(0) as u16;
             eu.prog.equip = equipment;
         }
-        ServerMessage::MapaDaIlha { zonas, recursos, .. } => {
+        ServerMessage::MapaDaIlha {
+            zonas, recursos, ..
+        } => {
             eu.prog.recursos = recursos;
             eu.prog.zonas = zonas;
             eu.prog.plano = None;
@@ -1120,8 +1205,19 @@ async fn recebe(
             eu.prog.destinos = destinos;
         }
         ServerMessage::Magica { aviso } => match aviso {
-            shared::magica::AvisoMagica::Estado { grau_maximo, passes, gratis, dentro, .. } => {
-                eu.prog.magica = Some(progresso::Magica { grau_maximo, gratis, passes, dentro });
+            shared::magica::AvisoMagica::Estado {
+                grau_maximo,
+                passes,
+                gratis,
+                dentro,
+                ..
+            } => {
+                eu.prog.magica = Some(progresso::Magica {
+                    grau_maximo,
+                    gratis,
+                    passes,
+                    dentro,
+                });
             }
             shared::magica::AvisoMagica::Recusa(texto) => {
                 t.registra(ev(nome, eu, "ilha_magica_recusou", false, texto));
@@ -1129,7 +1225,9 @@ async fn recebe(
             _ => {}
         },
         ServerMessage::GoldUpdate { gold } => eu.ouro = gold as i64,
-        ServerMessage::StatPointsUpdate { unspent, allocated, .. } => {
+        ServerMessage::StatPointsUpdate {
+            unspent, allocated, ..
+        } => {
             eu.pontos_livres = unspent;
             eu.prog.alocados = allocated;
             // Saldo novo, tentativa nova. Sem isto o bot que teve UM pedido
@@ -1154,7 +1252,11 @@ async fn recebe(
                 .map(|q| (q.id, (q.progress, q.status)))
                 .collect();
         }
-        ServerMessage::QuestUpdate { quest_id, progress, status } => {
+        ServerMessage::QuestUpdate {
+            quest_id,
+            progress,
+            status,
+        } => {
             let antes = eu.quests.insert(quest_id, (progress, status));
             // SÓ A MISSÃO EM FOCO ZERA O CONTADOR, e só se ELA mudou.
             //
@@ -1178,18 +1280,26 @@ async fn recebe(
         //
         // O bot sempre escolhe a MISSÃO: é o caminho do jogador que está
         // seguindo a história, e é pra isso que ele foi até lá.
-        ServerMessage::EscolhaNoNpc { npc_eid, nome: npc_nome, funcao } => {
+        ServerMessage::EscolhaNoNpc {
+            npc_eid,
+            nome: npc_nome,
+            funcao,
+        } => {
             // Indo embarcar: com o Capitão, a escolha é o BARCO, não a missão.
-            let embarcando = matches!(
-                eu.prog.plano,
-                Some(progresso::Plano::Embarcar { .. })
-            );
-            ws.send(envia(&ClientMessage::EscolherNoNpc { npc_eid, missao: !embarcando })?)
-                .await?;
+            let embarcando = matches!(eu.prog.plano, Some(progresso::Plano::Embarcar { .. }));
+            ws.send(envia(&ClientMessage::EscolherNoNpc {
+                npc_eid,
+                missao: !embarcando,
+            })?)
+            .await?;
             eu.conversas_a_toa.clear();
-            t.registra(ev(nome, eu, "escolheu_missao", true, format!(
-                "npc {npc_eid} '{npc_nome}' (tinha {funcao})"
-            )));
+            t.registra(ev(
+                nome,
+                eu,
+                "escolheu_missao",
+                true,
+                format!("npc {npc_eid} '{npc_nome}' (tinha {funcao})"),
+            ));
         }
         // O SERVIDOR EXPLICA AS RECUSAS PELO CHAT DE "SYS".
         //
@@ -1212,7 +1322,8 @@ async fn recebe(
             // Aceita a primeira que dê pra aceitar. Escolher a "melhor" seria
             // inventar uma estratégia que o jogador comum não tem.
             if let Some(q) = quests.first() {
-                ws.send(envia(&ClientMessage::AcceptQuest { quest_id: q.id })?).await?;
+                ws.send(envia(&ClientMessage::AcceptQuest { quest_id: q.id })?)
+                    .await?;
                 // ACEITAR OUTRA MISSÃO NÃO É PROGRESSO NA QUE ELE VEIO
                 // FAZER. Só zera quando a aceita é a do foco — senão um NPC
                 // que oferece uma missão paralela reseta a conta pra sempre.
@@ -1222,7 +1333,13 @@ async fn recebe(
                 t.registra(ev(nome, eu, "quest_aceita", true, format!("#{}", q.id)));
             }
         }
-        ServerMessage::QuestDestino { quest_id, tipo, pos, raio, npc_eid } => {
+        ServerMessage::QuestDestino {
+            quest_id,
+            tipo,
+            pos,
+            raio,
+            npc_eid,
+        } => {
             // TIPO ZERO É "NÃO HÁ PRA ONDE IR NESTA ILHA", e guardar isso como
             // destino era um beco sem saída: nenhum ramo trata o tipo 0, então
             // o bot caía no `sem_o_que_fazer` e repetia. Um bot registrou 144
@@ -1235,8 +1352,14 @@ async fn recebe(
             if tipo == shared::quests::destino_tipo::NENHUM {
                 eu.destino = None;
                 eu.esperando_destino = 0;
-                passo_nao_deu(eu, t, nome, quest_id, "sem_destino_nesta_ilha",
-                    format!("#{quest_id}"));
+                passo_nao_deu(
+                    eu,
+                    t,
+                    nome,
+                    quest_id,
+                    "sem_destino_nesta_ilha",
+                    format!("#{quest_id}"),
+                );
                 return Ok(None);
             }
             eu.destino = Some(Destino {
@@ -1259,7 +1382,9 @@ async fn recebe(
                 eu.pedidos_de_no = 0;
             }
         }
-        ServerMessage::ColetaEstado { pausado, centro, .. } => {
+        ServerMessage::ColetaEstado {
+            pausado, centro, ..
+        } => {
             // Colhendo enquanto houver centro e não estiver pausado. É o que
             // impede o bot de mandar `ColetarNo` por cima de uma coleta que
             // já está correndo.
@@ -1327,7 +1452,9 @@ async fn recebe(
                         } else {
                             eu.tentou_na_arena = true;
                             ws.send(envia(&ClientMessage::Dungeon {
-                                pedido: shared::dungeon::Pedido::EntrarSolo { conteudo: eu.dungeon_conteudo.max(1) },
+                                pedido: shared::dungeon::Pedido::EntrarSolo {
+                                    conteudo: eu.dungeon_conteudo.max(1),
+                                },
                             })?)
                             .await?;
                         }
@@ -1411,13 +1538,22 @@ async fn recebe(
             match resultado {
                 r::SUBIU | r::FALHOU | r::DESTRUIU => {
                     eu.passos_a_toa.remove(&(quest, "refino_recusado"));
-                    t.registra(ev(nome, eu, "refinou", true, format!(
-                        "#{quest} slot {slot} -> nível {nivel}"
-                    )));
+                    t.registra(ev(
+                        nome,
+                        eu,
+                        "refinou",
+                        true,
+                        format!("#{quest} slot {slot} -> nível {nivel}"),
+                    ));
                 }
-                _ => passo_nao_deu(eu, t, nome, quest, "refino_recusado", format!(
-                    "#{quest} slot {slot}: {motivo}"
-                )),
+                _ => passo_nao_deu(
+                    eu,
+                    t,
+                    nome,
+                    quest,
+                    "refino_recusado",
+                    format!("#{quest} slot {slot}: {motivo}"),
+                ),
             }
         }
         // O CHEFE CARREGANDO UM GOLPE: sai de baixo.
@@ -1442,16 +1578,31 @@ async fn recebe(
                 eu.desviando_ate = Some(Instant::now() + Duration::from_secs_f32(prazo));
                 eu.empurrao = Some((saida - eu.pos).normalize_or_zero());
                 eu.empurrao_ate = eu.desviando_ate;
-                t.registra(ev(nome, eu, "desviou", true, format!(
-                    "{:.1}u em {carga_s:.1}s", eu.pos.distance(saida)
-                )));
+                t.registra(ev(
+                    nome,
+                    eu,
+                    "desviou",
+                    true,
+                    format!("{:.1}u em {carga_s:.1}s", eu.pos.distance(saida)),
+                ));
             }
         }
         ServerMessage::MercadoResultado { ok, texto } => {
             t.registra(ev(nome, eu, "mercado_resultado", ok, texto));
         }
-        ServerMessage::CraftResultado { recipe_id, ok, motivo, .. } => {
-            t.registra(ev(nome, eu, "craft", ok, format!("receita {recipe_id}: {motivo}")));
+        ServerMessage::CraftResultado {
+            recipe_id,
+            ok,
+            motivo,
+            ..
+        } => {
+            t.registra(ev(
+                nome,
+                eu,
+                "craft",
+                ok,
+                format!("receita {recipe_id}: {motivo}"),
+            ));
             // A RECUSA TEM QUE DERRUBAR A MISSÃO.
             //
             // O bot mandava `Craft`, o servidor respondia "faltam: Madeira
@@ -1471,9 +1622,13 @@ async fn recebe(
                     eu.craft_a_toa.remove(&q);
                     eu.desistiu.insert(q, Instant::now());
                     eu.destino = None;
-                    t.registra(ev(nome, eu, "craft_emperrado", false, format!(
-                        "#{q} receita {recipe_id}: {motivo}"
-                    )));
+                    t.registra(ev(
+                        nome,
+                        eu,
+                        "craft_emperrado",
+                        false,
+                        format!("#{q} receita {recipe_id}: {motivo}"),
+                    ));
                 }
             }
         }
@@ -1481,7 +1636,8 @@ async fn recebe(
         ServerMessage::TrocarZona { zona, host } => {
             // Guarda pra onde ir; quem reconecta é o laço de `vive`, que é
             // dono do socket.
-            let local = std::env::var("BOT_ZONE_HOSTS_FILE").ok()
+            let local = std::env::var("BOT_ZONE_HOSTS_FILE")
+                .ok()
                 .and_then(|file| std::fs::read_to_string(file).ok())
                 .and_then(|s| serde_json::from_str::<HashMap<String, String>>(&s).ok())
                 .and_then(|map| map.get(&zona).cloned());
@@ -1501,7 +1657,13 @@ async fn recebe(
             eu.destino = None;
             eu.andando_para = None;
             eu.no_de_coleta = None;
-            t.registra(ev(nome, eu, "trocou_de_zona", true, format!("{zona} em {host}")));
+            t.registra(ev(
+                nome,
+                eu,
+                "trocou_de_zona",
+                true,
+                format!("{zona} em {host}"),
+            ));
         }
         _ => {}
     }
@@ -1547,14 +1709,24 @@ async fn decide(
             ),
             None => "sem destino".into(),
         };
-        let empurrando = if eu.empurrao.is_some() { " · empurrando" } else { "" };
-        t.registra(ev(nome, eu, "batimento", true, format!(
-            "em {:.0},{:.0} · {} quest(s) · {alvo}{}",
-            eu.pos.x,
-            eu.pos.y,
-            eu.quests.len(),
-            if eu.morto { " · MORTO" } else { "" }
-        ) + empurrando));
+        let empurrando = if eu.empurrao.is_some() {
+            " · empurrando"
+        } else {
+            ""
+        };
+        t.registra(ev(
+            nome,
+            eu,
+            "batimento",
+            true,
+            format!(
+                "em {:.0},{:.0} · {} quest(s) · {alvo}{}",
+                eu.pos.x,
+                eu.pos.y,
+                eu.quests.len(),
+                if eu.morto { " · MORTO" } else { "" }
+            ) + empurrando,
+        ));
     }
     if eu.morto {
         return Ok(());
@@ -1569,20 +1741,39 @@ async fn decide(
     eu.desviando_ate = None;
     // Bounded daily/resource activities must get a turn during a long story chain.
     if !eu.na_dungeon && !eu.na_arena && !eu.colhendo && eu.buscando.is_none() {
-        if progresso::manutencao(ws, eu, nome, t).await? { return Ok(()); }
-        if eu.nivel >= 15 && progresso::magica(ws, eu, nome, t).await? { return Ok(()); }
+        if progresso::manutencao(ws, eu, nome, t).await? {
+            return Ok(());
+        }
+        if eu.nivel >= 15 && progresso::magica(ws, eu, nome, t).await? {
+            return Ok(());
+        }
         let intervalo = Duration::from_secs(1800);
-        if eu.hp_max > 0 && eu.hp as f32 / eu.hp_max as f32 >= 0.8
-            && eu.ultima_tentativa_dungeon.is_none_or(|at| at.elapsed() >= intervalo) {
-            if let Some(c) = shared::dungeon::CONTEUDOS.iter()
+        if eu.hp_max > 0
+            && eu.hp as f32 / eu.hp_max as f32 >= 0.8
+            && eu
+                .ultima_tentativa_dungeon
+                .is_none_or(|at| at.elapsed() >= intervalo)
+        {
+            if let Some(c) = shared::dungeon::CONTEUDOS
+                .iter()
                 .filter(|c| c.disponivel && c.grupo_max == 1 && c.nivel_min <= eu.nivel)
-                .max_by_key(|c| c.nivel_min) {
+                .max_by_key(|c| c.nivel_min)
+            {
                 eu.dungeon_conteudo = c.id;
                 eu.pediu_dungeon = true;
                 eu.tentou_na_arena = false;
                 eu.ultima_tentativa_dungeon = Some(Instant::now());
-                ws.send(envia(&ClientMessage::Dungeon { pedido: shared::dungeon::Pedido::EntrarSolo { conteudo: c.id } })?).await?;
-                t.registra(ev(nome, eu, "pediu_dungeon", true, format!("{} (nível mínimo {})", c.nome, c.nivel_min)));
+                ws.send(envia(&ClientMessage::Dungeon {
+                    pedido: shared::dungeon::Pedido::EntrarSolo { conteudo: c.id },
+                })?)
+                .await?;
+                t.registra(ev(
+                    nome,
+                    eu,
+                    "pediu_dungeon",
+                    true,
+                    format!("{} (nível mínimo {})", c.nome, c.nivel_min),
+                ));
                 return Ok(());
             }
         }
@@ -1604,8 +1795,7 @@ async fn decide(
                 .filter(|(_, tag)| matches!(tag, shared::EntityTag::Npc))
                 .filter_map(|(id, _)| eu.posicoes.get(id).map(|p| (*id, *p)))
                 .filter(|(id, p)| {
-                    p.distance(eu.pos) <= shared::INTERACT_RADIUS
-                        && !eu.balcao_seco.contains(id)
+                    p.distance(eu.pos) <= shared::INTERACT_RADIUS && !eu.balcao_seco.contains(id)
                 })
                 .min_by(|a, b| {
                     a.1.distance_squared(eu.pos)
@@ -1620,9 +1810,13 @@ async fn decide(
                     target_eid: Some(id.0 as u64),
                 })?)
                 .await?;
-                t.registra(ev(nome, eu, "procurou_balcao", true, format!(
-                    "{tem} poção(ões) na bolsa"
-                )));
+                t.registra(ev(
+                    nome,
+                    eu,
+                    "procurou_balcao",
+                    true,
+                    format!("{tem} poção(ões) na bolsa"),
+                ));
                 return Ok(());
             }
         }
@@ -1638,10 +1832,18 @@ async fn decide(
         eu.tentou_gastar = true;
         let arma = eu.prog.equip.weapon.unwrap_or(0);
         let stat = progresso::proximo_ponto(arma, &eu.prog.alocados);
-        ws.send(envia(&ClientMessage::AllocStatPoint { stat })?).await?;
-        t.registra(ev(nome, eu, "ponto_gasto", true, format!(
-            "stat {stat}, {} livres, energia {} (custa {custo})", eu.pontos_livres, eu.prog.energia
-        )));
+        ws.send(envia(&ClientMessage::AllocStatPoint { stat })?)
+            .await?;
+        t.registra(ev(
+            nome,
+            eu,
+            "ponto_gasto",
+            true,
+            format!(
+                "stat {stat}, {} livres, energia {} (custa {custo})",
+                eu.pontos_livres, eu.prog.energia
+            ),
+        ));
         return Ok(());
     }
     // 2. Missão pronta: entrega.
@@ -1651,7 +1853,8 @@ async fn decide(
         .find(|(_, (_, st))| *st == shared::quests::quest_status::READY)
         .map(|(id, _)| *id);
     if let Some(id) = pronta {
-        ws.send(envia(&ClientMessage::TurnInQuest { quest_id: id })?).await?;
+        ws.send(envia(&ClientMessage::TurnInQuest { quest_id: id })?)
+            .await?;
         // ENTREGAR NÃO É ENTREGUE, e este contador mentia igual aos outros.
         //
         // 1.714 "quest_entregue" da MESMA missão (#603) em dez minutos, com o
@@ -1714,7 +1917,8 @@ async fn decide(
     eu.desistiu
         .retain(|_, quando| quando.elapsed() < PRAZO_DA_DESISTENCIA);
     let foco_vale = eu.foco.is_some_and(|f| {
-        !eu.desistiu.contains_key(&f) && !eu.impossiveis.contains(&f)
+        !eu.desistiu.contains_key(&f)
+            && !eu.impossiveis.contains(&f)
             && eu
                 .quests
                 .get(&f)
@@ -1766,17 +1970,24 @@ async fn decide(
             // caçar o que estiver por perto, que é o que um jogador faria.
             if eu.esperando_destino < 3 {
                 eu.esperando_destino += 1;
-                ws.send(envia(&ClientMessage::QuestDestino { quest_id: id })?).await?;
+                ws.send(envia(&ClientMessage::QuestDestino { quest_id: id })?)
+                    .await?;
                 // REGISTRA O PEDIDO. Este ramo era mudo, e é justamente onde
                 // um bot com seis missões pode ficar pingando entre elas: a
                 // "ativa" sai de um HashMap, cuja ordem muda, então ele podia
                 // pedir o destino de uma, receber, e na decisão seguinte
                 // cobrar o de outra — para sempre, sem um evento na trilha.
-                t.registra(ev(nome, eu, "pediu_destino", true, format!(
-                    "#{id} (tinha {:?}, tentativa {})",
-                    eu.destino.map(|d| d.quest),
-                    eu.esperando_destino
-                )));
+                t.registra(ev(
+                    nome,
+                    eu,
+                    "pediu_destino",
+                    true,
+                    format!(
+                        "#{id} (tinha {:?}, tentativa {})",
+                        eu.destino.map(|d| d.quest),
+                        eu.esperando_destino
+                    ),
+                ));
                 return Ok(());
             }
         }
@@ -1799,9 +2010,13 @@ async fn decide(
             // A missão volta a valer: ela foi largada só pra buscar.
             eu.desistiu.remove(&quest);
             eu.craft_a_toa.remove(&quest);
-            t.registra(ev(nome, eu, "voltou_da_busca", true, format!(
-                "#{quest} com {tem}/{quanto}x item {item}"
-            )));
+            t.registra(ev(
+                nome,
+                eu,
+                "voltou_da_busca",
+                true,
+                format!("#{quest} com {tem}/{quanto}x item {item}"),
+            ));
             return Ok(());
         }
         // Os tipos de nó que rendem este item, direto do "onde obter".
@@ -1817,9 +2032,13 @@ async fn decide(
         if tipos.iter().all(|t| !t) && !energia {
             // Não sai de coleta: buscar aqui seria bater em árvore pra sempre.
             eu.buscando = None;
-            t.registra(ev(nome, eu, "busca_impossivel", false, format!(
-                "#{quest} item {item} não vem de coleta"
-            )));
+            t.registra(ev(
+                nome,
+                eu,
+                "busca_impossivel",
+                false,
+                format!("#{quest} item {item} não vem de coleta"),
+            ));
             return Ok(());
         }
         match eu.no_de_coleta {
@@ -1844,26 +2063,41 @@ async fn decide(
                         // rede num e deixei o outro, que é exatamente o erro
                         // que o `parado.rs` do cliente veio corrigir.
                         eu.no_de_coleta = None;
-                        passo_nao_deu(eu, t, nome, quest, "no_inalcancavel",
-                            format!("#{quest} a {d_no:.1}u do nó, buscando item {item}"));
+                        passo_nao_deu(
+                            eu,
+                            t,
+                            nome,
+                            quest,
+                            "no_inalcancavel",
+                            format!("#{quest} a {d_no:.1}u do nó, buscando item {item}"),
+                        );
                         // Desistiu da missão? Então a BUSCA dela também acaba:
                         // `passo_nao_deu` solta o destino, mas `buscando` é
                         // outro estado e ficaria segurando o bot aqui pra
                         // sempre.
                         if eu.desistiu.contains_key(&quest) {
                             eu.buscando = None;
-                            t.registra(ev(nome, eu, "busca_emperrada", false, format!(
-                                "#{quest} item {item}: o nó não se alcança daqui"
-                            )));
+                            t.registra(ev(
+                                nome,
+                                eu,
+                                "busca_emperrada",
+                                false,
+                                format!("#{quest} item {item}: o nó não se alcança daqui"),
+                            ));
                         }
                     }
                     return Ok(());
                 }
                 eu.no_de_coleta = None;
-                ws.send(envia(&ClientMessage::ColetarNo { coluna })?).await?;
-                t.registra(ev(nome, eu, "buscou", tem > 0, format!(
-                    "#{quest} item {item}: {tem}/{quanto}"
-                )));
+                ws.send(envia(&ClientMessage::ColetarNo { coluna })?)
+                    .await?;
+                t.registra(ev(
+                    nome,
+                    eu,
+                    "buscou",
+                    tem > 0,
+                    format!("#{quest} item {item}: {tem}/{quanto}"),
+                ));
             }
             None => {
                 ws.send(envia(&ClientMessage::PedirNoDeColeta {
@@ -1880,15 +2114,23 @@ async fn decide(
                 // não responde, e pedir para sempre é o travamento silencioso
                 // que este ramo já produziu uma vez.
                 eu.pedidos_de_no += 1;
-                t.registra(ev(nome, eu, "pediu_no", true, format!(
-                    "#{quest} item {item} ({tem}/{quanto})"
-                )));
+                t.registra(ev(
+                    nome,
+                    eu,
+                    "pediu_no",
+                    true,
+                    format!("#{quest} item {item} ({tem}/{quanto})"),
+                ));
                 if eu.pedidos_de_no >= 8 {
                     eu.pedidos_de_no = 0;
                     eu.buscando = None;
-                    t.registra(ev(nome, eu, "busca_emperrada", false, format!(
-                        "#{quest} item {item}: nada do tipo pedido em 80u"
-                    )));
+                    t.registra(ev(
+                        nome,
+                        eu,
+                        "busca_emperrada",
+                        false,
+                        format!("#{quest} item {item}: nada do tipo pedido em 80u"),
+                    ));
                 }
             }
         }
@@ -1979,23 +2221,44 @@ async fn decide(
                     eu.tentativas_no_destino = 0;
                     eu.desistiu.insert(d.quest, Instant::now());
                     eu.destino = None;
-                    t.registra(ev(nome, eu, "destino_inalcancavel", false, format!(
+                    t.registra(ev(
+                        nome,
+                        eu,
+                        "destino_inalcancavel",
+                        false,
+                        format!(
                         "#{} parou a {dist:.1}u de {:.0},{:.0} — A* entrega longe e reto não passa",
                         d.quest, d.pos.x, d.pos.y
-                    )));
+                    ),
+                    ));
                     return Ok(());
                 }
-                ws.send(envia(&ClientMessage::MoverPara { x: d.pos.x, z: d.pos.y })?).await?;
-                t.registra(ev(nome, eu, "empurrao_travado", false, format!(
-                    "#{} a {dist:.1}u de {:.0},{:.0} — chamando o A*",
-                    d.quest, d.pos.x, d.pos.y
-                )));
+                ws.send(envia(&ClientMessage::MoverPara {
+                    x: d.pos.x,
+                    z: d.pos.y,
+                })?)
+                .await?;
+                t.registra(ev(
+                    nome,
+                    eu,
+                    "empurrao_travado",
+                    false,
+                    format!(
+                        "#{} a {dist:.1}u de {:.0},{:.0} — chamando o A*",
+                        d.quest, d.pos.x, d.pos.y
+                    ),
+                ));
                 return Ok(());
             }
             // ARMA O EMPURRÃO e deixa o pulso andar. Mandar UM frame aqui
             // movia 33 ms a cada 700 — na prática, parado.
             eu.empurrao = Some((d.pos - eu.pos).normalize_or_zero());
-            eu.empurrao_ate = Some(Instant::now() + Duration::from_millis(((dist - alcance).max(0.2) / 5.0 * 1000.0).clamp(40.0, 700.0) as u64));
+            eu.empurrao_ate = Some(
+                Instant::now()
+                    + Duration::from_millis(
+                        ((dist - alcance).max(0.2) / 5.0 * 1000.0).clamp(40.0, 700.0) as u64,
+                    ),
+            );
             return Ok(());
         }
         eu.empurrao_parado = 0;
@@ -2019,11 +2282,25 @@ async fn decide(
                 .andando_para
                 .is_some_and(|(alvo, _, _)| alvo.distance(d.pos) < 1.0);
             if !ja_mandado {
-                ws.send(envia(&ClientMessage::MoverPara { x: d.pos.x, z: d.pos.y })?).await?;
+                ws.send(envia(&ClientMessage::MoverPara {
+                    x: d.pos.x,
+                    z: d.pos.y,
+                })?)
+                .await?;
                 eu.andando_para = Some((d.pos, eu.pos, 0));
-                t.registra(ev(nome, eu, "andou", true, format!(
-                    "#{} -> {:.0},{:.0} (faltam {:.0})", d.quest, d.pos.x, d.pos.y, eu.pos.distance(d.pos)
-                )));
+                t.registra(ev(
+                    nome,
+                    eu,
+                    "andou",
+                    true,
+                    format!(
+                        "#{} -> {:.0},{:.0} (faltam {:.0})",
+                        d.quest,
+                        d.pos.x,
+                        d.pos.y,
+                        eu.pos.distance(d.pos)
+                    ),
+                ));
                 return Ok(());
             }
             // TRAVOU? Só então se insiste.
@@ -2055,13 +2332,20 @@ async fn decide(
                     // lugar ("no notice from the server" = o A* achou caminho).
                     //
                     // Três voltas e a missão sai da frente, como todo o resto.
-                    passo_nao_deu(eu, t, nome, d.quest, "travou_no_caminho", format!(
-                        "#{} parado a {:.0} de {:.0},{:.0} — {porque}",
+                    passo_nao_deu(
+                        eu,
+                        t,
+                        nome,
                         d.quest,
-                        eu.pos.distance(d.pos),
-                        d.pos.x,
-                        d.pos.y
-                    ));
+                        "travou_no_caminho",
+                        format!(
+                            "#{} parado a {:.0} de {:.0},{:.0} — {porque}",
+                            d.quest,
+                            eu.pos.distance(d.pos),
+                            d.pos.x,
+                            d.pos.y
+                        ),
+                    );
                 } else {
                     eu.andando_para = Some((alvo, onde, paradas + 1));
                 }
@@ -2076,8 +2360,12 @@ async fn decide(
             // conversar.
             destino_tipo::NPC | destino_tipo::ENTREGA => {
                 if let Some(npc) = d.npc {
-                    ws.send(envia(&ClientMessage::Interact { target_eid: Some(npc) })?).await?;
-                    ws.send(envia(&ClientMessage::ConcluirConversa { npc_eid: npc })?).await?;
+                    ws.send(envia(&ClientMessage::Interact {
+                        target_eid: Some(npc),
+                    })?)
+                    .await?;
+                    ws.send(envia(&ClientMessage::ConcluirConversa { npc_eid: npc })?)
+                        .await?;
                     // O SUCESSO NÃO É TER MANDADO A MENSAGEM.
                     //
                     // Enquanto nada voltar (oferta, escolha ou progresso), a
@@ -2100,9 +2388,16 @@ async fn decide(
                     if vezes >= 5 {
                         eu.conversas_a_toa.remove(&npc);
                         eu.desistiu.insert(d.quest, Instant::now());
-                        t.registra(ev(nome, eu, "missao_emperrada", false, format!(
-                            "#{} — {vezes} conversas com o npc {npc} e nada mudou", d.quest
-                        )));
+                        t.registra(ev(
+                            nome,
+                            eu,
+                            "missao_emperrada",
+                            false,
+                            format!(
+                                "#{} — {vezes} conversas com o npc {npc} e nada mudou",
+                                d.quest
+                            ),
+                        ));
                     }
                     eu.destino = None;
                     eu.esperando_destino = 0;
@@ -2128,11 +2423,18 @@ async fn decide(
                     eu.colhendo = false;
                     eu.colhendo_desde = None;
                     eu.no_de_coleta = None;
-                    passo_nao_deu(eu, t, nome, d.quest, "coleta_sem_render", format!(
-                        "#{} {}s colhendo sem o objetivo andar",
+                    passo_nao_deu(
+                        eu,
+                        t,
+                        nome,
                         d.quest,
-                        COLHENDO_MAX.as_secs()
-                    ));
+                        "coleta_sem_render",
+                        format!(
+                            "#{} {}s colhendo sem o objetivo andar",
+                            d.quest,
+                            COLHENDO_MAX.as_secs()
+                        ),
+                    );
                     return Ok(());
                 }
                 eu.colhendo_desde = None;
@@ -2153,15 +2455,22 @@ async fn decide(
                                 // for a missão inteira que não anda, o
                                 // `coleta_emperrada` cuida.
                                 eu.no_de_coleta = None;
-                                passo_nao_deu(eu, t, nome, d.quest, "no_inalcancavel",
-                                    format!("#{} a {d_no:.1}u do nó", d.quest));
+                                passo_nao_deu(
+                                    eu,
+                                    t,
+                                    nome,
+                                    d.quest,
+                                    "no_inalcancavel",
+                                    format!("#{} a {d_no:.1}u do nó", d.quest),
+                                );
                             }
                             return Ok(());
                         }
                         eu.empurrao = None;
                         eu.empurrao_ate = None;
                         eu.no_de_coleta = None;
-                        ws.send(envia(&ClientMessage::ColetarNo { coluna })?).await?;
+                        ws.send(envia(&ClientMessage::ColetarNo { coluna })?)
+                            .await?;
                         // O SUCESSO É O OBJETIVO ANDAR, não o envio.
                         //
                         // Marcar `true` por ter mandado `ColetarNo` escondeu
@@ -2177,10 +2486,16 @@ async fn decide(
                         } else {
                             eu.coleta_sem_avanco += 1;
                         }
-                        t.registra(ev(nome, eu, "coletou", andou, format!(
-                            "#{} coluna {coluna} (progresso {agora_p}, {} sem avanço)",
-                            d.quest, eu.coleta_sem_avanco
-                        )));
+                        t.registra(ev(
+                            nome,
+                            eu,
+                            "coletou",
+                            andou,
+                            format!(
+                                "#{} coluna {coluna} (progresso {agora_p}, {} sem avanço)",
+                                d.quest, eu.coleta_sem_avanco
+                            ),
+                        ));
                         // O nó pode estar esgotado, ou a missão pode pedir
                         // outro recurso. Nos dois casos insistir não resolve:
                         // larga a missão e vai fazer outra coisa.
@@ -2188,9 +2503,13 @@ async fn decide(
                             eu.coleta_sem_avanco = 0;
                             eu.desistiu.insert(d.quest, Instant::now());
                             eu.destino = None;
-                            t.registra(ev(nome, eu, "coleta_emperrada", false, format!(
-                                "#{} 40 coletas sem o objetivo andar", d.quest
-                            )));
+                            t.registra(ev(
+                                nome,
+                                eu,
+                                "coleta_emperrada",
+                                false,
+                                format!("#{} 40 coletas sem o objetivo andar", d.quest),
+                            ));
                         }
                     }
                     None => {
@@ -2229,8 +2548,14 @@ async fn decide(
                         eu.pedidos_de_no += 1;
                         if eu.pedidos_de_no >= 8 {
                             eu.pedidos_de_no = 0;
-                            passo_nao_deu(eu, t, nome, d.quest, "sem_no_por_perto",
-                                format!("#{} nada do tipo pedido em 40u", d.quest));
+                            passo_nao_deu(
+                                eu,
+                                t,
+                                nome,
+                                d.quest,
+                                "sem_no_por_perto",
+                                format!("#{} nada do tipo pedido em 40u", d.quest),
+                            );
                         }
                     }
                 }
@@ -2254,11 +2579,7 @@ async fn decide(
                                 eu.bolsa.get(&(*item as u16)).copied().unwrap_or(0) >= *q
                             })
                     })
-                    .or_else(|| {
-                        eu.receitas
-                            .iter()
-                            .find(|r| r.nivel_min as u32 <= eu.nivel)
-                    })
+                    .or_else(|| eu.receitas.iter().find(|r| r.nivel_min as u32 <= eu.nivel))
                     .map(|r| (r.id, r.inputs.clone()));
                 match escolhida {
                     Some((r, inputs)) => {
@@ -2297,9 +2618,9 @@ async fn decide(
                         // Algum que NÃO vem de coleta? Então buscar não
                         // resolve, por mais que se colha. Larga a missão —
                         // insistir era o laço.
-                        let impossivel = faltando.iter().find(|(item, _)| {
-                            eu.fontes.get(item).is_none_or(|t| t.is_empty())
-                        });
+                        let impossivel = faltando
+                            .iter()
+                            .find(|(item, _)| eu.fontes.get(item).is_none_or(|t| t.is_empty()));
                         if let Some((item, _)) = impossivel {
                             // DE VEZ, e não pelo prazo da desistência.
                             //
@@ -2313,9 +2634,16 @@ async fn decide(
                             // peça não volta a cada dez minutos pra conferir.
                             eu.impossiveis.insert(d.quest);
                             eu.destino = None;
-                            t.registra(ev(nome, eu, "missao_impossivel", false, format!(
-                                "#{} item {item} não sai de coleta — largada de vez", d.quest
-                            )));
+                            t.registra(ev(
+                                nome,
+                                eu,
+                                "missao_impossivel",
+                                false,
+                                format!(
+                                    "#{} item {item} não sai de coleta — largada de vez",
+                                    d.quest
+                                ),
+                            ));
                             return Ok(());
                         }
                         let falta = faltando.first().copied();
@@ -2334,21 +2662,36 @@ async fn decide(
                                     eu.buscando = None;
                                     eu.desistiu.insert(d.quest, Instant::now());
                                     eu.destino = None;
-                                    t.registra(ev(nome, eu, "busca_em_circulo", false, format!(
-                                        "#{} item {item}: seis idas sem o craft andar", d.quest
-                                    )));
+                                    t.registra(ev(
+                                        nome,
+                                        eu,
+                                        "busca_em_circulo",
+                                        false,
+                                        format!(
+                                            "#{} item {item}: seis idas sem o craft andar",
+                                            d.quest
+                                        ),
+                                    ));
                                     return Ok(());
                                 }
                                 eu.buscando = Some((d.quest, item, quanto));
                                 eu.destino = None;
                                 let tem = eu.bolsa.get(&item).copied().unwrap_or(0);
-                                t.registra(ev(nome, eu, "foi_buscar", true, format!(
-                                    "#{} precisa de {quanto}x item {item} (tem {tem})", d.quest
-                                )));
+                                t.registra(ev(
+                                    nome,
+                                    eu,
+                                    "foi_buscar",
+                                    true,
+                                    format!(
+                                        "#{} precisa de {quanto}x item {item} (tem {tem})",
+                                        d.quest
+                                    ),
+                                ));
                                 return Ok(());
                             }
                         }
-                        ws.send(envia(&ClientMessage::Craft { recipe_id: r })?).await?;
+                        ws.send(envia(&ClientMessage::Craft { recipe_id: r })?)
+                            .await?;
                         // `ok` SAI DA CONTA DE RECUSAS, e não do envio.
                         //
                         // Registrar `true` por ter mandado a mensagem é a
@@ -2357,11 +2700,22 @@ async fn decide(
                         // 1.692 "craft_da_missao" marcados como sucesso
                         // enquanto os doze bots giravam em falso.
                         let recusas = eu.craft_a_toa.get(&d.quest).copied().unwrap_or(0);
-                        t.registra(ev(nome, eu, "craft_da_missao", recusas == 0, format!(
-                            "#{} receita {r} (recusas {recusas})", d.quest
-                        )));
+                        t.registra(ev(
+                            nome,
+                            eu,
+                            "craft_da_missao",
+                            recusas == 0,
+                            format!("#{} receita {r} (recusas {recusas})", d.quest),
+                        ));
                     }
-                    None => passo_nao_deu(eu, t, nome, d.quest, "craft_sem_receita", format!("#{}", d.quest)),
+                    None => passo_nao_deu(
+                        eu,
+                        t,
+                        nome,
+                        d.quest,
+                        "craft_sem_receita",
+                        format!("#{}", d.quest),
+                    ),
                 }
                 eu.destino = None;
                 eu.esperando_destino = 0;
@@ -2393,7 +2747,14 @@ async fn decide(
                         // "subiu" e "sem material".
                         eu.refino_pedido = Some((d.quest, slot));
                     }
-                    None => passo_nao_deu(eu, t, nome, d.quest, "sem_peca_pra_refinar", format!("#{}", d.quest)),
+                    None => passo_nao_deu(
+                        eu,
+                        t,
+                        nome,
+                        d.quest,
+                        "sem_peca_pra_refinar",
+                        format!("#{}", d.quest),
+                    ),
                 }
                 eu.destino = None;
                 eu.esperando_destino = 0;
@@ -2414,9 +2775,14 @@ async fn decide(
                     // COM TETO, como todo passo que pode não dar. Pedir
                     // entrada e não entrar rendeu 406 pedidos em dez minutos
                     // (e 979 respostas), sem o bot pisar numa dungeon.
-                    passo_nao_deu(eu, t, nome, d.quest, "dungeon_da_missao", format!(
-                        "#{} conteúdo {conteudo}", d.quest
-                    ));
+                    passo_nao_deu(
+                        eu,
+                        t,
+                        nome,
+                        d.quest,
+                        "dungeon_da_missao",
+                        format!("#{} conteúdo {conteudo}", d.quest),
+                    );
                 }
                 eu.destino = None;
                 eu.esperando_destino = 0;
@@ -2428,9 +2794,13 @@ async fn decide(
             destino_tipo::TRAVA => {
                 eu.desistiu.insert(d.quest, Instant::now());
                 eu.destino = None;
-                t.registra(ev(nome, eu, "trava_de_nivel", false, format!(
-                    "#{} — nível {} não basta", d.quest, eu.nivel
-                )));
+                t.registra(ev(
+                    nome,
+                    eu,
+                    "trava_de_nivel",
+                    false,
+                    format!("#{} — nível {} não basta", d.quest, eu.nivel),
+                ));
                 return Ok(());
             }
             // LUGAR: chegar É o objetivo, e o servidor conclui sozinho. Aqui
@@ -2438,7 +2808,13 @@ async fn decide(
             destino_tipo::LUGAR => {
                 eu.destino = None;
                 eu.esperando_destino = 0;
-                t.registra(ev(nome, eu, "chegou_no_lugar", true, format!("#{}", d.quest)));
+                t.registra(ev(
+                    nome,
+                    eu,
+                    "chegou_no_lugar",
+                    true,
+                    format!("#{}", d.quest),
+                ));
                 return Ok(());
             }
             // ZONA DE BICHO: chegou, agora BATE.
@@ -2453,7 +2829,8 @@ async fn decide(
             // quando não há mais nada pendente.
             destino_tipo::COMBATE => {
                 if let Some((alvo, p)) = eu.alvo {
-                    ws.send(envia(&ClientMessage::SetTarget { target: Some(alvo) })?).await?;
+                    ws.send(envia(&ClientMessage::SetTarget { target: Some(alvo) })?)
+                        .await?;
                     let dir = (p - eu.pos).normalize_or_zero();
                     let longe = eu.pos.distance(p) > 2.0;
                     // Longe do bicho: o pulso leva até ele. Perto: para de
@@ -2507,34 +2884,62 @@ async fn decide(
                 match acao {
                     tut::PONTO_ATRIBUTO => {
                         if eu.pontos_livres > 0 {
-                            ws.send(envia(&ClientMessage::AllocStatPoint { stat: 0 })?).await?;
+                            ws.send(envia(&ClientMessage::AllocStatPoint { stat: 0 })?)
+                                .await?;
                             t.registra(ev(nome, eu, "tutorial_ponto", true, String::new()));
                         } else {
                             // Sem ponto livre não há o que gastar: o passo
                             // espera o próximo nível, e dizer "feito" seria
                             // mentir pro servidor.
-                            passo_nao_deu(eu, t, nome, d.quest, "tutorial_espera", "sem ponto livre".into());
+                            passo_nao_deu(
+                                eu,
+                                t,
+                                nome,
+                                d.quest,
+                                "tutorial_espera",
+                                "sem ponto livre".into(),
+                            );
                         }
                     }
                     tut::EVOLUIR_SKILL => {
                         match eu.skills.first().copied() {
                             Some(skill_id) => {
-                                ws.send(envia(&ClientMessage::EvoluirSkill { skill_id })?).await?;
-                                t.registra(ev(nome, eu, "tutorial_evoluiu", true, format!("skill {skill_id}")));
+                                ws.send(envia(&ClientMessage::EvoluirSkill { skill_id })?)
+                                    .await?;
+                                t.registra(ev(
+                                    nome,
+                                    eu,
+                                    "tutorial_evoluiu",
+                                    true,
+                                    format!("skill {skill_id}"),
+                                ));
                             }
                             None => {
                                 // Sem a lista não há id pra mandar, e um id
                                 // inventado vira recusa silenciosa. Ela vem
                                 // no login; se não veio, é isso que a trilha
                                 // tem que dizer.
-                                passo_nao_deu(eu, t, nome, d.quest, "tutorial_espera", "sem lista de skills".into());
+                                passo_nao_deu(
+                                    eu,
+                                    t,
+                                    nome,
+                                    d.quest,
+                                    "tutorial_espera",
+                                    "sem lista de skills".into(),
+                                );
                             }
                         }
                     }
                     // Os de interface: o gesto é a mensagem.
                     _ => {
                         ws.send(envia(&ClientMessage::Tutorial { acao })?).await?;
-                        t.registra(ev(nome, eu, "tutorial_feito", true, format!("#{} ação {acao}", d.quest)));
+                        t.registra(ev(
+                            nome,
+                            eu,
+                            "tutorial_feito",
+                            true,
+                            format!("#{} ação {acao}", d.quest),
+                        ));
                     }
                 }
                 eu.destino = None;
@@ -2549,7 +2954,10 @@ async fn decide(
     // entra na Ilha Mágica, caça na zona da faixa e embarca pra próxima ilha
     // (`progresso.rs`). O mercado e o Porão continuam abaixo, e o ramo 10
     // (bater no bicho perto) é quem luta dentro da zona.
-    if eu.destino.is_none() && eu.buscando.is_none() && !eu.na_dungeon && !eu.na_arena
+    if eu.destino.is_none()
+        && eu.buscando.is_none()
+        && !eu.na_dungeon
+        && !eu.na_arena
         && progresso::progride(ws, eu, nome, t).await?
     {
         return Ok(());
@@ -2619,7 +3027,13 @@ async fn decide(
                 pago: preco,
             })?)
             .await?;
-            t.registra(ev(nome, eu, "comprou", true, format!("item {item} por {preco}")));
+            t.registra(ev(
+                nome,
+                eu,
+                "comprou",
+                true,
+                format!("item {item} por {preco}"),
+            ));
             return Ok(());
         }
     }
@@ -2649,13 +3063,15 @@ async fn decide(
             // de missão. Reenviar a cada decisão reinicia o trajeto.
             if eu.indo_ao_alvo != Some(id) {
                 eu.indo_ao_alvo = Some(id);
-                ws.send(envia(&ClientMessage::MoverPara { x: p.x, z: p.y })?).await?;
+                ws.send(envia(&ClientMessage::MoverPara { x: p.x, z: p.y })?)
+                    .await?;
                 t.registra(ev(nome, eu, "foi_ao_alvo", true, format!("{dist:.0}u")));
             }
             return Ok(());
         }
         eu.indo_ao_alvo = None;
-        ws.send(envia(&ClientMessage::SetTarget { target: Some(id) })?).await?;
+        ws.send(envia(&ClientMessage::SetTarget { target: Some(id) })?)
+            .await?;
         *seq = seq.wrapping_add(1);
         let dir = (p - eu.pos).normalize_or_zero();
         ws.send(envia(&ClientMessage::Input {
@@ -2705,9 +3121,13 @@ async fn decide(
         if let Some((alvo, desde)) = eu.vagando_para {
             if eu.pos.distance(alvo) <= PERTO_O_BASTANTE {
                 eu.vagando_para = None;
-                t.registra(ev(nome, eu, "vagou", true, format!(
-                    "chegou em {:.0},{:.0}", alvo.x, alvo.y
-                )));
+                t.registra(ev(
+                    nome,
+                    eu,
+                    "vagou",
+                    true,
+                    format!("chegou em {:.0},{:.0}", alvo.x, alvo.y),
+                ));
                 return Ok(());
             }
             if Instant::now().duration_since(desde) < PRAZO_DA_VOLTA {
@@ -2739,15 +3159,28 @@ async fn decide(
             if sobrou > LONGE * 0.8 {
                 eu.empurrao = Some((alvo - eu.pos).normalize_or_zero());
                 eu.empurrao_ate = Some(Instant::now() + Duration::from_secs(3));
-                t.registra(ev(nome, eu, "desencalhou", true, format!(
-                    "rota não saiu de {:.0},{:.0} — indo na mão", eu.pos.x, eu.pos.y
-                )));
+                t.registra(ev(
+                    nome,
+                    eu,
+                    "desencalhou",
+                    true,
+                    format!(
+                        "rota não saiu de {:.0},{:.0} — indo na mão",
+                        eu.pos.x, eu.pos.y
+                    ),
+                ));
                 return Ok(());
             }
-            t.registra(ev(nome, eu, "vagou", false, format!(
-                "não chegou em {:.0},{:.0} (parou a {sobrou:.0}u)",
-                alvo.x, alvo.y
-            )));
+            t.registra(ev(
+                nome,
+                eu,
+                "vagou",
+                false,
+                format!(
+                    "não chegou em {:.0},{:.0} (parou a {sobrou:.0}u)",
+                    alvo.x, alvo.y
+                ),
+            ));
             return Ok(());
         }
         // VAGAR É CAÇAR, E CAÇAR É IR EMBORA DA CIDADE.
@@ -2780,20 +3213,29 @@ async fn decide(
         // caminhada, que é o que tira o bot da orla da cidade.
         let alvo = eu.pos + rumo * LONGE;
         eu.vagando_para = Some((alvo, Instant::now()));
-        ws.send(envia(&ClientMessage::MoverPara { x: alvo.x, z: alvo.y })?).await?;
+        ws.send(envia(&ClientMessage::MoverPara {
+            x: alvo.x,
+            z: alvo.y,
+        })?)
+        .await?;
         return Ok(());
     }
     // Achou alvo ou missão: a volta pode esperar.
     eu.vagando_para = None;
-    t.registra(ev(nome, eu, "sem_o_que_fazer", false, format!(
-        "{} quest(s), destino={:?}",
-        eu.quests.len(),
-        eu.destino
-            .map(|d| (d.quest, d.tipo, d.raio, d.npc.unwrap_or(0))),
-    )));
+    t.registra(ev(
+        nome,
+        eu,
+        "sem_o_que_fazer",
+        false,
+        format!(
+            "{} quest(s), destino={:?}",
+            eu.quests.len(),
+            eu.destino
+                .map(|d| (d.quest, d.tipo, d.raio, d.npc.unwrap_or(0))),
+        ),
+    ));
     Ok(())
 }
-
 
 #[cfg(test)]
 mod testes_da_variedade {
@@ -2874,7 +3316,11 @@ mod testes_do_empurrao {
                 break;
             }
         }
-        assert_eq!(desistiu, Some(6), "parado e a rede não disparou na hora certa");
+        assert_eq!(
+            desistiu,
+            Some(6),
+            "parado e a rede não disparou na hora certa"
+        );
 
         // ANDANDO: nunca desiste, por mais chamadas que passem.
         let (mut parado, mut ultima) = (0u32, 0.0f32);
@@ -2961,14 +3407,15 @@ mod testes_da_esquiva {
         for f in formas {
             // Um ponto claramente DENTRO de cada uma.
             let dentro = match f {
-                Forma::Anel { interno, externo } => {
-                    centro + dir * ((interno + externo) * 0.5)
-                }
+                Forma::Anel { interno, externo } => centro + dir * ((interno + externo) * 0.5),
                 Forma::Linha { comprimento, .. } => centro + dir * (comprimento * 0.4),
                 Forma::Cone { raio, .. } => centro + dir * (raio * 0.5),
                 Forma::Circulo { .. } => centro,
             };
-            assert!(f.contem(centro, dir, dentro), "o ponto de teste {f:?} não está dentro");
+            assert!(
+                f.contem(centro, dir, dentro),
+                "o ponto de teste {f:?} não está dentro"
+            );
             let saida = saida_do_telegrafico(&f, centro, dir, dentro)
                 .unwrap_or_else(|| panic!("{f:?}: não achou saída nenhuma"));
             assert!(

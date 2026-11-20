@@ -14,11 +14,13 @@ thread_local! {
 }
 
 pub fn get_time() -> f64 {
-    FIXO.with(|f| f.get()).map_or_else(macroquad::time::get_time, |(t, _)| t)
+    FIXO.with(|f| f.get())
+        .map_or_else(macroquad::time::get_time, |(t, _)| t)
 }
 
 pub fn get_frame_time() -> f32 {
-    FIXO.with(|f| f.get()).map_or_else(macroquad::time::get_frame_time, |(_, dt)| dt)
+    FIXO.with(|f| f.get())
+        .map_or_else(macroquad::time::get_frame_time, |(_, dt)| dt)
 }
 
 /// Holds (or with `None` releases) the clock. Only the capture calls it.

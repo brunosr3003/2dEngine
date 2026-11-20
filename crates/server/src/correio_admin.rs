@@ -5,9 +5,9 @@
 //! photographed inside the transaction) lives in the `correio` crate, because
 //! the panoptico sends too. Re-exported here so existing callers keep working.
 
-pub use correio::{cargo, enviar, init};
 use crate::world::{IncomingMessage, SessionId};
 use anyhow::{bail, Result};
+pub use correio::{cargo, enviar, init};
 use shared::social::{Anexo, Carta};
 use sqlx::{Connection, PgConnection, PgPool, Postgres, Row, Transaction};
 use tokio::sync::{mpsc, oneshot};
@@ -204,11 +204,18 @@ pub mod tests {
             para: None,
             assunto: "Evento".into(),
             texto: "Recompensa de teste".into(),
-            anexos: vec![Anexo { item_id: 1, qtd: 3,
+            anexos: vec![
+                Anexo {
+                    item_id: 1,
+                    qtd: 3,
                     instance: None,
-                }, Anexo { item_id: 2, qtd: 4,
+                },
+                Anexo {
+                    item_id: 2,
+                    qtd: 4,
                     instance: None,
-                }],
+                },
+            ],
         };
         assert!(enviar(p, "Ana", 1, &pedido).await.is_err());
         sqlx::query("INSERT INTO social_staff VALUES(1,'admin'),(2,'mod')")

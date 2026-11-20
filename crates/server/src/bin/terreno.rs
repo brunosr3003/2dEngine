@@ -324,7 +324,14 @@ fn seguir(ilha: &Ilha, de: glam::Vec2, para: glam::Vec2, montado: bool) -> Segui
         }
         agora += dt;
     }
-    Seguida { chegou: p.distance(para) < 2.0, fim: p, pulos, rotas, parado_desde: preso_desde.1, tempo: agora }
+    Seguida {
+        chegou: p.distance(para) < 2.0,
+        fim: p,
+        pulos,
+        rotas,
+        parado_desde: preso_desde.1,
+        tempo: agora,
+    }
 }
 
 fn simula(args: &[String]) {
@@ -372,21 +379,31 @@ fn rotas(args: &[String]) {
         let meio = ilha.lado as f32 * BLOCO * 0.5;
         let mut semente = 0x5EED_u64 ^ qual as u64;
         let mut rnd = || {
-            semente = semente.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            semente = semente
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
             ((semente >> 33) as f32) / (u32::MAX >> 1) as f32
         };
         let (mut testadas, mut falhas) = (0, Vec::new());
         let mut tentativas = 0;
         while testadas < n && tentativas < n * 50 {
             tentativas += 1;
-            let de = glam::Vec2::new((rnd() * 2.0 - 1.0) * meio * 0.8, (rnd() * 2.0 - 1.0) * meio * 0.8);
+            let de = glam::Vec2::new(
+                (rnd() * 2.0 - 1.0) * meio * 0.8,
+                (rnd() * 2.0 - 1.0) * meio * 0.8,
+            );
             let ang = rnd() * std::f32::consts::TAU;
             let para = de + glam::Vec2::new(ang.cos(), ang.sin()) * (30.0 + rnd() * 90.0);
-            if ilha.agua(de.x, de.y) || ilha.agua(para.x, para.y) || ilha.ocupado(de, shared::ENTITY_RADIUS) {
+            if ilha.agua(de.x, de.y)
+                || ilha.agua(para.x, para.y)
+                || ilha.ocupado(de, shared::ENTITY_RADIUS)
+            {
                 continue;
             }
             // Only routes the A* finishes: the follower is what is on trial.
-            let Some(rt) = ilha.caminho(de, para, 6_000) else { continue };
+            let Some(rt) = ilha.caminho(de, para, 6_000) else {
+                continue;
+            };
             if rt.last().map_or(true, |f| f.distance(para) > 2.5) {
                 continue;
             }
@@ -398,7 +415,13 @@ fn rotas(args: &[String]) {
                 }
             }
         }
-        println!("{} ({}): {} rotas, {} falhas (a pe' e montado)", d.nome, d.zona, testadas, falhas.len());
+        println!(
+            "{} ({}): {} rotas, {} falhas (a pe' e montado)",
+            d.nome,
+            d.zona,
+            testadas,
+            falhas.len()
+        );
         for (de, para, montado, s) in falhas.iter().take(8) {
             println!(
                 "   --ilha {qual} --de {:.1},{:.1} --para {:.1},{:.1} {} -> parou a {:.1} em {:.1},{:.1}, {} pulos, {} rotas, parado desde {:.0}s",

@@ -31,7 +31,10 @@ pub async fn handle_connection(
     };
     let mut ws = tokio_tungstenite::accept_hdr_async_with_config(stream, cb, Some(cfg)).await?;
     tracing::info!("ws accepted from {peer}");
-    let ip = ip_real.lock().clone().unwrap_or_else(|| peer.ip().to_string());
+    let ip = ip_real
+        .lock()
+        .clone()
+        .unwrap_or_else(|| peer.ip().to_string());
     crate::latencia::abriu(peer, ip);
     // A WebSocket ping every 15 s, answered by the client's network thread:
     // the pure network round trip, without the client's frames.

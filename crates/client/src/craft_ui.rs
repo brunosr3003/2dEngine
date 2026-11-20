@@ -211,7 +211,10 @@ impl Craft {
             self.aba = i;
         }
         self.sel = chave.and_then(|k| {
-            self.receitas.iter().find(|r| r.output_item_id == k).map(|r| r.id)
+            self.receitas
+                .iter()
+                .find(|r| r.output_item_id == k)
+                .map(|r| r.id)
         });
         self.rolagem.zera();
     }
@@ -450,17 +453,15 @@ impl Craft {
         let linha_h = u(LINHA);
         let p = Self::painel();
         estilo::painel(p);
-        let titulo = if self.so_combinar {
-            "Combine"
-        } else {
-            "Craft"
-        };
+        let titulo = if self.so_combinar { "Combine" } else { "Craft" };
         estilo::texto(p.x + u(18.0), p.y + u(32.0), titulo, 22, estilo::OURO);
         let dica = match self.aba {
             ABA_MATERIAIS => "10 materiais + cobre, darksteel e pó criam 1 da cor seguinte",
             ABA_APRIMORAR => "duas peças iguais sobem o tier; duas Tier IV +8 sobem a cor",
             ABA_COMBINAR => "chaves, pets e montarias: 5 para tentar a cor seguinte",
-            i if ABAS.get(i) == Some(&CAT_CHAVES) => "madeira + aço: a chave abre a porta do Porão na ilha dele",
+            i if ABAS.get(i) == Some(&CAT_CHAVES) => {
+                "madeira + aço: a chave abre a porta do Porão na ilha dele"
+            }
             _ => "chave + materiais da cor + darksteel + cobre",
         };
         estilo::texto(p.x + u(90.0), p.y + u(31.0), dica, 13, estilo::SUAVE);
@@ -595,7 +596,10 @@ impl Craft {
             estilo::texto(
                 linha.x + u(42.0),
                 linha.y + u(33.0),
-                &format!("Nv {}", shared::progressao::texto_de_nivel(r.nivel_min.max(1) as u32)),
+                &format!(
+                    "Nv {}",
+                    shared::progressao::texto_de_nivel(r.nivel_min.max(1) as u32)
+                ),
                 12,
                 estilo::SUAVE,
             );
@@ -798,7 +802,12 @@ pub async fn previa() {
     // As receitas vêm do servidor; na prévia, as mesmas que ele semeia.
     c.receitas = shared::receitas::receitas_de_chave_de_porao();
     let aba_chaves = ABAS.iter().position(|&x| x == CAT_CHAVES).unwrap();
-    for (aba, nome) in [(aba_chaves, "chaves"), (ABA_MATERIAIS, "materiais"), (ABA_APRIMORAR, "aprimorar"), (ABA_COMBINAR, "combinar")] {
+    for (aba, nome) in [
+        (aba_chaves, "chaves"),
+        (ABA_MATERIAIS, "materiais"),
+        (ABA_APRIMORAR, "aprimorar"),
+        (ABA_COMBINAR, "combinar"),
+    ] {
         c.aba = aba;
         c.sel = None;
         for _ in 0..3 {
@@ -823,9 +832,14 @@ pub async fn previa() {
 pub async fn previa_combinar() {
     use crate::combinar_anim::{Animacao, Antes};
     use shared::item_id as it;
-    let saida = std::env::var("MMO_PREVIA_SAIDA").unwrap_or_else(|_| "/tmp/tempest-combinar".into());
+    let saida =
+        std::env::var("MMO_PREVIA_SAIDA").unwrap_or_else(|_| "/tmp/tempest-combinar".into());
     std::fs::create_dir_all(&saida).unwrap();
-    let mat = |id: u16, qty: u32| InventorySlot { item_id: id, qty, instance: None };
+    let mat = |id: u16, qty: u32| InventorySlot {
+        item_id: id,
+        qty,
+        instance: None,
+    };
     let chave = |b: u16, c: u8| it::chave_na_cor(b, c);
     let base = vec![
         mat(chave(it::HORN, 2), 37),
@@ -835,8 +849,19 @@ pub async fn previa_combinar() {
         mat(it::GLITTERING_POWDER, 40),
     ];
     let mut nomes = HashMap::new();
-    for (b, n) in [(it::SCALE, "Scale"), (it::CLAW, "Claw"), (it::HORN, "Horn"), (it::HIDE, "Hide")] {
-        for (c, cor) in [(1, ""), (2, "Green "), (3, "Blue "), (4, "Purple "), (5, "Legendary ")] {
+    for (b, n) in [
+        (it::SCALE, "Scale"),
+        (it::CLAW, "Claw"),
+        (it::HORN, "Horn"),
+        (it::HIDE, "Hide"),
+    ] {
+        for (c, cor) in [
+            (1, ""),
+            (2, "Green "),
+            (3, "Blue "),
+            (4, "Purple "),
+            (5, "Legendary "),
+        ] {
             nomes.insert(chave(b, c), format!("{cor}{n}"));
         }
     }
@@ -848,12 +873,40 @@ pub async fn previa_combinar() {
     let horn = shared::combinar::receita(chave(it::HORN, 2)).unwrap();
     let aco = shared::combinar::receita(it::na_cor(it::STEEL, 1)).unwrap();
     // (name, recipe, attempts, successes, attempts-to-guarantee before, what lands in the bag)
-    let cenas: Vec<(&str, shared::combinar::ReceitaDeCombinar, u16, u16, Option<u16>, Vec<(u16, u32)>)> = vec![
-        ("sucesso", horn, 1, 1, Some(14), vec![(chave(it::CLAW, 3), 1)]),
-        ("lote", horn, 7, 2, Some(3), vec![(chave(it::SCALE, 3), 1), (chave(it::HORN, 3), 1)]),
+    let cenas: Vec<(
+        &str,
+        shared::combinar::ReceitaDeCombinar,
+        u16,
+        u16,
+        Option<u16>,
+        Vec<(u16, u32)>,
+    )> = vec![
+        (
+            "sucesso",
+            horn,
+            1,
+            1,
+            Some(14),
+            vec![(chave(it::CLAW, 3), 1)],
+        ),
+        (
+            "lote",
+            horn,
+            7,
+            2,
+            Some(3),
+            vec![(chave(it::SCALE, 3), 1), (chave(it::HORN, 3), 1)],
+        ),
         ("falha", horn, 1, 0, Some(9), vec![]),
         ("falha-lote", horn, 7, 0, Some(20), vec![]),
-        ("sintese", aco, 1, 1, None, vec![(it::na_cor(it::STEEL, 2), 1)]),
+        (
+            "sintese",
+            aco,
+            1,
+            1,
+            None,
+            vec![(it::na_cor(it::STEEL, 2), 1)],
+        ),
     ];
     let fracoes = [0.04, 0.18, 0.32, 0.42, 0.50, 0.62, 0.80, 0.97];
     for (w, h, esc, tam) in [(1280.0, 720.0, 1.2, "pc"), (926.0, 428.0, 0.8, "cel")] {
@@ -878,7 +931,11 @@ pub async fn previa_combinar() {
         for _ in 0..3 {
             next_frame().await;
         }
-        eprintln!("combinar preview: {tam} at {}x{}", screen_width(), screen_height());
+        eprintln!(
+            "combinar preview: {tam} at {}x{}",
+            screen_width(),
+            screen_height()
+        );
         crate::hud_layout::define_escala_ui(esc);
         let rt = render_target(screen_width() as u32, screen_height() as u32);
         crate::render3d::define_alvo(Some(rt.clone()));
@@ -896,15 +953,23 @@ pub async fn previa_combinar() {
                     c.abrir_material(r.entrada);
                 }
                 let agora = 100.0;
-                c.combinando = Some(Animacao::nova(*r, *tent, *suc, *faltam, Some(antes.clone()), agora - (dur * f) as f64));
+                c.combinando = Some(Animacao::nova(
+                    *r,
+                    *tent,
+                    *suc,
+                    *faltam,
+                    Some(antes.clone()),
+                    agora - (dur * f) as f64,
+                ));
                 for _ in 0..2 {
                     crate::render3d::camera_padrao();
                     clear_background(Color::new(0.08, 0.12, 0.16, 1.0));
                     c.desenha(&depois, &nomes, 30, agora, None);
                     unsafe { get_internal_gl().flush() };
-                    rt.texture
-                        .get_texture_data()
-                        .export_png(&format!("{saida}/{tam}-{nome}-{:02}.png", (f * 100.0).round() as u32));
+                    rt.texture.get_texture_data().export_png(&format!(
+                        "{saida}/{tam}-{nome}-{:02}.png",
+                        (f * 100.0).round() as u32
+                    ));
                     next_frame().await;
                 }
             }

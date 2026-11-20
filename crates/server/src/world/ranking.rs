@@ -39,14 +39,29 @@ pub(crate) async fn monta(pool: &sqlx::PgPool) -> anyhow::Result<Vec<LinhaRankin
         .into_values()
         .filter(|c| !c.account_id.is_some_and(|a| staff.contains(&a)))
         .map(|c| {
-            let stats = effective_stats_rv(&c.equipment, &c.allocated_points, &c.proficiencies, c.xp, c.renascimentos, &c.arvore_valida());
+            let stats = effective_stats_rv(
+                &c.equipment,
+                &c.allocated_points,
+                &c.proficiencies,
+                c.xp,
+                c.renascimentos,
+                &c.arvore_valida(),
+            );
             LinhaRanking {
                 posicao: 0,
                 nivel: shared::level_of_xp_with_mult(c.xp, mult),
                 poder: shared::dungeon::poder_de_stats(&stats),
                 classe: Conjunto::da_arma(c.equipment.weapon.unwrap_or(0)) as u8,
-                aparencia: c.guarda_roupa.as_ref().map(|g| g.aparencia.empacota()).unwrap_or(0),
-                skins: c.guarda_roupa.as_ref().map(|g| g.aparencia.empacota_skins()).unwrap_or(0),
+                aparencia: c
+                    .guarda_roupa
+                    .as_ref()
+                    .map(|g| g.aparencia.empacota())
+                    .unwrap_or(0),
+                skins: c
+                    .guarda_roupa
+                    .as_ref()
+                    .map(|g| g.aparencia.empacota_skins())
+                    .unwrap_or(0),
                 auras: shared::auras::equipamento(&c.equipment),
                 renascimentos: c.renascimentos,
                 nome: c.name,
@@ -63,12 +78,20 @@ async fn tabela(pool: &sqlx::PgPool) -> anyhow::Result<Vec<LinhaRanking>> {
         }
     }
     let linhas = monta(pool).await?;
-    *CACHE.lock().unwrap() = Some(Cache { feito: Instant::now(), linhas: linhas.clone() });
+    *CACHE.lock().unwrap() = Some(Cache {
+        feito: Instant::now(),
+        linhas: linhas.clone(),
+    });
     Ok(linhas)
 }
 
 /// One page: filtered by class, ordered, the top `rk::TOPO` plus `eu`.
-pub(crate) fn pagina(mut todas: Vec<LinhaRanking>, tipo: TipoRanking, classe: Option<u8>, eu: &str) -> Ranking {
+pub(crate) fn pagina(
+    mut todas: Vec<LinhaRanking>,
+    tipo: TipoRanking,
+    classe: Option<u8>,
+    eu: &str,
+) -> Ranking {
     if let Some(c) = classe {
         todas.retain(|l| l.classe == c);
     }
@@ -76,7 +99,13 @@ pub(crate) fn pagina(mut todas: Vec<LinhaRanking>, tipo: TipoRanking, classe: Op
     let minha = todas.iter().find(|l| l.nome == eu).cloned();
     let total = todas.len() as u32;
     todas.truncate(rk::TOPO);
-    Ranking { tipo, classe, linhas: todas, eu: minha, total }
+    Ranking {
+        tipo,
+        classe,
+        linhas: todas,
+        eu: minha,
+        total,
+    }
 }
 
 impl GameWorld {
@@ -119,12 +148,24 @@ mod testes {
     use super::*;
 
     fn l(nome: &str, nivel: u32, poder: i32, classe: u8) -> LinhaRanking {
-        LinhaRanking { posicao: 0, nome: nome.into(), nivel, poder, classe, aparencia: 0, skins: 0, auras: 0, renascimentos: 0 }
+        LinhaRanking {
+            posicao: 0,
+            nome: nome.into(),
+            nivel,
+            poder,
+            classe,
+            aparencia: 0,
+            skins: 0,
+            auras: 0,
+            renascimentos: 0,
+        }
     }
 
     #[test]
     fn pagina_filtra_por_classe_e_acha_o_jogador_fora_do_topo() {
-        let mut v: Vec<LinhaRanking> = (0..80).map(|i| l(&format!("p{i:02}"), i, i as i32 * 10, (i % 2) as u8)).collect();
+        let mut v: Vec<LinhaRanking> = (0..80)
+            .map(|i| l(&format!("p{i:02}"), i, i as i32 * 10, (i % 2) as u8))
+            .collect();
         v.push(l("eu", 0, -1, 1));
         let r = pagina(v.clone(), TipoRanking::Poder, None, "eu");
         assert_eq!(r.linhas.len(), rk::TOPO);

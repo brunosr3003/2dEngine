@@ -149,7 +149,11 @@ impl IrPara {
         let (Some(a), Some(eu)) = (&self.alvo, eu) else {
             return None;
         };
-        Some(format!("HEADING · {} · {:.0} m", a.rotulo, eu.distance(a.pos)))
+        Some(format!(
+            "HEADING · {} · {:.0} m",
+            a.rotulo,
+            eu.distance(a.pos)
+        ))
     }
 }
 

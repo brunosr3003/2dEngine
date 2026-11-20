@@ -178,9 +178,15 @@ mod testes {
         for d in TODOS {
             assert!(d.cumpriu(c, &limpo), "{d:?} reprovou uma corrida limpa");
         }
-        let lento = Placar { segundos: c.limite_s as f32 * 0.7, ..limpo };
+        let lento = Placar {
+            segundos: c.limite_s as f32 * 0.7,
+            ..limpo
+        };
         assert!(!Desafio::Rapido.cumpriu(c, &lento));
-        let ferido = Placar { vida_min: 0.3, ..limpo };
+        let ferido = Placar {
+            vida_min: 0.3,
+            ..limpo
+        };
         assert!(!Desafio::VidaAlta.cumpriu(c, &ferido));
         assert!(!Desafio::SemPocao.cumpriu(c, &Placar { pocoes: 1, ..limpo }));
         assert!(!Desafio::SemMorte.cumpriu(c, &Placar { mortes: 1, ..limpo }));

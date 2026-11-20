@@ -47,7 +47,11 @@ fn linhas(def: &dg::Conteudo, ce: &dg::ConteudoEstado, estagio: u8) -> Vec<Linha
         ),
         Linha::Titulo("First win of the week · per account".into()),
         Linha::Texto(
-            status(&ce.semanais_recebidas, estagio, "Already received this week"),
+            status(
+                &ce.semanais_recebidas,
+                estagio,
+                "Already received this week",
+            ),
             true,
         ),
         Linha::Texto(

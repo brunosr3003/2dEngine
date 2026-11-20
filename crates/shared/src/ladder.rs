@@ -328,7 +328,11 @@ pub const MOB_MAX_DEFENSE: f32 = 0.25;
 
 impl Profile {
     pub const fn novo(health: f32, attack: f32, defense: f32) -> Profile {
-        Profile { health, attack, defense }
+        Profile {
+            health,
+            attack,
+            defense,
+        }
     }
 
     /// The profile of a row in the mob table (health, damage, base defense).
@@ -395,9 +399,9 @@ pub fn net_scale(level: u32) -> f32 {
 
 /// Late regions demand stronger enemies even against matching gear.
 /// Smooth ramp: at 100 +50% health/+25% net damage, at 120 +100%/+50%.
-pub fn endgame_multipliers(level:u32)->(f32,f32,f32) {
-    let steps=level.saturating_sub(80).min(40) as f32;
-    (1.0+steps*0.025,1.0+steps*0.0125,steps*0.0015)
+pub fn endgame_multipliers(level: u32) -> (f32, f32, f32) {
+    let steps = level.saturating_sub(80).min(40) as f32;
+    (1.0 + steps * 0.025, 1.0 + steps * 0.0125, steps * 0.0015)
 }
 ///
 /// Since 04/10/2026 the health takes `strikes_per_mob` blows and the NET
@@ -409,11 +413,16 @@ pub fn mob(p: &Profile, level: u32) -> Mob {
     let net_scale = net_scale(level);
     let a = attack(level) as f32;
     let golpe_esperado = a * (1.0 - MOB_DEFENSE);
-    let (vida,dano,armadura)=endgame_multipliers(level);
+    let (vida, dano, armadura) = endgame_multipliers(level);
     Mob {
-        health: (strikes_per_mob(level) * golpe_esperado * p.health * vida).round().max(1.0) as i32,
+        health: (strikes_per_mob(level) * golpe_esperado * p.health * vida)
+            .round()
+            .max(1.0) as i32,
         attack: (pierceable(level)
-            + mob_net_damage(level) * net_scale * (1.0 + (p.attack - 1.0) * ATTACK_FLATTENING) * dano)
+            + mob_net_damage(level)
+                * net_scale
+                * (1.0 + (p.attack - 1.0) * ATTACK_FLATTENING)
+                * dano)
             .round()
             .max(1.0) as i32,
         defense: (a * (p.defense + armadura).min(0.60)).round().max(0.0) as i32,
@@ -451,7 +460,9 @@ pub fn boss_health(level: u32) -> i32 {
     // Capped at 80 and easing off past 85: Kōgen-tō's giant robots (85-100)
     // ran sword and shield past the 240 s ceiling with the straight 1.2%
     // (267 s at 92, 282 s at 100); the pistol stays well above the 60 s floor.
-    let alem = (level.saturating_sub(60).min(20) as f32 * 0.012 - level.saturating_sub(85) as f32 * 0.004).max(0.0);
+    let alem = (level.saturating_sub(60).min(20) as f32 * 0.012
+        - level.saturating_sub(85) as f32 * 0.004)
+        .max(0.0);
     (BOSS_STRIKES * golpe * (1.0 + alem)).round() as i32
 }
 
@@ -484,8 +495,19 @@ mod testes {
         for n in [1u32, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60] {
             let l = row(n);
             let m = mob(&Profile::novo(1.0, 1.0, 0.0), n);
-            println!("| {n} | {} | {} | {} | {}/{} | {} |", l.0, l.1, l.2, m.health, m.attack, power(n));
-            assert!(l.0 > before.0 && l.1 > before.1 && l.2 > before.2, "level {n} did not grow");
+            println!(
+                "| {n} | {} | {} | {} | {}/{} | {} |",
+                l.0,
+                l.1,
+                l.2,
+                m.health,
+                m.attack,
+                power(n)
+            );
+            assert!(
+                l.0 > before.0 && l.1 > before.1 && l.2 > before.2,
+                "level {n} did not grow"
+            );
             before = l;
         }
         // Straight lines: the difference between two levels does not depend on where you are.
@@ -499,8 +521,16 @@ mod testes {
     fn o_golpe_subtrai_e_tem_piso() {
         let piso_de_100 = (100.0 * FLOOR).round() as i32;
         assert_eq!(damage(100, 30), 70);
-        assert_eq!(damage(100, 100), piso_de_100, "defense igual ao attack: o floor");
-        assert_eq!(damage(100, 1000), piso_de_100, "defense absurda: o floor, nunca imune");
+        assert_eq!(
+            damage(100, 100),
+            piso_de_100,
+            "defense igual ao attack: o floor"
+        );
+        assert_eq!(
+            damage(100, 1000),
+            piso_de_100,
+            "defense absurda: o floor, nunca imune"
+        );
         assert_eq!(damage(3, 1000), 1, "nunca abaixo de 1");
         assert_eq!(damage(100, 0), 100);
         assert_eq!(damage(100, -5), 100, "negative defense does not amplify");
@@ -515,8 +545,14 @@ mod testes {
         // Two steps, like `damage_with_reduction`: the blow rounds FIRST, and the
         // reduction comes on top of the integer. Computing `100 x FLOOR x 0.5` in one
         // go is off by one when the floor lands on half a point.
-        let com_teto = ((damage(100, 100) as f32) * (1.0 - MAX_REDUCTION)).round().max(1.0) as i32;
-        assert_eq!(damage_with_reduction(100, 100, 0.50), com_teto, "floor e cap juntos: ainda nao e' zero");
+        let com_teto = ((damage(100, 100) as f32) * (1.0 - MAX_REDUCTION))
+            .round()
+            .max(1.0) as i32;
+        assert_eq!(
+            damage_with_reduction(100, 100, 0.50),
+            com_teto,
+            "floor e cap juntos: ainda nao e' zero"
+        );
         assert!(com_teto >= 1, "floor mais cap nunca chega a zero");
         assert_eq!(damage_with_reduction(100, 30, 0.0), 70);
     }
@@ -528,12 +564,21 @@ mod testes {
         let p = Profile::novo(1.0, 1.0, 0.0);
         let def_do_31 = defense(31);
         let toma = |n: u32| damage(mob(&p, n).attack, def_do_31);
-        assert!(toma(31) < toma(41) && toma(41) < toma(51), "{} {} {}", toma(31), toma(41), toma(51));
+        assert!(
+            toma(31) < toma(41) && toma(41) < toma(51),
+            "{} {} {}",
+            toma(31),
+            toma(41),
+            toma(51)
+        );
         // Refined (+48%, the refinement cap) lands on the floor: at most ~4x less
         // than expected, never zero.
         let refinado = (def_do_31 as f32 * 1.48) as i32;
         let m = mob(&p, 31);
-        assert_eq!(damage(m.attack, refinado), (m.attack as f32 * FLOOR).round() as i32);
+        assert_eq!(
+            damage(m.attack, refinado),
+            (m.attack as f32 * FLOOR).round() as i32
+        );
     }
 
     /// The mobs' goals, on top of the expected player.
@@ -543,11 +588,17 @@ mod testes {
             let m = mob(&Profile::novo(1.0, 1.0, 0.0), n);
             // The expected one takes exactly the net (after the ramp).
             let liquido = (mob_net_damage(n) * net_scale(n)).round() as i32;
-            assert!((damage(m.attack, defense(n)) - liquido).abs() <= 1, "nível {n}");
+            assert!(
+                (damage(m.attack, defense(n)) - liquido).abs() <= 1,
+                "nível {n}"
+            );
             // And kills in `strikes_per_mob` blows against defense 1.0.
             let def_um = (attack(n) as f32 * MOB_DEFENSE).round() as i32;
             let strikes = (m.health as f32 / damage(attack(n), def_um) as f32).ceil();
-            assert!((strikes - strikes_per_mob(n)).abs() <= 1.0, "nível {n}: {strikes} strikes");
+            assert!(
+                (strikes - strikes_per_mob(n)).abs() <= 1.0,
+                "nível {n}: {strikes} strikes"
+            );
         }
         // The profile comes from the table as it always was.
         let urso = Profile::relativo_ao_lobo(280, 18, 8);
@@ -555,7 +606,10 @@ mod testes {
         assert!((urso.defense - 0.08).abs() < 0.001);
         let rochoso = Profile::relativo_ao_lobo(560, 30, 22);
         assert!((rochoso.defense - 0.22).abs() < 0.001);
-        assert_eq!(Profile::relativo_ao_lobo(9999, 99, 999).defense, MOB_MAX_DEFENSE);
+        assert_eq!(
+            Profile::relativo_ao_lobo(9999, 99, 999).defense,
+            MOB_MAX_DEFENSE
+        );
     }
 
     /// Personality scales only the net: the owlbear (2.8x) does not pierce armor
@@ -569,7 +623,10 @@ mod testes {
         let (tl, to) = (damage(wolf.attack, d), damage(owl.attack, d));
         let expected = 1.0 + 1.8 * ATTACK_FLATTENING;
         assert!((to as f32 / tl as f32 - expected).abs() < 0.2, "{tl} {to}");
-        assert!((owl.attack as f32) < wolf.attack as f32 * 2.0, "the whole attack does not double");
+        assert!(
+            (owl.attack as f32) < wolf.attack as f32 * 2.0,
+            "the whole attack does not double"
+        );
     }
 
     #[test]
@@ -580,7 +637,11 @@ mod testes {
                 + character_attack(n);
             let def = TEMPLATE_DEFENSE * defense_scale(ilvl) + character_defense(n);
             let hp = TEMPLATE_HEALTH * health_scale(ilvl) + character_health(n);
-            assert!((atk - attack(n) as f32).abs() < 1.0, "ilvl {ilvl}: {atk} vs {}", attack(n));
+            assert!(
+                (atk - attack(n) as f32).abs() < 1.0,
+                "ilvl {ilvl}: {atk} vs {}",
+                attack(n)
+            );
             assert!((def - defense(n) as f32).abs() < 1.0);
             assert!((hp - health(n) as f32).abs() < 1.0);
         }
@@ -594,14 +655,23 @@ mod testes {
             let c = boss_attack(n);
             let comum = mob(&Profile::novo(1.0, 1.0, 0.0), n);
             assert!(c > comum.attack);
-            assert_eq!(damage(c, defense(n)), (mob_net_damage(n) * BOSS_NET).round() as i32);
+            assert_eq!(
+                damage(c, defense(n)),
+                (mob_net_damage(n) * BOSS_NET).round() as i32
+            );
             assert!(boss_defense(n) > comum.defense);
             assert!(boss_health(n) > 20 * comum.health);
         }
         // Health is u32 on the wire since protocol 172: a level-80 boss
         // (Skyreach) has its real health, not the old u16 ceiling.
-        assert!(boss_health(80) > u16::MAX as i32, "level 80 passes the old u16 cap");
-        assert!(boss_health(NIVEL_CONTEUDO_TESTE) < i32::MAX / 4, "and never overflows");
+        assert!(
+            boss_health(80) > u16::MAX as i32,
+            "level 80 passes the old u16 cap"
+        );
+        assert!(
+            boss_health(NIVEL_CONTEUDO_TESTE) < i32::MAX / 4,
+            "and never overflows"
+        );
     }
 
     /// In the first levels the mob pierces less: the freshly created character has no armor.
@@ -610,7 +680,11 @@ mod testes {
         let p = Profile::novo(1.0, 1.0, 0.0);
         let sem_armadura = 0;
         let toma = |n: u32| damage(mob(&p, n).attack, sem_armadura);
-        assert!(toma(1) < 10, "wolf do nível 1 contra quem só tem a arma: {}", toma(1));
+        assert!(
+            toma(1) < 10,
+            "wolf do nível 1 contra quem só tem a arma: {}",
+            toma(1)
+        );
         assert!(toma(3) < toma(6) && toma(6) < toma(12));
         assert_eq!(pierceable(EARLY_RAMP), defense(EARLY_RAMP) as f32);
         assert_eq!(pierceable(60), defense(60) as f32);
@@ -622,14 +696,15 @@ mod endgame_tests {
     use super::*;
     #[test]
     fn late_maps_raise_health_damage_and_defense_smoothly() {
-        assert_eq!(endgame_multipliers(79),(1.,1.,0.));
-        assert_eq!(endgame_multipliers(80),(1.,1.,0.));
-        let p=Profile::novo(1.,1.,0.);
-        for n in [80,90,100,110,120] {
-            let m=mob(&p,n);let next=mob(&p,n+1);
-            assert!(next.health>m.health && next.attack>=m.attack && next.defense>=m.defense);
+        assert_eq!(endgame_multipliers(79), (1., 1., 0.));
+        assert_eq!(endgame_multipliers(80), (1., 1., 0.));
+        let p = Profile::novo(1., 1., 0.);
+        for n in [80, 90, 100, 110, 120] {
+            let m = mob(&p, n);
+            let next = mob(&p, n + 1);
+            assert!(next.health > m.health && next.attack >= m.attack && next.defense >= m.defense);
         }
-        assert_eq!(endgame_multipliers(100).0,1.5);
-        assert_eq!(endgame_multipliers(120).0,2.0);
+        assert_eq!(endgame_multipliers(100).0, 1.5);
+        assert_eq!(endgame_multipliers(120).0, 2.0);
     }
 }

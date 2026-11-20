@@ -232,7 +232,6 @@ impl Assentamento {
             Self::Castelo => "Castle",
         }
     }
-
 }
 
 /// Quantos MORADORES o assentamento sustenta, por nivel. Um por construcao.
@@ -866,7 +865,9 @@ mod testes_do_chao {
         let raios: Vec<f32> = (0..64)
             .map(|k| raio_na_direcao(k as f32 / 64.0 * std::f32::consts::TAU))
             .collect();
-        let (mn, mx) = raios.iter().fold((f32::MAX, 0.0f32), |a, r| (a.0.min(*r), a.1.max(*r)));
+        let (mn, mx) = raios
+            .iter()
+            .fold((f32::MAX, 0.0f32), |a, r| (a.0.min(*r), a.1.max(*r)));
         assert!(
             mx - mn > RAIO * 0.12,
             "costa quase circular ({mn:.0}..{mx:.0} u): parece uma moeda"

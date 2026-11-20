@@ -29,7 +29,11 @@ fn nenhuma_chave_repetida() {
             erros.push(format!("{pt:?} está em {antes} e de novo em {parte}"));
         }
     }
-    assert!(erros.is_empty(), "chave repetida (a segunda nunca é usada):\n{}", erros.join("\n"));
+    assert!(
+        erros.is_empty(),
+        "chave repetida (a segunda nunca é usada):\n{}",
+        erros.join("\n")
+    );
 }
 
 #[test]
@@ -39,19 +43,27 @@ fn os_buracos_do_portugues_batem_com_os_do_ingles() {
         let a = idioma::buracos(pt);
         let b = idioma::buracos(en);
         if a.len() != b.len() {
-            erros.push(format!("[{parte}] {pt:?} tem {} buraco(s), o inglês tem {}", a.len(), b.len()));
+            erros.push(format!(
+                "[{parte}] {pt:?} tem {} buraco(s), o inglês tem {}",
+                a.len(),
+                b.len()
+            ));
             continue;
         }
         // Buraco nomeado tem que existir dos dois lados com o MESMO nome: é o
         // nome que permite trocar a ordem na tradução.
         for nome in a.iter().flatten() {
             if !b.contains(&Some(nome)) {
-                erros.push(format!("[{parte}] {pt:?}: o inglês não tem o buraco {{{nome}}}"));
+                erros.push(format!(
+                    "[{parte}] {pt:?}: o inglês não tem o buraco {{{nome}}}"
+                ));
             }
         }
         for nome in b.iter().flatten() {
             if !a.contains(&Some(nome)) {
-                erros.push(format!("[{parte}] {en:?}: o buraco {{{nome}}} não existe no português"));
+                erros.push(format!(
+                    "[{parte}] {en:?}: o buraco {{{nome}}} não existe no português"
+                ));
             }
         }
         // Mistura de anônimo com nomeado no mesmo verbete: a substituição
@@ -60,10 +72,17 @@ fn os_buracos_do_portugues_batem_com_os_do_ingles() {
         let anon_pt = a.iter().filter(|n| n.is_none()).count();
         let anon_en = b.iter().filter(|n| n.is_none()).count();
         if anon_pt != anon_en {
-            erros.push(format!("[{parte}] {pt:?}: {anon_pt} buraco(s) anônimo(s) no pt, {anon_en} no en"));
+            erros.push(format!(
+                "[{parte}] {pt:?}: {anon_pt} buraco(s) anônimo(s) no pt, {anon_en} no en"
+            ));
         }
     }
-    assert!(erros.is_empty(), "{} problema(s) de buraco:\n{}", erros.len(), erros.join("\n"));
+    assert!(
+        erros.is_empty(),
+        "{} problema(s) de buraco:\n{}",
+        erros.len(),
+        erros.join("\n")
+    );
 }
 
 #[test]
@@ -76,7 +95,8 @@ fn nenhuma_traducao_vazia_ou_igual_por_engano() {
         // Frase igual nos dois idiomas é legítima ("Katana", "Tier {}"), mas
         // então o verbete não serve pra nada e só custa busca. Só reclama se
         // tiver acento — aí é português que ficou sem traduzir.
-        if pt == en && pt.chars().any(|c| "áéíóúâêôãõçÁÉÍÓÚÂÊÔÃÕÇ".contains(c)) {
+        if pt == en && pt.chars().any(|c| "áéíóúâêôãõçÁÉÍÓÚÂÊÔÃÕÇ".contains(c))
+        {
             erros.push(format!("[{parte}] {pt:?} está igual no inglês, com acento"));
         }
     }
@@ -101,7 +121,10 @@ fn o_dicionario_traduz_de_ponta_a_ponta() {
 fn frase_montada_de_verdade_casa() {
     // Um verbete com buraco, pego do dicionário, preenchido e conferido.
     assert_eq!(idioma::tr_em(Idioma::Pt, "Level 12"), "Nível 12");
-    assert_eq!(idioma::tr_em(Idioma::Pt, "Requires level 30"), "Requer nível 30");
+    assert_eq!(
+        idioma::tr_em(Idioma::Pt, "Requires level 30"),
+        "Requer nível 30"
+    );
 }
 
 /// A troca de idioma vale pro processo inteiro, na hora.
@@ -159,10 +182,17 @@ fn nenhum_modelo_casa_qualquer_coisa() {
             fora
         };
         if !fixo.chars().any(char::is_alphabetic) {
-            erros.push(format!("[{parte}] {pt:?}: o texto fixo {fixo:?} não tem letra nenhuma"));
+            erros.push(format!(
+                "[{parte}] {pt:?}: o texto fixo {fixo:?} não tem letra nenhuma"
+            ));
         }
     }
-    assert!(erros.is_empty(), "{} modelo(s) que casam qualquer frase:\n{}", erros.len(), erros.join("\n"));
+    assert!(
+        erros.is_empty(),
+        "{} modelo(s) que casam qualquer frase:\n{}",
+        erros.len(),
+        erros.join("\n")
+    );
 }
 
 /// Buracos colados (`"…{}{}"`) não entram no dicionário.
@@ -209,7 +239,10 @@ fn nenhum_verbete_tem_buracos_colados() {
 /// this one was checking English.
 #[test]
 fn o_feminino_nao_vaza_pro_ingles() {
-    use shared::idioma::{tr_em, tr_f_em, Idioma::{En, Pt}};
+    use shared::idioma::{
+        tr_em, tr_f_em,
+        Idioma::{En, Pt},
+    };
 
     // A fonte e' inglesa: a chave e' a palavra inglesa.
     assert_eq!(tr_f_em(Pt, "Epic"), "Épica");

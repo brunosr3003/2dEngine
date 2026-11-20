@@ -142,12 +142,16 @@ pub fn destino_do_toque(p: Vec2) -> (Vec2, Option<u8>) {
         return (mq(c.fundeadouro()), Some(c.ilha as u8));
     }
     // Land, or Abyssia's closed lagoon (water no hull reaches): the island.
-    let na_lagoa = shared::mar::ilhas().iter().any(|i| q.distance(i.centro) < shared::mar::raio_da_lagoa(i, q));
+    let na_lagoa = shared::mar::ilhas()
+        .iter()
+        .any(|i| q.distance(i.centro) < shared::mar::raio_da_lagoa(i, q));
     if !shared::mar::navegavel(q.x, q.y) || na_lagoa {
         let perto = shared::mar::ilhas()
             .iter()
             .filter(|i| q.distance(i.centro) <= i.raio + TOQUE_NA_ILHA)
-            .min_by(|a, b| (q.distance(a.centro) - a.raio).total_cmp(&(q.distance(b.centro) - b.raio)));
+            .min_by(|a, b| {
+                (q.distance(a.centro) - a.raio).total_cmp(&(q.distance(b.centro) - b.raio))
+            });
         if let Some(i) = perto {
             return (mq(i.fundeadouro()), Some(i.ilha as u8));
         }
@@ -205,7 +209,10 @@ pub fn ilha_da_missao(quest: u16) -> Option<u8> {
         return Some(def.obj_target as u8);
     }
     let z = shared::quests::zona_da_missao(quest)?;
-    shared::terreno::ARQUIPELAGO.iter().position(|a| a.zona == z).map(|i| i as u8)
+    shared::terreno::ARQUIPELAGO
+        .iter()
+        .position(|a| a.zona == z)
+        .map(|i| i as u8)
 }
 
 impl RotaDoMar {
@@ -220,7 +227,9 @@ impl RotaDoMar {
     /// The island that matters NOW (the only one with an edge marker,
     /// `mar_cena::rotulos`): the crossing's dock, else the nearest.
     pub fn ilha_em_foco(&self, eu: Vec2) -> Option<u8> {
-        self.atracar.filter(|_| self.ativa()).or_else(|| porto_mais_perto(eu).map(|p| p.0))
+        self.atracar
+            .filter(|_| self.ativa())
+            .or_else(|| porto_mais_perto(eu).map(|p| p.0))
     }
 
     /// Sail to `destino`; `atracar` = dock at that island on arrival. The
@@ -312,14 +321,24 @@ impl RotaDoMar {
     }
 
     /// The status strip: "Sailing to Glacier · 320 m · 0:32".
-    pub fn faixa(&self, eu: Option<Vec2>, restante: Option<f32>, velocidade: f32) -> Option<String> {
+    pub fn faixa(
+        &self,
+        eu: Option<Vec2>,
+        restante: Option<f32>,
+        velocidade: f32,
+    ) -> Option<String> {
         let (d, eu) = (self.destino?, eu?);
         let m = restante.unwrap_or_else(|| eu.distance(d));
         let eta = formata_eta(eta_s(m, velocidade));
-        Some(match self.atracar.and_then(|i| shared::mar::vista_da_ilha(i as usize)) {
-            Some(v) => format!("Sailing to {} · {:.0} m · {}", v.nome, m, eta),
-            None => format!("Sailing · {:.0} m · {}", m, eta),
-        })
+        Some(
+            match self
+                .atracar
+                .and_then(|i| shared::mar::vista_da_ilha(i as usize))
+            {
+                Some(v) => format!("Sailing to {} · {:.0} m · {}", v.nome, m, eta),
+                None => format!("Sailing · {:.0} m · {}", m, eta),
+            },
+        )
     }
 
     /// The sea's AUTO modes scan at most every `VARREDURA_S` (mobile: the
@@ -339,16 +358,35 @@ impl RotaDoMar {
     pub fn proximo_ninho(&mut self, eu: Vec2, agora: f64) -> Option<Vec2> {
         let ninhos = shared::mar::ninhos();
         // Standing on a nest with nothing around: mark it empty.
-        if let Some((k, _)) = ninhos.iter().enumerate().find(|(_, n)| mq(**n).distance(eu) < 14.0) {
-            if !self.ninhos_vazios.iter().any(|(i, ate)| *i == k && *ate > agora) {
-                let velho = (0..self.ninhos_vazios.len()).min_by(|a, b| self.ninhos_vazios[*a].1.total_cmp(&self.ninhos_vazios[*b].1)).unwrap_or(0);
+        if let Some((k, _)) = ninhos
+            .iter()
+            .enumerate()
+            .find(|(_, n)| mq(**n).distance(eu) < 14.0)
+        {
+            if !self
+                .ninhos_vazios
+                .iter()
+                .any(|(i, ate)| *i == k && *ate > agora)
+            {
+                let velho = (0..self.ninhos_vazios.len())
+                    .min_by(|a, b| {
+                        self.ninhos_vazios[*a]
+                            .1
+                            .total_cmp(&self.ninhos_vazios[*b].1)
+                    })
+                    .unwrap_or(0);
                 self.ninhos_vazios[velho] = (k, agora + NINHO_VAZIO_S);
             }
         }
         ninhos
             .iter()
             .enumerate()
-            .filter(|(k, _)| !self.ninhos_vazios.iter().any(|(i, ate)| i == k && *ate > agora))
+            .filter(|(k, _)| {
+                !self
+                    .ninhos_vazios
+                    .iter()
+                    .any(|(i, ate)| i == k && *ate > agora)
+            })
             .map(|(_, n)| mq(*n))
             .min_by(|a, b| a.distance_squared(eu).total_cmp(&b.distance_squared(eu)))
     }
@@ -359,19 +397,40 @@ impl RotaDoMar {
     /// opens one row per port under the minimap — name, distance, ETA and
     /// "Sail". Returns the island chosen. Rows are text built only while the
     /// panel is open.
-    pub fn desenha_portos(&mut self, disco: (Vec2, f32), s: f32, eu: Option<Vec2>, velocidade: f32) -> Option<u8> {
+    pub fn desenha_portos(
+        &mut self,
+        disco: (Vec2, f32),
+        s: f32,
+        eu: Option<Vec2>,
+        velocidade: f32,
+    ) -> Option<u8> {
         let (botao, painel) = retangulos_dos_portos(disco, s);
         self.ancora = Some((botao, painel));
         let m = Vec2::from(mouse_position());
         let sobre = botao.toca(m);
         let ativo = self.portos_abertos;
         estilo::ret_arredondado(botao, botao.h * 0.5, estilo::alfa(estilo::FUNDO, 0.92));
-        estilo::borda_arredondada(botao, botao.h * 0.5, 1.0, estilo::alfa(estilo::OURO, if sobre || ativo { 0.9 } else { 0.45 }));
-        let cor = if sobre || ativo { estilo::OURO } else { estilo::TEXTO };
+        estilo::borda_arredondada(
+            botao,
+            botao.h * 0.5,
+            1.0,
+            estilo::alfa(estilo::OURO, if sobre || ativo { 0.9 } else { 0.45 }),
+        );
+        let cor = if sobre || ativo {
+            estilo::OURO
+        } else {
+            estilo::TEXTO
+        };
         let e = botao.h / 2.3;
         crate::mar_cena::ancora(vec2(botao.x + e * 1.4, botao.center().y), e * 0.75, cor);
         let rotulo = if ativo { "Close" } else { "Sail to…" };
-        estilo::texto_forte(botao.x + e * 2.6, botao.center().y + e * 0.48, rotulo, 12, cor);
+        estilo::texto_forte(
+            botao.x + e * 2.6,
+            botao.center().y + e * 0.48,
+            rotulo,
+            12,
+            cor,
+        );
         let clique = crate::foco::clique();
         if clique && sobre {
             self.portos_abertos = !self.portos_abertos;
@@ -392,12 +451,21 @@ impl RotaDoMar {
             let info = format!("{:.0} m · {}", d, formata_eta(eta_s(*d, velocidade)));
             let e = linha / 2.4;
             let bw = largura_do_botao(e);
-            let b = Rect::new(painel.x + painel.w - bw - e * 0.8, y + e * 0.35, bw, linha - e * 0.7);
+            let b = Rect::new(
+                painel.x + painel.w - bw - e * 0.8,
+                y + e * 0.35,
+                bw,
+                linha - e * 0.7,
+            );
             let x_info = b.x - e * 1.2 - estilo::medir(&info, 12);
             // A long island name steps down a size rather than run into
             // the distance (only on a screen too narrow for the panel).
             let cabe = x_info - painel.x - e * 2.2;
-            let tam = if estilo::medir(nome, 14) <= cabe { 14 } else { 11 };
+            let tam = if estilo::medir(nome, 14) <= cabe {
+                14
+            } else {
+                11
+            };
             estilo::texto(painel.x + e * 1.2, y + linha * 0.66, nome, tam, cor);
             estilo::texto(x_info, y + linha * 0.66, &info, 12, estilo::SUAVE);
             estilo::botao(b, "Sail", estilo::estado_de(b, false, destino), true);
@@ -434,7 +502,10 @@ pub fn retangulos_dos_portos(disco: (Vec2, f32), _s: f32) -> (Rect, Rect) {
     let bx = (c.x - w * 0.5).min(tela_w - w - 6.0);
     let botao = Rect::new(bx, c.y + raio - h * 0.3, w, h);
     let ilhas = shared::mar::ilhas();
-    let nome = ilhas.iter().map(|i| estilo::medir(i.nome, 14)).fold(0.0, f32::max);
+    let nome = ilhas
+        .iter()
+        .map(|i| estilo::medir(i.nome, 14))
+        .fold(0.0, f32::max);
     let info = estilo::medir("9999 m · 9:99", 12);
     let largura = e * 1.2 + nome + e * 1.4 + info + e * 1.0 + largura_do_botao(e) + e * 0.8;
     let tela = crate::render3d::tela().0;
@@ -538,7 +609,10 @@ mod testes {
         let i = &shared::mar::ilhas()[0];
         r.para_ilha(i.ilha as u8, 0.0);
         let f = r.faixa(Some(vec2(0.0, 0.0)), Some(300.0), 10.0).unwrap();
-        assert!(f.starts_with(&format!("Sailing to {}", i.nome)) && f.ends_with("30 s"), "{f}");
+        assert!(
+            f.starts_with(&format!("Sailing to {}", i.nome)) && f.ends_with("30 s"),
+            "{f}"
+        );
     }
 
     /// AUTO COMBAT AT SEA picks the NEAREST sea mob (a shark beyond an eel
@@ -556,7 +630,9 @@ mod testes {
             (3, EntityTag::Enemy, 72, 5.0),
             (4, EntityTag::Enemy, 70, 14.0),
         ] {
-            metas.push(shared::EntityMeta { skins: 0, cla: String::new(),
+            metas.push(shared::EntityMeta {
+                skins: 0,
+                cla: String::new(),
                 pk: Default::default(),
                 auras: 0,
                 id: EntityId(id),
@@ -567,8 +643,9 @@ mod testes {
                 kind,
                 nivel: 1,
                 desafio: None,
-            aparencia: 0,
-            poder: 0, renascimentos: 0,
+                aparencia: 0,
+                poder: 0,
+                renascimentos: 0,
             });
             estados.push(shared::EntityState::quantize(
                 EntityId(id),
@@ -582,14 +659,21 @@ mod testes {
         let mut a = crate::auto_combate::AutoCombate::default();
         let eu = mq(n);
         a.ligar(eu);
-        assert_eq!(a.escolher(&w, None, 0.0, None), Some(EntityId(3)), "not the nearest sea mob");
+        assert_eq!(
+            a.escolher(&w, None, 0.0, None),
+            Some(EntityId(3)),
+            "not the nearest sea mob"
+        );
         for id in [2, 3, 4] {
             w.ents.get_mut(&EntityId(id)).unwrap().state.hp = 0;
         }
         assert_eq!(a.escolher(&w, Some(EntityId(3)), 1.0, None), None);
         let mut r = RotaDoMar::default();
         let ninho = r.proximo_ninho(eu, 1.0).expect("no nest to hunt");
-        assert!(ninho.distance(eu) > 14.0, "hunts the nest it already cleared");
+        assert!(
+            ninho.distance(eu) > 14.0,
+            "hunts the nest it already cleared"
+        );
     }
 
     /// THE PILOT'S SWITCH follows AUTO COMBAT at sea, is resent while on
@@ -598,16 +682,33 @@ mod testes {
     #[test]
     fn o_piloto_segue_o_auto_e_recua_com_o_casco() {
         let mut r = RotaDoMar::default();
-        assert_eq!(r.piloto.pedido(false, 0.0), None, "sent an off it never turned on");
+        assert_eq!(
+            r.piloto.pedido(false, 0.0),
+            None,
+            "sent an off it never turned on"
+        );
         assert_eq!(r.piloto.pedido(true, 0.0), Some(true));
         assert_eq!(r.piloto.pedido(true, 1.0), None, "resent every frame");
-        assert_eq!(r.piloto.pedido(true, 1.0 + PILOTO_REENVIO_S), Some(true), "never resent");
+        assert_eq!(
+            r.piloto.pedido(true, 1.0 + PILOTO_REENVIO_S),
+            Some(true),
+            "never resent"
+        );
         r.iniciar(vec2(50.0, 0.0), None, 2.0);
         assert!(r.piloto.ligado(), "a new crossing switched the pilot off");
         assert!(!r.piloto.casco(0.5, false));
-        assert!(!r.piloto.casco(0.15, true), "retreated with the repair ready");
-        assert!(r.piloto.casco(0.15, false), "no retreat at 15% with no repair");
-        assert!(!r.piloto.casco(0.4, false) && r.piloto.recuando, "came back under half");
+        assert!(
+            !r.piloto.casco(0.15, true),
+            "retreated with the repair ready"
+        );
+        assert!(
+            r.piloto.casco(0.15, false),
+            "no retreat at 15% with no repair"
+        );
+        assert!(
+            !r.piloto.casco(0.4, false) && r.piloto.recuando,
+            "came back under half"
+        );
         assert!(!r.piloto.casco(0.6, false) && !r.piloto.recuando);
         assert_eq!(r.piloto.pedido(false, 9.0), Some(false));
     }
@@ -620,7 +721,10 @@ mod testes {
         let mut r = RotaDoMar::default();
         let eu = mq(ninhos[0]) + vec2(2.0, 0.0);
         let primeiro = r.proximo_ninho(eu, 0.0).unwrap();
-        assert!(primeiro.distance(mq(ninhos[0])) > 1.0, "went back to the empty nest it is on");
+        assert!(
+            primeiro.distance(mq(ninhos[0])) > 1.0,
+            "went back to the empty nest it is on"
+        );
         assert!(r.pode_varrer(1.0));
         assert!(!r.pode_varrer(1.1), "scans every frame");
         assert!(r.pode_varrer(1.0 + VARREDURA_S + 0.01));

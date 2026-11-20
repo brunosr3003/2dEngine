@@ -39,20 +39,28 @@ impl GameWorld {
     /// Both sides of a PvP hit are in PK combat from now on.
     pub(crate) fn marcar_combate_pk(&mut self, a: EntityId, b: EntityId) {
         let ate = self.sim_time_s + shared::pk::COMBATE_PK_S;
-        for s in self.sessions.values_mut().filter(|s| s.entity_id == a || s.entity_id == b) {
+        for s in self
+            .sessions
+            .values_mut()
+            .filter(|s| s.entity_id == a || s.entity_id == b)
+        {
             s.pk_combate_ate = s.pk_combate_ate.max(ate);
         }
     }
 
     pub fn esta_permanecendo(&self, sid: &SessionId) -> bool {
-        self.sessions.get(sid).is_some_and(|s| s.permanece_ate.is_some())
+        self.sessions
+            .get(sid)
+            .is_some_and(|s| s.permanece_ate.is_some())
     }
 
     /// The connection of `sid` dropped, or the player asked to leave. `true`
     /// = the body stays in the world: the caller must NOT save and remove the
     /// session now (`tick_permanencia` hands it back when it is done).
     pub fn comecar_permanencia(&mut self, sid: SessionId) -> bool {
-        let Some(s) = self.sessions.get(&sid) else { return false };
+        let Some(s) = self.sessions.get(&sid) else {
+            return false;
+        };
         if s.permanece_ate.is_some() {
             return true;
         }
@@ -71,7 +79,8 @@ impl GameWorld {
         let nome = s.name.clone();
         // Nothing of the player's own goes on: the body stands still.
         self.troca_encerra(sid, false, "Trade cancelled: the other player left.");
-        self.troca_convites.retain(|k, (de, _)| *k != sid && *de != sid);
+        self.troca_convites
+            .retain(|k, (de, _)| *k != sid && *de != sid);
         self.social_pendentes.remove(&sid);
         if let Some(s) = self.sessions.get_mut(&sid) {
             s.permanece_ate = Some(ate);
@@ -81,14 +90,20 @@ impl GameWorld {
             s.coleta_no = None;
             s.piloto = Default::default();
         }
-        tracing::info!("{nome} saiu com PK: o corpo fica {:.0} s no mundo", shared::pk::PERMANENCIA_S);
+        tracing::info!(
+            "{nome} saiu com PK: o corpo fica {:.0} s no mundo",
+            shared::pk::PERMANENCIA_S
+        );
         if let Some(ctx) = &self.auth_ctx {
             let (pool, zona, canal) = (ctx.pool.clone(), self.zona.clone(), canal_daqui());
-            let host = std::env::var("MMO_HOST_PUBLICO")
-                .unwrap_or_else(|_| std::env::var("BIND_ADDR").unwrap_or_else(|_| "127.0.0.1:9000".into()));
+            let host = std::env::var("MMO_HOST_PUBLICO").unwrap_or_else(|_| {
+                std::env::var("BIND_ADDR").unwrap_or_else(|_| "127.0.0.1:9000".into())
+            });
             tokio::spawn(async move {
                 let s = shared::pk::PERMANENCIA_S as i64 + 5;
-                if let Err(e) = crate::social::permanencia_comeca(&pool, &nome, &zona, &canal, &host, s).await {
+                if let Err(e) =
+                    crate::social::permanencia_comeca(&pool, &nome, &zona, &canal, &host, s).await
+                {
                     tracing::warn!("pk_permanencia: {e:#}");
                 }
             });
@@ -108,7 +123,8 @@ impl GameWorld {
             let Some(ate) = s.permanece_ate else { continue };
             if s.downed {
                 caidos.push(*sid);
-            } else if s.entity.is_none() || ate <= agora || self.zona_de_saida.contains_key(&s.name) {
+            } else if s.entity.is_none() || ate <= agora || self.zona_de_saida.contains_key(&s.name)
+            {
                 prontos.push(*sid);
             }
         }
@@ -127,7 +143,9 @@ impl GameWorld {
 
     /// Forgets the realm-wide record of `sid`'s lingering body.
     fn permanencia_acabou(&mut self, sid: SessionId) {
-        let Some(s) = self.sessions.get_mut(&sid) else { return };
+        let Some(s) = self.sessions.get_mut(&sid) else {
+            return;
+        };
         s.permanece_ate = None;
         let nome = s.name.clone();
         if let Some(ctx) = &self.auth_ctx {
@@ -148,7 +166,9 @@ impl GameWorld {
         let Some(velho) = self
             .sessions
             .iter()
-            .find(|(_, s)| s.permanece_ate.is_some() && s.name == nome && s.account_id == Some(conta))
+            .find(|(_, s)| {
+                s.permanece_ate.is_some() && s.name == nome && s.account_id == Some(conta)
+            })
             .map(|(k, _)| *k)
         else {
             return false;
@@ -175,16 +195,26 @@ impl GameWorld {
         if self.tutorial_mode || self.dungeon_mode {
             return false;
         }
-        let Some(ctx) = &self.auth_ctx else { return false };
-        let Some(s) = self.sessions.get_mut(&sid) else { return false };
+        let Some(ctx) = &self.auth_ctx else {
+            return false;
+        };
+        let Some(s) = self.sessions.get_mut(&sid) else {
+            return false;
+        };
         if s.permanencia_checada.as_deref() == Some(nome) {
             s.permanencia_checada = None;
             return false;
         }
-        let (pool, tx, zona, canal) = (ctx.pool.clone(), ctx.tx.clone(), self.zona.clone(), canal_daqui());
+        let (pool, tx, zona, canal) = (
+            ctx.pool.clone(),
+            ctx.tx.clone(),
+            self.zona.clone(),
+            canal_daqui(),
+        );
         let nome = nome.to_string();
         tokio::spawn(async move {
-            let destino = match crate::social::permanencia_remota(&pool, &nome, &zona, &canal).await {
+            let destino = match crate::social::permanencia_remota(&pool, &nome, &zona, &canal).await
+            {
                 Ok(d) => d,
                 Err(e) => {
                     tracing::warn!("pk_permanencia: {e:#}");
@@ -198,12 +228,22 @@ impl GameWorld {
 
     /// The realm answered: lingering elsewhere = reconnect THERE (that
     /// channel hands the body back); otherwise the login goes on.
-    pub fn on_permanencia_remota(&mut self, sid: SessionId, nome: String, destino: Option<(String, String)>) {
-        let Some(s) = self.sessions.get_mut(&sid).filter(|s| !s.logged_in) else { return };
+    pub fn on_permanencia_remota(
+        &mut self,
+        sid: SessionId,
+        nome: String,
+        destino: Option<(String, String)>,
+    ) {
+        let Some(s) = self.sessions.get_mut(&sid).filter(|s| !s.logged_in) else {
+            return;
+        };
         match destino {
             Some((zona, host)) => {
                 tracing::info!("login '{nome}': o corpo ainda esta' noutro canal ({zona} {host}) — manda pra la'");
-                let _ = s.handle.to_client.send(ServerMessage::TrocarZona { zona, host });
+                let _ = s
+                    .handle
+                    .to_client
+                    .send(ServerMessage::TrocarZona { zona, host });
             }
             None => {
                 s.permanencia_checada = Some(nome.clone());
@@ -217,7 +257,9 @@ impl GameWorld {
     /// body, a sunk ship washing ashore, the Magic Island's time running
     /// out, a lingering body. `true` = refused (the player was told).
     pub(crate) fn recusa_viagem_em_combate_pk(&self, sid: SessionId) -> bool {
-        let Some(s) = self.sessions.get(&sid) else { return false };
+        let Some(s) = self.sessions.get(&sid) else {
+            return false;
+        };
         if !self.em_combate_pk(s) || self.tutorial_mode || self.dungeon_mode {
             return false;
         }
@@ -245,22 +287,37 @@ impl GameWorld {
             return;
         }
         let mult = crate::economy::xp_multiplier();
-        let Some(k) = self.sessions.values().find(|s| s.entity_id == killer && s.logged_in) else { return };
+        let Some(k) = self
+            .sessions
+            .values()
+            .find(|s| s.entity_id == killer && s.logged_in)
+        else {
+            return;
+        };
         let (quem, renasc, nivel, pk) = (
             k.name.clone(),
             k.renascimentos,
             shared::level_of_xp_with_mult(k.xp, mult),
             k.pk_points > 0,
         );
-        let Some(v) = self.sessions.values().find(|s| s.entity_id == vitima && s.logged_in) else { return };
+        let Some(v) = self
+            .sessions
+            .values()
+            .find(|s| s.entity_id == vitima && s.logged_in)
+        else {
+            return;
+        };
         let pos = v
             .entity
             .and_then(|e| self.ecs.get::<&Position>(e).ok().map(|p| p.0))
             .unwrap_or(Vec2::ZERO);
         let onde = shared::pk::lugar(&self.zona, pos);
         let quando = (now_ms() / 1000) as i64;
-        let (assunto, texto) = shared::pk::carta_de_abate(&quem, renasc, nivel, &onde, quando, pk, area_aberta);
-        let Some(v) = self.sessions.values_mut().find(|s| s.entity_id == vitima) else { return };
+        let (assunto, texto) =
+            shared::pk::carta_de_abate(&quem, renasc, nivel, &onde, quando, pk, area_aberta);
+        let Some(v) = self.sessions.values_mut().find(|s| s.entity_id == vitima) else {
+            return;
+        };
         // Dead is out of the fight: the wash-up / respawn is not "travel".
         v.pk_combate_ate = 0.0;
         v.cartas_de_abate.push((assunto, texto, quem.clone()));
@@ -283,7 +340,10 @@ impl GameWorld {
             for (assunto, texto, matador) in std::mem::take(&mut s.cartas_de_abate) {
                 let (pool, para) = (pool.clone(), para.clone());
                 tokio::spawn(async move {
-                    if let Err(e) = crate::social::carta_de_abate(&pool, &para, &matador, &assunto, &texto).await {
+                    if let Err(e) =
+                        crate::social::carta_de_abate(&pool, &para, &matador, &assunto, &texto)
+                            .await
+                    {
                         tracing::warn!("kill letter to {para}: {e:#}");
                     }
                 });
@@ -307,18 +367,27 @@ mod tests {
         w.zona = "ilha_inicial".into();
         w.imortal = false;
         w.safe_zone = false;
-        let ids = [SessionId(([127, 0, 0, 1], 19851).into()), SessionId(([127, 0, 0, 1], 19852).into())];
+        let ids = [
+            SessionId(([127, 0, 0, 1], 19851).into()),
+            SessionId(([127, 0, 0, 1], 19852).into()),
+        ];
         for (i, sid) in ids.iter().enumerate() {
             let (tx, rx) = mpsc::unbounded_channel();
             std::mem::forget(rx);
-            w.on_connect(SessionHandle { id: *sid, to_client: tx });
+            w.on_connect(SessionHandle {
+                id: *sid,
+                to_client: tx,
+            });
             let eid = EntityId(900 + i as u32);
             let e = w.ecs.spawn((
                 NetId(eid),
                 Position(Vec2::new(10.0 + i as f32, 10.0)),
                 Velocity(Vec2::ZERO),
                 EntityKind::Player,
-                Health { current: 100, max: 100 },
+                Health {
+                    current: 100,
+                    max: 100,
+                },
                 PlayerTag {
                     name: format!("pk{i}"),
                     player_id: PlayerId(i as u64),
@@ -392,7 +461,10 @@ mod tests {
         // Input that arrives anyway is not there: the body stands still.
         let antes = w.ecs.get::<&Position>(e1).unwrap().0;
         segundos(&mut w, 60);
-        assert!(w.sessions.contains_key(&ids[1]), "still in the world after 60 s");
+        assert!(
+            w.sessions.contains_key(&ids[1]),
+            "still in the world after 60 s"
+        );
         assert_eq!(w.ecs.get::<&Position>(e1).unwrap().0, antes, "frozen");
         // Attackable: a red name is fair game for a Peaceful attacker.
         assert!(w.can_damage_player(EntityId(900), EntityId(901)));
@@ -406,7 +478,10 @@ mod tests {
         let (mut w, ids) = mundo();
         w.sessions.get_mut(&ids[0]).unwrap().pk_modo = shared::pk::LIVRE;
         golpe(&mut w, 1);
-        assert!(w.em_combate_pk(&w.sessions[&ids[0]]) && w.em_combate_pk(&w.sessions[&ids[1]]), "both sides");
+        assert!(
+            w.em_combate_pk(&w.sessions[&ids[0]]) && w.em_combate_pk(&w.sessions[&ids[1]]),
+            "both sides"
+        );
         cair(&mut w, ids[0]);
         assert!(w.esta_permanecendo(&ids[0]), "attacked a player 0 s ago");
         // After the 30 s with no PvP, a clean name leaves at once.
@@ -429,7 +504,11 @@ mod tests {
         assert!(w.sessions[&ids[1]].downed, "killed while lingering");
         let xp_morto = w.sessions[&ids[1]].xp;
         assert!(xp_morto < 50_000_000, "the death penalty ran");
-        assert_eq!(w.sessions[&ids[1]].cartas_de_abate.len(), 1, "and the letter");
+        assert_eq!(
+            w.sessions[&ids[1]].cartas_de_abate.len(),
+            1,
+            "and the letter"
+        );
         segundos(&mut w, 1);
         assert!(!w.sessions.contains_key(&ids[1]), "a fallen body leaves");
         let row = &w.characters["pk1"];
@@ -447,7 +526,11 @@ mod tests {
         assert!(w.religar_permanencia("pk1", 2));
         assert!(!w.sessions.contains_key(&ids[1]), "the old session went");
         let row = &w.characters["pk1"];
-        assert_eq!((row.pos, row.hp.current, row.pk.pontos), (Vec2::new(42.0, 17.0), 37, 3), "the same body");
+        assert_eq!(
+            (row.pos, row.hp.current, row.pk.pontos),
+            (Vec2::new(42.0, 17.0), 37, 3),
+            "the same body"
+        );
         assert!(w.copia_fresca("pk1"), "the login spawns from it");
         assert!(!w.religar_permanencia("pk1", 2), "only once");
         // Another account cannot take it.
@@ -482,12 +565,23 @@ mod tests {
         let (tx, rx) = mpsc::unbounded_channel();
         std::mem::forget(rx);
         let novo = SessionId(([127, 0, 0, 1], 19899).into());
-        w.on_connect(SessionHandle { id: novo, to_client: tx });
+        w.on_connect(SessionHandle {
+            id: novo,
+            to_client: tx,
+        });
         w.on_auth_result(
             novo,
-            Ok(crate::auth::AuthSuccess { sessao: None, account_id: 2, username: "pk1".into(), class: "warrior".into() }),
+            Ok(crate::auth::AuthSuccess {
+                sessao: None,
+                account_id: 2,
+                username: "pk1".into(),
+                class: "warrior".into(),
+            }),
         );
-        assert!(w.esta_permanecendo(&ids[1]), "logging in again does not end the linger");
+        assert!(
+            w.esta_permanecendo(&ids[1]),
+            "logging in again does not end the linger"
+        );
     }
 
     #[test]
@@ -503,7 +597,10 @@ mod tests {
         assert_eq!(assunto, "You were killed by pk0");
         assert_eq!(matador, "pk0");
         assert!(texto.starts_with("pk0 [R2 · Lv "), "{texto}");
-        assert!(texto.contains("(10, 10)") || texto.contains("(11, 10)"), "the place: {texto}");
+        assert!(
+            texto.contains("(10, 10)") || texto.contains("(11, 10)"),
+            "the place: {texto}"
+        );
         assert!(texto.contains("(Brasília time)"), "the time: {texto}");
         // A Peaceful clean victim: the killer is red now, and the letter says so.
         assert!(texto.contains("The killer has PK"), "{texto}");
@@ -512,13 +609,19 @@ mod tests {
             w.step(shared::TICK_DT);
         }
         assert_eq!(w.sessions[&ids[1]].cartas_de_abate.len(), 1);
-        assert!(w.sessions[&ids[0]].cartas_de_abate.is_empty(), "the killer gets none");
+        assert!(
+            w.sessions[&ids[0]].cartas_de_abate.is_empty(),
+            "the killer gets none"
+        );
         // A death with no player behind it (a mob, the sea): no letter.
         let (mut w, ids) = mundo();
         let e1 = w.sessions[&ids[1]].entity.unwrap();
         w.ecs.get::<&mut Health>(e1).unwrap().current = 0;
         w.step(shared::TICK_DT);
         assert!(w.sessions[&ids[1]].downed);
-        assert!(w.sessions[&ids[1]].cartas_de_abate.is_empty(), "a mob kill sends none");
+        assert!(
+            w.sessions[&ids[1]].cartas_de_abate.is_empty(),
+            "a mob kill sends none"
+        );
     }
 }

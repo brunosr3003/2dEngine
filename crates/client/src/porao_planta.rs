@@ -38,7 +38,8 @@ impl Desenho {
             let passos = if s.raio >= 10.0 { 8 } else { 4 };
             let centro = mq(p.ancora + s.centro);
             for k in 0..passos {
-                let a = std::f32::consts::FRAC_PI_4 + k as f32 * std::f32::consts::TAU / passos as f32;
+                let a =
+                    std::f32::consts::FRAC_PI_4 + k as f32 * std::f32::consts::TAU / passos as f32;
                 let dir = vec2(a.cos(), a.sin());
                 // The room's edge in this direction: caves wobble (`raio_em`).
                 let borda = p.raio_em(i, g(centro + dir));
@@ -61,7 +62,12 @@ impl Desenho {
         for (i, q) in self.tochas.iter().enumerate() {
             let chama = 0.75 + 0.25 * (t * 7.0 + i as f32 * 1.7).sin();
             let pe = vec3(q.x, y, q.y);
-            draw_cube(pe + vec3(0.0, 0.75, 0.0), vec3(0.16, 1.5, 0.16), None, Color::from_rgba(70, 48, 30, 255));
+            draw_cube(
+                pe + vec3(0.0, 0.75, 0.0),
+                vec3(0.16, 1.5, 0.16),
+                None,
+                Color::from_rgba(70, 48, 30, 255),
+            );
             draw_cube(
                 pe + vec3(0.0, 1.62, 0.0),
                 vec3(0.3, 0.34 * chama, 0.3),
@@ -85,22 +91,41 @@ fn desenha_portao(p: Vec3, dir: Vec2, t: f32) {
     let barras = 7;
     for k in 0..barras {
         let d = -largura * 0.5 + largura * (k as f32 + 0.5) / barras as f32;
-        let off = if ao_longo_x { vec3(d, 0.0, 0.0) } else { vec3(0.0, 0.0, d) };
-        draw_cube(p + off + vec3(0.0, 1.05, 0.0), vec3(0.14, 2.1, 0.14), None, ferro);
+        let off = if ao_longo_x {
+            vec3(d, 0.0, 0.0)
+        } else {
+            vec3(0.0, 0.0, d)
+        };
+        draw_cube(
+            p + off + vec3(0.0, 1.05, 0.0),
+            vec3(0.14, 2.1, 0.14),
+            None,
+            ferro,
+        );
     }
     let viga = if ao_longo_x {
         vec3(largura, 0.26, 0.3)
     } else {
         vec3(0.3, 0.26, largura)
     };
-    draw_cube(p + vec3(0.0, 2.15, 0.0), viga, None, Color::from_rgba(44, 46, 54, 255));
+    draw_cube(
+        p + vec3(0.0, 2.15, 0.0),
+        viga,
+        None,
+        Color::from_rgba(44, 46, 54, 255),
+    );
     let a = 0.45 + 0.25 * (t * 2.5).sin();
     let brilho = if ao_longo_x {
         vec3(largura, 0.04, 0.9)
     } else {
         vec3(0.9, 0.04, largura)
     };
-    draw_cube(p + vec3(0.0, 0.07, 0.0), brilho, None, Color::new(0.85, 0.18, 0.12, a));
+    draw_cube(
+        p + vec3(0.0, 0.07, 0.0),
+        brilho,
+        None,
+        Color::new(0.85, 0.18, 0.12, a),
+    );
 }
 
 /// One drawing per plan, built the first time it's needed.

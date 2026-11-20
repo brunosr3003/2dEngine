@@ -44,7 +44,10 @@ fn forma_de_area(raio: f32, alcance: f32) -> Skill {
 
 /// Does this active end invisibility when used (it hits or pulls)?
 fn e_ofensiva(t: TipoAtiva) -> bool {
-    matches!(t, TipoAtiva::Nova | TipoAtiva::Meteoro | TipoAtiva::Provocar)
+    matches!(
+        t,
+        TipoAtiva::Nova | TipoAtiva::Meteoro | TipoAtiva::Provocar
+    )
 }
 
 /// How far a Shadowstep goes and where it stops: toward `alvo` (one body
@@ -107,8 +110,12 @@ impl GameWorld {
             self.rejeita_skill(sid, id, "You cannot attack in the safe zone.");
             return;
         }
-        let (atk, crit_chance, extra_crit, hp_max) =
-            (s.stats.attack_damage, s.chance_de_crit(agora), s.extra_de_dano_crit(agora), s.stats.hp_max);
+        let (atk, crit_chance, extra_crit, hp_max) = (
+            s.stats.attack_damage,
+            s.chance_de_crit(agora),
+            s.extra_de_dano_crit(agora),
+            s.stats.hp_max,
+        );
         let selecionado = s.target;
 
         // The strikes need a valid enemy in reach, checked BEFORE paying.
@@ -140,7 +147,11 @@ impl GameWorld {
                         .map(|(_, (_, p, _))| p.0)
                 })
                 .filter(|p| p.distance(de) <= def.alcance + 1.0);
-            let dir = self.ecs.get::<&Velocity>(entity).map(|v| v.0).unwrap_or(Vec2::ZERO);
+            let dir = self
+                .ecs
+                .get::<&Velocity>(entity)
+                .map(|v| v.0)
+                .unwrap_or(Vec2::ZERO);
             if alvo.is_none() && dir.length_squared() < 1e-4 {
                 self.rejeita_skill(sid, id, "Select a target or move to choose where to step.");
                 return;
@@ -179,7 +190,13 @@ impl GameWorld {
                 let vel = (destino - de) / (passos as f32 * dt);
                 for _ in 0..passos {
                     let proxima = match &self.ilha {
-                        Some(i) => i.mover_com_degrau(pos, vel, dt, ENTITY_RADIUS, shared::terreno::DEGRAU_BLOCOS),
+                        Some(i) => i.mover_com_degrau(
+                            pos,
+                            vel,
+                            dt,
+                            ENTITY_RADIUS,
+                            shared::terreno::DEGRAU_BLOCOS,
+                        ),
                         None => self.map.move_and_slide(pos, vel, dt, ENTITY_RADIUS),
                     };
                     if proxima.distance(pos) < 1e-4 {
@@ -213,7 +230,11 @@ impl GameWorld {
                 let alvos = self.alvos_da_habilidade(dono, de, dir, centro, &area);
                 let crit = crit_chance > 0.0 && fastrand::f32() < crit_chance;
                 let base = ((atk as f32) * fator).round().max(1.0) as i32;
-                let dano = if crit { super::golpe_critico_com(base, extra_crit) } else { base };
+                let dano = if crit {
+                    super::golpe_critico_com(base, extra_crit)
+                } else {
+                    base
+                };
                 for &(net, p) in &alvos {
                     self.pending_skill_hits.push(PendingSkillHit {
                         target_net: net,
@@ -222,14 +243,19 @@ impl GameWorld {
                         hurt_dir: (de - p).normalize_or_zero(),
                         is_crit: crit,
                         from_player: true,
-                        knockback: if def.tipo == TipoAtiva::Nova { 0.5 } else { 0.0 },
+                        knockback: if def.tipo == TipoAtiva::Nova {
+                            0.5
+                        } else {
+                            0.0
+                        },
                         drain_tier: 0,
                     });
                 }
                 if def.tipo == TipoAtiva::Meteoro {
                     // Stuns monsters, never a boss (its telegraphs would stop).
                     let ate = agora + def.duracao_s;
-                    let atingidos: std::collections::HashSet<EntityId> = alvos.iter().map(|a| a.0).collect();
+                    let atingidos: std::collections::HashSet<EntityId> =
+                        alvos.iter().map(|a| a.0).collect();
                     for (_, (net, tag)) in self.ecs.query_mut::<(&NetId, &mut EnemyTag)>() {
                         if atingidos.contains(&net.0) && !tag.is_boss && tag.stunned_until < ate {
                             tag.stunned_until = ate;
@@ -273,7 +299,10 @@ impl GameWorld {
                     }
                 }
                 let cura = ((hp_max as f32) * fator).round().max(1.0) as i32;
-                self.pending_heals.push(PendingHeal { target_net: dono, amount: cura });
+                self.pending_heals.push(PendingHeal {
+                    target_net: dono,
+                    amount: cura,
+                });
             }
             TipoAtiva::Saque => {
                 duracao_fx = def.duracao_s;
@@ -325,14 +354,21 @@ impl GameWorld {
 
     fn avisar_invisibilidade(&self, eid: EntityId, segundos: f32) {
         for s in self.sessions.values().filter(|s| s.logged_in) {
-            let _ = s.handle.to_client.send(ServerMessage::Invisibilidade { eid, segundos });
+            let _ = s
+                .handle
+                .to_client
+                .send(ServerMessage::Invisibilidade { eid, segundos });
         }
     }
 
     /// INVISIBILITY off (attack, skill, timeout). A downed body keeps its
     /// `Untargetable` (the downed state owns it then).
     pub(super) fn quebrar_invisibilidade(&mut self, sid: SessionId) {
-        let Some(s) = self.sessions.get_mut(&sid).filter(|s| s.invisivel_ate > 0.0) else {
+        let Some(s) = self
+            .sessions
+            .get_mut(&sid)
+            .filter(|s| s.invisivel_ate > 0.0)
+        else {
             return;
         };
         s.invisivel_ate = 0.0;
@@ -399,13 +435,19 @@ mod testes {
         let sid = SessionId(([127, 0, 0, 1], 47_301).into());
         let (tx, rx) = mpsc::unbounded_channel();
         std::mem::forget(rx);
-        w.on_connect(SessionHandle { id: sid, to_client: tx });
+        w.on_connect(SessionHandle {
+            id: sid,
+            to_client: tx,
+        });
         let s = w.sessions.get_mut(&sid).unwrap();
         s.logged_in = true;
         s.name = "Ativo".into();
         s.renascimentos = r;
         s.xp = shared::progressao::xp_do_nivel_exibido(100, crate::economy::xp_multiplier());
-        s.arvore = av::Arvore { slots, ..av::Arvore::com_nos(nos) };
+        s.arvore = av::Arvore {
+            slots,
+            ..av::Arvore::com_nos(nos)
+        };
         s.equipment.weapon = Some(shared::item_id::ESPADA_E_ESCUDO);
         s.mp_current = 100.0;
         s.stats.mp_max = 100;
@@ -417,9 +459,16 @@ mod testes {
             Position(Vec2::splat(10.0)),
             Velocity(Vec2::ZERO),
             EntityKind::Player,
-            Health { current: 100, max: 200 },
-            PlayerTag { name: "Ativo".into(), player_id: PlayerId(73),
-                attack_anim_pending: None, combo_step_pending: None },
+            Health {
+                current: 100,
+                max: 200,
+            },
+            PlayerTag {
+                name: "Ativo".into(),
+                player_id: PlayerId(73),
+                attack_anim_pending: None,
+                combo_step_pending: None,
+            },
         ));
         let s = w.sessions.get_mut(&sid).unwrap();
         s.entity = Some(e);
@@ -428,7 +477,10 @@ mod testes {
             NetId(EntityId(999)),
             Position(Vec2::new(12.0, 10.0)),
             EntityKind::Enemy(0),
-            Health { current: 100, max: 100 },
+            Health {
+                current: 100,
+                max: 100,
+            },
         ));
         (w, sid, dono)
     }
@@ -462,7 +514,10 @@ mod testes {
         assert_eq!(s.mp_current, 100.0 - def.custo_mp as f32);
         let fim = s.skill_cds[&av::id_de_skill(3)];
         assert!(fim > w.sim_time_s + 1.0);
-        let golpe = w.pending_skill_hits.iter().find(|h| h.target_net == EntityId(999));
+        let golpe = w
+            .pending_skill_hits
+            .iter()
+            .find(|h| h.target_net == EntityId(999));
         assert!(golpe.is_some_and(|h| h.damage >= 78), "130% of 60 attack");
         // On cooldown: refused, nothing paid, no new hit.
         let hits = w.pending_skill_hits.len();
@@ -472,7 +527,10 @@ mod testes {
         // After the cooldown it goes again.
         w.sim_time_s = fim + 0.01;
         usar(&mut w, sid, 0);
-        assert_eq!(w.sessions[&sid].mp_current, 100.0 - 2.0 * def.custo_mp as f32);
+        assert_eq!(
+            w.sessions[&sid].mp_current,
+            100.0 - 2.0 * def.custo_mp as f32
+        );
         // Without the mana: refused.
         w.sim_time_s += 60.0;
         w.sessions.get_mut(&sid).unwrap().mp_current = 5.0;
@@ -495,9 +553,13 @@ mod testes {
         assert!((s.chance_de_crit(agora) - antes - shared::arvore::FURIA_CRIT).abs() < 1e-6);
         // The capstone node's own permanent crit damage stays under the buff.
         let base = s.arvore.passivas().dano_critico;
-        assert!((s.extra_de_dano_crit(agora) - base - shared::arvore::FURIA_DANO_CRIT).abs() < 1e-6);
-        assert_eq!(super::super::golpe_critico_com(100, s.extra_de_dano_crit(agora)),
-            ((100.0 * (shared::CRIT_DAMAGE_MULT + base + 0.15)) as f32).round() as i32);
+        assert!(
+            (s.extra_de_dano_crit(agora) - base - shared::arvore::FURIA_DANO_CRIT).abs() < 1e-6
+        );
+        assert_eq!(
+            super::super::golpe_critico_com(100, s.extra_de_dano_crit(agora)),
+            ((100.0 * (shared::CRIT_DAMAGE_MULT + base + 0.15)) as f32).round() as i32
+        );
         // Gone after 8 s.
         assert!((s.extra_de_dano_crit(agora + 8.1) - base).abs() < 1e-6);
         assert!((s.chance_de_crit(agora + 8.1) - antes).abs() < 1e-6);
@@ -508,24 +570,70 @@ mod testes {
         let (mut w, sid, _) = mundo(1, [0, 0, 0, 0], [None; 3]);
         // Start → three Assassin spine nodes → Shadowstep (5 of the 10 points).
         for no in av::Arvore::com_nos([4, 0, 0, 0]).ids() {
-            w.on_message(sid, ClientMessage::Arvore { pedido: PedidoArvore::Aprender { no } });
+            w.on_message(
+                sid,
+                ClientMessage::Arvore {
+                    pedido: PedidoArvore::Aprender { no },
+                },
+            );
         }
-        assert_eq!(w.sessions[&sid].arvore.slots, [Some(0), None, None], "Shadowstep went to slot 4");
+        assert_eq!(
+            w.sessions[&sid].arvore.slots,
+            [Some(0), None, None],
+            "Shadowstep went to slot 4"
+        );
         // Arcane Nova is not learned: refused.
-        w.on_message(sid, ClientMessage::Arvore { pedido: PedidoArvore::Equipar { slot: 0, ativa: Some(3) } });
+        w.on_message(
+            sid,
+            ClientMessage::Arvore {
+                pedido: PedidoArvore::Equipar {
+                    slot: 0,
+                    ativa: Some(3),
+                },
+            },
+        );
         assert_eq!(w.sessions[&sid].arvore.slots, [Some(0), None, None]);
         // Slot 5 is locked at rebirth 1.
-        w.on_message(sid, ClientMessage::Arvore { pedido: PedidoArvore::Equipar { slot: 1, ativa: Some(0) } });
+        w.on_message(
+            sid,
+            ClientMessage::Arvore {
+                pedido: PedidoArvore::Equipar {
+                    slot: 1,
+                    ativa: Some(0),
+                },
+            },
+        );
         assert_eq!(w.sessions[&sid].arvore.slots, [Some(0), None, None]);
         // Emptying works, and so does putting it back.
-        w.on_message(sid, ClientMessage::Arvore { pedido: PedidoArvore::Equipar { slot: 0, ativa: None } });
+        w.on_message(
+            sid,
+            ClientMessage::Arvore {
+                pedido: PedidoArvore::Equipar {
+                    slot: 0,
+                    ativa: None,
+                },
+            },
+        );
         assert_eq!(w.sessions[&sid].arvore.slots, [None; 3]);
-        w.on_message(sid, ClientMessage::Arvore { pedido: PedidoArvore::Equipar { slot: 0, ativa: Some(0) } });
+        w.on_message(
+            sid,
+            ClientMessage::Arvore {
+                pedido: PedidoArvore::Equipar {
+                    slot: 0,
+                    ativa: Some(0),
+                },
+            },
+        );
         assert_eq!(w.sessions[&sid].arvore.slots, [Some(0), None, None]);
         // The stored JSON carries the slot; a reset clears it.
         assert!(w.sessions[&sid].arvore.para_json().contains("slots"));
         w.sessions.get_mut(&sid).unwrap().gold = 1_000_000;
-        w.on_message(sid, ClientMessage::Arvore { pedido: PedidoArvore::Redistribuir });
+        w.on_message(
+            sid,
+            ClientMessage::Arvore {
+                pedido: PedidoArvore::Redistribuir,
+            },
+        );
         assert_eq!(w.sessions[&sid].arvore.slots, [None; 3]);
     }
 
@@ -538,7 +646,14 @@ mod testes {
         hp.current = 100;
         hp.max = 100;
         tag.spawn_grace_until = 0.0;
-        let mob = w.ecs.spawn((NetId(EntityId(777)), Position(pos), Velocity(Vec2::ZERO), EntityKind::Enemy(1), tag, hp));
+        let mob = w.ecs.spawn((
+            NetId(EntityId(777)),
+            Position(pos),
+            Velocity(Vec2::ZERO),
+            EntityKind::Enemy(1),
+            tag,
+            hp,
+        ));
         // Control: a visible player is the monster's target.
         w.step(shared::TICK_DT);
         assert_eq!(w.ecs.get::<&EnemyTag>(mob).unwrap().ai_target, Some(dono));
@@ -547,10 +662,18 @@ mod testes {
         let e = w.sessions[&sid].entity.unwrap();
         assert!(w.sessions[&sid].invisivel_ate > w.sim_time_s);
         assert!(w.ecs.get::<&Untargetable>(e).is_ok());
-        assert_eq!(w.ecs.get::<&EnemyTag>(mob).unwrap().ai_target, None, "aggro dropped at once");
+        assert_eq!(
+            w.ecs.get::<&EnemyTag>(mob).unwrap().ai_target,
+            None,
+            "aggro dropped at once"
+        );
         for _ in 0..5 {
             w.step(shared::TICK_DT);
-            assert_ne!(w.ecs.get::<&EnemyTag>(mob).unwrap().ai_target, Some(dono), "the monster cannot see it");
+            assert_ne!(
+                w.ecs.get::<&EnemyTag>(mob).unwrap().ai_target,
+                Some(dono),
+                "the monster cannot see it"
+            );
         }
         // An offensive active ends it.
         usar(&mut w, sid, 1);
@@ -579,15 +702,25 @@ mod testes {
         let outro = SessionId(([127, 0, 0, 1], 47_302).into());
         let (tx, rx) = mpsc::unbounded_channel();
         std::mem::forget(rx);
-        w.on_connect(SessionHandle { id: outro, to_client: tx });
+        w.on_connect(SessionHandle {
+            id: outro,
+            to_client: tx,
+        });
         let o = w.sessions.get_mut(&outro).unwrap();
         o.logged_in = true;
         let atacante = o.entity_id;
         let antes = w.can_damage_player(atacante, dono);
         usar(&mut w, sid, 0);
-        assert!(!w.can_damage_player(atacante, dono), "no PvP on an invisible body");
+        assert!(
+            !w.can_damage_player(atacante, dono),
+            "no PvP on an invisible body"
+        );
         w.quebrar_invisibilidade(sid);
-        assert_eq!(w.can_damage_player(atacante, dono), antes, "back to the usual PvP rules");
+        assert_eq!(
+            w.can_damage_player(atacante, dono),
+            antes,
+            "back to the usual PvP rules"
+        );
     }
 
     #[test]
@@ -596,7 +729,12 @@ mod testes {
         let (mut w, sid, dono) = mundo(1, [0, 0, 10, 0], [Some(7), None, None]);
         usar(&mut w, sid, 0);
         assert!(w.sessions[&sid].muralha_ate > w.sim_time_s + 4.0);
-        assert!(w.pending_heals.iter().any(|h| h.target_net == dono && h.amount == 16), "8% of 200");
+        assert!(
+            w.pending_heals
+                .iter()
+                .any(|h| h.target_net == dono && h.amount == 16),
+            "8% of 200"
+        );
 
         // Mage: Time Warp (node 15) halves the weapon skills' cooldowns.
         let (mut w, sid, _) = mundo(1, [0, 15, 0, 0], [Some(5), None, None]);
@@ -625,7 +763,10 @@ mod testes {
         usar(&mut w, sid, 0);
         let e = w.sessions[&sid].entity.unwrap();
         let p = w.ecs.get::<&Position>(e).unwrap().0;
-        assert!((p.x - 14.0).abs() < 0.3 && (p.y - 10.0).abs() < 0.3, "{p:?}");
+        assert!(
+            (p.x - 14.0).abs() < 0.3 && (p.y - 10.0).abs() < 0.3,
+            "{p:?}"
+        );
         // Standing still with no target: refused, nothing paid.
         let (mut w, sid, _) = mundo(1, [5, 0, 0, 0], [Some(0), None, None]);
         w.sessions.get_mut(&sid).unwrap().target = None;

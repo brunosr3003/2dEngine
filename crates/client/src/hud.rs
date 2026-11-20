@@ -89,8 +89,18 @@ pub fn desenha_fps(z: &Zonas) {
     // Quiet unless it's a problem: a dim line normally, its warning colour
     // only when the frame rate drops. A bright gold readout on the HUD read
     // as a developer overlay.
-    let cor = if f < 25.0 { fps::cor(f) } else { estilo::alfa(estilo::SUAVE, 0.6) };
-    estilo::texto(x + 1.0, y + 1.0, &texto, 11, estilo::alfa(estilo::FUNDO, 0.7));
+    let cor = if f < 25.0 {
+        fps::cor(f)
+    } else {
+        estilo::alfa(estilo::SUAVE, 0.6)
+    };
+    estilo::texto(
+        x + 1.0,
+        y + 1.0,
+        &texto,
+        11,
+        estilo::alfa(estilo::FUNDO, 0.7),
+    );
     estilo::texto(x, y, &texto, 11, cor);
 }
 
@@ -169,42 +179,55 @@ pub fn draw_hud(
     // text inside grow together.
     let k = crate::hud_custom::tamanho("area");
     let sobre = estilo::no_painel(estilo::fator_texto() * k, || {
-    estilo::painel(r);
-    let sobre = r.toca(mouse());
-    let zona = nome_da_zona(if info.zona.is_empty() {
-        map.map_or("Exploring", |m| m.name.as_str())
-    } else {
-        &info.zona
-    });
-    let zona = zona.as_str();
-    let cor = if sobre { estilo::OURO } else { estilo::TEXTO };
-    estilo::texto_ajustado(zona, r.x + 12.0 * k, r.y + r.h * 0.45, r.w - 100.0 * k, 18, cor);
-    let onde = if info.realm.is_empty() {
-        "Open world".into()
-    } else {
-        format!("{}  ·  CH {}", info.realm, info.canal)
-    };
-    estilo::texto_ajustado(
-        &onde,
-        r.x + 12.0 * k,
-        r.y + r.h * 0.84,
-        r.w - 100.0 * k,
-        12,
-        estilo::SUAVE,
-    );
-    // The ping in its own colour (green/yellow/red), with no dot in front:
-    // the number coloured says the same thing.
-    estilo::texto(
-        r.x + r.w - 62.0 * k,
-        r.y + r.h * 0.5,
-        &format!("{:.0} ms", rede.ms),
-        12,
-        rede.cor_ms(),
-    );
-    if sobre {
-        estilo::texto(r.x + r.w - 62.0 * k, r.y + r.h * 0.84, "map", 11, estilo::OURO);
-    }
-    sobre
+        estilo::painel(r);
+        let sobre = r.toca(mouse());
+        let zona = nome_da_zona(if info.zona.is_empty() {
+            map.map_or("Exploring", |m| m.name.as_str())
+        } else {
+            &info.zona
+        });
+        let zona = zona.as_str();
+        let cor = if sobre { estilo::OURO } else { estilo::TEXTO };
+        estilo::texto_ajustado(
+            zona,
+            r.x + 12.0 * k,
+            r.y + r.h * 0.45,
+            r.w - 100.0 * k,
+            18,
+            cor,
+        );
+        let onde = if info.realm.is_empty() {
+            "Open world".into()
+        } else {
+            format!("{}  ·  CH {}", info.realm, info.canal)
+        };
+        estilo::texto_ajustado(
+            &onde,
+            r.x + 12.0 * k,
+            r.y + r.h * 0.84,
+            r.w - 100.0 * k,
+            12,
+            estilo::SUAVE,
+        );
+        // The ping in its own colour (green/yellow/red), with no dot in front:
+        // the number coloured says the same thing.
+        estilo::texto(
+            r.x + r.w - 62.0 * k,
+            r.y + r.h * 0.5,
+            &format!("{:.0} ms", rede.ms),
+            12,
+            rede.cor_ms(),
+        );
+        if sobre {
+            estilo::texto(
+                r.x + r.w - 62.0 * k,
+                r.y + r.h * 0.84,
+                "map",
+                11,
+                estilo::OURO,
+            );
+        }
+        sobre
     });
 
     // AVISOS: texto solto que some sozinho, sem caixa. O painel de chat saiu
@@ -434,7 +457,9 @@ pub fn draw_topo(
     let m = mouse();
     let clique = crate::foco::clique();
     let mut saida = None;
-    let nomes = ["Offers", "Bag", "Quests", "Dailies", "Party", "Notices", "Presence"];
+    let nomes = [
+        "Offers", "Bag", "Quests", "Dailies", "Party", "Notices", "Presence",
+    ];
     let alvos = [
         Topo::Ofertas,
         Topo::Bolsa,
@@ -456,7 +481,11 @@ pub fn draw_topo(
             r.w * 0.30,
             if sobre { estilo::ACENTO } else { estilo::TEXTO },
         );
-        if (i == 0 && selo_ofertas) || (i == 2 && selo_missoes) || (i == 3 && selo_diarias) || (i == 6 && selo_presenca) {
+        if (i == 0 && selo_ofertas)
+            || (i == 2 && selo_missoes)
+            || (i == 3 && selo_diarias)
+            || (i == 6 && selo_presenca)
+        {
             selo(*r);
         }
         if sobre {
@@ -555,10 +584,29 @@ pub fn draw_sprint(z: &Zonas, ativo: bool) -> bool {
     let sobre = r.toca(mouse());
     estilo::cartao(r, sobre, ativo);
     let cor = if ativo { estilo::ACENTO } else { estilo::TEXTO };
-    crate::icones_ui::ui("sprint", r.center() - vec2(0.0, r.h * 0.10), r.w * 0.75, cor);
-    estilo::texto(r.x + r.w * 0.10, r.y + r.h * 0.92,
-        if ativo { "ON" } else { "SPRINT" }, (r.w * 0.19) as u16, cor);
-    if sobre { dica(r, if ativo { "Sprint off [Shift]" } else { "Sprint on [Shift]" }); }
+    crate::icones_ui::ui(
+        "sprint",
+        r.center() - vec2(0.0, r.h * 0.10),
+        r.w * 0.75,
+        cor,
+    );
+    estilo::texto(
+        r.x + r.w * 0.10,
+        r.y + r.h * 0.92,
+        if ativo { "ON" } else { "SPRINT" },
+        (r.w * 0.19) as u16,
+        cor,
+    );
+    if sobre {
+        dica(
+            r,
+            if ativo {
+                "Sprint off [Shift]"
+            } else {
+                "Sprint on [Shift]"
+            },
+        );
+    }
     sobre && crate::foco::clique()
 }
 
@@ -871,14 +919,33 @@ pub fn draw_ficha(
         estilo::texto_ajustado(nome, bx, r.y + 24.0 * k, bw, fonte(19.0, k), estilo::TEXTO);
         if let Some((pontos, cheio)) = casco {
             let f = (pontos as f32 / cheio.max(1) as f32).clamp(0.0, 1.0);
-            ficha.casco_rastro = if f >= ficha.casco_rastro { f } else { (ficha.casco_rastro - dt * 0.35).max(f) };
+            ficha.casco_rastro = if f >= ficha.casco_rastro {
+                f
+            } else {
+                (ficha.casco_rastro - dt * 0.35).max(f)
+            };
             let baixo = f <= shared::navio::CRITICO;
-            let pulsa = if baixo { 0.8 + 0.2 * (get_time() as f32 * 6.0).sin() } else { 1.0 };
+            let pulsa = if baixo {
+                0.8 + 0.2 * (get_time() as f32 * 6.0).sin()
+            } else {
+                1.0
+            };
             let icone = Rect::new(bx - 2.0 * k, r.y + 30.0 * k, 28.0 * k, 28.0 * k);
             crate::mar_ui::icone_do_item(shared::item_id::NAVIO_CHALUPA, icone, 1.0);
             let barra = Rect::new(bx + 28.0 * k, r.y + 35.0 * k, bw - 28.0 * k, 17.0 * k);
-            let cor = if baixo { Color::new(0.78 * pulsa, 0.2, 0.18, 1.0) } else { Color::new(0.74, 0.52, 0.26, 1.0) };
-            barra_de_recurso(barra, f, ficha.casco_rastro, cor, Color::new(1.0, 0.85, 0.55, 0.28), Some(&format!("{pontos} / {cheio}")));
+            let cor = if baixo {
+                Color::new(0.78 * pulsa, 0.2, 0.18, 1.0)
+            } else {
+                Color::new(0.74, 0.52, 0.26, 1.0)
+            };
+            barra_de_recurso(
+                barra,
+                f,
+                ficha.casco_rastro,
+                cor,
+                Color::new(1.0, 0.85, 0.55, 0.28),
+                Some(&format!("{pontos} / {cheio}")),
+            );
             let _ = (hp, hp_max, mp_max, vigor_max);
             return;
         }
@@ -924,11 +991,28 @@ pub fn draw_modo_pk(z: &Zonas, pk: shared::PkState) -> bool {
     let modo = crate::pk_ui::modo_de(pk);
     estilo::cartao(r, sobre, shared::pk::hostil(modo));
     draw_rectangle_lines(r.x, r.y, r.w, r.h, 1.5 * z.s, cor);
-    estilo::texto_centro_forte(r.center().x, r.y + 18.0 * z.s,
-        shared::pk::nome(modo), fonte(16.0, z.s), cor);
-    let linha = if pk.travado { format!("PK: {} · locked", pk.pontos) } else { format!("PK: {}", pk.pontos) };
-    estilo::texto_centro(r.center().x, r.y + 33.0 * z.s, &linha, fonte(11.0, z.s), estilo::SUAVE);
-    if sobre { dica(r, "Tap to choose the PK mode"); }
+    estilo::texto_centro_forte(
+        r.center().x,
+        r.y + 18.0 * z.s,
+        shared::pk::nome(modo),
+        fonte(16.0, z.s),
+        cor,
+    );
+    let linha = if pk.travado {
+        format!("PK: {} · locked", pk.pontos)
+    } else {
+        format!("PK: {}", pk.pontos)
+    };
+    estilo::texto_centro(
+        r.center().x,
+        r.y + 33.0 * z.s,
+        &linha,
+        fonte(11.0, z.s),
+        estilo::SUAVE,
+    );
+    if sobre {
+        dica(r, "Tap to choose the PK mode");
+    }
     sobre && crate::foco::clique()
 }
 
@@ -956,7 +1040,10 @@ pub fn draw_buffs(
             fortuna_ate,
             "$",
             Color::new(0.95, 0.55, 0.15, 1.0),
-            format!("+{}% gold and copper from beasts", shared::BONUS_FORTUNA_PCT),
+            format!(
+                "+{}% gold and copper from beasts",
+                shared::BONUS_FORTUNA_PCT
+            ),
         ),
         (
             sorte_ate,
@@ -981,8 +1068,20 @@ pub fn draw_buffs(
             Color::new(0.75, 0.82, 0.88, 1.0),
         );
         draw_circle(c.x, c.y + 3.0 * k, 11.0 * k, cor);
-        estilo::texto_centro(c.x, c.y + 7.0 * k, sigla, fonte(11.0, k), Color::new(0.12, 0.09, 0.02, 1.0));
-        estilo::texto_centro(c.x, r.y + r.h + 12.0 * k, &format!("{min}m"), fonte(11.0, k), estilo::OURO);
+        estilo::texto_centro(
+            c.x,
+            c.y + 7.0 * k,
+            sigla,
+            fonte(11.0, k),
+            Color::new(0.12, 0.09, 0.02, 1.0),
+        );
+        estilo::texto_centro(
+            c.x,
+            r.y + r.h + 12.0 * k,
+            &format!("{min}m"),
+            fonte(11.0, k),
+            estilo::OURO,
+        );
         if r.toca(mouse()) {
             dica_ativa = Some((r, format!("{dica} · {min} min")));
         }
@@ -992,7 +1091,11 @@ pub fn draw_buffs(
     let curando = [
         ("+V", Color::new(0.85, 0.25, 0.28, 1.0), "Healing"),
         ("+M", Color::new(0.25, 0.50, 0.90, 1.0), "Recovering mana"),
-        ("+E", Color::new(0.95, 0.75, 0.25, 1.0), "Recovering stamina"),
+        (
+            "+E",
+            Color::new(0.95, 0.75, 0.25, 1.0),
+            "Recovering stamina",
+        ),
     ];
     for (g, (sigla, cor, nome)) in curando.into_iter().enumerate() {
         let s = curas[g];
@@ -1003,7 +1106,13 @@ pub fn draw_buffs(
         estilo::cartao(r, r.toca(mouse()), false);
         let c = r.center();
         draw_circle(c.x, c.y, 13.0 * k, cor);
-        estilo::texto_centro(c.x, c.y + 5.0 * k, sigla, fonte(12.0, k), Color::new(0.08, 0.06, 0.05, 1.0));
+        estilo::texto_centro(
+            c.x,
+            c.y + 5.0 * k,
+            sigla,
+            fonte(12.0, k),
+            Color::new(0.08, 0.06, 0.05, 1.0),
+        );
         estilo::texto_centro(
             c.x,
             r.y + r.h + 12.0 * k,
@@ -1133,7 +1242,8 @@ pub(crate) fn nome_da_zona(z: &str) -> String {
         .filter(|p| !p.is_empty())
         .map(|p| {
             let mut c = p.chars();
-            c.next().map_or_else(String::new, |f| f.to_uppercase().chain(c).collect())
+            c.next()
+                .map_or_else(String::new, |f| f.to_uppercase().chain(c).collect())
         })
         .collect::<Vec<_>>()
         .join(" ")

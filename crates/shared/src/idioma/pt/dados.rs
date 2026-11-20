@@ -622,6 +622,8 @@ pub const VERBETES: &[(&str, &str)] = &[
     ("Galleon", "Galeão"),
     ("Man-o'-War", "Nau"),
     ("Wreck Plank", "Prancha de Naufrágio"),
+    ("Naval Token", "Token Naval"),
+    ("Naval Fragment", "Fragmento Naval"),
     ("Crimson Sails", "Velas Carmesim"),
     ("Black Sails", "Velas Negras"),
     ("Royal Blue Sails", "Velas Azul-Real"),

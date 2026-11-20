@@ -44,7 +44,10 @@ pub fn custo_da_estrela(estrelas: u8) -> Option<(u32, u32)> {
 
 /// Total Essence from 0 to `ESTRELAS_MAX` stars on one piece.
 pub fn essencia_ate_o_topo() -> u32 {
-    (0..ESTRELAS_MAX).filter_map(custo_da_estrela).map(|c| c.0).sum()
+    (0..ESTRELAS_MAX)
+        .filter_map(custo_da_estrela)
+        .map(|c| c.0)
+        .sum()
 }
 
 /// The multiplier share of `estrelas` stars (0.08 per star, capped at the top).
@@ -108,7 +111,10 @@ const fn chave(id: u8, nome: &'static str, base: u16) -> Oferta {
         nome,
         descricao: "A legendary craft key, for the best Forge recipes.",
         preco: PRECO_CHAVE_LENDARIA,
-        entrega: Entrega::Item { id: item_id::chave_na_cor(base, 5), qtd: 1 },
+        entrega: Entrega::Item {
+            id: item_id::chave_na_cor(base, 5),
+            qtd: 1,
+        },
     }
 }
 
@@ -130,35 +136,50 @@ pub const OFERTAS: [Oferta; 10] = [
         nome: "Ward Charms ×3",
         descricao: "Refining to +6 or +7, a failure spends a charm and the piece survives.",
         preco: 15,
-        entrega: Entrega::Item { id: item_id::AMULETO_DE_PROTECAO, qtd: 3 },
+        entrega: Entrega::Item {
+            id: item_id::AMULETO_DE_PROTECAO,
+            qtd: 3,
+        },
     },
     Oferta {
         id: 7,
         nome: "Crown",
         descricao: "Hat for your wardrobe: use it from the bag to unlock.",
         preco: 40,
-        entrega: Entrega::Item { id: aparencia::CHAPEU_BASE + 13, qtd: 1 },
+        entrega: Entrega::Item {
+            id: aparencia::CHAPEU_BASE + 13,
+            qtd: 1,
+        },
     },
     Oferta {
         id: 8,
         nome: "Knight",
         descricao: "Outfit for your wardrobe: use it from the bag to unlock.",
         preco: 40,
-        entrega: Entrega::Item { id: aparencia::ITEM_ROUPA_BASE + 8, qtd: 1 },
+        entrega: Entrega::Item {
+            id: aparencia::ITEM_ROUPA_BASE + 8,
+            qtd: 1,
+        },
     },
     Oferta {
         id: 9,
         nome: "Void Ring",
         descricao: "Magic ring skin for your wardrobe: use it from the bag to unlock.",
         preco: 50,
-        entrega: Entrega::Item { id: aparencia::ARMA_SKIN_BASE + 13, qtd: 1 },
+        entrega: Entrega::Item {
+            id: aparencia::ARMA_SKIN_BASE + 13,
+            qtd: 1,
+        },
     },
     Oferta {
         id: 10,
         nome: "Spectral Coat",
         descricao: "Mount skin for your wardrobe: use it from the bag to unlock.",
         preco: 50,
-        entrega: Entrega::Item { id: aparencia::MONTARIA_SKIN_BASE + 4, qtd: 1 },
+        entrega: Entrega::Item {
+            id: aparencia::MONTARIA_SKIN_BASE + 4,
+            qtd: 1,
+        },
     },
 ];
 
@@ -210,7 +231,10 @@ mod testes {
         // Refine and stars add, both on the base.
         i.refinement = 5;
         let ambos = i.effective_bonus();
-        assert_eq!(ambos.attack_damage, (i.attack_damage as f32 * 1.60).round() as i32);
+        assert_eq!(
+            ambos.attack_damage,
+            (i.attack_damage as f32 * 1.60).round() as i32
+        );
     }
 
     #[test]
@@ -218,7 +242,10 @@ mod testes {
         assert!(ascendivel(item_id::KATANA));
         assert!(!ascendivel(item_id::DARKSTEEL));
         assert!(!ascendivel(item_id::pet_no_grau(item_id::PET_BASE, 3)));
-        assert!(!ascendivel(item_id::montaria_no_grau(item_id::MONTARIA_BASE, 3)));
+        assert!(!ascendivel(item_id::montaria_no_grau(
+            item_id::MONTARIA_BASE,
+            3
+        )));
     }
 
     #[test]
@@ -237,16 +264,28 @@ mod testes {
         }
         assert_eq!(oferta(1).unwrap().entrega, Entrega::RedistribuirArvore);
         assert_eq!(oferta(1).unwrap().preco, 20);
-        for (o, base) in [(2, item_id::SCALE), (3, item_id::CLAW), (4, item_id::HORN), (5, item_id::HIDE)] {
-            let Entrega::Item { id, .. } = oferta(o).unwrap().entrega else { panic!() };
+        for (o, base) in [
+            (2, item_id::SCALE),
+            (3, item_id::CLAW),
+            (4, item_id::HORN),
+            (5, item_id::HIDE),
+        ] {
+            let Entrega::Item { id, .. } = oferta(o).unwrap().entrega else {
+                panic!()
+            };
             assert_eq!(id, item_id::chave_na_cor(base, 5));
             assert_eq!(item_id::cor_de_id(id), Some(5), "legendary");
         }
         // The cosmetics are existing, paid skins (no new art).
         for o in 7..=10 {
-            let Entrega::Item { id, .. } = oferta(o).unwrap().entrega else { panic!() };
+            let Entrega::Item { id, .. } = oferta(o).unwrap().entrega else {
+                panic!()
+            };
             let skin = aparencia::skin_do_item(id).expect("a skin item");
-            assert!(aparencia::preco_da_skin(skin).is_some(), "skin {skin} is a paid one");
+            assert!(
+                aparencia::preco_da_skin(skin).is_some(),
+                "skin {skin} is a paid one"
+            );
             assert_eq!(aparencia::nome_da_skin(skin), Some(oferta(o).unwrap().nome));
         }
         assert!(oferta(0).is_none() && oferta(99).is_none());

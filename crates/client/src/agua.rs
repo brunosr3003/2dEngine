@@ -304,7 +304,11 @@ fn horizonte(centro: Vec2, raio: i32, mar: bool) -> Vec<Mesh> {
         // At sea the distance fog does the fading (it reaches much farther
         // there, `mar_cena::neblina`): a ring already fading to sky would
         // paint a pale band where the islands' silhouettes stand.
-        let t = if mar { 0.0 } else { suave((r - raios[0]) / (raios[raios.len() - 1] - raios[0])) };
+        let t = if mar {
+            0.0
+        } else {
+            suave((r - raios[0]) / (raios[raios.len() - 1] - raios[0]))
+        };
         let mut c = [0u8; 4];
         for i in 0..3 {
             c[i] = (fundo[i] as f32 + (CEU[i] - fundo[i] as f32) * t).round() as u8;
@@ -606,7 +610,10 @@ const SOBRA: f32 = 0.6;
 /// half-block phase as `malhas_do_pedaco`'s quads, so the fill's cells and
 /// the chunks' water share their edges exactly.
 fn borda_do_pedaco(cx: i32, cz: i32) -> (Vec2, Vec2) {
-    let a = vec2((cx * CHUNK) as f32 * BLOCO - BLOCO * 0.5, (cz * CHUNK) as f32 * BLOCO - BLOCO * 0.5);
+    let a = vec2(
+        (cx * CHUNK) as f32 * BLOCO - BLOCO * 0.5,
+        (cz * CHUNK) as f32 * BLOCO - BLOCO * 0.5,
+    );
     (a, a + Vec2::splat(CHUNK_U))
 }
 
@@ -634,17 +641,23 @@ fn preenchimento(chave: &ChavePreenche) -> Vec<Mesh> {
     let cor = [cor[0], cor[1], cor[2], 255];
     let y = ALTURA_DA_AGUA - 0.02;
     let (mut malhas, mut verts, mut idx) = (Vec::new(), Vec::new(), Vec::new());
-    let mut retangulo = |a: Vec2, b: Vec2, verts: &mut Vec<Vertex>, idx: &mut Vec<u16>, malhas: &mut Vec<Mesh>| {
-        if idx.len() + 6 > MAX_QUADS * 6 {
-            empilha(malhas, verts, idx);
-        }
-        // A little over every edge: a long edge meeting a run of shorter
-        // ones (the chunks' water, the next cell) leaves pixel cracks; the
-        // overlap is the same flat deep water, so it never shows.
-        let (a, b) = (a - Vec2::splat(SOBRA), b + Vec2::splat(SOBRA));
-        let p = [vec3(a.x, y, a.y), vec3(b.x, y, a.y), vec3(b.x, y, b.y), vec3(a.x, y, b.y)];
-        quad(verts, idx, p, [(0.0, 0.0, cor); 4]);
-    };
+    let mut retangulo =
+        |a: Vec2, b: Vec2, verts: &mut Vec<Vertex>, idx: &mut Vec<u16>, malhas: &mut Vec<Mesh>| {
+            if idx.len() + 6 > MAX_QUADS * 6 {
+                empilha(malhas, verts, idx);
+            }
+            // A little over every edge: a long edge meeting a run of shorter
+            // ones (the chunks' water, the next cell) leaves pixel cracks; the
+            // overlap is the same flat deep water, so it never shows.
+            let (a, b) = (a - Vec2::splat(SOBRA), b + Vec2::splat(SOBRA));
+            let p = [
+                vec3(a.x, y, a.y),
+                vec3(b.x, y, a.y),
+                vec3(b.x, y, b.y),
+                vec3(a.x, y, b.y),
+            ];
+            quad(verts, idx, p, [(0.0, 0.0, cor); 4]);
+        };
     for dz in -meia..=*meia {
         // Runs of unloaded chunks along x: one quad each.
         let mut dx = -meia;
@@ -665,13 +678,40 @@ fn preenchimento(chave: &ChavePreenche) -> Vec<Mesh> {
     let (a, _) = borda_do_pedaco(pcx - meia, pcz - meia);
     let (_, b) = borda_do_pedaco(pcx + meia, pcz + meia);
     let meio = (a + b) * 0.5;
-    let (lo, hi) = (meio - Vec2::splat(ALCANCE_DO_PREENCHE), meio + Vec2::splat(ALCANCE_DO_PREENCHE));
+    let (lo, hi) = (
+        meio - Vec2::splat(ALCANCE_DO_PREENCHE),
+        meio + Vec2::splat(ALCANCE_DO_PREENCHE),
+    );
     // The four slabs round the box: north and south full width, east and
     // west between them.
-    retangulo(vec2(lo.x, lo.y), vec2(hi.x, a.y), &mut verts, &mut idx, &mut malhas);
-    retangulo(vec2(lo.x, b.y), vec2(hi.x, hi.y), &mut verts, &mut idx, &mut malhas);
-    retangulo(vec2(lo.x, a.y), vec2(a.x, b.y), &mut verts, &mut idx, &mut malhas);
-    retangulo(vec2(b.x, a.y), vec2(hi.x, b.y), &mut verts, &mut idx, &mut malhas);
+    retangulo(
+        vec2(lo.x, lo.y),
+        vec2(hi.x, a.y),
+        &mut verts,
+        &mut idx,
+        &mut malhas,
+    );
+    retangulo(
+        vec2(lo.x, b.y),
+        vec2(hi.x, hi.y),
+        &mut verts,
+        &mut idx,
+        &mut malhas,
+    );
+    retangulo(
+        vec2(lo.x, a.y),
+        vec2(a.x, b.y),
+        &mut verts,
+        &mut idx,
+        &mut malhas,
+    );
+    retangulo(
+        vec2(b.x, a.y),
+        vec2(hi.x, b.y),
+        &mut verts,
+        &mut idx,
+        &mut malhas,
+    );
     empilha(&mut malhas, &mut verts, &mut idx);
     malhas
 }
@@ -720,9 +760,15 @@ pub fn estilo() -> f32 {
 }
 
 pub fn desenha(t: &Terreno, cam: &Camera3D, tempo: f32) {
-    if t.sem_oceano() { return; }
+    if t.sem_oceano() {
+        return;
+    }
     use crate::gpu_estatica::{desenha as desenha_na_gpu, MalhaEstatica, Programa};
-    let ondas = if ONDAS && crate::config_graficos::ondas() { 1.0f32 } else { 0.0 };
+    let ondas = if ONDAS && crate::config_graficos::ondas() {
+        1.0f32
+    } else {
+        0.0
+    };
     let estilo = estilo();
     let (ceu, sol) = crate::mar_cena::ceu_e_sol();
     crate::gpu_estatica::define_agua(cam.position, estilo, ceu, sol);
@@ -731,7 +777,11 @@ pub fn desenha(t: &Terreno, cam: &Camera3D, tempo: f32) {
     if estilo > 0.0 && !crate::mar_cena::sem_fix() {
         // AT SEA: the chunks' water and the far fill, one surface.
         let n = crate::gpu_estatica::neblina();
-        let centro = if n[3] > 0.0 { vec2(n[0], n[1]) } else { vec2(cam.target.x, cam.target.z) };
+        let centro = if n[3] > 0.0 {
+            vec2(n[0], n[1])
+        } else {
+            vec2(cam.target.x, cam.target.z)
+        };
         let raio = crate::mar_cena::raio_no_mar();
         let (b0, b1) = borda_do_mar(raio);
         crate::gpu_estatica::define_borda(b0, b1);
@@ -753,7 +803,10 @@ pub fn desenha(t: &Terreno, cam: &Camera3D, tempo: f32) {
         PREENCHE.with(|h| {
             let mut h = h.borrow_mut();
             if h.as_ref().is_none_or(|(k, _)| *k != chave) {
-                let malhas = preenchimento(&chave).into_iter().map(MalhaEstatica::nova).collect();
+                let malhas = preenchimento(&chave)
+                    .into_iter()
+                    .map(MalhaEstatica::nova)
+                    .collect();
                 *h = Some((chave, malhas));
             }
             if let Some((_, malhas)) = h.as_ref() {
@@ -867,7 +920,9 @@ mod testes {
         let p = (37, -12);
         let meia = 7;
         let lado = 2 * meia + 1;
-        let carregado = |dx: i32, dz: i32| dx.abs() <= 5 && dz.abs() <= 5 && (dx * 7 + dz * 3).rem_euclid(5) != 0;
+        let carregado = |dx: i32, dz: i32| {
+            dx.abs() <= 5 && dz.abs() <= 5 && (dx * 7 + dz * 3).rem_euclid(5) != 0
+        };
         let mut bits = vec![0u64; ((lado * lado) as usize).div_ceil(64)];
         for dz in -meia..=meia {
             for dx in -meia..=meia {
@@ -883,7 +938,10 @@ mod testes {
         let dentro = |q: Vec2| {
             malhas.iter().any(|m| {
                 m.indices.chunks(6).any(|f| {
-                    let (a, b) = f.iter().map(|k| m.vertices[*k as usize].position).fold((Vec2::splat(f32::MAX), Vec2::splat(f32::MIN)), |(a, b), v| (a.min(vec2(v.x, v.z)), b.max(vec2(v.x, v.z))));
+                    let (a, b) = f.iter().map(|k| m.vertices[*k as usize].position).fold(
+                        (Vec2::splat(f32::MAX), Vec2::splat(f32::MIN)),
+                        |(a, b), v| (a.min(vec2(v.x, v.z)), b.max(vec2(v.x, v.z))),
+                    );
                     q.x >= a.x && q.x <= b.x && q.y >= a.y && q.y <= b.y
                 })
             })
@@ -896,7 +954,9 @@ mod testes {
                 let bx = ((q.x + BLOCO * 0.5) / BLOCO).floor() as i32;
                 let bz = ((q.y + BLOCO * 0.5) / BLOCO).floor() as i32;
                 let (cx, cz) = (bx.div_euclid(CHUNK), bz.div_euclid(CHUNK));
-                let no_pedaco = carregado(cx - p.0, cz - p.1) && (cx - p.0).abs() <= meia && (cz - p.1).abs() <= meia;
+                let no_pedaco = carregado(cx - p.0, cz - p.1)
+                    && (cx - p.0).abs() <= meia
+                    && (cz - p.1).abs() <= meia;
                 if !no_pedaco && !dentro(q) {
                     buracos += 1;
                 }
@@ -914,7 +974,10 @@ mod testes {
         // square, at every view distance.
         for raio in 3..=12 {
             let (a, b) = borda_do_mar(raio);
-            assert!(a < b && b <= (raio - 1) as f32 * CHUNK_U, "radius {raio}: band {a}..{b}");
+            assert!(
+                a < b && b <= (raio - 1) as f32 * CHUNK_U,
+                "radius {raio}: band {a}..{b}"
+            );
         }
     }
 

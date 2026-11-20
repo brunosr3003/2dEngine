@@ -267,13 +267,16 @@ impl BlocoCasa {
     pub fn neon(self) -> Self {
         use BlocoCasa::*;
         match self {
-            Reboco | RebocoOcre | RebocoRosa | RebocoAzul | RebocoVerde | Papel | Pano | MarmoreCasa => ConcretoCasa,
+            Reboco | RebocoOcre | RebocoRosa | RebocoAzul | RebocoVerde | Papel | Pano
+            | MarmoreCasa => ConcretoCasa,
             PedraBase | PedraNegra | NegroBorda | MarmoreBase => ConcretoEscuroCasa,
             Viga | Tabua | Lenha | Corda | OuroCasa => Metal,
             Telha | TelhaEscura | Palha | Ardosia | TelhaCeleste => ConcretoEscuroCasa,
             Janela => VidroCasa,
             PinturaVermelha | PinturaAmarela | PanoRubro | Toldo | ToldoAmbar => NeonRosaCasa,
-            PinturaAzul | PinturaVerde | ToldoAzul | ToldoVerde | ToldoRoxo | ToldoPergaminho => NeonCianoCasa,
+            PinturaAzul | PinturaVerde | ToldoAzul | ToldoVerde | ToldoRoxo | ToldoPergaminho => {
+                NeonCianoCasa
+            }
             outro => outro,
         }
     }
@@ -283,13 +286,17 @@ impl BlocoCasa {
     pub fn coral(self) -> Self {
         use BlocoCasa::*;
         match self {
-            Reboco | RebocoOcre | RebocoRosa | RebocoAzul | RebocoVerde | Papel | Pano => MarmoreCasa,
+            Reboco | RebocoOcre | RebocoRosa | RebocoAzul | RebocoVerde | Papel | Pano => {
+                MarmoreCasa
+            }
             PedraBase | PedraNegra | NegroBorda => ConcretoEscuroCasa,
             Viga | Tabua | Lenha | Corda => RebocoRosa,
             Telha | TelhaEscura | Palha | Ardosia | TelhaCeleste => VidroCasa,
             Janela => NeonCianoCasa,
             PinturaVermelha | PinturaAmarela | PanoRubro | Toldo | ToldoAmbar => NeonRosaCasa,
-            PinturaAzul | PinturaVerde | ToldoAzul | ToldoVerde | ToldoRoxo | ToldoPergaminho => NeonCianoCasa,
+            PinturaAzul | PinturaVerde | ToldoAzul | ToldoVerde | ToldoRoxo | ToldoPergaminho => {
+                NeonCianoCasa
+            }
             outro => outro,
         }
     }
@@ -300,7 +307,9 @@ impl BlocoCasa {
     pub fn celeste(self) -> Self {
         use BlocoCasa::*;
         match self {
-            Reboco | RebocoOcre | RebocoRosa | RebocoAzul | RebocoVerde | Papel | Pano => MarmoreCasa,
+            Reboco | RebocoOcre | RebocoRosa | RebocoAzul | RebocoVerde | Papel | Pano => {
+                MarmoreCasa
+            }
             PedraBase | PedraNegra | NegroBorda => MarmoreBase,
             // Gold only on the frame beams; boards become marble, or whole
             // walls turned gold.
@@ -317,7 +326,13 @@ impl BlocoCasa {
 
     /// Chama: desenha sem sombreamento.
     pub fn brilha(self) -> bool {
-        matches!(self, BlocoCasa::Lume | BlocoCasa::LumeVerde | BlocoCasa::NeonRosaCasa | BlocoCasa::NeonCianoCasa)
+        matches!(
+            self,
+            BlocoCasa::Lume
+                | BlocoCasa::LumeVerde
+                | BlocoCasa::NeonRosaCasa
+                | BlocoCasa::NeonCianoCasa
+        )
     }
 }
 
@@ -521,7 +536,6 @@ impl Voxels {
     }
 }
 
-
 impl Voxels {
     pub fn novo(x0: i32, y0: i32, z0: i32, nx: i32, ny: i32, nz: i32) -> Self {
         Self {
@@ -670,7 +684,9 @@ pub fn gerar_prop(tipo: TipoProp, seed: i32) -> Construcao {
         TipoProp::Rede => rede(),
         TipoProp::Boia => boia(),
         TipoProp::Barquinho => barquinho(seed),
-        TipoProp::FarolTormenta | TipoProp::RuinaTormenta | TipoProp::CristalTormenta => marco_tormenta(tipo),
+        TipoProp::FarolTormenta | TipoProp::RuinaTormenta | TipoProp::CristalTormenta => {
+            marco_tormenta(tipo)
+        }
         TipoProp::OnibusVoador => onibus_voador(),
         TipoProp::Submarino => submarino(),
         TipoProp::Naufragio => naufragio(seed),
@@ -2182,7 +2198,9 @@ fn onibus_voador() -> Construcao {
                     BlocoCasa::Metal
                 } else if x == 12 && (6..=7).contains(&y) && z.abs() == 4 {
                     BlocoCasa::PinturaAmarela
-                } else if (9..=11).contains(&y) && (x == 12 || (z.abs() == 5 && x.rem_euclid(3) != 0 && x.abs() < 11)) {
+                } else if (9..=11).contains(&y)
+                    && (x == 12 || (z.abs() == 5 && x.rem_euclid(3) != 0 && x.abs() < 11))
+                {
                     BlocoCasa::Janela
                 } else {
                     BlocoCasa::PinturaAzul
@@ -2215,8 +2233,15 @@ fn onibus_voador() -> Construcao {
                 if !(0.80..=1.0).contains(&e) {
                     continue;
                 }
-                let faixa = (((z as f32).atan2(x as f32) + std::f32::consts::PI) / std::f32::consts::TAU * 9.0) as i32 % 3;
-                let bloco = [BlocoCasa::PinturaVermelha, BlocoCasa::Pano, BlocoCasa::PinturaAzul][faixa as usize];
+                let faixa = (((z as f32).atan2(x as f32) + std::f32::consts::PI)
+                    / std::f32::consts::TAU
+                    * 9.0) as i32
+                    % 3;
+                let bloco = [
+                    BlocoCasa::PinturaVermelha,
+                    BlocoCasa::Pano,
+                    BlocoCasa::PinturaAzul,
+                ][faixa as usize];
                 v.set(x, y, z, bloco);
             }
         }
@@ -2263,7 +2288,16 @@ fn torii() -> Construcao {
         let sobe = ((x.abs() - 50).max(0) as f32 / 4.0) as i32;
         for y in 56 + sobe..=60 + sobe {
             for z in -3..=3 {
-                v.set(x, y.min(65), z, if y >= 59 + sobe { BlocoCasa::NegroBorda } else { BlocoCasa::PinturaVermelha });
+                v.set(
+                    x,
+                    y.min(65),
+                    z,
+                    if y >= 59 + sobe {
+                        BlocoCasa::NegroBorda
+                    } else {
+                        BlocoCasa::PinturaVermelha
+                    },
+                );
             }
         }
     }
@@ -2284,13 +2318,26 @@ fn lanterna(seed: i32) -> Construcao {
     for y in 0..18 {
         v.set(0, y, 0, BlocoCasa::Metal);
     }
-    let cor = if seed.rem_euclid(2) == 0 { BlocoCasa::NeonRosaCasa } else { BlocoCasa::NeonCianoCasa };
+    let cor = if seed.rem_euclid(2) == 0 {
+        BlocoCasa::NeonRosaCasa
+    } else {
+        BlocoCasa::NeonCianoCasa
+    };
     for y in 18..27 {
         let r = if y == 18 || y == 26 { 2 } else { 3 };
         for x in -r..=r {
             for z in -r..=r {
                 if x * x + z * z <= r * r + 1 {
-                    v.set(x, y, z, if y == 18 || y == 26 { BlocoCasa::NegroBorda } else { cor });
+                    v.set(
+                        x,
+                        y,
+                        z,
+                        if y == 18 || y == 26 {
+                            BlocoCasa::NegroBorda
+                        } else {
+                            cor
+                        },
+                    );
                 }
             }
         }
@@ -2335,7 +2382,16 @@ fn submarino() -> Construcao {
         for y in 12..=17i32 {
             for z in -2..=2i32 {
                 if x.abs() == 4 || x == 3 || z.abs() == 2 || y == 17 {
-                    v.set(x, y, z, if y == 15 && z.abs() == 2 { BlocoCasa::Lume } else { BlocoCasa::OuroCasa });
+                    v.set(
+                        x,
+                        y,
+                        z,
+                        if y == 15 && z.abs() == 2 {
+                            BlocoCasa::Lume
+                        } else {
+                            BlocoCasa::OuroCasa
+                        },
+                    );
                 }
             }
         }
@@ -2373,7 +2429,13 @@ fn naufragio(seed: i32) -> Construcao {
                 if yy < 0 {
                     continue;
                 }
-                let b = if y == 10 { BlocoCasa::Viga } else if (y + x) % 5 == 0 { BlocoCasa::Lenha } else { BlocoCasa::Tabua };
+                let b = if y == 10 {
+                    BlocoCasa::Viga
+                } else if (y + x) % 5 == 0 {
+                    BlocoCasa::Lenha
+                } else {
+                    BlocoCasa::Tabua
+                };
                 v.set(x, yy, z, b);
             }
         }
@@ -2430,7 +2492,13 @@ fn letreiro(seed: i32) -> Construcao {
             let borda = y == 9 || y == 32 || z == 1 || z == 8;
             // Glyph strokes: a few bars per "character", every four rows.
             let traco = !borda && ((y - 10) % 5 != 4) && z != 2 && z != 7 && r.int(0, 10) < 6;
-            let b = if borda { cor } else if traco { cor } else { BlocoCasa::NegroBorda };
+            let b = if borda {
+                cor
+            } else if traco {
+                cor
+            } else {
+                BlocoCasa::NegroBorda
+            };
             v.set(0, y, z, b);
         }
     }
@@ -2457,7 +2525,11 @@ fn sakura(seed: i32) -> Construcao {
             for z in -12..=12i32 {
                 let d = ((x * x + z * z) as f32 / 144.0 + ((y - 21) as f32 / 11.0).powi(2)).sqrt();
                 if d <= 1.0 && r.int(0, 10) < 7 {
-                    let b = if r.int(0, 10) < 3 { BlocoCasa::FlorBranca } else { BlocoCasa::NeonRosaCasa };
+                    let b = if r.int(0, 10) < 3 {
+                        BlocoCasa::FlorBranca
+                    } else {
+                        BlocoCasa::NeonRosaCasa
+                    };
                     v.set(x, y, z, b);
                 }
             }
@@ -2551,25 +2623,68 @@ mod testes {
 
 /// Silhuetas do Planalto, no mesmo pipeline voxel e colisão das construções.
 fn marco_tormenta(tipo: TipoProp) -> Construcao {
-    let (r, h) = match tipo { TipoProp::FarolTormenta => (7, 80), TipoProp::RuinaTormenta => (10, 24), _ => (4, 20) };
-    let mut v = Voxels::novo(-r,0,-r,2*r+1,h+1,2*r+1);
-    for y in 0..=h { for x in -r..=r { for z in -r..=r {
-        let borda = x.abs().max(z.abs());
-        let bloco = match tipo {
-            TipoProp::FarolTormenta if y>=h-13 && y<h-3 && borda<=r-2 && x.abs()+z.abs()<=r+1 => BlocoCasa::Lume,
-            TipoProp::FarolTormenta if (y==h-14 || y==h-3 || y==0 || y==1) && x.abs()+z.abs()<=r+3 => BlocoCasa::PedraBase,
-            TipoProp::FarolTormenta if y>=h-2 && borda<=(h-y+1).max(1) => BlocoCasa::PinturaAzul,
-            TipoProp::FarolTormenta if y<h-14 && x.abs()+z.abs()<=r+1 && borda<=r-1
-                && (borda>=r-3 || y<3)
-                && !(z<0 && x.abs()<=1 && ((y>8 && y<15)||(y>29 && y<36)||(y>50 && y<57))) =>
-                    if y%12<=1 { BlocoCasa::PedraBase } else { BlocoCasa::PedraNegra },
-            TipoProp::RuinaTormenta if borda >= r-1 && y < h-(x+z).abs()%8 && !(z == -r && x.abs()<4 && y<15) => BlocoCasa::PedraNegra,
-            TipoProp::CristalTormenta if x.abs()+z.abs() <= ((h-y)/4).min(r) => BlocoCasa::PinturaAzul,
-            _ => BlocoCasa::Ar,
-        };
-        v.set(x,y,z,bloco);
-    } } }
-    let mut c = prop(tipo,v);
+    let (r, h) = match tipo {
+        TipoProp::FarolTormenta => (7, 80),
+        TipoProp::RuinaTormenta => (10, 24),
+        _ => (4, 20),
+    };
+    let mut v = Voxels::novo(-r, 0, -r, 2 * r + 1, h + 1, 2 * r + 1);
+    for y in 0..=h {
+        for x in -r..=r {
+            for z in -r..=r {
+                let borda = x.abs().max(z.abs());
+                let bloco = match tipo {
+                    TipoProp::FarolTormenta
+                        if y >= h - 13
+                            && y < h - 3
+                            && borda <= r - 2
+                            && x.abs() + z.abs() <= r + 1 =>
+                    {
+                        BlocoCasa::Lume
+                    }
+                    TipoProp::FarolTormenta
+                        if (y == h - 14 || y == h - 3 || y == 0 || y == 1)
+                            && x.abs() + z.abs() <= r + 3 =>
+                    {
+                        BlocoCasa::PedraBase
+                    }
+                    TipoProp::FarolTormenta if y >= h - 2 && borda <= (h - y + 1).max(1) => {
+                        BlocoCasa::PinturaAzul
+                    }
+                    TipoProp::FarolTormenta
+                        if y < h - 14
+                            && x.abs() + z.abs() <= r + 1
+                            && borda <= r - 1
+                            && (borda >= r - 3 || y < 3)
+                            && !(z < 0
+                                && x.abs() <= 1
+                                && ((y > 8 && y < 15)
+                                    || (y > 29 && y < 36)
+                                    || (y > 50 && y < 57))) =>
+                    {
+                        if y % 12 <= 1 {
+                            BlocoCasa::PedraBase
+                        } else {
+                            BlocoCasa::PedraNegra
+                        }
+                    }
+                    TipoProp::RuinaTormenta
+                        if borda >= r - 1
+                            && y < h - (x + z).abs() % 8
+                            && !(z == -r && x.abs() < 4 && y < 15) =>
+                    {
+                        BlocoCasa::PedraNegra
+                    }
+                    TipoProp::CristalTormenta if x.abs() + z.abs() <= ((h - y) / 4).min(r) => {
+                        BlocoCasa::PinturaAzul
+                    }
+                    _ => BlocoCasa::Ar,
+                };
+                v.set(x, y, z, bloco);
+            }
+        }
+    }
+    let mut c = prop(tipo, v);
     c.escala = 0.5;
     c
 }

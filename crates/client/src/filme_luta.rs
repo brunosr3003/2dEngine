@@ -43,8 +43,24 @@ pub struct Heroi {
     pub rosto: u8,
 }
 
-const fn h(roupa: u16, chapeu: u16, arma: u16, aura: (u8, u8, u8), renascimentos: u8, pele: u8, rosto: u8) -> Heroi {
-    Heroi { roupa, chapeu, arma, aura, renascimentos, pele, rosto }
+const fn h(
+    roupa: u16,
+    chapeu: u16,
+    arma: u16,
+    aura: (u8, u8, u8),
+    renascimentos: u8,
+    pele: u8,
+    rosto: u8,
+) -> Heroi {
+    Heroi {
+        roupa,
+        chapeu,
+        arma,
+        aura,
+        renascimentos,
+        pele,
+        rosto,
+    }
 }
 
 /// The lineup, left to right by rebirths: every paid outfit, paid hats,
@@ -104,7 +120,8 @@ impl Heroi {
             ..Default::default()
         };
         if let Some(s) = shared::aparencia::skin_de_arma(self.arma) {
-            a.armas[s.conjunto as usize] = (self.arma - shared::aparencia::ARMA_SKIN_BASE + 1) as u8;
+            a.armas[s.conjunto as usize] =
+                (self.arma - shared::aparencia::ARMA_SKIN_BASE + 1) as u8;
         }
         a
     }
@@ -146,7 +163,10 @@ struct Sorte(u64);
 
 impl Sorte {
     fn u(&mut self) -> f32 {
-        self.0 = self.0.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        self.0 = self
+            .0
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
         ((self.0 >> 40) as f32) / (1u64 << 24) as f32
     }
     fn entre(&mut self, a: f32, b: f32) -> f32 {
@@ -212,20 +232,62 @@ struct Ator {
 }
 
 enum Pendente {
-    Golpe { de: u32, alvo: u32, dano: i32, critico: bool },
-    Mordida { de: u32, alvo: u32 },
-    Skill { dono: u32, skill: usize, alvo: u32, ponto: Vec2, de: Vec2 },
-    ChefeBate { carga: u32 },
+    Golpe {
+        de: u32,
+        alvo: u32,
+        dano: i32,
+        critico: bool,
+    },
+    Mordida {
+        de: u32,
+        alvo: u32,
+    },
+    Skill {
+        dono: u32,
+        skill: usize,
+        alvo: u32,
+        ponto: Vec2,
+        de: Vec2,
+    },
+    ChefeBate {
+        carga: u32,
+    },
 }
 
 /// What a frame did to the bodies, applied after `World::apply`.
 enum Ordem {
-    Skill { id: u32, skill: usize, mira: Vec2, salto: bool },
-    Mordida { id: u32, alvo: u32, impacto: f32, mira: Vec2 },
-    Ferido { id: u32, de: Vec2 },
-    Numero { alvo: u32, dano: i32, critico: bool, eu: bool },
-    Carga { id: u32, forma: FormaDoChefe, centro: Vec2, dir: Vec2, carga_s: f32 },
-    Bateu { id: u32 },
+    Skill {
+        id: u32,
+        skill: usize,
+        mira: Vec2,
+        salto: bool,
+    },
+    Mordida {
+        id: u32,
+        alvo: u32,
+        impacto: f32,
+        mira: Vec2,
+    },
+    Ferido {
+        id: u32,
+        de: Vec2,
+    },
+    Numero {
+        alvo: u32,
+        dano: i32,
+        critico: bool,
+        eu: bool,
+    },
+    Carga {
+        id: u32,
+        forma: FormaDoChefe,
+        centro: Vec2,
+        dir: Vec2,
+        carga_s: f32,
+    },
+    Bateu {
+        id: u32,
+    },
 }
 
 pub struct Luta {
@@ -298,12 +360,26 @@ impl Luta {
             let n_kinds = kinds.len().max(1);
             let ks: Vec<u16> = (0..3).map(|i| kinds[(g * 2 + i) % n_kinds]).collect();
             let vivos = mobs.get(g).copied().unwrap_or(4);
-            s.grupos.push(Grupo { centro: c, raio: if chefe.is_some() { 9.0 } else { 7.0 }, kinds: ks, vivos, proxima_chegada: 0.0 });
+            s.grupos.push(Grupo {
+                centro: c,
+                raio: if chefe.is_some() { 9.0 } else { 7.0 },
+                kinds: ks,
+                vivos,
+                proxima_chegada: 0.0,
+            });
             let nj = jogadores.get(g).copied().unwrap_or(3);
             for j in 0..nj {
-                let id = if k_jogador == 0 { EU } else { 10 + k_jogador - 1 };
+                let id = if k_jogador == 0 {
+                    EU
+                } else {
+                    10 + k_jogador - 1
+                };
                 let heroi = OUTROS[(k_jogador as usize + 2) % OUTROS.len()];
-                let heroi = if k_jogador as usize % 2 == 0 { HEROIS[(k_jogador as usize / 2) % HEROIS.len()] } else { heroi };
+                let heroi = if k_jogador as usize % 2 == 0 {
+                    HEROIS[(k_jogador as usize / 2) % HEROIS.len()]
+                } else {
+                    heroi
+                };
                 let mut m = heroi.meta(id, k_jogador);
                 // One black hole on screen is a show; five are a mess.
                 if m.renascimentos >= 15 && k_jogador != 0 {
@@ -471,7 +547,11 @@ impl Luta {
             .iter()
             .filter(|a| a.jogador && a.grupo == g)
             .fold((Vec2::ZERO, 0.0), |(s, n), a| (s + a.pos, n + 1.0));
-        if n > 0.0 { s / n } else { self.grupos[g].centro }
+        if n > 0.0 {
+            s / n
+        } else {
+            self.grupos[g].centro
+        }
     }
 
     /// Steps the fight by `dt` and hands the bodies to `mundo`.
@@ -550,7 +630,11 @@ impl Luta {
     /// Mobs walking in from the edges to keep each clearing busy.
     fn chegadas(&mut self, t: f32) {
         for g in 0..self.grupos.len() {
-            let vivos = self.atores.iter().filter(|a| !a.jogador && !a.chefe && a.grupo == g && a.morto.is_none()).count();
+            let vivos = self
+                .atores
+                .iter()
+                .filter(|a| !a.jogador && !a.chefe && a.grupo == g && a.morto.is_none())
+                .count();
             if vivos < self.grupos[g].vivos && t >= self.grupos[g].proxima_chegada {
                 let espera = self.sorte.entre(0.6, 1.8);
                 self.grupos[g].proxima_chegada = t + espera;
@@ -581,15 +665,24 @@ impl Luta {
             return;
         }
         // Keep a live target in its own clearing.
-        let alvo = a.alvo.and_then(|id| self.vivo(id)).map(|x| (x.id, x.pos, x.chefe));
+        let alvo = a
+            .alvo
+            .and_then(|id| self.vivo(id))
+            .map(|x| (x.id, x.pos, x.chefe));
         let alvo = match alvo {
             Some(x) => Some(x),
             None => {
                 let c = self.grupos[a.grupo].centro;
                 let raio = self.grupos[a.grupo].raio + 7.0;
-                let novo = self.mais_perto(a.pos, a.grupo, false, 26.0).filter(|(id, _)| self.vivo(*id).is_some_and(|m| m.chefe || m.pos.distance(c) < raio));
+                let novo = self
+                    .mais_perto(a.pos, a.grupo, false, 26.0)
+                    .filter(|(id, _)| {
+                        self.vivo(*id)
+                            .is_some_and(|m| m.chefe || m.pos.distance(c) < raio)
+                    });
                 self.atores[i].alvo = novo.map(|(id, _)| id);
-                novo.and_then(|(id, _)| self.vivo(id)).map(|x| (x.id, x.pos, x.chefe))
+                novo.and_then(|(id, _)| self.vivo(id))
+                    .map(|x| (x.id, x.pos, x.chefe))
             }
         };
         let distancia_ = matches!(a.conjunto, 2 | 3);
@@ -606,17 +699,27 @@ impl Luta {
                 self.atores[i].proximo_passeio = t + self.sorte.entre(2.0, 4.0);
             }
             let d = self.atores[i].passeio - a.pos;
-            self.atores[i].vel = if d.length() > 0.5 { d.normalize() * 2.6 } else { Vec2::ZERO };
+            self.atores[i].vel = if d.length() > 0.5 {
+                d.normalize() * 2.6
+            } else {
+                Vec2::ZERO
+            };
             self.atores[i].olha = None;
             return;
         };
         // The boss's slam charging over me: run out of it.
         if let Some((_, forma, c, dir, _)) = self.tapa {
             let g = |v: Vec2| ::glam::Vec2::new(v.x, v.y);
-            if forma.contem(g(c), g(dir), g(a.pos)) || forma.contem(g(c), g(dir), g(a.pos + a.vel * 0.3)) {
+            if forma.contem(g(c), g(dir), g(a.pos))
+                || forma.contem(g(c), g(dir), g(a.pos + a.vel * 0.3))
+            {
                 let fora = (a.pos - c).normalize_or(vec2(1.0, 0.0));
                 let fora = if let FormaDoChefe::Anel { interno, externo } = forma {
-                    if a.pos.distance(c) < (interno + externo) * 0.5 { -fora } else { fora }
+                    if a.pos.distance(c) < (interno + externo) * 0.5 {
+                        -fora
+                    } else {
+                        fora
+                    }
                 } else {
                     fora
                 };
@@ -626,17 +729,26 @@ impl Luta {
             }
         }
         let raio_alvo = if no_chefe { 3.4 } else { 0.45 };
-        let quero = if distancia_ { 6.0 + (a.id % 3) as f32 } else { 1.05 + raio_alvo };
+        let quero = if distancia_ {
+            6.0 + (a.id % 3) as f32
+        } else {
+            1.05 + raio_alvo
+        };
         let d = alvo_pos.distance(a.pos);
         // Ranged: a mob in my face, step back and keep shooting after.
         if distancia_ && t >= a.recua_ate {
             let perto = self.mais_perto(a.pos, a.grupo, false, 2.6);
-            if let Some((mid, _)) = perto.filter(|(id, _)| self.vivo(*id).is_some_and(|m| !m.chefe)) {
+            if let Some((mid, _)) = perto.filter(|(id, _)| self.vivo(*id).is_some_and(|m| !m.chefe))
+            {
                 let m = self.vivo(mid).map_or(a.pos, |m| m.pos);
                 let fora = (a.pos - m).normalize_or(self.sorte.dir());
                 let lado = vec2(-fora.y, fora.x) * self.sorte.entre(-0.6, 0.6);
                 let casa = self.grupos[a.grupo].centro - a.pos;
-                let volta = if casa.length() > self.grupos[a.grupo].raio { casa.normalize() * 1.3 } else { Vec2::ZERO };
+                let volta = if casa.length() > self.grupos[a.grupo].raio {
+                    casa.normalize() * 1.3
+                } else {
+                    Vec2::ZERO
+                };
                 self.atores[i].recua_dir = (fora + lado + volta).normalize_or(fora);
                 self.atores[i].recua_ate = t + self.sorte.entre(0.55, 0.8);
             }
@@ -651,18 +763,31 @@ impl Luta {
         let vaga = alvo_pos + vec2(lado.cos(), lado.sin()) * quero;
         // Never far from the clearing: the fight stays where the camera is.
         let (c, r) = (self.grupos[a.grupo].centro, self.grupos[a.grupo].raio + 4.0);
-        let vaga = if vaga.distance(c) > r { c + (vaga - c).normalize() * r } else { vaga };
+        let vaga = if vaga.distance(c) > r {
+            c + (vaga - c).normalize() * r
+        } else {
+            vaga
+        };
         let ate_vaga = vaga - a.pos;
         let no_alcance = d <= quero + 0.6;
         // Skills: when ready and the target is in reach.
-        let skills: Vec<usize> =
-            (0..self.catalogo.len()).filter(|k| self.catalogo[*k].conjunto as u8 == a.conjunto).collect();
+        let skills: Vec<usize> = (0..self.catalogo.len())
+            .filter(|k| self.catalogo[*k].conjunto as u8 == a.conjunto)
+            .collect();
         if t >= a.proxima_skill && !skills.is_empty() {
             let k = skills[a.proxima_skill_idx % skills.len()];
             let s = &self.catalogo[k];
-            let alcance = if s.forma == Forma::EmSi { 99.0 } else { s.alcance.max(2.5) + raio_alvo };
+            let alcance = if s.forma == Forma::EmSi {
+                99.0
+            } else {
+                s.alcance.max(2.5) + raio_alvo
+            };
             let salto = s.e_salto();
-            let vale = if salto { d > 3.0 && d < s.alcance.max(6.0) + raio_alvo } else { d <= alcance };
+            let vale = if salto {
+                d > 3.0 && d < s.alcance.max(6.0) + raio_alvo
+            } else {
+                d <= alcance
+            };
             if vale {
                 self.lanca(i, k, alvo_id, alvo_pos, t);
                 return;
@@ -674,9 +799,18 @@ impl Luta {
         }
         if !no_alcance || ate_vaga.length() > 1.2 {
             let corre = ate_vaga.length() > 4.0;
-            let v = if corre { shared::PLAYER_SPEED * 1.4 } else { shared::PLAYER_SPEED * 0.8 };
-            self.atores[i].vel = ate_vaga.normalize_or_zero() * v.min(ate_vaga.length() / dt.max(1e-3));
-            self.atores[i].olha = if no_alcance { Some(alvo_pos - a.pos) } else { None };
+            let v = if corre {
+                shared::PLAYER_SPEED * 1.4
+            } else {
+                shared::PLAYER_SPEED * 0.8
+            };
+            self.atores[i].vel =
+                ate_vaga.normalize_or_zero() * v.min(ate_vaga.length() / dt.max(1e-3));
+            self.atores[i].olha = if no_alcance {
+                Some(alvo_pos - a.pos)
+            } else {
+                None
+            };
         } else {
             self.atores[i].vel = Vec2::ZERO;
             self.atores[i].olha = Some(alvo_pos - a.pos);
@@ -692,9 +826,18 @@ impl Luta {
             ator.proximo_golpe = t + if passo == 2 { 0.78 } else { 0.5 } + (a.id % 3) as f32 * 0.03;
             let critico = self.sorte.u() < 0.22;
             let base = if no_chefe { 4200.0 } else { 1300.0 };
-            let dano = (base * self.sorte.entre(0.8, 1.35) * if critico { 2.1 } else { 1.0 }) as i32;
+            let dano =
+                (base * self.sorte.entre(0.8, 1.35) * if critico { 2.1 } else { 1.0 }) as i32;
             let voo = if distancia_ { d / 28.0 } else { 0.0 };
-            self.pendentes.push((t + shared::PLAYER_ATTACK_IMPACT_S + voo, Pendente::Golpe { de: a.id, alvo: alvo_id, dano, critico }));
+            self.pendentes.push((
+                t + shared::PLAYER_ATTACK_IMPACT_S + voo,
+                Pendente::Golpe {
+                    de: a.id,
+                    alvo: alvo_id,
+                    dano,
+                    critico,
+                },
+            ));
         }
     }
 
@@ -718,9 +861,31 @@ impl Luta {
             a.salto = Some((de, para, t, impacto));
         }
         let (id, tier) = (a.id, a.tier);
-        self.habilidades.efeito(s.id, EntityId(id), de, ponto, Some(EntityId(alvo)).filter(|_| s.forma != Forma::EmSi), false, tier);
-        self.ordens.push(Ordem::Skill { id, skill: k, mira: alvo_pos, salto });
-        self.pendentes.push((t + impacto, Pendente::Skill { dono: id, skill: k, alvo, ponto, de }));
+        self.habilidades.efeito(
+            s.id,
+            EntityId(id),
+            de,
+            ponto,
+            Some(EntityId(alvo)).filter(|_| s.forma != Forma::EmSi),
+            false,
+            tier,
+        );
+        self.ordens.push(Ordem::Skill {
+            id,
+            skill: k,
+            mira: alvo_pos,
+            salto,
+        });
+        self.pendentes.push((
+            t + impacto,
+            Pendente::Skill {
+                dono: id,
+                skill: k,
+                alvo,
+                ponto,
+                de,
+            },
+        ));
     }
 
     fn mob(&mut self, i: usize, t: f32) {
@@ -747,7 +912,8 @@ impl Luta {
             }
         }
         if d > a.alcance + 0.25 {
-            ator.vel = (alvo_pos - a.pos).normalize_or_zero() * a.passo * if d > 6.0 { 1.35 } else { 1.0 };
+            ator.vel =
+                (alvo_pos - a.pos).normalize_or_zero() * a.passo * if d > 6.0 { 1.35 } else { 1.0 };
             ator.olha = None;
         } else {
             ator.vel = Vec2::ZERO;
@@ -757,8 +923,19 @@ impl Luta {
                 ator.proximo_golpe = t + espera;
                 let dir = (alvo_pos - a.pos).normalize_or_zero();
                 ator.bote = Some((dir, t));
-                self.ordens.push(Ordem::Mordida { id: a.id, alvo: alvo_id, impacto: 0.42, mira: alvo_pos });
-                self.pendentes.push((t + 0.42, Pendente::Mordida { de: a.id, alvo: alvo_id }));
+                self.ordens.push(Ordem::Mordida {
+                    id: a.id,
+                    alvo: alvo_id,
+                    impacto: 0.42,
+                    mira: alvo_pos,
+                });
+                self.pendentes.push((
+                    t + 0.42,
+                    Pendente::Mordida {
+                        de: a.id,
+                        alvo: alvo_id,
+                    },
+                ));
             }
         }
     }
@@ -767,13 +944,21 @@ impl Luta {
         let a = self.atores[i].clone();
         // Face whoever it is about to hit, turning slowly between slams.
         if a.alvo.and_then(|id| self.vivo(id)).is_none() || self.sorte.u() < 0.01 {
-            let ids: Vec<u32> = self.atores.iter().filter(|x| x.jogador).map(|x| x.id).collect();
+            let ids: Vec<u32> = self
+                .atores
+                .iter()
+                .filter(|x| x.jogador)
+                .map(|x| x.id)
+                .collect();
             if !ids.is_empty() {
                 let k = (self.sorte.u() * ids.len() as f32) as usize % ids.len();
                 self.atores[i].alvo = Some(ids[k]);
             }
         }
-        let alvo = self.atores[i].alvo.and_then(|id| self.vivo(id)).map_or(a.pos + vec2(0.0, 1.0), |x| x.pos);
+        let alvo = self.atores[i]
+            .alvo
+            .and_then(|id| self.vivo(id))
+            .map_or(a.pos + vec2(0.0, 1.0), |x| x.pos);
         self.atores[i].vel = Vec2::ZERO;
         if self.tapa.is_none() {
             self.atores[i].olha = Some(alvo - a.pos);
@@ -787,17 +972,38 @@ impl Luta {
             let dir = (alvo - a.pos).normalize_or(vec2(0.0, 1.0));
             let forma = match self.tapas % 3 {
                 0 => FormaDoChefe::Circulo { raio: 6.5 },
-                1 => FormaDoChefe::Cone { raio: 10.0, abertura: 0.75 },
-                _ => FormaDoChefe::Anel { interno: 4.0, externo: 10.0 },
+                1 => FormaDoChefe::Cone {
+                    raio: 10.0,
+                    abertura: 0.75,
+                },
+                _ => FormaDoChefe::Anel {
+                    interno: 4.0,
+                    externo: 10.0,
+                },
             };
             let carga_s = 1.25;
             self.tapas += 1;
             let id = self.tapas;
             self.tapa = Some((id, forma, a.pos, dir, t + carga_s));
             self.proximo_tapa = t + carga_s + 2.4;
-            self.telegrafos.comeca(id, EntityId(a.id), forma, [a.pos.x, a.pos.y], [dir.x, dir.y], carga_s, get_time());
-            self.ordens.push(Ordem::Carga { id: a.id, forma, centro: a.pos, dir, carga_s });
-            self.pendentes.push((t + carga_s, Pendente::ChefeBate { carga: id }));
+            self.telegrafos.comeca(
+                id,
+                EntityId(a.id),
+                forma,
+                [a.pos.x, a.pos.y],
+                [dir.x, dir.y],
+                carga_s,
+                get_time(),
+            );
+            self.ordens.push(Ordem::Carga {
+                id: a.id,
+                forma,
+                centro: a.pos,
+                dir,
+                carga_s,
+            });
+            self.pendentes
+                .push((t + carga_s, Pendente::ChefeBate { carga: id }));
         }
     }
 
@@ -828,11 +1034,18 @@ impl Luta {
 
     /// Hits land: numbers, flinches, deaths.
     fn resolve(&mut self, t: f32) {
-        let (agora, depois): (Vec<_>, Vec<_>) = std::mem::take(&mut self.pendentes).into_iter().partition(|(q, _)| *q <= t);
+        let (agora, depois): (Vec<_>, Vec<_>) = std::mem::take(&mut self.pendentes)
+            .into_iter()
+            .partition(|(q, _)| *q <= t);
         self.pendentes = depois;
         for (_, p) in agora {
             match p {
-                Pendente::Golpe { de, alvo, dano, critico } => self.fere(de, alvo, dano, critico),
+                Pendente::Golpe {
+                    de,
+                    alvo,
+                    dano,
+                    critico,
+                } => self.fere(de, alvo, dano, critico),
                 Pendente::Mordida { de, alvo } => {
                     if self.vivo(de).is_none() {
                         continue;
@@ -841,32 +1054,63 @@ impl Luta {
                     let pos_de = self.vivo(de).map_or(Vec2::ZERO, |a| a.pos);
                     if let Some(a) = self.vivo(alvo) {
                         if a.pos.distance(pos_de) < 2.6 {
-                            self.ordens.push(Ordem::Ferido { id: alvo, de: pos_de });
-                            self.ordens.push(Ordem::Numero { alvo, dano, critico: false, eu: true });
+                            self.ordens.push(Ordem::Ferido {
+                                id: alvo,
+                                de: pos_de,
+                            });
+                            self.ordens.push(Ordem::Numero {
+                                alvo,
+                                dano,
+                                critico: false,
+                                eu: true,
+                            });
                         }
                     }
                 }
-                Pendente::Skill { dono, skill, alvo, ponto, de } => {
+                Pendente::Skill {
+                    dono,
+                    skill,
+                    alvo,
+                    ponto,
+                    de,
+                } => {
                     let s = self.catalogo[skill].clone();
                     let tier = self.vivo(dono).map_or(8, |a| a.tier);
                     let agora_de = self.vivo(dono).map_or(de, |a| a.pos);
-                    let ponto = if s.forma == Forma::Projetil { self.vivo(alvo).map_or(ponto, |a| a.pos) } else { ponto };
-                    self.habilidades.efeito(s.id, EntityId(dono), agora_de, ponto, None, true, tier);
+                    let ponto = if s.forma == Forma::Projetil {
+                        self.vivo(alvo).map_or(ponto, |a| a.pos)
+                    } else {
+                        ponto
+                    };
+                    self.habilidades.efeito(
+                        s.id,
+                        EntityId(dono),
+                        agora_de,
+                        ponto,
+                        None,
+                        true,
+                        tier,
+                    );
                     if s.dano <= 0 {
                         continue;
                     }
                     let frente = (ponto - agora_de).normalize_or(vec2(0.0, 1.0));
-                    let raio = shared::skills::ajustada_ao_tier(s.clone(), tier).raio.max(2.0);
+                    let raio = shared::skills::ajustada_ao_tier(s.clone(), tier)
+                        .raio
+                        .max(2.0);
                     let alvos: Vec<u32> = self
                         .atores
                         .iter()
                         .filter(|a| !a.jogador && a.morto.is_none())
                         .filter(|a| match s.forma {
                             Forma::Projetil => a.id == alvo,
-                            Forma::Circulo => a.pos.distance(ponto) <= raio + if a.chefe { 3.0 } else { 0.0 },
+                            Forma::Circulo => {
+                                a.pos.distance(ponto) <= raio + if a.chefe { 3.0 } else { 0.0 }
+                            }
                             Forma::Cone | Forma::Linha => {
                                 let v = a.pos - agora_de;
-                                v.length() <= s.alcance.max(4.0) + if a.chefe { 3.0 } else { 0.0 } && v.normalize_or_zero().dot(frente) > 0.45
+                                v.length() <= s.alcance.max(4.0) + if a.chefe { 3.0 } else { 0.0 }
+                                    && v.normalize_or_zero().dot(frente) > 0.45
                             }
                             Forma::EmSi => false,
                         })
@@ -876,22 +1120,44 @@ impl Luta {
                     for (n, id) in alvos.into_iter().enumerate() {
                         let critico = self.sorte.u() < 0.4;
                         let base = if id == CHEFE { 11_000.0 } else { 5200.0 };
-                        let dano = (base * self.sorte.entre(0.85, 1.3) * if critico { 1.9 } else { 1.0 }) as i32;
+                        let dano =
+                            (base * self.sorte.entre(0.85, 1.3) * if critico { 1.9 } else { 1.0 })
+                                as i32;
                         // A little stagger so stacked numbers read.
-                        self.pendentes.push((t + n as f32 * 0.05, Pendente::Golpe { de: dono, alvo: id, dano, critico }));
+                        self.pendentes.push((
+                            t + n as f32 * 0.05,
+                            Pendente::Golpe {
+                                de: dono,
+                                alvo: id,
+                                dano,
+                                critico,
+                            },
+                        ));
                     }
                 }
                 Pendente::ChefeBate { carga } => {
                     self.telegrafos.termina(carga, true, get_time());
                     self.ordens.push(Ordem::Bateu { id: CHEFE });
-                    let Some((_, forma, c, dir)) = self.tapa.map(|(i, f, c, d, _)| (i, f, c, d)) else { continue };
+                    let Some((_, forma, c, dir)) = self.tapa.map(|(i, f, c, d, _)| (i, f, c, d))
+                    else {
+                        continue;
+                    };
                     let g = |v: Vec2| ::glam::Vec2::new(v.x, v.y);
-                    let feridos: Vec<u32> =
-                        self.atores.iter().filter(|a| a.jogador && forma.contem(g(c), g(dir), g(a.pos))).map(|a| a.id).collect();
+                    let feridos: Vec<u32> = self
+                        .atores
+                        .iter()
+                        .filter(|a| a.jogador && forma.contem(g(c), g(dir), g(a.pos)))
+                        .map(|a| a.id)
+                        .collect();
                     for id in feridos {
                         let dano = self.sorte.entre(1800.0, 3200.0) as i32;
                         self.ordens.push(Ordem::Ferido { id, de: c });
-                        self.ordens.push(Ordem::Numero { alvo: id, dano, critico: false, eu: true });
+                        self.ordens.push(Ordem::Numero {
+                            alvo: id,
+                            dano,
+                            critico: false,
+                            eu: true,
+                        });
                     }
                     self.tapa = None;
                 }
@@ -900,8 +1166,14 @@ impl Luta {
     }
 
     fn fere(&mut self, de: u32, alvo: u32, dano: i32, critico: bool) {
-        let pos_de = self.atores.iter().find(|a| a.id == de).map_or(Vec2::ZERO, |a| a.pos);
-        let Some(i) = self.idx(alvo).filter(|i| self.atores[*i].morto.is_none()) else { return };
+        let pos_de = self
+            .atores
+            .iter()
+            .find(|a| a.id == de)
+            .map_or(Vec2::ZERO, |a| a.pos);
+        let Some(i) = self.idx(alvo).filter(|i| self.atores[*i].morto.is_none()) else {
+            return;
+        };
         let relogio = self.relogio;
         let a = &mut self.atores[i];
         let mut ferido = true;
@@ -913,7 +1185,10 @@ impl Luta {
             // only the crits and the skills get one.
             if !critico && dano < 8000 {
                 if ferido {
-                    self.ordens.push(Ordem::Ferido { id: alvo, de: pos_de });
+                    self.ordens.push(Ordem::Ferido {
+                        id: alvo,
+                        de: pos_de,
+                    });
                 }
                 return;
             }
@@ -927,9 +1202,17 @@ impl Luta {
             }
         }
         if ferido {
-            self.ordens.push(Ordem::Ferido { id: alvo, de: pos_de });
+            self.ordens.push(Ordem::Ferido {
+                id: alvo,
+                de: pos_de,
+            });
         }
-        self.ordens.push(Ordem::Numero { alvo, dano, critico, eu: false });
+        self.ordens.push(Ordem::Numero {
+            alvo,
+            dano,
+            critico,
+            eu: false,
+        });
     }
 
     /// The frame's states into the world, then what the server would have
@@ -951,17 +1234,39 @@ impl Luta {
                 if a.chefe {
                     flags |= ent_flags::BOSS;
                 }
-                let mut s = EntityState::quantize(EntityId(a.id), g(pos), g(a.vel), if a.morto.is_some() { 0 } else { a.hp.max(1) }, flags);
-                s.acao = if a.jogador { acao::monta(a.conjunto, true, a.gesto.0, a.gesto.1) } else { 0 };
-                let olha = a.olha.filter(|d| d.length_squared() > 1e-4).or((a.vel.length_squared() > 0.05).then_some(a.vel));
+                let mut s = EntityState::quantize(
+                    EntityId(a.id),
+                    g(pos),
+                    g(a.vel),
+                    if a.morto.is_some() { 0 } else { a.hp.max(1) },
+                    flags,
+                );
+                s.acao = if a.jogador {
+                    acao::monta(a.conjunto, true, a.gesto.0, a.gesto.1)
+                } else {
+                    0
+                };
+                let olha =
+                    a.olha
+                        .filter(|d| d.length_squared() > 1e-4)
+                        .or((a.vel.length_squared() > 0.05).then_some(a.vel));
                 s.rumo = olha.map_or(0, |d| shared::rumo_de_dir(g(d)));
                 s
             })
             .collect();
-        mundo.apply(std::mem::take(&mut self.novas), estados, &std::mem::take(&mut self.removidas));
+        mundo.apply(
+            std::mem::take(&mut self.novas),
+            estados,
+            &std::mem::take(&mut self.removidas),
+        );
         for o in std::mem::take(&mut self.ordens) {
             match o {
-                Ordem::Skill { id, skill, mira, salto } => {
+                Ordem::Skill {
+                    id,
+                    skill,
+                    mira,
+                    salto,
+                } => {
                     let s = &self.catalogo[skill];
                     if let Some(e) = mundo.ents.get_mut(&EntityId(id)) {
                         e.skill = Some((s.id, 0.0, s.impacto_em()));
@@ -977,7 +1282,12 @@ impl Luta {
                         }
                     }
                 }
-                Ordem::Mordida { id, alvo, impacto, mira } => {
+                Ordem::Mordida {
+                    id,
+                    alvo,
+                    impacto,
+                    mira,
+                } => {
                     if let Some(e) = mundo.ents.get_mut(&EntityId(id)) {
                         e.golpe = 0.0;
                         e.ataque_mob = Some((Some(EntityId(alvo)), 0.0, impacto));
@@ -990,7 +1300,12 @@ impl Luta {
                         e.golpe_de = (de - e.render_pos).normalize_or_zero();
                     }
                 }
-                Ordem::Numero { alvo, dano, critico, eu } => {
+                Ordem::Numero {
+                    alvo,
+                    dano,
+                    critico,
+                    eu,
+                } => {
                     let k = mundo.efeitos.len() as u32 * 7 + alvo * 13 + (t * 100.0) as u32;
                     mundo.efeitos.push(crate::world::Efeito {
                         alvo: EntityId(alvo),
@@ -1001,14 +1316,31 @@ impl Luta {
                         semente: (k.wrapping_mul(2_654_435_761) % 1000) as f32 / 1000.0,
                     });
                 }
-                Ordem::Carga { id, forma, centro, dir, carga_s } => {
+                Ordem::Carga {
+                    id,
+                    forma,
+                    centro,
+                    dir,
+                    carga_s,
+                } => {
                     if let Some(e) = mundo.ents.get_mut(&EntityId(id)) {
                         let p = e.render_pos;
-                        e.carga_chefe = Some(crate::chefe_anim::Carga::nova(&forma, centro, dir, p, carga_s, get_time()));
+                        e.carga_chefe = Some(crate::chefe_anim::Carga::nova(
+                            &forma,
+                            centro,
+                            dir,
+                            p,
+                            carga_s,
+                            get_time(),
+                        ));
                     }
                 }
                 Ordem::Bateu { id } => {
-                    if let Some(c) = mundo.ents.get_mut(&EntityId(id)).and_then(|e| e.carga_chefe.as_mut()) {
+                    if let Some(c) = mundo
+                        .ents
+                        .get_mut(&EntityId(id))
+                        .and_then(|e| e.carga_chefe.as_mut())
+                    {
                         c.bateu(get_time());
                     }
                 }
@@ -1073,7 +1405,16 @@ pub fn clareiras(
     while escolhidas.len() < n {
         let prox = boas
             .iter()
-            .map(|(q, p)| (escolhidas.iter().map(|e| e.distance(*p)).fold(f32::MAX, f32::min), *q, *p))
+            .map(|(q, p)| {
+                (
+                    escolhidas
+                        .iter()
+                        .map(|e| e.distance(*p))
+                        .fold(f32::MAX, f32::min),
+                    *q,
+                    *p,
+                )
+            })
             .filter(|(d, _, _)| *d >= entre)
             .min_by(|a, b| {
                 // The nearest spot that is still far enough: groups spread
@@ -1098,15 +1439,28 @@ mod testes {
         renasc.sort_unstable();
         assert_eq!(renasc, vec![1, 2, 3, 5, 10, 15]);
         for h in HEROIS {
-            assert!(shared::aparencia::preco_da_skin(h.roupa).is_some(), "{} is a cash outfit", h.roupa);
+            assert!(
+                shared::aparencia::preco_da_skin(h.roupa).is_some(),
+                "{} is a cash outfit",
+                h.roupa
+            );
             assert!(shared::aparencia::skin_de_arma(h.arma).is_some());
             let a = h.aparencia(0);
             assert_eq!(a.saneada(), a, "the look survives the server's check");
             let bits = bits_de_aura(h.aura.0, h.aura.1, h.aura.2);
-            assert_eq!(shared::auras::peca(bits, 2).map(|p| (p.0, p.1)), Some((h.aura.0, h.aura.1)));
+            assert_eq!(
+                shared::auras::peca(bits, 2).map(|p| (p.0, p.1)),
+                Some((h.aura.0, h.aura.1))
+            );
         }
-        assert_eq!(shared::auras::peca(bits_de_aura(3, 4, 12), 0), Some((3, 4, 10)));
-        assert_eq!(shared::auras::peca(bits_de_aura(2, 3, 5), 0), Some((2, 3, 5)));
+        assert_eq!(
+            shared::auras::peca(bits_de_aura(3, 4, 12), 0),
+            Some((3, 4, 10))
+        );
+        assert_eq!(
+            shared::auras::peca(bits_de_aura(2, 3, 5), 0),
+            Some((2, 3, 5))
+        );
     }
 
     #[test]
@@ -1134,17 +1488,29 @@ mod testes {
             }
             mundo.tick(1.0 / 60.0, &|_, _, _| 0.0);
         }
-        assert!(golpes > 40 && mordidas > 20 && skills > 5 && feridos > 40, "{golpes} {mordidas} {skills} {feridos}");
+        assert!(
+            golpes > 40 && mordidas > 20 && skills > 5 && feridos > 40,
+            "{golpes} {mordidas} {skills} {feridos}"
+        );
         assert!(luta.mortes >= 4, "mobs die: {}", luta.mortes);
         assert!(luta.proximo_id > 107, "and new ones walk in");
         // Players move with walking speed (the walk cycle has something to show).
-        assert!(mundo.ents.values().filter(|e| e.meta.tag == EntityTag::Player).all(|e| e.fase > 1.0));
+        assert!(mundo
+            .ents
+            .values()
+            .filter(|e| e.meta.tag == EntityTag::Player)
+            .all(|e| e.fase > 1.0));
         // The two groups stay apart.
         // The two groups stay apart, each player near its own clearing.
         assert!(luta.centro_do_grupo(0).distance(luta.centro_do_grupo(1)) > 25.0);
         for a in luta.atores.iter().filter(|a| a.jogador) {
             let c = luta.grupos[a.grupo].centro;
-            assert!(a.pos.distance(c) < luta.grupos[a.grupo].raio + 8.0, "player {} wandered to {:?}", a.id, a.pos - c);
+            assert!(
+                a.pos.distance(c) < luta.grupos[a.grupo].raio + 8.0,
+                "player {} wandered to {:?}",
+                a.id,
+                a.pos - c
+            );
         }
         crate::relogio::fixa(None);
     }

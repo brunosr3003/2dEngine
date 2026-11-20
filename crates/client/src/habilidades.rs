@@ -155,7 +155,11 @@ mod tests {
         c.vida_baixa = true;
         // This is the path `usar_habilidade` takes with power-saving mode on: it
         // reads neither gesture nor key, and still casts.
-        assert_eq!(h.pedido_automatico(c, 10.0), Some(11), "a cura tem que sair");
+        assert_eq!(
+            h.pedido_automatico(c, 10.0),
+            Some(11),
+            "a cura tem que sair"
+        );
         // And it charges the same wait as the normal path, so a black screen does
         // not become a machine gun of requests.
         assert_eq!(h.pedido_automatico(c, 10.0), None, "sem respeitar a espera");
@@ -221,7 +225,6 @@ impl Habilidades {
     pub fn recarga_ate(&self, id: u32) -> f64 {
         self.recargas.get(&id).copied().unwrap_or(0.0)
     }
-
 
     pub fn pedido(&mut self, contexto: Contexto) -> Option<u32> {
         let mouse = Vec2::from(mouse_position());
@@ -291,7 +294,10 @@ impl Habilidades {
         if let Some(id) = manual {
             let s = self.catalogo.iter().find(|s| s.id == id)?;
             let erro = if !s.destravada(contexto.nivel) {
-                Some(format!("Unlocks at level {}", shared::progressao::texto_de_nivel(s.nivel_necessario())))
+                Some(format!(
+                    "Unlocks at level {}",
+                    shared::progressao::texto_de_nivel(s.nivel_necessario())
+                ))
             } else if !contexto.vivo {
                 Some("Character incapacitated".into())
             } else if self.ocupada() {
@@ -519,7 +525,10 @@ impl Habilidades {
                 estilo::texto_centro(
                     c.x,
                     c.y + 7.0,
-                    &format!("Lv {}", shared::progressao::texto_de_nivel(s.nivel_necessario())),
+                    &format!(
+                        "Lv {}",
+                        shared::progressao::texto_de_nivel(s.nivel_necessario())
+                    ),
                     18,
                     estilo::TEXTO,
                 );
@@ -548,8 +557,17 @@ impl Habilidades {
                 let w = estilo::medir(&custo, 11) + 12.0;
                 let legenda = Rect::new(c.x - w * 0.5, r.y + r.h + 7.0, w, 18.0);
                 estilo::ret_arredondado(legenda, 4.0, estilo::FUNDO);
-                estilo::texto_centro(c.x, legenda.y + 13.0, &custo, 11,
-                    if mp < s.custo_mp { ORANGE } else { estilo::SUAVE });
+                estilo::texto_centro(
+                    c.x,
+                    legenda.y + 13.0,
+                    &custo,
+                    11,
+                    if mp < s.custo_mp {
+                        ORANGE
+                    } else {
+                        estilo::SUAVE
+                    },
+                );
             });
             let arrastando = self.arrasto.inicio.is_some_and(|(id, _)| id == s.id);
             if arrastando {

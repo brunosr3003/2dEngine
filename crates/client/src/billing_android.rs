@@ -78,7 +78,11 @@ pub fn pedido_do_token(token: &str) -> String {
         h
     }
     let b = token.as_bytes();
-    format!("gp-{:016x}{:016x}", fnv(b, 0), fnv(b, 0x9e37_79b9_7f4a_7c15))
+    format!(
+        "gp-{:016x}{:016x}",
+        fnv(b, 0),
+        fnv(b, 0x9e37_79b9_7f4a_7c15)
+    )
 }
 
 /// Chamar uma vez por frame (loop principal) pra saber se alguma compra
@@ -200,7 +204,8 @@ mod jni {
         } else {
             c"(Landroid/app/Activity;)V"
         };
-        let method = (**env).GetStaticMethodID.unwrap()(env, class, method_name.as_ptr(), sig.as_ptr());
+        let method =
+            (**env).GetStaticMethodID.unwrap()(env, class, method_name.as_ptr(), sig.as_ptr());
         if method.is_null() {
             (**env).ExceptionClear.unwrap()(env);
             macroquad::prelude::error!("TempestBilling: metodo {metodo} nao encontrado");
@@ -209,7 +214,9 @@ mod jni {
         let mut args = vec![ndk_sys::jvalue { l: ACTIVITY }];
         if let Some(a) = arg {
             let c = CString::new(a).unwrap_or_default();
-            args.push(ndk_sys::jvalue { l: (**env).NewStringUTF.unwrap()(env, c.as_ptr()) });
+            args.push(ndk_sys::jvalue {
+                l: (**env).NewStringUTF.unwrap()(env, c.as_ptr()),
+            });
         }
         (**env).CallStaticVoidMethodA.unwrap()(env, class, method, args.as_ptr());
         if (**env).ExceptionCheck.unwrap()(env) != 0 {

@@ -43,7 +43,11 @@ impl GameWorld {
             return;
         }
         let Some(ctx) = self.auth_ctx.as_ref() else {
-            self.social_resultado(sid, false, "Social unavailable: the server has no database.");
+            self.social_resultado(
+                sid,
+                false,
+                "Social unavailable: the server has no database.",
+            );
             return;
         };
         // At most one operation in flight per session; no SQL blocks the tick.
@@ -205,10 +209,14 @@ impl GameWorld {
                     .unwrap_or(Vec2::ZERO);
                 crate::social::Presente {
                     nome: s.name.clone(),
-                    nivel: shared::level_of_xp_with_mult(s.xp, crate::economy::xp_multiplier()) as u16,
-                    conjunto: s.equipment.weapon.map_or(shared::social::SEM_CONJUNTO, |w| {
-                        shared::skills::Conjunto::da_arma(w) as u8
-                    }),
+                    nivel: shared::level_of_xp_with_mult(s.xp, crate::economy::xp_multiplier())
+                        as u16,
+                    conjunto: s
+                        .equipment
+                        .weapon
+                        .map_or(shared::social::SEM_CONJUNTO, |w| {
+                            shared::skills::Conjunto::da_arma(w) as u8
+                        }),
                     pk: s.pk_points,
                     x: p.x,
                     y: p.y,
@@ -248,7 +256,11 @@ impl GameWorld {
 
     pub fn on_cla_dos_presentes(&mut self, v: Vec<(String, i64, String)>) {
         for (nome, id, tag) in v {
-            if let Some(s) = self.sessions.values_mut().find(|s| s.logged_in && s.name == nome) {
+            if let Some(s) = self
+                .sessions
+                .values_mut()
+                .find(|s| s.logged_in && s.name == nome)
+            {
                 s.cla_id = id;
                 s.cla_tag = tag;
             }
@@ -272,17 +284,27 @@ impl GameWorld {
             if let Aviso::Estado(e) = &mut aviso {
                 // Whoever is HERE is online for sure (the table may lag a beat).
                 for c in &mut e.contatos {
-                    if let Some(o) = self.sessions.values().find(|o| o.logged_in && o.name == c.nome) {
+                    if let Some(o) = self
+                        .sessions
+                        .values()
+                        .find(|o| o.logged_in && o.name == c.nome)
+                    {
                         c.online = true;
                         c.zona = self.zona.clone();
                         c.canal = std::env::var("MMO_CANAL").unwrap_or_else(|_| "1".into());
-                        c.nivel = shared::level_of_xp_with_mult(o.xp, crate::economy::xp_multiplier()) as u16;
+                        c.nivel =
+                            shared::level_of_xp_with_mult(o.xp, crate::economy::xp_multiplier())
+                                as u16;
                     }
                 }
                 // The blacklist, for whoever is HERE: live PK and position.
                 let canal = std::env::var("MMO_CANAL").unwrap_or_else(|_| "1".into());
                 for i in &mut e.lista_negra {
-                    if let Some(o) = self.sessions.values().find(|o| o.logged_in && o.name == i.nome) {
+                    if let Some(o) = self
+                        .sessions
+                        .values()
+                        .find(|o| o.logged_in && o.name == i.nome)
+                    {
                         let p = o
                             .entity
                             .and_then(|e| self.ecs.get::<&Position>(e).ok().map(|p| p.0))
@@ -304,14 +326,21 @@ impl GameWorld {
                     .filter(|c| c.online)
                     .map(|c| c.nome.clone())
                     .collect();
-                meu_cla = Some(e.cla.as_ref().map_or((0, String::new()), |c| (c.id, c.tag.clone())));
+                meu_cla = Some(
+                    e.cla
+                        .as_ref()
+                        .map_or((0, String::new()), |c| (c.id, c.tag.clone())),
+                );
             }
             let _ = s.handle.to_client.send(ServerMessage::Social { aviso });
         }
         if let Some(pid) = s.party_id {
             let members = self.party_members(pid);
             let tags = self.party_tags(&members);
-            let _ = s.handle.to_client.send(ServerMessage::PartyUpdate { members, tags });
+            let _ = s
+                .handle
+                .to_client
+                .send(ServerMessage::PartyUpdate { members, tags });
         }
         // My own clan changed (created, joined, new tag): the nameplate follows now.
         if let Some((id, tag)) = meu_cla {

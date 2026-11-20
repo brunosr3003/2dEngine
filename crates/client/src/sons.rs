@@ -348,12 +348,17 @@ mod tests {
     fn os_sons_do_mar_existem_e_sao_pequenos() {
         let raiz = concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/audio/mar/");
         for n in ["canhao", "agua", "impacto"] {
-            let bytes = std::fs::read(format!("{raiz}{n}.ogg")).unwrap_or_else(|_| panic!("missing {n}.ogg"));
+            let bytes = std::fs::read(format!("{raiz}{n}.ogg"))
+                .unwrap_or_else(|_| panic!("missing {n}.ogg"));
             assert!(bytes.starts_with(b"OggS"), "{n}.ogg is not Ogg");
             assert!(bytes.len() < 16 * 1024, "{n}.ogg has {} bytes", bytes.len());
         }
         assert_eq!(Som::CanhaoImpacto as usize + 1, SOM_COUNT);
-        assert_eq!(Som::CanhaoDisparo as usize, Som::Craft as usize + 1, "append only");
+        assert_eq!(
+            Som::CanhaoDisparo as usize,
+            Som::Craft as usize + 1,
+            "append only"
+        );
     }
     #[test]
     fn mobs_usam_canais_separados_do_jogador() {

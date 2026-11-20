@@ -122,7 +122,10 @@ pub fn montar(ger: &Gerador) -> Vila {
     }
     if let Some(p) = ger.porto() {
         montar_porto(ger, &p, &mut vila);
-    } else if let Some(c) = ger.cidade().filter(|_| ger.semente == crate::celeste::SEMENTE) {
+    } else if let Some(c) = ger
+        .cidade()
+        .filter(|_| ger.semente == crate::celeste::SEMENTE)
+    {
         // SKYREACH HAS NO PORT, and the Harbour Captain only stood on one: no
         // Captain, no travel, and whoever sailed up could not leave (the
         // owner: "how do I leave the sky islands?"). He keeps the town square,
@@ -147,7 +150,12 @@ pub fn montar(ger: &Gerador) -> Vila {
     // Kōgen-tō's Docks lawn west of the shops (the bus is east), and at the
     // bubble kingdom's dock.
     let lugar_do_submarino = if ger.semente == crate::kogen::SEMENTE {
-        ger.cidade().map(|c| (c.centro() + Vec2::new(-27.0, -4.0), c.centro() + Vec2::new(-36.0, 2.0)))
+        ger.cidade().map(|c| {
+            (
+                c.centro() + Vec2::new(-27.0, -4.0),
+                c.centro() + Vec2::new(-36.0, 2.0),
+            )
+        })
     } else if ger.semente == crate::abissal::SEMENTE {
         let d = crate::abissal::doca_do_submarino();
         Some((d + Vec2::new(6.0, -6.0), d))
@@ -172,37 +180,88 @@ pub fn montar(ger: &Gerador) -> Vila {
     }
     // ABYSSIA's floor: the kingdom's shell lanterns and the graveyard's wrecks.
     if ger.semente == crate::abissal::SEMENTE {
-        for l in crate::abissal::luzes().iter().filter(|l| !l.agua_viva && !l.coral) {
-            vila.props.push(PropPosto { tipo: TipoProp::Lanterna, seed: l.seed, pos: Vec3::new(l.pos.x, ger.altura(l.pos.x, l.pos.y), l.pos.y), yaw_q: 0 });
+        for l in crate::abissal::luzes()
+            .iter()
+            .filter(|l| !l.agua_viva && !l.coral)
+        {
+            vila.props.push(PropPosto {
+                tipo: TipoProp::Lanterna,
+                seed: l.seed,
+                pos: Vec3::new(l.pos.x, ger.altura(l.pos.x, l.pos.y), l.pos.y),
+                yaw_q: 0,
+            });
         }
-        for (i,povoado) in crate::abissal::POVOADOS.iter().enumerate() {
-            let centro=povoado.centro;
-            vila.pracas.push((centro,crate::abissal::RAIO_POVOADO));
-            vila.caminhos.push((Vec2::ZERO,centro));
+        for (i, povoado) in crate::abissal::POVOADOS.iter().enumerate() {
+            let centro = povoado.centro;
+            vila.pracas.push((centro, crate::abissal::RAIO_POVOADO));
+            vila.caminhos.push((Vec2::ZERO, centro));
             for k in 0..6 {
-                let a=k as f32*std::f32::consts::TAU/6.0;
-                let q=centro+Vec2::new(a.cos(),a.sin())*16.0;
-                let papel=match k {0=>Papel::Alquimista,3=>Papel::Deposito,_=>Papel::Casa};
-                let seed=ger.semente.wrapping_add((i*6+k) as i32);
-                let predio=Predio {tipo:if k%2==0 {TipoCasa::Cabana}else{TipoCasa::Casebre},papel,seed,pos:Vec3::new(q.x,ger.altura(q.x,q.y),q.y),yaw_q:((k+2)%4) as u8,chao:ger.altura(q.x,q.y)};
-                if let Some(npc)=npc_da_porta(&predio) {vila.npcs.push(npc);}
+                let a = k as f32 * std::f32::consts::TAU / 6.0;
+                let q = centro + Vec2::new(a.cos(), a.sin()) * 16.0;
+                let papel = match k {
+                    0 => Papel::Alquimista,
+                    3 => Papel::Deposito,
+                    _ => Papel::Casa,
+                };
+                let seed = ger.semente.wrapping_add((i * 6 + k) as i32);
+                let predio = Predio {
+                    tipo: if k % 2 == 0 {
+                        TipoCasa::Cabana
+                    } else {
+                        TipoCasa::Casebre
+                    },
+                    papel,
+                    seed,
+                    pos: Vec3::new(q.x, ger.altura(q.x, q.y), q.y),
+                    yaw_q: ((k + 2) % 4) as u8,
+                    chao: ger.altura(q.x, q.y),
+                };
+                if let Some(npc) = npc_da_porta(&predio) {
+                    vila.npcs.push(npc);
+                }
                 vila.predios.push(predio);
             }
             for k in 0..3 {
-                let q=centro+Vec2::new(k as f32*3.0-3.0,3.0);
-                vila.npcs.push(NpcDaVila {papel:Papel::Casa,nome:match k {0=>"Pearl Diver",1=>"Coral Gardener",_=>"Triton Watchman"},pos:q,yaw:k as f32,loja:None,giver:None});
-                vila.props.push(PropPosto {tipo:if k==0 {TipoProp::Barraca}else{TipoProp::Rede},seed:k as i32+80,pos:Vec3::new(q.x+2.0,ger.altura(q.x,q.y),q.y+6.0),yaw_q:0});
+                let q = centro + Vec2::new(k as f32 * 3.0 - 3.0, 3.0);
+                vila.npcs.push(NpcDaVila {
+                    papel: Papel::Casa,
+                    nome: match k {
+                        0 => "Pearl Diver",
+                        1 => "Coral Gardener",
+                        _ => "Triton Watchman",
+                    },
+                    pos: q,
+                    yaw: k as f32,
+                    loja: None,
+                    giver: None,
+                });
+                vila.props.push(PropPosto {
+                    tipo: if k == 0 {
+                        TipoProp::Barraca
+                    } else {
+                        TipoProp::Rede
+                    },
+                    seed: k as i32 + 80,
+                    pos: Vec3::new(q.x + 2.0, ger.altura(q.x, q.y), q.y + 6.0),
+                    yaw_q: 0,
+                });
             }
         }
         for (p, rumo, seed) in crate::abissal::naufragios() {
-            vila.props.push(PropPosto { tipo: TipoProp::Naufragio, seed: *seed, pos: Vec3::new(p.x, ger.altura(p.x, p.y), p.y), yaw_q: *rumo });
+            vila.props.push(PropPosto {
+                tipo: TipoProp::Naufragio,
+                seed: *seed,
+                pos: Vec3::new(p.x, ger.altura(p.x, p.y), p.y),
+                yaw_q: *rumo,
+            });
         }
     }
     let lugar_do_onibus = if ger.semente == crate::celeste::SEMENTE {
         let trono = crate::celeste::PLATOS[11].centro;
         Some((trono, Vec2::new(22.0, -22.0), Vec2::new(30.0, -30.0)))
     } else if ger.semente == crate::kogen::SEMENTE {
-        ger.cidade().map(|c| (c.centro(), Vec2::new(27.0, -4.0), Vec2::new(33.0, 0.0)))
+        ger.cidade()
+            .map(|c| (c.centro(), Vec2::new(27.0, -4.0), Vec2::new(33.0, 0.0)))
     } else {
         None
     };
@@ -231,8 +290,17 @@ pub fn montar(ger: &Gerador) -> Vila {
     if ger.semente == crate::kogen::SEMENTE {
         use crate::kogen as k;
         for (p, i, lanterna) in k::canteiro_do_boulevard() {
-            let tipo = if lanterna { TipoProp::Lanterna } else { TipoProp::Sakura };
-            vila.props.push(PropPosto { tipo, seed: i, pos: Vec3::new(p.x, ger.altura(p.x, p.y), p.y), yaw_q: 0 });
+            let tipo = if lanterna {
+                TipoProp::Lanterna
+            } else {
+                TipoProp::Sakura
+            };
+            vila.props.push(PropPosto {
+                tipo,
+                seed: i,
+                pos: Vec3::new(p.x, ger.altura(p.x, p.y), p.y),
+                yaw_q: 0,
+            });
         }
         // The street lamps and the shop signs (`kogen::luzes`).
         for l in k::luzes() {
@@ -241,28 +309,52 @@ pub fn montar(ger: &Gerador) -> Vila {
                 k::TipoDeLuz::Letreiro => TipoProp::Letreiro,
                 k::TipoDeLuz::Lanterna => continue,
             };
-            vila.props.push(PropPosto { tipo, seed: l.seed, pos: Vec3::new(l.pos.x, ger.altura(l.pos.x, l.pos.y), l.pos.y), yaw_q: l.yaw_q });
+            vila.props.push(PropPosto {
+                tipo,
+                seed: l.seed,
+                pos: Vec3::new(l.pos.x, ger.altura(l.pos.x, l.pos.y), l.pos.y),
+                yaw_q: l.yaw_q,
+            });
         }
         for z in [45.0f32, 90.0, 135.0, 180.0, 225.0] {
             let p = Vec2::new(k::boulevard_x(z), z);
-            vila.props.push(PropPosto { tipo: TipoProp::Torii, seed: 0, pos: Vec3::new(p.x, ger.altura(p.x, p.y), p.y), yaw_q: 0 });
+            vila.props.push(PropPosto {
+                tipo: TipoProp::Torii,
+                seed: 0,
+                pos: Vec3::new(p.x, ger.altura(p.x, p.y), p.y),
+                yaw_q: 0,
+            });
         }
     }
     montar_postos(ger, &mut vila);
     if let Some(pl) = ger.planalto() {
-        for (i,r) in pl.regioes.iter().enumerate() {
+        for (i, r) in pl.regioes.iter().enumerate() {
             // The lighthouse and the crystal stay. The three storm RUINS were
             // square walls of black stone that read as little castles on the
             // map, and the owner asked for them out (30/09/2026) — the one
             // castle on this island is Last Refuge's (`planalto::muralha`).
-            let tipo = match i { 4 => Some(TipoProp::FarolTormenta), 2 => Some(TipoProp::CristalTormenta), _ => None };
-            let p = r.centro + Vec2::new(22.0,-22.0);
+            let tipo = match i {
+                4 => Some(TipoProp::FarolTormenta),
+                2 => Some(TipoProp::CristalTormenta),
+                _ => None,
+            };
+            let p = r.centro + Vec2::new(22.0, -22.0);
             if let Some(tipo) = tipo {
-                vila.props.push(PropPosto { tipo, seed: ger.semente, pos: Vec3::new(p.x,ger.altura(p.x,p.y),p.y), yaw_q: 0 });
+                vila.props.push(PropPosto {
+                    tipo,
+                    seed: ger.semente,
+                    pos: Vec3::new(p.x, ger.altura(p.x, p.y), p.y),
+                    yaw_q: 0,
+                });
             }
             if i == 1 || i == 3 {
-                let p = r.centro + Vec2::new(-10.0,-12.0);
-                vila.props.push(PropPosto { tipo: TipoProp::Portal, seed: ger.semente, pos: Vec3::new(p.x,ger.altura(p.x,p.y),p.y), yaw_q: 0 });
+                let p = r.centro + Vec2::new(-10.0, -12.0);
+                vila.props.push(PropPosto {
+                    tipo: TipoProp::Portal,
+                    seed: ger.semente,
+                    pos: Vec3::new(p.x, ger.altura(p.x, p.y), p.y),
+                    yaw_q: 0,
+                });
             }
         }
     }
@@ -1618,9 +1710,16 @@ mod testes {
             }
             let vila = ger.vila();
             let porto = vila.porto.as_ref().unwrap();
-            let capitao = vila.npcs.iter().find(|n| n.papel == Papel::Estaleiro).unwrap();
-            assert!((capitao.pos - porto.raiz).dot(porto.mar) < 0.0,
-                "{}: capitão precisa ficar na entrada do cais, dentro da ilha", d.zona);
+            let capitao = vila
+                .npcs
+                .iter()
+                .find(|n| n.papel == Papel::Estaleiro)
+                .unwrap();
+            assert!(
+                (capitao.pos - porto.raiz).dot(porto.mar) < 0.0,
+                "{}: capitão precisa ficar na entrada do cais, dentro da ilha",
+                d.zona
+            );
             let papeis: Vec<Papel> = vila.npcs.iter().map(|n| n.papel).collect();
             for papel in [Papel::Estaleiro, Papel::Deposito, Papel::Cartografo] {
                 assert!(
@@ -1637,9 +1736,18 @@ mod testes {
         for d in crate::terreno::ARQUIPELAGO.iter() {
             let ger = Gerador::da_ilha(d);
             let Some(cidade) = ger.cidade() else { continue };
-            let primes: Vec<_> = ger.vila().npcs.iter().filter(|n| n.papel == Papel::Prime).collect();
+            let primes: Vec<_> = ger
+                .vila()
+                .npcs
+                .iter()
+                .filter(|n| n.papel == Papel::Prime)
+                .collect();
             assert_eq!(primes.len(), 1, "{}", d.zona);
-            assert!(primes[0].pos.distance(cidade.centro()) < 8.0, "{}: Prime far from the square", d.zona);
+            assert!(
+                primes[0].pos.distance(cidade.centro()) < 8.0,
+                "{}: Prime far from the square",
+                d.zona
+            );
         }
     }
 
@@ -1648,10 +1756,13 @@ mod testes {
         for d in crate::terreno::ARQUIPELAGO.iter() {
             let ger = Gerador::da_ilha(d);
             let Some(cidade) = ger.cidade() else { continue };
-            assert!(ger.vila().npcs.iter().any(|n|
-                n.nome == "Banker" && n.papel == Papel::Deposito
+            assert!(
+                ger.vila().npcs.iter().any(|n| n.nome == "Banker"
+                    && n.papel == Papel::Deposito
                     && n.pos.distance(cidade.centro()) < 8.0),
-                "{} sem Banqueira na praca", d.zona);
+                "{} sem Banqueira na praca",
+                d.zona
+            );
         }
     }
 
@@ -1764,14 +1875,18 @@ mod testes {
                 .vila()
                 .npcs
                 .iter()
-                .find(|n| n.papel == Papel::Estaleiro
-                    || (crate::kogen::e_kogen(d.zona) && n.papel == Papel::Motorista)
-                    || (crate::abissal::e_abissal(d.zona) && n.papel == Papel::Submarino))
+                .find(|n| {
+                    n.papel == Papel::Estaleiro
+                        || (crate::kogen::e_kogen(d.zona) && n.papel == Papel::Motorista)
+                        || (crate::abissal::e_abissal(d.zona) && n.papel == Papel::Submarino)
+                })
                 .unwrap_or_else(|| panic!("{}: no Harbour Captain", d.zona));
             let praca = ilha.cidade().expect("a town").centro() + Vec2::new(0.0, 4.0);
             let rota = ilha.caminho(praca, cap.pos, 40_000);
             assert!(
-                rota.as_ref().and_then(|r| r.last()).is_some_and(|f| f.distance(cap.pos) < crate::viagem::PERTO_DO_CAPITAO),
+                rota.as_ref()
+                    .and_then(|r| r.last())
+                    .is_some_and(|f| f.distance(cap.pos) < crate::viagem::PERTO_DO_CAPITAO),
                 "{}: the Captain at {:?} cannot be reached from the square",
                 d.zona,
                 cap.pos
@@ -1785,23 +1900,37 @@ mod testes {
     fn o_professor_do_onibus_se_alcanca() {
         for d in [crate::celeste::DEF, crate::kogen::DEF] {
             let ilha = crate::terreno::Ilha::da_ilha(&d);
-            let prof = ilha.vila().npcs.iter().find(|n| n.papel == Papel::Motorista).cloned()
+            let prof = ilha
+                .vila()
+                .npcs
+                .iter()
+                .find(|n| n.papel == Papel::Motorista)
+                .cloned()
                 .unwrap_or_else(|| panic!("{}: no Sky Bus Professor", d.zona));
             let praca = if crate::celeste::e_celeste(d.zona) {
                 crate::celeste::PLATOS[11].centro
             } else {
                 ilha.cidade().unwrap().centro() + Vec2::new(0.0, 4.0)
             };
-            let fim = ilha.caminho(praca, prof.pos, 40_000).and_then(|r| r.last().copied());
-            assert!(fim.is_some_and(|f| f.distance(prof.pos) < crate::viagem::PERTO_DO_CAPITAO),
-                "{}: the professor at {:?} cannot be reached", d.zona, prof.pos);
+            let fim = ilha
+                .caminho(praca, prof.pos, 40_000)
+                .and_then(|r| r.last().copied());
+            assert!(
+                fim.is_some_and(|f| f.distance(prof.pos) < crate::viagem::PERTO_DO_CAPITAO),
+                "{}: the professor at {:?} cannot be reached",
+                d.zona,
+                prof.pos
+            );
         }
     }
 
     #[test]
     fn numeros_das_quatro_ilhas() {
         // The sea islands: Skyreach has a town but no port.
-        for d in ARQUIPELAGO.iter().filter(|d| crate::terreno::tem_porto(d.zona)) {
+        for d in ARQUIPELAGO
+            .iter()
+            .filter(|d| crate::terreno::tem_porto(d.zona))
+        {
             let ger = Gerador::da_ilha(d);
             let vila = ger.vila();
             let c = ger.cidade().expect("sem cidade");

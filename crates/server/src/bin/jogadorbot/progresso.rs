@@ -246,7 +246,11 @@ pub async fn manutencao(ws: &mut Ws, eu: &mut Eu, nome: &str, t: &Trilha) -> any
     // 1. VESTE O QUE É MELHOR. Uma troca por decisão, e nunca duas no mesmo
     // segundo: o `StatsUpdate` com o equipamento novo precisa chegar antes de
     // comparar de novo, senão ele troca a mesma peça duas vezes.
-    if eu.prog.vestiu_em.is_none_or(|t| agora.duration_since(t) > Duration::from_secs(3)) {
+    if eu
+        .prog
+        .vestiu_em
+        .is_none_or(|t| agora.duration_since(t) > Duration::from_secs(3))
+    {
         if let Some((slot, onde, novo, atual)) = melhor_troca(eu) {
             eu.prog.vestiu_em = Some(agora);
             ws.send(envia(&ClientMessage::InventorySwap {
@@ -254,15 +258,22 @@ pub async fn manutencao(ws: &mut Ws, eu: &mut Eu, nome: &str, t: &Trilha) -> any
                 b: InvSpot::Equip(onde),
             })?)
             .await?;
-            t.registra(ev(nome, eu, "vestiu", true, format!(
-                "{onde:?}: poder {atual} -> {novo}"
-            )));
+            t.registra(ev(
+                nome,
+                eu,
+                "vestiu",
+                true,
+                format!("{onde:?}: poder {atual} -> {novo}"),
+            ));
             return Ok(true);
         }
     }
 
     // 3 e 4. FORJA: refino e equipamento da faixa, de tempos em tempos.
-    let forja_livre = eu.prog.forjou_em.is_none_or(|t| agora.duration_since(t) >= FORJA_A_CADA)
+    let forja_livre = eu
+        .prog
+        .forjou_em
+        .is_none_or(|t| agora.duration_since(t) >= FORJA_A_CADA)
         && eu.prog.forja_seca_ate.is_none_or(|t| agora >= t)
         && eu.prog.refinando.is_none();
     if forja_livre {
@@ -270,7 +281,10 @@ pub async fn manutencao(ws: &mut Ws, eu: &mut Eu, nome: &str, t: &Trilha) -> any
         if refina(ws, eu, nome, t).await? {
             return Ok(true);
         }
-        let tem_historia = eu.quests.iter().any(|(id, (_, status))| *status == shared::quests::quest_status::ACTIVE && shared::historia::def_da_historia(*id).is_some());
+        let tem_historia = eu.quests.iter().any(|(id, (_, status))| {
+            *status == shared::quests::quest_status::ACTIVE
+                && shared::historia::def_da_historia(*id).is_some()
+        });
         if !tem_historia && fabrica(ws, eu, nome, t).await? {
             return Ok(true);
         }
@@ -283,7 +297,9 @@ pub async fn manutencao(ws: &mut Ws, eu: &mut Eu, nome: &str, t: &Trilha) -> any
 pub async fn progride(ws: &mut Ws, eu: &mut Eu, nome: &str, t: &Trilha) -> anyhow::Result<bool> {
     let agora = Instant::now();
 
-    if manutencao(ws, eu, nome, t).await? { return Ok(true); }
+    if manutencao(ws, eu, nome, t).await? {
+        return Ok(true);
+    }
 
     // 2. ENERGIA pros pontos parados.
     let custo = shared::custo_energia_do_ponto(eu.prog.alocados.iter().sum());
@@ -295,20 +311,36 @@ pub async fn progride(ws: &mut Ws, eu: &mut Eu, nome: &str, t: &Trilha) -> anyho
                 eu.prog.plano = None;
                 eu.no_de_coleta = None;
                 eu.prog.indo_energia = None;
-                if !bastou { eu.prog.energia_seca_ate = Some(agora + FORJA_SECA); }
-                t.registra(ev(nome, eu, "energia_colhida", bastou, format!(
-                    "energia {} (ponto custa {custo})", eu.prog.energia
-                )));
+                if !bastou {
+                    eu.prog.energia_seca_ate = Some(agora + FORJA_SECA);
+                }
+                t.registra(ev(
+                    nome,
+                    eu,
+                    "energia_colhida",
+                    bastou,
+                    format!("energia {} (ponto custa {custo})", eu.prog.energia),
+                ));
                 return Ok(true);
             }
             return colhe_energia(ws, eu, nome, t).await.map(|_| true);
         }
-        _ if falta_energia && eu.nivel >= 2 && eu.prog.energia_seca_ate.is_none_or(|at| at <= agora) => {
+        _ if falta_energia
+            && eu.nivel >= 2
+            && eu.prog.energia_seca_ate.is_none_or(|at| at <= agora) =>
+        {
             eu.prog.plano = Some(Plano::Energia { desde: agora });
             eu.no_de_coleta = None;
-            t.registra(ev(nome, eu, "foi_colher_energia", true, format!(
-                "{} ponto(s) parado(s), energia {} de {custo}", eu.pontos_livres, eu.prog.energia
-            )));
+            t.registra(ev(
+                nome,
+                eu,
+                "foi_colher_energia",
+                true,
+                format!(
+                    "{} ponto(s) parado(s), energia {} de {custo}",
+                    eu.pontos_livres, eu.prog.energia
+                ),
+            ));
             return Ok(true);
         }
         _ => {}
@@ -326,15 +358,35 @@ pub async fn progride(ws: &mut Ws, eu: &mut Eu, nome: &str, t: &Trilha) -> anyho
 /// Colhe Energia: pede o nó de energia mais perto e vai até ele.
 async fn colhe_energia(ws: &mut Ws, eu: &mut Eu, nome: &str, t: &Trilha) -> anyhow::Result<()> {
     if eu.no_de_coleta.is_none() {
-        if let Some(regiao) = eu.prog.recursos.iter().filter(|r| r.tipo == 5)
-            .min_by(|a, b| glam::Vec2::from(a.centro).distance_squared(eu.pos)
-                .total_cmp(&glam::Vec2::from(b.centro).distance_squared(eu.pos))) {
+        if let Some(regiao) = eu
+            .prog
+            .recursos
+            .iter()
+            .filter(|r| r.tipo == 5)
+            .min_by(|a, b| {
+                glam::Vec2::from(a.centro)
+                    .distance_squared(eu.pos)
+                    .total_cmp(&glam::Vec2::from(b.centro).distance_squared(eu.pos))
+            })
+        {
             let centro = glam::Vec2::from(regiao.centro);
             if eu.pos.distance(centro) > 55.0 {
-                if eu.prog.indo_energia.is_none_or(|(p, at)| p.distance(centro) > 1.0 || at.elapsed() > Duration::from_secs(20)) {
+                if eu.prog.indo_energia.is_none_or(|(p, at)| {
+                    p.distance(centro) > 1.0 || at.elapsed() > Duration::from_secs(20)
+                }) {
                     eu.prog.indo_energia = Some((centro, Instant::now()));
-                    ws.send(envia(&ClientMessage::MoverPara { x: centro.x, z: centro.y })?).await?;
-                    t.registra(ev(nome, eu, "foi_ao_campo_de_energia", true, format!("{:.0},{:.0}", centro.x, centro.y)));
+                    ws.send(envia(&ClientMessage::MoverPara {
+                        x: centro.x,
+                        z: centro.y,
+                    })?)
+                    .await?;
+                    t.registra(ev(
+                        nome,
+                        eu,
+                        "foi_ao_campo_de_energia",
+                        true,
+                        format!("{:.0},{:.0}", centro.x, centro.y),
+                    ));
                 }
                 return Ok(());
             }
@@ -349,13 +401,26 @@ async fn colhe_energia(ws: &mut Ws, eu: &mut Eu, nome: &str, t: &Trilha) -> anyh
             if d > shared::COLETA_ALCANCE_UN * 0.6 {
                 if !super::anda_ao_no(ws, eu, onde).await? {
                     eu.no_de_coleta = None;
-                    t.registra(ev(nome, eu, "energia_inalcancavel", false, format!("a {d:.1}u do nó")));
+                    t.registra(ev(
+                        nome,
+                        eu,
+                        "energia_inalcancavel",
+                        false,
+                        format!("a {d:.1}u do nó"),
+                    ));
                 }
                 return Ok(());
             }
             eu.no_de_coleta = None;
-            ws.send(envia(&ClientMessage::ColetarNo { coluna })?).await?;
-            t.registra(ev(nome, eu, "colheu_energia", true, format!("energia {}", eu.prog.energia)));
+            ws.send(envia(&ClientMessage::ColetarNo { coluna })?)
+                .await?;
+            t.registra(ev(
+                nome,
+                eu,
+                "colheu_energia",
+                true,
+                format!("energia {}", eu.prog.energia),
+            ));
         }
         None => {
             ws.send(envia(&ClientMessage::PedirNoDeColeta {
@@ -371,7 +436,13 @@ async fn colhe_energia(ws: &mut Ws, eu: &mut Eu, nome: &str, t: &Trilha) -> anyh
                 eu.pedidos_de_no = 0;
                 eu.prog.plano = None;
                 eu.prog.energia_seca_ate = Some(Instant::now() + FORJA_SECA);
-                t.registra(ev(nome, eu, "sem_energia_por_perto", false, "nada em 80u".into()));
+                t.registra(ev(
+                    nome,
+                    eu,
+                    "sem_energia_por_perto",
+                    false,
+                    "nada em 80u".into(),
+                ));
             }
         }
     }
@@ -400,7 +471,13 @@ async fn refina(ws: &mut Ws, eu: &mut Eu, nome: &str, t: &Trilha) -> anyhow::Res
         return Ok(false);
     };
     // Sem darksteel nenhum nem adianta pedir: a recusa é certa.
-    if eu.bolsa.get(&shared::item_id::DARKSTEEL).copied().unwrap_or(0) == 0 {
+    if eu
+        .bolsa
+        .get(&shared::item_id::DARKSTEEL)
+        .copied()
+        .unwrap_or(0)
+        == 0
+    {
         return Ok(false);
     }
     eu.prog.refinando = Some(slot);
@@ -408,12 +485,25 @@ async fn refina(ws: &mut Ws, eu: &mut Eu, nome: &str, t: &Trilha) -> anyhow::Res
         alvo: shared::protocol::AlvoDaForja::Equipado(slot),
     })?)
     .await?;
-    t.registra(ev(nome, eu, "pediu_refino", true, format!("{slot:?} +{nivel} -> +{}", nivel + 1)));
+    t.registra(ev(
+        nome,
+        eu,
+        "pediu_refino",
+        true,
+        format!("{slot:?} +{nivel} -> +{}", nivel + 1),
+    ));
     Ok(true)
 }
 
 /// O resultado do refino de equipamento vestido (chamado de `recebe`).
-pub fn refino_respondido(eu: &mut Eu, t: &Trilha, nome: &str, resultado: u8, nivel: u8, motivo: &str) {
+pub fn refino_respondido(
+    eu: &mut Eu,
+    t: &Trilha,
+    nome: &str,
+    resultado: u8,
+    nivel: u8,
+    motivo: &str,
+) {
     use shared::forja::resultado as r;
     let Some(slot) = eu.prog.refinando.take() else {
         return;
@@ -423,17 +513,30 @@ pub fn refino_respondido(eu: &mut Eu, t: &Trilha, nome: &str, resultado: u8, niv
             if nivel >= REFINO_SEGURO {
                 eu.prog.refino_pronto.insert(slot as u8);
             }
-            t.registra(ev(nome, eu, "refinou_equipado", true, format!("{slot:?} -> +{nivel} ({resultado})")));
+            t.registra(ev(
+                nome,
+                eu,
+                "refinou_equipado",
+                true,
+                format!("{slot:?} -> +{nivel} ({resultado})"),
+            ));
         }
         _ => {
             // Sem material é passageiro: a forja espera. Outra recusa (topo,
             // peça sem instância) é deste slot: larga ele nesta vida.
-            if motivo.to_lowercase().contains("falt") || motivo.to_lowercase().contains("material") {
+            if motivo.to_lowercase().contains("falt") || motivo.to_lowercase().contains("material")
+            {
                 eu.prog.forja_seca_ate = Some(Instant::now() + FORJA_SECA);
             } else {
                 eu.prog.refino_pronto.insert(slot as u8);
             }
-            t.registra(ev(nome, eu, "refino_recusado", false, format!("{slot:?}: {motivo}")));
+            t.registra(ev(
+                nome,
+                eu,
+                "refino_recusado",
+                false,
+                format!("{slot:?}: {motivo}"),
+            ));
         }
     }
 }
@@ -468,10 +571,15 @@ async fn fabrica(ws: &mut Ws, eu: &mut Eu, nome: &str, t: &Trilha) -> anyhow::Re
         })
         .collect();
     if faltando.is_empty() {
-        ws.send(envia(&ClientMessage::Craft { recipe_id: id })?).await?;
-        t.registra(ev(nome, eu, "fabricou_equipamento", true, format!(
-            "receita {id} -> item {saida} ({slot:?})"
-        )));
+        ws.send(envia(&ClientMessage::Craft { recipe_id: id })?)
+            .await?;
+        t.registra(ev(
+            nome,
+            eu,
+            "fabricou_equipamento",
+            true,
+            format!("receita {id} -> item {saida} ({slot:?})"),
+        ));
         return Ok(true);
     }
     // FALTA MATERIAL: o que sai de coleta ele vai buscar (o ramo 4.5 do
@@ -482,18 +590,28 @@ async fn fabrica(ws: &mut Ws, eu: &mut Eu, nome: &str, t: &Trilha) -> anyhow::Re
     match colhivel {
         Some((item, q)) if eu.buscando.is_none() => {
             eu.buscando = Some((0, *item, *q));
-            t.registra(ev(nome, eu, "foi_buscar_pra_forja", true, format!(
-                "receita {id}: {q}x item {item} (tem {})",
-                eu.bolsa.get(item).copied().unwrap_or(0)
-            )));
+            t.registra(ev(
+                nome,
+                eu,
+                "foi_buscar_pra_forja",
+                true,
+                format!(
+                    "receita {id}: {q}x item {item} (tem {})",
+                    eu.bolsa.get(item).copied().unwrap_or(0)
+                ),
+            ));
             Ok(true)
         }
         Some(_) => Ok(false),
         None => {
             eu.prog.receita_seca.insert(id);
-            t.registra(ev(nome, eu, "receita_sem_caminho", false, format!(
-                "receita {id}: falta {:?}, que não sai de coleta", faltando
-            )));
+            t.registra(ev(
+                nome,
+                eu,
+                "receita_sem_caminho",
+                false,
+                format!("receita {id}: falta {:?}, que não sai de coleta", faltando),
+            ));
             Ok(false)
         }
     }
@@ -505,7 +623,11 @@ pub async fn magica(ws: &mut Ws, eu: &mut Eu, nome: &str, t: &Trilha) -> anyhow:
     if eu.nivel < 15 {
         return Ok(false);
     }
-    if eu.prog.perguntou_magica_em.is_none_or(|t| agora.duration_since(t) > MAGICA_A_CADA) {
+    if eu
+        .prog
+        .perguntou_magica_em
+        .is_none_or(|t| agora.duration_since(t) > MAGICA_A_CADA)
+    {
         eu.prog.perguntou_magica_em = Some(agora);
         ws.send(envia(&ClientMessage::Magica {
             pedido: shared::magica::PedidoMagica::Painel,
@@ -519,21 +641,35 @@ pub async fn magica(ws: &mut Ws, eu: &mut Eu, nome: &str, t: &Trilha) -> anyhow:
     if m.dentro || m.grau_maximo == 0 || (m.gratis == 0 && m.passes == 0) {
         return Ok(false);
     }
-    if eu.prog.pediu_magica_em.is_some_and(|t| agora.duration_since(t) < MAGICA_A_CADA) {
+    if eu
+        .prog
+        .pediu_magica_em
+        .is_some_and(|t| agora.duration_since(t) < MAGICA_A_CADA)
+    {
         return Ok(false);
     }
     eu.prog.pediu_magica_em = Some(agora);
     // As grátis primeiro; passe só se não houver grátis — o passe é do
     // jogador, e o bot gasta só um de cada vez.
-    let entradas = if m.gratis > 0 { m.gratis.min(shared::magica::ENTRADAS_MAX) } else { 1 };
+    let entradas = if m.gratis > 0 {
+        m.gratis.min(shared::magica::ENTRADAS_MAX)
+    } else {
+        1
+    };
     ws.send(envia(&ClientMessage::Magica {
         pedido: shared::magica::PedidoMagica::Entrar { entradas, grau: 0 },
     })?)
     .await?;
-    t.registra(ev(nome, eu, "pediu_ilha_magica", true, format!(
-        "{entradas} entrada(s), degrau até {} ({} grátis, {} passes)",
-        m.grau_maximo, m.gratis, m.passes
-    )));
+    t.registra(ev(
+        nome,
+        eu,
+        "pediu_ilha_magica",
+        true,
+        format!(
+            "{entradas} entrada(s), degrau até {} ({} grátis, {} passes)",
+            m.grau_maximo, m.gratis, m.passes
+        ),
+    ));
     Ok(true)
 }
 
@@ -545,7 +681,13 @@ async fn caca_ou_embarca(ws: &mut Ws, eu: &mut Eu, nome: &str, t: &Trilha) -> an
         if agora.duration_since(desde) > PRAZO_DA_IDA * 2 {
             eu.prog.plano = None;
             eu.prog.embarque_falhou_em = Some(agora);
-            t.registra(ev(nome, eu, "embarque_desistiu", false, format!("parou em {etapa:?}")));
+            t.registra(ev(
+                nome,
+                eu,
+                "embarque_desistiu",
+                false,
+                format!("parou em {etapa:?}"),
+            ));
             return Ok(false);
         }
         return embarca(ws, eu, nome, t, etapa, desde).await;
@@ -556,12 +698,21 @@ async fn caca_ou_embarca(ws: &mut Ws, eu: &mut Eu, nome: &str, t: &Trilha) -> an
         .embarque_falhou_em
         .is_none_or(|t| agora.duration_since(t) > Duration::from_secs(900));
     if ilha_pequena(&eu.prog.zonas, eu.nivel) && pode_tentar_embarque && !eu.na_arena {
-        eu.prog.plano = Some(Plano::Embarcar { etapa: Etapa::ACidade, desde: agora });
-        t.registra(ev(nome, eu, "vai_embarcar", true, format!(
-            "nível {} e a ilha vai até {}",
-            eu.nivel,
-            eu.prog.zonas.iter().map(|z| z.lv_max).max().unwrap_or(0)
-        )));
+        eu.prog.plano = Some(Plano::Embarcar {
+            etapa: Etapa::ACidade,
+            desde: agora,
+        });
+        t.registra(ev(
+            nome,
+            eu,
+            "vai_embarcar",
+            true,
+            format!(
+                "nível {} e a ilha vai até {}",
+                eu.nivel,
+                eu.prog.zonas.iter().map(|z| z.lv_max).max().unwrap_or(0)
+            ),
+        ));
         return Ok(true);
     }
     // A ZONA DA FAIXA.
@@ -569,18 +720,37 @@ async fn caca_ou_embarca(ws: &mut Ws, eu: &mut Eu, nome: &str, t: &Trilha) -> an
         return Ok(false);
     };
     let centro = glam::Vec2::from(z.centro);
-    let mesma = matches!(eu.prog.plano, Some(Plano::Cacar { centro: c, .. }) if c.distance(centro) < 1.0);
+    let mesma =
+        matches!(eu.prog.plano, Some(Plano::Cacar { centro: c, .. }) if c.distance(centro) < 1.0);
     if !mesma {
-        eu.prog.plano = Some(Plano::Cacar { centro, raio: z.raio, lv: (z.lv_min, z.lv_max), desde: agora });
+        eu.prog.plano = Some(Plano::Cacar {
+            centro,
+            raio: z.raio,
+            lv: (z.lv_min, z.lv_max),
+            desde: agora,
+        });
         eu.prog.rondando = None;
         eu.indo_ao_alvo = None;
-        t.registra(ev(nome, eu, "zona_da_faixa", true, format!(
-            "nv {}–{} em {:.0},{:.0}{} (a {:.0}u)",
-            z.lv_min, z.lv_max, centro.x, centro.y,
-            if z.forte { " FORTE" } else { "" },
-            eu.pos.distance(centro)
-        )));
-        ws.send(envia(&ClientMessage::MoverPara { x: centro.x, z: centro.y })?).await?;
+        t.registra(ev(
+            nome,
+            eu,
+            "zona_da_faixa",
+            true,
+            format!(
+                "nv {}–{} em {:.0},{:.0}{} (a {:.0}u)",
+                z.lv_min,
+                z.lv_max,
+                centro.x,
+                centro.y,
+                if z.forte { " FORTE" } else { "" },
+                eu.pos.distance(centro)
+            ),
+        ));
+        ws.send(envia(&ClientMessage::MoverPara {
+            x: centro.x,
+            z: centro.y,
+        })?)
+        .await?;
         eu.prog.rondando = Some((centro, agora));
         return Ok(true);
     }
@@ -599,10 +769,19 @@ async fn caca_ou_embarca(ws: &mut Ws, eu: &mut Eu, nome: &str, t: &Trilha) -> an
                 if let Some(Plano::Cacar { desde: d0, .. }) = eu.prog.plano {
                     if agora.duration_since(d0) > PRAZO_DA_IDA {
                         eu.prog.plano = None;
-                        eu.prog.zonas.retain(|x| glam::Vec2::from(x.centro).distance(centro) > 1.0);
-                        t.registra(ev(nome, eu, "zona_inalcancavel", false, format!(
-                            "{:.0},{:.0} — tirada da lista nesta vida", centro.x, centro.y
-                        )));
+                        eu.prog
+                            .zonas
+                            .retain(|x| glam::Vec2::from(x.centro).distance(centro) > 1.0);
+                        t.registra(ev(
+                            nome,
+                            eu,
+                            "zona_inalcancavel",
+                            false,
+                            format!(
+                                "{:.0},{:.0} — tirada da lista nesta vida",
+                                centro.x, centro.y
+                            ),
+                        ));
                     }
                 }
             }
@@ -615,7 +794,8 @@ async fn caca_ou_embarca(ws: &mut Ws, eu: &mut Eu, nome: &str, t: &Trilha) -> an
     let r = z.raio * 0.6 * (((eu.vagou % 5) + 1) as f32 / 5.0).sqrt();
     let p = centro + glam::Vec2::new(a.cos(), a.sin()) * r;
     eu.prog.rondando = Some((p, agora));
-    ws.send(envia(&ClientMessage::MoverPara { x: p.x, z: p.y })?).await?;
+    ws.send(envia(&ClientMessage::MoverPara { x: p.x, z: p.y })?)
+        .await?;
     Ok(true)
 }
 
@@ -635,7 +815,10 @@ async fn embarca(
         .iter()
         .filter(|(_, k)| shared::npc_papel_de_kind(**k) == capitao)
         .filter_map(|(id, _)| eu.posicoes.get(id).map(|p| (*id, *p)))
-        .min_by(|a, b| a.1.distance_squared(eu.pos).total_cmp(&b.1.distance_squared(eu.pos)));
+        .min_by(|a, b| {
+            a.1.distance_squared(eu.pos)
+                .total_cmp(&b.1.distance_squared(eu.pos))
+        });
     match etapa {
         Etapa::ACidade | Etapa::AoCapitao => {
             let Some((id, p)) = visto else {
@@ -644,19 +827,37 @@ async fn embarca(
                     eu.prog.plano = None;
                     return Ok(false);
                 };
-                if etapa == Etapa::ACidade && eu.andando_para.is_none_or(|(a, _, _)| a.distance(cidade) > 1.0) {
-                    ws.send(envia(&ClientMessage::MoverPara { x: cidade.x, z: cidade.y })?).await?;
+                if etapa == Etapa::ACidade
+                    && eu
+                        .andando_para
+                        .is_none_or(|(a, _, _)| a.distance(cidade) > 1.0)
+                {
+                    ws.send(envia(&ClientMessage::MoverPara {
+                        x: cidade.x,
+                        z: cidade.y,
+                    })?)
+                    .await?;
                     eu.andando_para = Some((cidade, eu.pos, 0));
-                    t.registra(ev(nome, eu, "indo_ao_porto", true, format!(
-                        "praça em {:.0},{:.0} (a {:.0}u)", cidade.x, cidade.y, eu.pos.distance(cidade)
-                    )));
+                    t.registra(ev(
+                        nome,
+                        eu,
+                        "indo_ao_porto",
+                        true,
+                        format!(
+                            "praça em {:.0},{:.0} (a {:.0}u)",
+                            cidade.x,
+                            cidade.y,
+                            eu.pos.distance(cidade)
+                        ),
+                    ));
                 }
                 // Na praça e sem Capitão à vista: ronda o cais em volta.
                 if eu.pos.distance(cidade) < 12.0 {
                     eu.vagou = eu.vagou.wrapping_add(1);
                     let a = eu.vagou as f32 * 2.399_963;
                     let q = cidade + glam::Vec2::new(a.cos(), a.sin()) * 25.0;
-                    ws.send(envia(&ClientMessage::MoverPara { x: q.x, z: q.y })?).await?;
+                    ws.send(envia(&ClientMessage::MoverPara { x: q.x, z: q.y })?)
+                        .await?;
                     eu.andando_para = Some((q, eu.pos, 0));
                 }
                 return Ok(true);
@@ -665,21 +866,38 @@ async fn embarca(
             if d > shared::viagem::PERTO_DO_CAPITAO - 0.5 {
                 if d <= 20.0 {
                     if !super::empurra(eu, p) {
-                        ws.send(envia(&ClientMessage::MoverPara { x: p.x, z: p.y })?).await?;
+                        ws.send(envia(&ClientMessage::MoverPara { x: p.x, z: p.y })?)
+                            .await?;
                     }
                 } else if eu.andando_para.is_none_or(|(a, _, _)| a.distance(p) > 1.0) {
-                    ws.send(envia(&ClientMessage::MoverPara { x: p.x, z: p.y })?).await?;
+                    ws.send(envia(&ClientMessage::MoverPara { x: p.x, z: p.y })?)
+                        .await?;
                     eu.andando_para = Some((p, eu.pos, 0));
                 }
-                eu.prog.plano = Some(Plano::Embarcar { etapa: Etapa::AoCapitao, desde });
+                eu.prog.plano = Some(Plano::Embarcar {
+                    etapa: Etapa::AoCapitao,
+                    desde,
+                });
                 return Ok(true);
             }
             eu.empurrao = None;
             eu.empurrao_ate = None;
             eu.prog.destinos.clear();
-            ws.send(envia(&ClientMessage::Interact { target_eid: Some(id.0 as u64) })?).await?;
-            eu.prog.plano = Some(Plano::Embarcar { etapa: Etapa::Menu, desde });
-            t.registra(ev(nome, eu, "falou_com_capitao", true, format!("a {d:.1}u")));
+            ws.send(envia(&ClientMessage::Interact {
+                target_eid: Some(id.0 as u64),
+            })?)
+            .await?;
+            eu.prog.plano = Some(Plano::Embarcar {
+                etapa: Etapa::Menu,
+                desde,
+            });
+            t.registra(ev(
+                nome,
+                eu,
+                "falou_com_capitao",
+                true,
+                format!("a {d:.1}u"),
+            ));
             Ok(true)
         }
         Etapa::Menu => {
@@ -690,9 +908,13 @@ async fn embarca(
             match destino_pro_nivel(&eu.prog.destinos, eu.nivel) {
                 Some(ilha) => {
                     ws.send(envia(&ClientMessage::Viajar { ilha })?).await?;
-                    t.registra(ev(nome, eu, "embarcou", true, format!(
-                        "ilha {ilha} no nível {}", eu.nivel
-                    )));
+                    t.registra(ev(
+                        nome,
+                        eu,
+                        "embarcou",
+                        true,
+                        format!("ilha {ilha} no nível {}", eu.nivel),
+                    ));
                     eu.prog.plano = None;
                     // Se o embarque não trocar de zona, não tenta de novo
                     // tão cedo — a trilha diz por quê (`ultima_recusa`).
@@ -703,7 +925,18 @@ async fn embarca(
                         .prog
                         .destinos
                         .iter()
-                        .map(|d| format!("{}={}{}", d.nome, d.estado, if d.requisito.is_empty() { String::new() } else { format!(" ({})", d.requisito) }))
+                        .map(|d| {
+                            format!(
+                                "{}={}{}",
+                                d.nome,
+                                d.estado,
+                                if d.requisito.is_empty() {
+                                    String::new()
+                                } else {
+                                    format!(" ({})", d.requisito)
+                                }
+                            )
+                        })
                         .collect::<Vec<_>>()
                         .join(", ");
                     eu.prog.plano = None;
@@ -721,18 +954,40 @@ mod testes {
     use super::*;
 
     fn z(lv_min: u16, lv_max: u16, forte: bool, x: f32) -> ZonaNoMapa {
-        ZonaNoMapa { centro: [x, 0.0], raio: 30.0, lv_min, lv_max, bichos: vec![], forte }
+        ZonaNoMapa {
+            centro: [x, 0.0],
+            raio: 30.0,
+            lv_min,
+            lv_max,
+            bichos: vec![],
+            forte,
+        }
     }
 
     #[test]
     fn a_zona_da_faixa_e_a_mais_alta_que_ele_aguenta() {
-        let zonas = [z(1, 3, false, 0.0), z(4, 6, false, 100.0), z(7, 9, false, 200.0), z(7, 9, true, 300.0)];
-        assert_eq!(zona_da_faixa(&zonas, 5, glam::Vec2::ZERO).unwrap().lv_min, 4);
-        assert_eq!(zona_da_faixa(&zonas, 6, glam::Vec2::ZERO).unwrap().lv_min, 7);
+        let zonas = [
+            z(1, 3, false, 0.0),
+            z(4, 6, false, 100.0),
+            z(7, 9, false, 200.0),
+            z(7, 9, true, 300.0),
+        ];
+        assert_eq!(
+            zona_da_faixa(&zonas, 5, glam::Vec2::ZERO).unwrap().lv_min,
+            4
+        );
+        assert_eq!(
+            zona_da_faixa(&zonas, 6, glam::Vec2::ZERO).unwrap().lv_min,
+            7
+        );
         // Forte só depois de passar da faixa dele.
         let z10 = zona_da_faixa(&zonas, 10, glam::Vec2::new(300.0, 0.0)).unwrap();
         assert!(z10.forte, "no 10 o forte de 7-9 já é caça");
-        assert!(!zona_da_faixa(&zonas, 8, glam::Vec2::new(300.0, 0.0)).unwrap().forte);
+        assert!(
+            !zona_da_faixa(&zonas, 8, glam::Vec2::new(300.0, 0.0))
+                .unwrap()
+                .forte
+        );
         assert!(zona_da_faixa(&zonas, 14, glam::Vec2::ZERO).is_none());
         assert!(ilha_pequena(&zonas, 14) && !ilha_pequena(&zonas, 11));
     }
@@ -747,14 +1002,30 @@ mod testes {
         }
         assert_eq!(a[shared::stat_idx::DES], 10);
         assert_eq!(a[shared::stat_idx::VIT], 20);
-        assert_eq!(atributo_da_classe(shared::item_id::ANEL_MAGICO), shared::stat_idx::INT);
+        assert_eq!(
+            atributo_da_classe(shared::item_id::ANEL_MAGICO),
+            shared::stat_idx::INT
+        );
     }
 
     #[test]
     fn embarca_pra_ilha_liberada_de_maior_faixa_que_aceita() {
         use shared::viagem::{estado, Destino};
-        let d = |ilha, min, e| Destino { ilha, nome: format!("{ilha}"), nivel_min: min, nivel_max: min + 15, estado: e, requisito: String::new(), preco: 0 };
-        let ds = [d(0, 1, estado::AQUI), d(1, 15, estado::LIBERADA), d(2, 28, estado::LIBERADA), d(3, 40, estado::BLOQUEADA)];
+        let d = |ilha, min, e| Destino {
+            ilha,
+            nome: format!("{ilha}"),
+            nivel_min: min,
+            nivel_max: min + 15,
+            estado: e,
+            requisito: String::new(),
+            preco: 0,
+        };
+        let ds = [
+            d(0, 1, estado::AQUI),
+            d(1, 15, estado::LIBERADA),
+            d(2, 28, estado::LIBERADA),
+            d(3, 40, estado::BLOQUEADA),
+        ];
         assert_eq!(destino_pro_nivel(&ds, 20), Some(1));
         assert_eq!(destino_pro_nivel(&ds, 30), Some(2));
         assert_eq!(destino_pro_nivel(&ds, 45), Some(2), "bloqueada não conta");

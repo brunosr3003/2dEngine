@@ -333,7 +333,10 @@ use shared::essencia as forja_estrelas;
 /// The same piece with one more star (what the ASCEND tab previews).
 fn proxima_estrela(inst: &ItemInstance) -> ItemInstance {
     let mut p = *inst;
-    p.estrelas = p.estrelas.saturating_add(1).min(forja_estrelas::ESTRELAS_MAX);
+    p.estrelas = p
+        .estrelas
+        .saturating_add(1)
+        .min(forja_estrelas::ESTRELAS_MAX);
     p
 }
 
@@ -406,9 +409,25 @@ impl Forja {
     }
 
     /// `AscensaoResultado` from the server.
-    pub fn resultado_ascensao(&mut self, ok: bool, estrelas: u8, nome: &str, motivo: &str, agora: f64) {
+    pub fn resultado_ascensao(
+        &mut self,
+        ok: bool,
+        estrelas: u8,
+        nome: &str,
+        motivo: &str,
+        agora: f64,
+    ) {
         let (txt, cor) = texto_da_ascensao(ok, estrelas, nome, motivo);
-        self.aviso = Some((if ok { resultado::SUBIU } else { resultado::INVALIDO }, txt, cor, agora));
+        self.aviso = Some((
+            if ok {
+                resultado::SUBIU
+            } else {
+                resultado::INVALIDO
+            },
+            txt,
+            cor,
+            agora,
+        ));
     }
 
     /// `RefinoResultado` do servidor.
@@ -474,7 +493,12 @@ impl Forja {
         );
         // REFINE | ASCEND tabs, left of the close X.
         for (k, rotulo) in ["Refine", "Ascend"].into_iter().enumerate() {
-            let aba = Rect::new(p.x + p.w - u(254.0) + k as f32 * u(102.0), p.y + u(10.0), u(96.0), u(28.0));
+            let aba = Rect::new(
+                p.x + p.w - u(254.0) + k as f32 * u(102.0),
+                p.y + u(10.0),
+                u(96.0),
+                u(28.0),
+            );
             let nesta = self.ascender == (k == 1);
             if crate::ui::botao(aba, rotulo, !nesta) && self.confirmar.is_none() {
                 self.ascender = k == 1;
@@ -517,7 +541,11 @@ impl Forja {
             estilo::texto(
                 grade.x + u(4.0),
                 grade.y + u(24.0),
-                if self.ascender { "No piece to ascend." } else { "No refinable piece." },
+                if self.ascender {
+                    "No piece to ascend."
+                } else {
+                    "No refinable piece."
+                },
                 15,
                 estilo::SUAVE,
             );
@@ -556,7 +584,13 @@ impl Forja {
             }
             if inst.estrelas > 0 {
                 crate::bolsa::desenha_estrelas(r.x + u(3.0), r.y + r.h - u(9.0), u(5.0), 1, 1);
-                estilo::texto(r.x + u(15.0), r.y + r.h - u(3.0), &inst.estrelas.to_string(), 12, estilo::OURO);
+                estilo::texto(
+                    r.x + u(15.0),
+                    r.y + r.h - u(3.0),
+                    &inst.estrelas.to_string(),
+                    12,
+                    estilo::OURO,
+                );
             }
             if matches!(alvo, AlvoDaForja::Equipado(_)) {
                 estilo::texto(
@@ -668,7 +702,10 @@ impl Forja {
                 // longer a bet on the piece, so no red line and no question.
                 let amuletos = tem(slots, item_id::AMULETO_DE_PROTECAO);
                 let protegido = i.risco && amuletos > 0 && forja::protegivel(i.nivel + 1);
-                let i = Info { risco: i.risco && !protegido, ..i };
+                let i = Info {
+                    risco: i.risco && !protegido,
+                    ..i
+                };
                 if protegido {
                     estilo::texto_ajustado(
                         &format!("Protected: a fail spends 1 Ward Charm ({amuletos} left)"),
@@ -706,7 +743,13 @@ impl Forja {
                 }
                 let atual = atributos_do_refino(*id, inst);
                 let proximo = atributos_do_refino(*id, &proximo_refino(inst));
-                estilo::texto_forte(d.x, y + u(142.0), "IF THE REFINE SUCCEEDS", 13, estilo::OURO);
+                estilo::texto_forte(
+                    d.x,
+                    y + u(142.0),
+                    "IF THE REFINE SUCCEEDS",
+                    13,
+                    estilo::OURO,
+                );
                 if proximo.is_empty() {
                     estilo::texto(
                         d.x,
@@ -730,11 +773,7 @@ impl Forja {
                 let b = Rect::new(d.x, d.y + d.h - u(50.0), d.w, u(40.0));
                 if crate::ui::botao(
                     b,
-                    if i.risco {
-                        "Refine (risky)"
-                    } else {
-                        "Refine"
-                    },
+                    if i.risco { "Refine (risky)" } else { "Refine" },
                     // Not while the question is open: the tap on "Yes" would
                     // also press this button underneath and reopen it.
                     tem_tudo && self.confirmar.is_none(),
@@ -788,15 +827,38 @@ impl Forja {
         palco: Option<(&VoxCache, &Material)>,
     ) -> Option<ClientMessage> {
         crate::bolsa::icone_do_item_com(Rect::new(d.x, d.y, u(64.0), u(64.0)), id, 1.0, palco);
-        estilo::texto_ajustado(nome, d.x + u(74.0), d.y + u(24.0), d.w - u(80.0), 18, estilo::TEXTO);
+        estilo::texto_ajustado(
+            nome,
+            d.x + u(74.0),
+            d.y + u(24.0),
+            d.w - u(80.0),
+            18,
+            estilo::TEXTO,
+        );
         let grau = Grau::de_u8(inst.rarity.clamp(1, 5)).unwrap_or(Grau::Comum);
-        let onde = if matches!(alvo, AlvoDaForja::Equipado(_)) { "vestida" } else { "in your bag" };
-        estilo::texto(d.x + u(74.0), d.y + u(46.0), &format!("{} · {onde}", grau.nome()), 14, estilo::SUAVE);
+        let onde = if matches!(alvo, AlvoDaForja::Equipado(_)) {
+            "vestida"
+        } else {
+            "in your bag"
+        };
+        estilo::texto(
+            d.x + u(74.0),
+            d.y + u(46.0),
+            &format!("{} · {onde}", grau.nome()),
+            14,
+            estilo::SUAVE,
+        );
         let y = d.y + u(100.0);
         let max = forja_estrelas::ESTRELAS_MAX;
         crate::bolsa::desenha_estrelas(d.x, y - u(9.0), u(11.0), inst.estrelas, max);
         let Some((essencia, ds)) = forja_estrelas::custo_da_estrela(inst.estrelas) else {
-            estilo::texto(d.x, y + u(34.0), "Every star reached: +40% to the piece.", 16, VERDE);
+            estilo::texto(
+                d.x,
+                y + u(34.0),
+                "Every star reached: +40% to the piece.",
+                16,
+                VERDE,
+            );
             return None;
         };
         let prox = proxima_estrela(inst);
@@ -806,11 +868,17 @@ impl Forja {
         estilo::texto(
             d.x,
             y + u(34.0),
-            &format!("Star {} of {max}: +8% of the piece's base stats", inst.estrelas + 1),
+            &format!(
+                "Star {} of {max}: +8% of the piece's base stats",
+                inst.estrelas + 1
+            ),
             15,
             estilo::OURO,
         );
-        let (tem_e, tem_ds) = (tem(slots, item_id::ESSENCIA_RENASCIMENTO), tem(slots, item_id::DARKSTEEL));
+        let (tem_e, tem_ds) = (
+            tem(slots, item_id::ESSENCIA_RENASCIMENTO),
+            tem(slots, item_id::DARKSTEEL),
+        );
         estilo::texto(
             d.x,
             y + u(62.0),
@@ -825,18 +893,37 @@ impl Forja {
             15,
             if tem_ds >= ds { VERDE } else { VERMELHO },
         );
-        if crate::onde_obter::botao(Rect::new(d.x + d.w - u(36.0), y + u(44.0), u(34.0), u(22.0))) {
+        if crate::onde_obter::botao(Rect::new(
+            d.x + d.w - u(36.0),
+            y + u(44.0),
+            u(34.0),
+            u(22.0),
+        )) {
             self.onde_obter = Some(item_id::ESSENCIA_RENASCIMENTO);
         }
-        if crate::onde_obter::botao(Rect::new(d.x + d.w - u(36.0), y + u(68.0), u(34.0), u(22.0))) {
+        if crate::onde_obter::botao(Rect::new(
+            d.x + d.w - u(36.0),
+            y + u(68.0),
+            u(34.0),
+            u(22.0),
+        )) {
             self.onde_obter = Some(item_id::DARKSTEEL);
         }
-        estilo::texto(d.x, y + u(116.0), "Ascending never fails; the stars stay with the piece.", 14, estilo::SUAVE);
+        estilo::texto(
+            d.x,
+            y + u(116.0),
+            "Ascending never fails; the stars stay with the piece.",
+            14,
+            estilo::SUAVE,
+        );
         let atual = atributos_do_refino(id, inst);
         let proximo = atributos_do_refino(id, &prox);
         estilo::texto_forte(d.x, y + u(142.0), "WITH THE NEXT STAR", 13, estilo::OURO);
         for (n, (rotulo, depois)) in proximo.iter().take(7).enumerate() {
-            let antes = atual.iter().find(|(nm, _)| nm == rotulo).map_or("0", |(_, v)| v.as_str());
+            let antes = atual
+                .iter()
+                .find(|(nm, _)| nm == rotulo)
+                .map_or("0", |(_, v)| v.as_str());
             let texto = format!("{antes} › {depois}  ({})", ganho_formatado(antes, depois));
             let yy = y + u(162.0 + n as f32 * 18.0);
             estilo::texto(d.x, yy, rotulo, 12, estilo::TEXTO);
@@ -859,16 +946,28 @@ pub async fn previa() {
     crate::render3d::define_alvo(Some(rt.clone()));
     let mut katana = ItemInstance::roll_for(item_id::KATANA, 5, || 0.5).unwrap();
     katana.refinement = 5;
-    let mat = |id, qty| InventorySlot { item_id: id, qty, instance: None };
+    let mat = |id, qty| InventorySlot {
+        item_id: id,
+        qty,
+        instance: None,
+    };
     let base = vec![
-        InventorySlot { item_id: item_id::KATANA, qty: 1, instance: Some(katana) },
+        InventorySlot {
+            item_id: item_id::KATANA,
+            qty: 1,
+            instance: Some(katana),
+        },
         mat(item_id::DARKSTEEL, 50_000),
         mat(item_id::COPPER, 50_000),
     ];
     let mut com = base.clone();
     com.push(mat(item_id::AMULETO_DE_PROTECAO, 3));
     let nomes = HashMap::from([(item_id::KATANA, "Katana".to_string())]);
-    for (cena, slots, pergunta) in [("risco", &base, false), ("protegido", &com, false), ("pergunta", &base, true)] {
+    for (cena, slots, pergunta) in [
+        ("risco", &base, false),
+        ("protegido", &com, false),
+        ("pergunta", &base, true),
+    ] {
         let mut f = Forja::default();
         f.aberto = true;
         f.sel = Some(AlvoDaForja::Bolsa(0));
@@ -880,7 +979,9 @@ pub async fn previa() {
             clear_background(Color::new(0.08, 0.1, 0.12, 1.0));
             let _ = f.desenha(slots, &Equipment::default(), &nomes, 0.0, None);
             unsafe { get_internal_gl().flush() };
-            rt.texture.get_texture_data().export_png(&format!("/tmp/tempest-forja-{cena}.png"));
+            rt.texture
+                .get_texture_data()
+                .export_png(&format!("/tmp/tempest-forja-{cena}.png"));
             next_frame().await;
         }
     }

@@ -160,7 +160,9 @@ async fn main() -> anyhow::Result<()> {
                 .find(|n| !canais.iter().any(|c| c.numero == *n))
                 .unwrap();
             let porta = porta_base + numero as u16 - 1;
-            match abrir(&bin, &realm, numero, porta, &host_base, &caminho, cap_canal, unico) {
+            match abrir(
+                &bin, &realm, numero, porta, &host_base, &caminho, cap_canal, unico,
+            ) {
                 Ok(processo) => {
                     tracing::info!(
                         "channel {numero} opened on port {porta} ({total} players in total)"
@@ -273,7 +275,10 @@ fn abrir(
         .env("MMO_CANAL_UNICO", if unico { "1" } else { "0" })
         .env("MMO_CANAL", numero.to_string())
         .env("BIND_ADDR", format!("0.0.0.0:{porta}"))
-        .env("MMO_HOST_PUBLICO", endereco_publico(host_base, caminho, numero, porta))
+        .env(
+            "MMO_HOST_PUBLICO",
+            endereco_publico(host_base, caminho, numero, porta),
+        )
         .env("MMO_CANAL_CAPACIDADE", cap_canal.to_string());
     // Retrato ao vivo pro panoptico: cada canal na porta do jogo + offset, so'
     // em loopback. Um PANOPTICO_BIND herdado igual pra todos faria os canais

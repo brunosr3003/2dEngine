@@ -35,9 +35,9 @@ impl GameWorld {
 
     /// The entity is the Prime Merchant?
     pub(super) fn e_prime(&self, e: hecs::Entity) -> bool {
-        self.ecs
-            .get::<&NpcDaVilaTag>(e)
-            .is_ok_and(|t| shared::npc_papel_de_kind(t.rumo) == shared::construcao::Papel::Prime as u8)
+        self.ecs.get::<&NpcDaVilaTag>(e).is_ok_and(|t| {
+            shared::npc_papel_de_kind(t.rumo) == shared::construcao::Papel::Prime as u8
+        })
     }
 
     /// Within reach of a Prime Merchant.
@@ -50,7 +50,9 @@ impl GameWorld {
         self.ecs
             .query::<(&Position, &NpcDaVilaTag)>()
             .iter()
-            .any(|(_, (p, t))| shared::npc_papel_de_kind(t.rumo) == prime && p.0.distance(eu) <= PERTO)
+            .any(|(_, (p, t))| {
+                shared::npc_papel_de_kind(t.rumo) == prime && p.0.distance(eu) <= PERTO
+            })
     }
 
     pub(super) fn handle_prime(&mut self, sid: SessionId, pedido: PedidoPrime) {
@@ -60,7 +62,11 @@ impl GameWorld {
         }
         match pedido {
             PedidoPrime::Abrir => self.abrir_prime(sid),
-            PedidoPrime::Comprar { item_id, qtd, preco_visto } => {
+            PedidoPrime::Comprar {
+                item_id,
+                qtd,
+                preco_visto,
+            } => {
                 let preco = crate::prime::preco_atual(item_id);
                 self.comprar_no_prime(sid, item_id, qtd, preco, preco_visto);
             }
@@ -69,7 +75,9 @@ impl GameWorld {
 
     fn avisa_prime(&self, sid: SessionId, texto: String) {
         if let Some(s) = self.sessions.get(&sid) {
-            let _ = s.handle.to_client.send(ServerMessage::Prime { aviso: AvisoPrime::Recusa(texto) });
+            let _ = s.handle.to_client.send(ServerMessage::Prime {
+                aviso: AvisoPrime::Recusa(texto),
+            });
         }
     }
 
@@ -98,13 +106,26 @@ impl GameWorld {
         let Some(s) = self.sessions.get_mut(&sid).filter(|s| s.logged_in) else {
             return;
         };
-        let compra = match shared::prime::validar(&s.diario, dia, s.gold, item_id, qtd, preco_atual, preco_visto) {
+        let compra = match shared::prime::validar(
+            &s.diario,
+            dia,
+            s.gold,
+            item_id,
+            qtd,
+            preco_atual,
+            preco_visto,
+        ) {
             Ok(c) => c,
             Err(r) => {
                 let texto = r.texto();
-                let _ = s.handle.to_client.send(ServerMessage::Prime { aviso: AvisoPrime::Recusa(texto) });
+                let _ = s.handle.to_client.send(ServerMessage::Prime {
+                    aviso: AvisoPrime::Recusa(texto),
+                });
                 // A stale price: the fresh board goes with the refusal.
-                if matches!(r, shared::prime::Recusa::PrecoMudou { .. } | shared::prime::Recusa::SemPreco) {
+                if matches!(
+                    r,
+                    shared::prime::Recusa::PrecoMudou { .. } | shared::prime::Recusa::SemPreco
+                ) {
                     self.abrir_prime(sid);
                 }
                 return;
@@ -122,7 +143,11 @@ impl GameWorld {
         } else {
             // Room first: nothing is charged for what would not fit.
             let cabe = shared::armazem::e_moeda(item_id)
-                || crate::coleta::cabe_tudo(&s.inventory, &[(item_id, qtd)], &crate::economy::item_stack_max);
+                || crate::coleta::cabe_tudo(
+                    &s.inventory,
+                    &[(item_id, qtd)],
+                    &crate::economy::item_stack_max,
+                );
             if !cabe {
                 let _ = s.handle.to_client.send(ServerMessage::Prime {
                     aviso: AvisoPrime::Recusa("Not enough room in the bag.".into()),
@@ -138,7 +163,11 @@ impl GameWorld {
         crate::telemetria::conta_de(&s.name, "ouro_ralo", "prime", compra.total as i64);
         crate::telemetria::conta_de(&s.name, "prime_compra", item_id, qtd as i64);
         let _ = s.handle.to_client.send(ServerMessage::Prime {
-            aviso: AvisoPrime::Comprou { item_id, qtd, total: compra.total },
+            aviso: AvisoPrime::Comprou {
+                item_id,
+                qtd,
+                total: compra.total,
+            },
         });
         self.save_pending = true;
         self.abrir_prime(sid);
@@ -157,13 +186,19 @@ mod testes {
         w.zona = "ilha_inicial".into();
         let sid = SessionId(([127, 0, 0, 1], 19_970).into());
         let (tx, rx) = mpsc::unbounded_channel::<ServerMessage>();
-        w.on_connect(SessionHandle { id: sid, to_client: tx });
+        w.on_connect(SessionHandle {
+            id: sid,
+            to_client: tx,
+        });
         let e = w.ecs.spawn((
             NetId(EntityId(911)),
             Position(Vec2::ZERO),
             Velocity(Vec2::ZERO),
             EntityKind::Player,
-            Health { current: 100, max: 100 },
+            Health {
+                current: 100,
+                max: 100,
+            },
         ));
         w.ecs.spawn((
             NetId(EntityId(912)),
@@ -185,7 +220,12 @@ mod testes {
     }
 
     fn qtd_na_bolsa(w: &GameWorld, sid: SessionId, id: u16) -> u32 {
-        w.sessions[&sid].inventory.iter().filter(|s| s.item_id == id).map(|s| s.qty).sum()
+        w.sessions[&sid]
+            .inventory
+            .iter()
+            .filter(|s| s.item_id == id)
+            .map(|s| s.qty)
+            .sum()
     }
 
     /// The gold leaves the purse (nobody gets it), the item arrives, the
@@ -200,7 +240,10 @@ mod testes {
         assert_eq!(qtd_na_bolsa(&w, sid, xp), 3);
         // 5 a day: 2 more fit, a 3rd does not.
         w.comprar_no_prime(sid, xp, 3, Some(115), 115);
-        assert_eq!(w.sessions[&sid].gold, 655, "refused over the limit: nothing charged");
+        assert_eq!(
+            w.sessions[&sid].gold, 655,
+            "refused over the limit: nothing charged"
+        );
         w.comprar_no_prime(sid, xp, 2, Some(115), 115);
         assert_eq!(w.sessions[&sid].gold, 655 - 230);
         assert_eq!(qtd_na_bolsa(&w, sid, xp), 5);
@@ -224,7 +267,10 @@ mod testes {
         let antes = w.sessions[&sid].skill_progress.energia;
         w.comprar_no_prime(sid, shared::item_id::ENERGIA_MIL, 2, Some(20), 20);
         assert_eq!(w.sessions[&sid].gold, 60);
-        assert_eq!(w.sessions[&sid].skill_progress.energia, antes + 2 * shared::mercado::ENERGIA_POR_LOTE);
+        assert_eq!(
+            w.sessions[&sid].skill_progress.energia,
+            antes + 2 * shared::mercado::ENERGIA_POR_LOTE
+        );
         assert_eq!(qtd_na_bolsa(&w, sid, shared::item_id::ENERGIA_MIL), 0);
     }
 
@@ -238,18 +284,45 @@ mod testes {
         w.sessions.get_mut(&sid).unwrap().gold = 1_000;
         w.handle_prime(sid, PedidoPrime::Abrir);
         let quadro = std::iter::from_fn(|| rx.try_recv().ok()).find_map(|m| match m {
-            ServerMessage::Prime { aviso: AvisoPrime::Quadro(q) } => Some(q),
+            ServerMessage::Prime {
+                aviso: AvisoPrime::Quadro(q),
+            } => Some(q),
             _ => None,
         });
-        let linha = quadro.unwrap().linhas.into_iter().find(|l| l.item_id == shared::item_id::DARKSTEEL).unwrap();
+        let linha = quadro
+            .unwrap()
+            .linhas
+            .into_iter()
+            .find(|l| l.item_id == shared::item_id::DARKSTEEL)
+            .unwrap();
         assert_eq!(linha.preco, 12, "10 x 1.15 = 11.5 -> 12");
-        w.handle_prime(sid, PedidoPrime::Comprar { item_id: shared::item_id::DARKSTEEL, qtd: 10, preco_visto: 12 });
+        w.handle_prime(
+            sid,
+            PedidoPrime::Comprar {
+                item_id: shared::item_id::DARKSTEEL,
+                qtd: 10,
+                preco_visto: 12,
+            },
+        );
         assert_eq!(w.sessions[&sid].gold, 880);
-        assert_eq!(w.sessions[&sid].diario.comprado(shared::dungeon::dia((now_ms() / 1000) as i64), shared::item_id::DARKSTEEL), 10);
+        assert_eq!(
+            w.sessions[&sid].diario.comprado(
+                shared::dungeon::dia((now_ms() / 1000) as i64),
+                shared::item_id::DARKSTEEL
+            ),
+            10
+        );
         // Far from the merchant: refused.
         let e = w.sessions[&sid].entity.unwrap();
         w.ecs.get::<&mut Position>(e).unwrap().0 = Vec2::new(500.0, 500.0);
-        w.handle_prime(sid, PedidoPrime::Comprar { item_id: shared::item_id::DARKSTEEL, qtd: 10, preco_visto: 12 });
+        w.handle_prime(
+            sid,
+            PedidoPrime::Comprar {
+                item_id: shared::item_id::DARKSTEEL,
+                qtd: 10,
+                preco_visto: 12,
+            },
+        );
         assert_eq!(w.sessions[&sid].gold, 880);
     }
 }

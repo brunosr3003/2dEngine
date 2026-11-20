@@ -368,66 +368,70 @@ impl Economia {
 
         if let Some(auto) = r.auto_resumo {
             let alto = (seguro.y + seguro.h - 108.0 * f - y).max(100.0 * f);
-            auto.desenhar(Rect::new(x, y - 12.0 * f, w, alto),
-                r.missao_atual, r.proximas_missoes, r.nomes_itens);
+            auto.desenhar(
+                Rect::new(x, y - 12.0 * f, w, alto),
+                r.missao_atual,
+                r.proximas_missoes,
+                r.nomes_itens,
+            );
         } else {
-        estilo::texto_forte(x, y, "SINCE YOU STARTED", 12, suave);
-        y += 26.0 * f;
-        let niveis = r.nivel.saturating_sub(self.nivel_inicio);
-        let mut linhas = vec![
-            (
-                "XP",
-                format!("+{}", milhar(r.xp.saturating_sub(self.xp_inicio))),
-            ),
-            (
-                "Gold",
-                format!("+{}", milhar(r.ouro.saturating_sub(self.ouro_inicio))),
-            ),
-        ];
-        if niveis > 0 {
-            linhas.push(("Levels", format!("+{niveis}")));
-        }
-        if self.mortes > 0 {
-            linhas.push(("Deaths", self.mortes.to_string()));
-        }
-        let mut itens = self.itens.clone();
-        itens.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
-        // Duas colunas: numeros a' esquerda, itens a' direita.
-        let (xe, xd, cw) = (x, x + w * 0.42, w * 0.58);
-        let y0 = y;
-        for (rot, val) in &linhas {
-            estilo::texto(xe, y, rot, 15, suave);
-            estilo::texto_forte(
-                xe + w * 0.36 - estilo::medir_forte(val, 15),
-                y,
-                val,
-                15,
-                texto,
-            );
-            y += 24.0 * f;
-        }
-        let cabem = (((seguro.y + seguro.h - 150.0 * f) - y0) / (22.0 * f)).max(1.0) as usize;
-        let mut yd = y0;
-        if itens.is_empty() {
-            estilo::texto(xd, yd, "No item yet", 14, suave);
-        }
-        for (i, (id, q)) in itens.iter().enumerate() {
-            if i + 1 == cabem && itens.len() > cabem {
-                estilo::texto(xd, yd, &format!("+ {} outros", itens.len() - i), 13, suave);
-                break;
+            estilo::texto_forte(x, y, "SINCE YOU STARTED", 12, suave);
+            y += 26.0 * f;
+            let niveis = r.nivel.saturating_sub(self.nivel_inicio);
+            let mut linhas = vec![
+                (
+                    "XP",
+                    format!("+{}", milhar(r.xp.saturating_sub(self.xp_inicio))),
+                ),
+                (
+                    "Gold",
+                    format!("+{}", milhar(r.ouro.saturating_sub(self.ouro_inicio))),
+                ),
+            ];
+            if niveis > 0 {
+                linhas.push(("Levels", format!("+{niveis}")));
             }
-            let qtd = format!("×{}", milhar(*q as u64));
-            estilo::texto_ajustado(
-                &(r.nome_item)(*id),
-                xd,
-                yd,
-                cw - estilo::medir_forte(&qtd, 14) - 12.0 * f,
-                14,
-                texto,
-            );
-            estilo::texto_forte(xd + cw - estilo::medir_forte(&qtd, 14), yd, &qtd, 14, texto);
-            yd += 22.0 * f;
-        }
+            if self.mortes > 0 {
+                linhas.push(("Deaths", self.mortes.to_string()));
+            }
+            let mut itens = self.itens.clone();
+            itens.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+            // Duas colunas: numeros a' esquerda, itens a' direita.
+            let (xe, xd, cw) = (x, x + w * 0.42, w * 0.58);
+            let y0 = y;
+            for (rot, val) in &linhas {
+                estilo::texto(xe, y, rot, 15, suave);
+                estilo::texto_forte(
+                    xe + w * 0.36 - estilo::medir_forte(val, 15),
+                    y,
+                    val,
+                    15,
+                    texto,
+                );
+                y += 24.0 * f;
+            }
+            let cabem = (((seguro.y + seguro.h - 150.0 * f) - y0) / (22.0 * f)).max(1.0) as usize;
+            let mut yd = y0;
+            if itens.is_empty() {
+                estilo::texto(xd, yd, "No item yet", 14, suave);
+            }
+            for (i, (id, q)) in itens.iter().enumerate() {
+                if i + 1 == cabem && itens.len() > cabem {
+                    estilo::texto(xd, yd, &format!("+ {} outros", itens.len() - i), 13, suave);
+                    break;
+                }
+                let qtd = format!("×{}", milhar(*q as u64));
+                estilo::texto_ajustado(
+                    &(r.nome_item)(*id),
+                    xd,
+                    yd,
+                    cw - estilo::medir_forte(&qtd, 14) - 12.0 * f,
+                    14,
+                    texto,
+                );
+                estilo::texto_forte(xd + cw - estilo::medir_forte(&qtd, 14), yd, &qtd, 14, texto);
+                yd += 22.0 * f;
+            }
         }
         if r.ping_ms > 0.0 {
             let p = format!("{:.0} ms", r.ping_ms);

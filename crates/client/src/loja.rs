@@ -2,9 +2,9 @@
 //! block below says how many to buy (-/+, 1, 10, 50, Max) and what the batch
 //! costs. Price, copper, bag space and range are still validated by the
 //! server (`ShopComprar`, all or nothing).
+use crate::hud_estilo as estilo;
 #[allow(unused_imports)]
 use crate::ui::Toque as _;
-use crate::hud_estilo as estilo;
 use macroquad::prelude::*;
 use shared::protocol::{ClientMessage, ShopItem};
 use shared::{EntityId, InventorySlot};
@@ -61,6 +61,7 @@ pub struct Loja {
     pub vendedor: Option<EntityId>,
     itens: Vec<ShopItem>,
     moeda_magica: bool,
+    moeda_naval: bool,
     /// The chosen row and how much of it goes in the batch.
     sel: usize,
     qtd: u32,
@@ -108,6 +109,11 @@ impl Loja {
     pub fn abre_magica(&mut self, vendor_id: u32, itens: Vec<ShopItem>) {
         self.abre(vendor_id, itens);
         self.moeda_magica = true;
+    }
+
+    pub fn abre_naval(&mut self, vendor_id: u32, itens: Vec<ShopItem>) {
+        self.abre(vendor_id, itens);
+        self.moeda_naval = true;
     }
 
     pub fn fecha(&mut self) {
@@ -192,10 +198,18 @@ impl Loja {
         }
         let saldo = if self.moeda_magica {
             na_bolsa(slots, shared::item_id::MOEDA_MAGICA)
+        } else if self.moeda_naval {
+            na_bolsa(slots, shared::item_id::NAVAL_TOKEN)
         } else {
             cobre
         };
-        let moeda = if self.moeda_magica { "moedas" } else { "cobre" };
+        let moeda = if self.moeda_magica {
+            "moedas"
+        } else if self.moeda_naval {
+            "tokens"
+        } else {
+            "cobre"
+        };
         let pacote = |id: u16| -> u32 {
             if self.moeda_magica {
                 shared::magica::TROCAS
@@ -415,7 +429,7 @@ impl Loja {
                 );
             }
             let b = Rect::new(d.x, d.y + 134.0 * f, d.w, 44.0 * f);
-            let rotulo = if self.moeda_magica {
+            let rotulo = if self.moeda_magica || self.moeda_naval {
                 format!("Trade for {}x", self.qtd)
             } else {
                 format!("Buy {}x", self.qtd)
@@ -440,6 +454,8 @@ impl Loja {
         );
         let rodape_texto = if self.moeda_magica {
             format!("Magic Coins: {}", crate::bolsa::milhar(saldo))
+        } else if self.moeda_naval {
+            format!("Naval Tokens: {}", crate::bolsa::milhar(saldo))
         } else {
             format!(
                 "Copper {}  ·  Gold {}",

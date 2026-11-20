@@ -7,9 +7,9 @@
 //! Eixos: o mundo e' (x, z), e a camera em yaw 0 olha pra -z. O mapa usa norte
 //! fixo com x pra direita e z pra BAIXO — a vista da camera sem giro —, entao
 //! o que esta' a' esquerda no mundo esta' a' esquerda no mapa.
+use crate::hud_estilo::{self as estilo, u};
 #[allow(unused_imports)]
 use crate::ui::Toque as _;
-use crate::hud_estilo::{self as estilo, u};
 use crate::world::World;
 use macroquad::prelude::*;
 use shared::terreno::{Bioma, Cidade, DefIlha, Gerador, BLOCO, ESCALA_ALTURA, NIVEL_DO_MAR};
@@ -423,7 +423,12 @@ pub struct Camadas {
 
 impl Default for Camadas {
     fn default() -> Self {
-        Self { chefes: true, portais: true, npcs: true, viagem: true }
+        Self {
+            chefes: true,
+            portais: true,
+            npcs: true,
+            viagem: true,
+        }
     }
 }
 
@@ -970,7 +975,12 @@ pub fn cor_do_mar_fundo() -> Color {
     Color::new(c[0], c[1], c[2], 1.0)
 }
 
-fn gerar_terreno_em(ger: &Gerador, raio_blocos: i32, bioma: shared::terreno::Bioma, lado: usize) -> Vec<u8> {
+fn gerar_terreno_em(
+    ger: &Gerador,
+    raio_blocos: i32,
+    bioma: shared::terreno::Bioma,
+    lado: usize,
+) -> Vec<u8> {
     let raio = raio_blocos as f32 * BLOCO;
     let pico = ger.pico().max(1.0);
     let mut hs = vec![0f32; lado * lado];
@@ -998,10 +1008,13 @@ fn gerar_terreno_em(ger: &Gerador, raio_blocos: i32, bioma: shared::terreno::Bio
                 // (`mar::material_do_topo`): one Gerador, four islands.
                 let cor = if ger.e_mar() {
                     let (bx, bz) = (
-                        ((-raio + (i as f32 + 0.5) / lado as f32 * 2.0 * raio) / BLOCO).round() as i32,
-                        ((-raio + (j as f32 + 0.5) / lado as f32 * 2.0 * raio) / BLOCO).round() as i32,
+                        ((-raio + (i as f32 + 0.5) / lado as f32 * 2.0 * raio) / BLOCO).round()
+                            as i32,
+                        ((-raio + (j as f32 + 0.5) / lado as f32 * 2.0 * raio) / BLOCO).round()
+                            as i32,
                     );
-                    let (r, g, b) = shared::mar::material_do_topo(bx, bz).map_or((180, 170, 140), |m| m.rgb());
+                    let (r, g, b) =
+                        shared::mar::material_do_topo(bx, bz).map_or((180, 170, 140), |m| m.rgb());
                     [r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0].map(|v| v * luz)
                 } else {
                     cor_de_terra(bioma, h, pico).map(|v| v * luz)
@@ -1097,7 +1110,13 @@ fn nomes_das_ilhotas(zona: Option<&str>, ponto: impl Fn(Vec2) -> Vec2, escala: f
 /// faint red rings, and every dock as an anchor in its island's colour on
 /// a dark coin. The minimap (`mini`) shows no labels — the disc is for
 /// finding your way; the big map names the docks and the lawless waters.
-fn aguas_sem_lei(zona: Option<&str>, ponto: impl Fn(Vec2) -> Vec2, escala: f32, tamanho: u16, recorte: Option<(Vec2, f32)>) {
+fn aguas_sem_lei(
+    zona: Option<&str>,
+    ponto: impl Fn(Vec2) -> Vec2,
+    escala: f32,
+    tamanho: u16,
+    recorte: Option<(Vec2, f32)>,
+) {
     if !zona.is_some_and(shared::mar::e_mar) {
         return;
     }
@@ -1120,7 +1139,13 @@ fn aguas_sem_lei(zona: Option<&str>, ponto: impl Fn(Vec2) -> Vec2, escala: f32, 
     if !mini {
         if let Some(b) = shared::mar::vista_da_zona("ilha_inicial") {
             let q = ponto(vec2(b.centro.x, b.centro.y + b.raio + 26.0));
-            estilo::texto_centro(q.x + 1.0, q.y + 1.0, "Peaceful waters", tamanho, Color::new(0.0, 0.0, 0.0, 0.85));
+            estilo::texto_centro(
+                q.x + 1.0,
+                q.y + 1.0,
+                "Peaceful waters",
+                tamanho,
+                Color::new(0.0, 0.0, 0.0, 0.85),
+            );
             estilo::texto_centro(q.x, q.y, "Peaceful waters", tamanho, paz);
         }
     }
@@ -1134,20 +1159,35 @@ fn aguas_sem_lei(zona: Option<&str>, ponto: impl Fn(Vec2) -> Vec2, escala: f32, 
             draw_circle(q.x, q.y, raio, Color::new(0.75, 0.08, 0.06, 0.16));
         }
         // At least three strokes however small the disc is drawn.
-        hachura(q, raio, (7.0 * k).max(5.0).min(raio / 3.0).max(2.0), Color::new(1.0, 0.3, 0.24, 0.45), recorte);
+        hachura(
+            q,
+            raio,
+            (7.0 * k).max(5.0).min(raio / 3.0).max(2.0),
+            Color::new(1.0, 0.3, 0.24, 0.45),
+            recorte,
+        );
         // The rim in short strokes, each cut to the minimap's disc.
         let n = 48;
         for s in 0..n {
             let a0 = s as f32 / n as f32 * std::f32::consts::TAU;
             let a1 = (s + 1) as f32 / n as f32 * std::f32::consts::TAU;
-            let (a, b) = (q + vec2(a0.cos(), a0.sin()) * raio, q + vec2(a1.cos(), a1.sin()) * raio);
+            let (a, b) = (
+                q + vec2(a0.cos(), a0.sin()) * raio,
+                q + vec2(a1.cos(), a1.sin()) * raio,
+            );
             if let Some((a, b)) = corta_no_disco(a, b, recorte) {
                 draw_line(a.x, a.y, b.x, b.y, 1.6 * k, estilo::alfa(vermelho, 0.85));
             }
         }
         if !mini && raio >= u(14.0) {
             crate::mar_combate_ui::caveira(q - vec2(0.0, u(16.0)), u(7.0), vermelho);
-            estilo::texto_centro(q.x + 1.0, q.y + u(8.0) + 1.0, "Lawless waters", tamanho, Color::new(0.0, 0.0, 0.0, 0.85));
+            estilo::texto_centro(
+                q.x + 1.0,
+                q.y + u(8.0) + 1.0,
+                "Lawless waters",
+                tamanho,
+                Color::new(0.0, 0.0, 0.0, 0.85),
+            );
             estilo::texto_centro(q.x, q.y + u(8.0), "Lawless waters", tamanho, vermelho);
         }
     }
@@ -1172,7 +1212,13 @@ fn aguas_sem_lei(zona: Option<&str>, ponto: impl Fn(Vec2) -> Vec2, escala: f32, 
         if !mini {
             let rotulo = format!("{} · Dock", i.nome);
             let (dx, dy) = (q.x + r * 1.7, q.y + r * 0.45);
-            estilo::texto(dx + 1.0, dy + 1.0, &rotulo, tamanho, Color::new(0.0, 0.0, 0.0, 0.85));
+            estilo::texto(
+                dx + 1.0,
+                dy + 1.0,
+                &rotulo,
+                tamanho,
+                Color::new(0.0, 0.0, 0.0, 0.85),
+            );
             estilo::texto(dx, dy, &rotulo, tamanho, cor);
         }
     }
@@ -1195,7 +1241,10 @@ fn corta_no_disco(a: Vec2, b: Vec2, recorte: Option<(Vec2, f32)>) -> Option<(Vec
         return None;
     }
     let raiz = disc.sqrt();
-    let (t0, t1) = (((-qb - raiz) / (2.0 * qa)).max(0.0), ((-qb + raiz) / (2.0 * qa)).min(1.0));
+    let (t0, t1) = (
+        ((-qb - raiz) / (2.0 * qa)).max(0.0),
+        ((-qb + raiz) / (2.0 * qa)).min(1.0),
+    );
     (t1 > t0).then(|| (a + d * t0, a + d * t1))
 }
 
@@ -1218,8 +1267,20 @@ fn hachura(c: Vec2, r: f32, passo: f32, cor: Color, recorte: Option<(Vec2, f32)>
 
 /// A small fin over a wave line: a sea mob (or its nest, faint).
 fn barbatana(q: Vec2, s: f32, cor: Color) {
-    draw_triangle(vec2(q.x - s, q.y + s * 0.45), vec2(q.x + s * 0.9, q.y + s * 0.45), vec2(q.x - s * 0.15, q.y - s * 1.1), cor);
-    draw_line(q.x - s * 1.4, q.y + s * 0.6, q.x + s * 1.4, q.y + s * 0.6, (s * 0.3).max(1.0), cor);
+    draw_triangle(
+        vec2(q.x - s, q.y + s * 0.45),
+        vec2(q.x + s * 0.9, q.y + s * 0.45),
+        vec2(q.x - s * 0.15, q.y - s * 1.1),
+        cor,
+    );
+    draw_line(
+        q.x - s * 1.4,
+        q.y + s * 0.6,
+        q.x + s * 1.4,
+        q.y + s * 0.6,
+        (s * 0.3).max(1.0),
+        cor,
+    );
 }
 
 /// A hull from above pointing along `yaw` (the game's `x.atan2(z)`): the
@@ -1228,8 +1289,14 @@ fn casco_no_mapa(c: Vec2, yaw: f32, s: f32, cor: Color) {
     let f = vec2(yaw.sin(), yaw.cos());
     let l = vec2(-f.y, f.x);
     let proa = c + f * s * 1.25;
-    let (ae, ad) = (c + f * s * 0.25 + l * s * 0.55, c + f * s * 0.25 - l * s * 0.55);
-    let (pe, pd) = (c - f * s * 0.95 + l * s * 0.45, c - f * s * 0.95 - l * s * 0.45);
+    let (ae, ad) = (
+        c + f * s * 0.25 + l * s * 0.55,
+        c + f * s * 0.25 - l * s * 0.55,
+    );
+    let (pe, pd) = (
+        c - f * s * 0.95 + l * s * 0.45,
+        c - f * s * 0.95 - l * s * 0.45,
+    );
     let sombra = Color::new(0.0, 0.0, 0.0, 0.7);
     let o = vec2(0.0, 1.2);
     for (cor, d) in [(sombra, o), (cor, Vec2::ZERO)] {
@@ -1243,10 +1310,16 @@ fn casco_no_mapa(c: Vec2, yaw: f32, s: f32, cor: Color) {
 }
 
 /// THE BODIES AT SEA on a map: other ships as pale hulls, mobs as red fins
-/// (an elite as a skull), the drifting treasure chests in gold, and my
-/// own ship last, a gold hull along its heading. `visivel` culls to the
+/// (an elite as a skull), drifting treasure chests in gold, salvage barrels
+/// in wood and brass, and my own ship last, a gold hull along its heading.
+/// `visivel` culls to the
 /// disc; `k` is the map's icon scale.
-fn corpos_no_mar(world: &World, ponto: &dyn Fn(Vec2) -> Vec2, visivel: &dyn Fn(Vec2) -> bool, k: f32) {
+fn corpos_no_mar(
+    world: &World,
+    ponto: &dyn Fn(Vec2) -> Vec2,
+    visivel: &dyn Fn(Vec2) -> bool,
+    k: f32,
+) {
     // The walkable deck: the SHIPS are the entities drawn as hulls; mine is
     // the one I stand on.
     let meu = world.casco_do_eu().map(|e| e.meta.id);
@@ -1268,20 +1341,57 @@ fn corpos_no_mar(world: &World, ponto: &dyn Fn(Vec2) -> Vec2, visivel: &dyn Fn(V
                 }
             }
             EntityTag::Navio => {
-                let hostil = e.meta.pk.hostil || e.meta.pk.marcado;
-                let cor = if hostil { Color::new(1.0, 0.45, 0.4, 1.0) } else { Color::new(0.82, 0.9, 1.0, 1.0) };
-                casco_no_mapa(q, e.yaw, 6.5 * k, cor);
+                if e.state.hp <= 0 {
+                    draw_circle(q.x, q.y, 6.8 * k, Color::new(0.03, 0.04, 0.06, 0.88));
+                    crate::mar_combate_ui::caveira(q, 4.8 * k, Color::new(1.0, 0.62, 0.25, 1.0));
+                } else {
+                    let hostil = e.meta.pk.hostil || e.meta.pk.marcado;
+                    let cor = if hostil {
+                        Color::new(1.0, 0.45, 0.4, 1.0)
+                    } else {
+                        Color::new(0.82, 0.9, 1.0, 1.0)
+                    };
+                    casco_no_mapa(q, e.yaw, 6.5 * k, cor);
+                }
             }
-            EntityTag::Npc if shared::npc_papel_de_kind(e.meta.kind) == shared::dungeon::PAPEL_BAU => {
+            EntityTag::Npc
+                if shared::npc_papel_de_kind(e.meta.kind) == shared::dungeon::PAPEL_BAU =>
+            {
                 draw_circle(q.x, q.y, 6.5 * k, Color::new(0.03, 0.04, 0.06, 0.85));
                 crate::mar_combate_ui::bau_icone(q, 4.2 * k, estilo::OURO);
+            }
+            EntityTag::Npc
+                if shared::npc_papel_de_kind(e.meta.kind) == shared::navio::PAPEL_BARRIL_NAVAL =>
+            {
+                draw_circle(q.x, q.y, 6.5 * k, Color::new(0.03, 0.04, 0.06, 0.85));
+                draw_rectangle(
+                    q.x - 3.2 * k,
+                    q.y - 4.0 * k,
+                    6.4 * k,
+                    8.0 * k,
+                    Color::new(0.55, 0.29, 0.12, 1.0),
+                );
+                for y in [-2.7, 2.7] {
+                    draw_rectangle(
+                        q.x - 3.5 * k,
+                        q.y + y * k - 0.6 * k,
+                        7.0 * k,
+                        1.2 * k,
+                        estilo::OURO,
+                    );
+                }
             }
             _ => {}
         }
     }
     if let Some(e) = world.casco_do_eu() {
         let rumo = crate::mar_ui::rumo_do_casco(e.state.vel_f32(), e.yaw);
-        casco_no_mapa(ponto(e.render_pos), rumo.x.atan2(rumo.y), 9.0 * k, estilo::OURO);
+        casco_no_mapa(
+            ponto(e.render_pos),
+            rumo.x.atan2(rumo.y),
+            9.0 * k,
+            estilo::OURO,
+        );
     }
 }
 
@@ -1516,7 +1626,9 @@ pub async fn previa() {
             clear_background(Color::new(0.08, 0.12, 0.16, 1.0));
             m.desenha_grande(&world, 20, &mundo, 1_789_000_000);
             unsafe { get_internal_gl().flush() };
-            rt.texture.get_texture_data().export_png(&format!("{saida}/mapa-{zona}.png"));
+            rt.texture
+                .get_texture_data()
+                .export_png(&format!("{saida}/mapa-{zona}.png"));
             next_frame().await;
         }
     }
@@ -1539,7 +1651,9 @@ pub async fn previa() {
         unsafe { get_internal_gl().flush() };
         next_frame().await;
     }
-    rt.texture.get_texture_data().export_png(&format!("{saida}/mapa-mundo.png"));
+    rt.texture
+        .get_texture_data()
+        .export_png(&format!("{saida}/mapa-mundo.png"));
 }
 
 /// O marcador de uma porta de Porão no mapa.
@@ -1580,18 +1694,39 @@ fn portal_no_mapa(q: Vec2, lado: f32, fonte: u16) {
     draw_circle(q.x, q.y, lado * 1.35, Color::new(0.0, 0.0, 0.0, 0.7));
     draw_circle(q.x, q.y, lado * 1.15, ouro);
     draw_circle(q.x, q.y, lado * 0.85, azul);
-    draw_circle(q.x, q.y + lado * 0.15, lado * 0.38, Color::new(0.38, 0.72, 0.36, 1.0));
-    draw_rectangle(q.x - lado * 0.38, q.y + lado * 0.15, lado * 0.76, lado * 0.2, Color::new(0.88, 0.8, 0.57, 1.0));
+    draw_circle(
+        q.x,
+        q.y + lado * 0.15,
+        lado * 0.38,
+        Color::new(0.38, 0.72, 0.36, 1.0),
+    );
+    draw_rectangle(
+        q.x - lado * 0.38,
+        q.y + lado * 0.15,
+        lado * 0.76,
+        lado * 0.2,
+        Color::new(0.88, 0.8, 0.57, 1.0),
+    );
     let nome = crate::portal_ilhas_ui::NOME;
     let w = estilo::medir(nome, fonte);
-    estilo::texto(q.x - w * 0.5, q.y + lado * 1.35 + fonte as f32 * 0.95, nome, fonte, ouro);
+    estilo::texto(
+        q.x - w * 0.5,
+        q.y + lado * 1.35 + fonte as f32 * 0.95,
+        nome,
+        fonte,
+        ouro,
+    );
 }
 
 fn porta_no_mapa(q: Vec2, lado: f32, nome: &str, fonte: u16, direita: bool) {
     icone_da_porta(ICONE_PORTA, q, lado);
     let cor = estilo::OURO;
     let largura = estilo::medir(nome, fonte);
-    let x = if direita { q.x + lado + 6.0 } else { q.x - lado - 6.0 - largura };
+    let x = if direita {
+        q.x + lado + 6.0
+    } else {
+        q.x - lado - 6.0 - largura
+    };
     estilo::texto(x, q.y + fonte as f32 * 0.35, nome, fonte, cor);
 }
 
@@ -1603,12 +1738,24 @@ pub fn icone_da_porta(qual: IconePorta, q: Vec2, lado: f32) {
     match qual {
         IconePorta::Arco => {
             // Contorno escuro pra destacar do verde/areia, depois o arco.
-            draw_rectangle(q.x - lado - 1.5, q.y - lado * 0.4 - 1.5, lado * 2.0 + 3.0, lado * 1.6 + 3.0, contorno);
+            draw_rectangle(
+                q.x - lado - 1.5,
+                q.y - lado * 0.4 - 1.5,
+                lado * 2.0 + 3.0,
+                lado * 1.6 + 3.0,
+                contorno,
+            );
             draw_circle(q.x, q.y - lado * 0.4, lado + 1.5, contorno);
             draw_rectangle(q.x - lado, q.y - lado * 0.4, lado * 2.0, lado * 1.6, ouro);
             draw_circle(q.x, q.y - lado * 0.4, lado, ouro);
             // O vão.
-            draw_rectangle(q.x - lado * 0.45, q.y - lado * 0.3, lado * 0.9, lado * 1.5, escuro);
+            draw_rectangle(
+                q.x - lado * 0.45,
+                q.y - lado * 0.3,
+                lado * 0.9,
+                lado * 1.5,
+                escuro,
+            );
             draw_circle(q.x, q.y - lado * 0.3, lado * 0.45, escuro);
         }
         IconePorta::Fechadura => {
@@ -1622,7 +1769,13 @@ pub fn icone_da_porta(qual: IconePorta, q: Vec2, lado: f32) {
                 vec2(q.x, q.y + lado * 0.75),
                 escuro,
             );
-            draw_rectangle(q.x - lado * 0.22, q.y - lado * 0.1, lado * 0.44, lado * 0.55, escuro);
+            draw_rectangle(
+                q.x - lado * 0.22,
+                q.y - lado * 0.1,
+                lado * 0.44,
+                lado * 0.55,
+                escuro,
+            );
         }
         IconePorta::Escada => {
             let r = lado * 1.25;
@@ -1633,7 +1786,12 @@ pub fn icone_da_porta(qual: IconePorta, q: Vec2, lado: f32) {
                 let t = i as f32 / 4.0;
                 let w = r * (1.5 - t * 0.9);
                 let y = q.y - r * 0.55 + t * r * 1.05;
-                let c = Color::new(ouro.r * (1.0 - t * 0.55), ouro.g * (1.0 - t * 0.55), ouro.b * (1.0 - t * 0.55), 1.0);
+                let c = Color::new(
+                    ouro.r * (1.0 - t * 0.55),
+                    ouro.g * (1.0 - t * 0.55),
+                    ouro.b * (1.0 - t * 0.55),
+                    1.0,
+                );
                 draw_rectangle(q.x - w * 0.5, y, w, r * 0.2, c);
             }
             draw_circle_lines(q.x, q.y, r, 1.5f32.max(lado * 0.18), ouro);
@@ -1641,30 +1799,87 @@ pub fn icone_da_porta(qual: IconePorta, q: Vec2, lado: f32) {
         IconePorta::Caveira => {
             let r = lado * 1.05;
             draw_circle(q.x, q.y - r * 0.1, r + 1.5, contorno);
-            draw_rectangle(q.x - r * 0.55 - 1.5, q.y + r * 0.35, r * 1.1 + 3.0, r * 0.6 + 1.5, contorno);
+            draw_rectangle(
+                q.x - r * 0.55 - 1.5,
+                q.y + r * 0.35,
+                r * 1.1 + 3.0,
+                r * 0.6 + 1.5,
+                contorno,
+            );
             draw_circle(q.x, q.y - r * 0.1, r, ouro);
             draw_rectangle(q.x - r * 0.55, q.y + r * 0.35, r * 1.1, r * 0.6, ouro);
             draw_circle(q.x - r * 0.4, q.y - r * 0.05, r * 0.28, escuro);
             draw_circle(q.x + r * 0.4, q.y - r * 0.05, r * 0.28, escuro);
-            draw_triangle(vec2(q.x, q.y + r * 0.2), vec2(q.x - r * 0.12, q.y + r * 0.42), vec2(q.x + r * 0.12, q.y + r * 0.42), escuro);
+            draw_triangle(
+                vec2(q.x, q.y + r * 0.2),
+                vec2(q.x - r * 0.12, q.y + r * 0.42),
+                vec2(q.x + r * 0.12, q.y + r * 0.42),
+                escuro,
+            );
             for dx in [-0.3f32, 0.0, 0.3] {
-                draw_line(q.x + r * dx, q.y + r * 0.55, q.x + r * dx, q.y + r * 0.95, 1.0f32.max(lado * 0.1), escuro);
+                draw_line(
+                    q.x + r * dx,
+                    q.y + r * 0.55,
+                    q.x + r * dx,
+                    q.y + r * 0.95,
+                    1.0f32.max(lado * 0.1),
+                    escuro,
+                );
             }
         }
         IconePorta::Espadas => {
             let r = lado * 1.3;
             // Escudo.
             let escudo = |c: Color, k: f32| {
-                draw_rectangle(q.x - r * 0.65 * k, q.y - r * 0.7 * k, r * 1.3 * k, r * 0.8 * k, c);
-                draw_triangle(vec2(q.x - r * 0.65 * k, q.y + r * 0.1 * k), vec2(q.x + r * 0.65 * k, q.y + r * 0.1 * k), vec2(q.x, q.y + r * 0.85 * k), c);
+                draw_rectangle(
+                    q.x - r * 0.65 * k,
+                    q.y - r * 0.7 * k,
+                    r * 1.3 * k,
+                    r * 0.8 * k,
+                    c,
+                );
+                draw_triangle(
+                    vec2(q.x - r * 0.65 * k, q.y + r * 0.1 * k),
+                    vec2(q.x + r * 0.65 * k, q.y + r * 0.1 * k),
+                    vec2(q.x, q.y + r * 0.85 * k),
+                    c,
+                );
             };
             escudo(contorno, 1.15);
             escudo(Color::new(0.45, 0.12, 0.10, 1.0), 1.0);
             let g = 2.0f32.max(lado * 0.28);
-            draw_line(q.x - r * 0.75, q.y - r * 0.75, q.x + r * 0.75, q.y + r * 0.6, g + 2.0, contorno);
-            draw_line(q.x + r * 0.75, q.y - r * 0.75, q.x - r * 0.75, q.y + r * 0.6, g + 2.0, contorno);
-            draw_line(q.x - r * 0.75, q.y - r * 0.75, q.x + r * 0.75, q.y + r * 0.6, g, ouro);
-            draw_line(q.x + r * 0.75, q.y - r * 0.75, q.x - r * 0.75, q.y + r * 0.6, g, ouro);
+            draw_line(
+                q.x - r * 0.75,
+                q.y - r * 0.75,
+                q.x + r * 0.75,
+                q.y + r * 0.6,
+                g + 2.0,
+                contorno,
+            );
+            draw_line(
+                q.x + r * 0.75,
+                q.y - r * 0.75,
+                q.x - r * 0.75,
+                q.y + r * 0.6,
+                g + 2.0,
+                contorno,
+            );
+            draw_line(
+                q.x - r * 0.75,
+                q.y - r * 0.75,
+                q.x + r * 0.75,
+                q.y + r * 0.6,
+                g,
+                ouro,
+            );
+            draw_line(
+                q.x + r * 0.75,
+                q.y - r * 0.75,
+                q.x - r * 0.75,
+                q.y + r * 0.6,
+                g,
+                ouro,
+            );
         }
         IconePorta::Caverna => {
             let r = lado * 1.3;
@@ -1673,7 +1888,12 @@ pub fn icone_da_porta(qual: IconePorta, q: Vec2, lado: f32) {
             draw_circle(q.x, q.y, r, Color::new(0.42, 0.40, 0.44, 1.0));
             draw_circle(q.x, q.y + r * 0.2, r * 0.65, escuro);
             draw_rectangle(q.x - r * 0.65, q.y + r * 0.2, r * 1.3, r * 0.75, escuro);
-            draw_circle(q.x, q.y + r * 0.35, r * 0.3, Color::new(0.75, 0.45, 1.0, 0.9));
+            draw_circle(
+                q.x,
+                q.y + r * 0.35,
+                r * 0.3,
+                Color::new(0.75, 0.45, 1.0, 0.9),
+            );
             draw_circle_lines(q.x, q.y, r, 1.5f32.max(lado * 0.15), ouro);
         }
         IconePorta::Cadeado => {
@@ -1682,7 +1902,13 @@ pub fn icone_da_porta(qual: IconePorta, q: Vec2, lado: f32) {
             let topo = q.y - lado * 0.2;
             // Contorno.
             draw_rectangle(q.x - w * 0.5 - 1.5, topo - 1.5, w + 3.0, h + 3.0, contorno);
-            draw_circle_lines(q.x, topo - lado * 0.15, lado * 0.62, lado * 0.42 + 3.0, contorno);
+            draw_circle_lines(
+                q.x,
+                topo - lado * 0.15,
+                lado * 0.62,
+                lado * 0.42 + 3.0,
+                contorno,
+            );
             // A alça.
             draw_circle_lines(q.x, topo - lado * 0.15, lado * 0.62, lado * 0.42, ouro);
             draw_rectangle(q.x - w * 0.5, topo - lado * 0.15, w, lado * 0.3, ouro);
@@ -1690,7 +1916,13 @@ pub fn icone_da_porta(qual: IconePorta, q: Vec2, lado: f32) {
             draw_rectangle(q.x - w * 0.5, topo, w, h, ouro);
             // O buraco.
             draw_circle(q.x, topo + h * 0.42, lado * 0.28, escuro);
-            draw_rectangle(q.x - lado * 0.12, topo + h * 0.42, lado * 0.24, h * 0.38, escuro);
+            draw_rectangle(
+                q.x - lado * 0.12,
+                topo + h * 0.42,
+                lado * 0.24,
+                h * 0.38,
+                escuro,
+            );
         }
     }
 }
@@ -1700,8 +1932,8 @@ pub fn icone_da_porta(qual: IconePorta, q: Vec2, lado: f32) {
 /// sobre areia — os dois fundos em que eles têm que ser lidos.
 #[cfg(debug_assertions)]
 pub async fn previa_icones() {
-    let saida = std::env::var("MMO_PREVIA_SAIDA")
-        .unwrap_or_else(|_| "/tmp/tempest-icone-porta".into());
+    let saida =
+        std::env::var("MMO_PREVIA_SAIDA").unwrap_or_else(|_| "/tmp/tempest-icone-porta".into());
     std::fs::create_dir_all(&saida).unwrap();
     let (w, h) = (1400.0f32, 560.0f32);
     let rt = render_target(w as u32, h as u32);
@@ -1733,7 +1965,9 @@ pub async fn previa_icones() {
             }
         }
         unsafe { get_internal_gl().flush() };
-        rt.texture.get_texture_data().export_png(&format!("{saida}/icones-porta.png"));
+        rt.texture
+            .get_texture_data()
+            .export_png(&format!("{saida}/icones-porta.png"));
         next_frame().await;
     }
 }
@@ -1944,7 +2178,9 @@ impl Mapa {
                 (
                     i,
                     para_tela(centro_da_zona(z) - foco, r, raio).distance(m),
-                    (z.raio * escala).max(9.0 * k).max(crate::ui::alvo_minimo() * 0.5),
+                    (z.raio * escala)
+                        .max(9.0 * k)
+                        .max(crate::ui::alvo_minimo() * 0.5),
                 )
             })
             .filter(|(_, d, rp)| d <= rp)
@@ -2006,7 +2242,11 @@ impl Mapa {
                 linhas.push((
                     format!(
                         "{} · Nv {}",
-                        if z.forte { "STRONGHOLD" } else { "Hunting zone" },
+                        if z.forte {
+                            "STRONGHOLD"
+                        } else {
+                            "Hunting zone"
+                        },
                         shared::progressao::texto_de_faixa(z.lv_min as u32, z.lv_max as u32)
                     ),
                     estilo::OURO,
@@ -2097,15 +2337,56 @@ impl Mapa {
         // and never scrolled — with an island's worth of creatures they ran
         // off the panel (the owner: "the map filters still without scroll
         // bar").
-        let area = Rect::new(lat.x + u(6.0), lat.y + u(36.0), lat.w - u(12.0), lat.h - u(44.0));
+        let area = Rect::new(
+            lat.x + u(6.0),
+            lat.y + u(36.0),
+            lat.w - u(12.0),
+            lat.h - u(44.0),
+        );
         let c = self.camadas;
         let mut chips: Vec<(String, bool, Color, Chip, Ico)> = vec![
-            ("Bosses".into(), c.chefes, Color::new(1.0, 0.72, 0.25, 1.0), Chip::Chefes, Ico::Atlas("chefe")),
-            ("Dungeons".into(), c.portais, COR_PORTAL, Chip::Portais, Ico::Porta),
-            ("NPCs".into(), c.npcs, COR_NPC, Chip::Npcs, Ico::Atlas("npc")),
-            ("Travel".into(), c.viagem, COR_VIAGEM, Chip::Viagem, Ico::Atlas("porto")),
-            ("Village".into(), self.filtros.vila, estilo::OURO, Chip::Vila, Ico::Atlas("cidade")),
-            ("Mobs".into(), self.filtros.mobs, COR_MOB, Chip::Mobs, Ico::Atlas("lobo")),
+            (
+                "Bosses".into(),
+                c.chefes,
+                Color::new(1.0, 0.72, 0.25, 1.0),
+                Chip::Chefes,
+                Ico::Atlas("chefe"),
+            ),
+            (
+                "Dungeons".into(),
+                c.portais,
+                COR_PORTAL,
+                Chip::Portais,
+                Ico::Porta,
+            ),
+            (
+                "NPCs".into(),
+                c.npcs,
+                COR_NPC,
+                Chip::Npcs,
+                Ico::Atlas("npc"),
+            ),
+            (
+                "Travel".into(),
+                c.viagem,
+                COR_VIAGEM,
+                Chip::Viagem,
+                Ico::Atlas("porto"),
+            ),
+            (
+                "Village".into(),
+                self.filtros.vila,
+                estilo::OURO,
+                Chip::Vila,
+                Ico::Atlas("cidade"),
+            ),
+            (
+                "Mobs".into(),
+                self.filtros.mobs,
+                COR_MOB,
+                Chip::Mobs,
+                Ico::Atlas("lobo"),
+            ),
         ];
         for k in info.bichos() {
             chips.push((
@@ -2146,7 +2427,18 @@ impl Mapa {
         let chefes: Vec<(String, u32, Vec2, String)> = info
             .chefes
             .iter()
-            .map(|ch| (ch.nome.clone(), ch.nivel as u32, vec2(ch.centro[0], ch.centro[1]), if ch.vivo { String::new() } else { " · dead".into() }))
+            .map(|ch| {
+                (
+                    ch.nome.clone(),
+                    ch.nivel as u32,
+                    vec2(ch.centro[0], ch.centro[1]),
+                    if ch.vivo {
+                        String::new()
+                    } else {
+                        " · dead".into()
+                    },
+                )
+            })
             .collect();
         // The chips' layout (wrapping rows), measured before drawing: the
         // scroll needs the whole height.
@@ -2164,10 +2456,15 @@ impl Mapa {
             }
         }
         let altura_chips = layout.last().map_or(0.0, |r| r.y + r.h) + u(10.0);
-        let linhas_chefes = if chefes.is_empty() { 0 } else { 1 + chefes.len() };
+        let linhas_chefes = if chefes.is_empty() {
+            0
+        } else {
+            1 + chefes.len()
+        };
         let total = altura_chips
             + u(34.0)
-            + (4 + vilas.len() + linhas_chefes + bichos.len() + tipos.len() + npcs.len()) as f32 * u(LINHA_IR);
+            + (4 + vilas.len() + linhas_chefes + bichos.len() + tipos.len() + npcs.len()) as f32
+                * u(LINHA_IR);
         // Rola arrastando, pela roda ou pela barra; o "Ir" vale no SOLTAR.
         let clique = self.rolagem_lateral.quadro(area, total, u(LINHA_IR));
         let topo = area.y - self.rolagem_lateral.pos;
@@ -2185,8 +2482,27 @@ impl Mapa {
                 1.0,
                 Color::new(cor.r, cor.g, cor.b, if *ligado { 0.85 } else { 0.30 }),
             );
-            desenha_ico(*ico, vec2(c.x + u(14.0), c.y + c.h * 0.5), u(16.0), if *ligado { *cor } else { Color::new(cor.r, cor.g, cor.b, 0.45) });
-            estilo::texto(c.x + u(26.0), c.y + u(16.0), rotulo, 13, if *ligado { estilo::TEXTO } else { estilo::SUAVE });
+            desenha_ico(
+                *ico,
+                vec2(c.x + u(14.0), c.y + c.h * 0.5),
+                u(16.0),
+                if *ligado {
+                    *cor
+                } else {
+                    Color::new(cor.r, cor.g, cor.b, 0.45)
+                },
+            );
+            estilo::texto(
+                c.x + u(26.0),
+                c.y + u(16.0),
+                rotulo,
+                13,
+                if *ligado {
+                    estilo::TEXTO
+                } else {
+                    estilo::SUAVE
+                },
+            );
             if clique.is_some_and(|p| c.toca(p) && area.toca(p)) {
                 toggle = Some(*id);
             }
@@ -2292,7 +2608,12 @@ impl Mapa {
             ly += u(LINHA_IR);
             for (nome, nivel_c, p, detalhe_vivo) in &chefes {
                 let nivel_c = shared::progressao::texto_de_nivel(*nivel_c as u32);
-                let alvo = Alvo { objetivo: Objetivo::Combate, pos: *p, raio: 8.0, rotulo: nome.clone() };
+                let alvo = Alvo {
+                    objetivo: Objetivo::Combate,
+                    pos: *p,
+                    raio: 8.0,
+                    rotulo: nome.clone(),
+                };
                 linha(
                     nome,
                     format!("Lv {nivel_c} · {:.0} m{detalhe_vivo}", p.distance(eu)),
@@ -2354,12 +2675,10 @@ impl Mapa {
         for k in &bichos {
             let nome = info.nome(*k);
             let z = zona_mais_perto(&info.zonas, *k, eu, nivel);
-            let faixa = info
-                .faixa(*k)
-                .map_or(String::new(), |(a, b)| {
-                    let f = shared::progressao::texto_de_faixa(a as u32, b as u32);
-                    format!("Lv {f} · ")
-                });
+            let faixa = info.faixa(*k).map_or(String::new(), |(a, b)| {
+                let f = shared::progressao::texto_de_faixa(a as u32, b as u32);
+                format!("Lv {f} · ")
+            });
             let detalhe = z.map_or("no zone".to_string(), |z| {
                 format!("{faixa}{:.0} m", centro_da_zona(z).distance(eu))
             });
@@ -2369,7 +2688,15 @@ impl Mapa {
                 raio: z.raio,
                 rotulo: nome.clone(),
             });
-            linha(&nome, detalhe, cor_do_bicho(*k), ico_do_bicho(*k), alvo, ly, &mut saida);
+            linha(
+                &nome,
+                detalhe,
+                cor_do_bicho(*k),
+                ico_do_bicho(*k),
+                alvo,
+                ly,
+                &mut saida,
+            );
             ly += u(LINHA_IR);
         }
         if visivel(ly) {
@@ -2596,7 +2923,13 @@ impl Mapa {
         let (_, nome, chefe) = self.destaque.clone()?;
         let lugares = self.lugares_do_destaque();
         let faixa = Rect::new(r.x + u(10.0), r.y + u(10.0), r.w - u(20.0), u(50.0));
-        draw_rectangle(faixa.x, faixa.y, faixa.w, faixa.h, Color::new(0.08, 0.06, 0.04, 0.92));
+        draw_rectangle(
+            faixa.x,
+            faixa.y,
+            faixa.w,
+            faixa.h,
+            Color::new(0.08, 0.06, 0.04, 0.92),
+        );
         draw_rectangle_lines(faixa.x, faixa.y, faixa.w, faixa.h, u(2.0), estilo::OURO);
         let texto = if lugares.is_empty() {
             format!("{nome} does not live on this island")
@@ -2605,11 +2938,28 @@ impl Mapa {
         } else {
             format!("{nome}: {} zones · best {}%", lugares.len(), lugares[0].2)
         };
-        estilo::texto_ajustado(&texto, faixa.x + u(14.0), faixa.y + u(31.0), faixa.w - u(260.0), 16, estilo::OURO);
+        estilo::texto_ajustado(
+            &texto,
+            faixa.x + u(14.0),
+            faixa.y + u(31.0),
+            faixa.w - u(260.0),
+            16,
+            estilo::OURO,
+        );
         let m = Vec2::from(mouse_position());
         let clicou = crate::foco::clique();
-        let limpar = Rect::new(faixa.x + faixa.w - u(96.0), faixa.y + u(4.0), u(90.0), u(42.0));
-        estilo::botao(limpar, "Clear", estilo::estado_de(limpar, false, false), false);
+        let limpar = Rect::new(
+            faixa.x + faixa.w - u(96.0),
+            faixa.y + u(4.0),
+            u(90.0),
+            u(42.0),
+        );
+        estilo::botao(
+            limpar,
+            "Clear",
+            estilo::estado_de(limpar, false, false),
+            false,
+        );
         if clicou && limpar.toca(m) {
             self.destaque = None;
             return None;
@@ -2620,7 +2970,11 @@ impl Mapa {
         if clicou && ir.toca(m) {
             let _ = world;
             return Some(Entrada::Ir(Alvo {
-                objetivo: if chefe { Objetivo::Lugar } else { Objetivo::Combate },
+                objetivo: if chefe {
+                    Objetivo::Lugar
+                } else {
+                    Objetivo::Combate
+                },
                 pos: c,
                 raio,
                 rotulo: nome,
@@ -2835,9 +3189,7 @@ impl Mapa {
                 // tem as abas Ilha|Mundo. Elas ficam ACIMA do `grande_rect`, e
                 // sem esta excecao tocar em "World" trocava a aba e fechava o
                 // mapa no mesmo quadro: o dono via o mapa sumir.
-                if Self::fechar_rect(r).toca(m)
-                    || (!r.toca(m) && !Self::moldura_rect(r).toca(m))
-                {
+                if Self::fechar_rect(r).toca(m) || (!r.toca(m) && !Self::moldura_rect(r).toca(m)) {
                     self.aberto = false;
                     return None;
                 }
@@ -3083,7 +3435,11 @@ impl Mapa {
         for (_, p) in &self.inimigos {
             let q = ponto(*p);
             let fora = q - c;
-            let q = if fora.length() > rad - 6.0 { c + fora.normalize_or_zero() * (rad - 6.0) } else { q };
+            let q = if fora.length() > rad - 6.0 {
+                c + fora.normalize_or_zero() * (rad - 6.0)
+            } else {
+                q
+            };
             marca_inimigo(q, 5.0);
         }
         // No minimapa também: é o mapa que fica na tela o tempo todo, e
@@ -3099,7 +3455,11 @@ impl Mapa {
             // arrow: a hull reads as a hull).
             corpos_no_mar(world, &ponto, &visivel, 1.0);
         }
-        if let Some(d) = self.viagem.destino().or(self.destino_mar.filter(|_| no_mar)) {
+        if let Some(d) = self
+            .viagem
+            .destino()
+            .or(self.destino_mar.filter(|_| no_mar))
+        {
             let q = ponto(d);
             // Fora do disco, o destino fica preso na BORDA REDONDA, na direcao
             // dele. Preso no quadrado, ele parava nos cantos — que agora sao
@@ -3299,7 +3659,9 @@ impl Mapa {
     /// ISLAND PORTAL, which goes to every island (17/11/2026). On arrival
     /// the trip is asked for (`Objetivo::Embarcar`).
     fn quem_leva_para(&self, destino: &'static DefIlha) -> Option<Alvo> {
-        let idx = shared::terreno::ARQUIPELAGO.iter().position(|d| d.zona == destino.zona)?;
+        let idx = shared::terreno::ARQUIPELAGO
+            .iter()
+            .position(|d| d.zona == destino.zona)?;
         let p = self.portal_das_ilhas()?;
         Some(Alvo {
             objetivo: Objetivo::Embarcar(idx as u8),
@@ -3315,7 +3677,11 @@ impl Mapa {
     }
 
     /// O MAPA-MUNDI no lugar do mapa da ilha (`mundo_ui`).
-    fn desenha_grande_mundo(&self, mundo: &crate::mundo_ui::Mundo, agora_unix: i64) -> Option<&'static DefIlha> {
+    fn desenha_grande_mundo(
+        &self,
+        mundo: &crate::mundo_ui::Mundo,
+        agora_unix: i64,
+    ) -> Option<&'static DefIlha> {
         let (sw, sh) = (screen_width(), screen_height());
         draw_rectangle(0.0, 0.0, sw, sh, Color::new(0.0, 0.0, 0.0, 0.45));
         let r = Self::grande_rect();
@@ -3488,14 +3854,28 @@ impl Mapa {
         if self.def.is_some_and(|d| shared::kogen::e_kogen(d.zona)) {
             let c = shared::kogen::ESPIRAL_CENTRO;
             let q = ponto(vec2(c.x, c.y));
-            draw_circle_lines(q.x, q.y, shared::kogen::ESPIRAL_RAIO * escala, u(2.0), estilo::OURO);
+            draw_circle_lines(
+                q.x,
+                q.y,
+                shared::kogen::ESPIRAL_RAIO * escala,
+                u(2.0),
+                estilo::OURO,
+            );
             estilo::texto_centro(q.x + 1.0, q.y - u(13.0), NOME_DA_ESPIRAL, 13, BLACK);
             estilo::texto_centro(q.x, q.y - u(14.0), NOME_DA_ESPIRAL, 13, estilo::OURO);
         }
         if let Some(pl) = self.ger.as_ref().and_then(|g| g.planalto()) {
             for e in &pl.estradas {
-                let a = ponto(vec2(e.a.x,e.a.y)); let b = ponto(vec2(e.b.x,e.b.y));
-                draw_line(a.x,a.y,b.x,b.y,u(3.0),Color::new(0.78,0.68,0.46,0.85));
+                let a = ponto(vec2(e.a.x, e.a.y));
+                let b = ponto(vec2(e.b.x, e.b.y));
+                draw_line(
+                    a.x,
+                    a.y,
+                    b.x,
+                    b.y,
+                    u(3.0),
+                    Color::new(0.78, 0.68, 0.46, 0.85),
+                );
             }
             // EM ESCADA, e nao todos na linha do proprio ponto: as cinco
             // regioes ficam a ~100 u uma da outra, e no zoom de ilha inteira os
@@ -3503,33 +3883,53 @@ impl Mapa {
             // do Porto. O degrau por indice da' linha propria a cada um mesmo
             // quando dois pontos coincidem, e a guia liga o nome ao ponto dele.
             for (i, regiao) in pl.regioes.iter().enumerate() {
-                let q = ponto(vec2(regiao.centro.x,regiao.centro.y));
-                let (a,b) = shared::planalto::NIVEIS[i];
-                let nome = format!("{} · {}–{}",shared::planalto::NOMES[i],a,b);
+                let q = ponto(vec2(regiao.centro.x, regiao.centro.y));
+                let (a, b) = shared::planalto::NIVEIS[i];
+                let nome = format!("{} · {}–{}", shared::planalto::NOMES[i], a, b);
                 let dy = (i as f32 - 2.0) * u(12.0) - u(10.0);
-                draw_circle(q.x,q.y,u(4.0),estilo::OURO);
-                draw_line(q.x,q.y,q.x,q.y+dy+u(3.0),1.0,Color::new(1.0,0.78,0.35,0.45));
-                estilo::texto_centro(q.x+1.0,q.y+dy+1.0,&nome,12,BLACK);
-                estilo::texto_centro(q.x,q.y+dy,&nome,12,estilo::OURO);
+                draw_circle(q.x, q.y, u(4.0), estilo::OURO);
+                draw_line(
+                    q.x,
+                    q.y,
+                    q.x,
+                    q.y + dy + u(3.0),
+                    1.0,
+                    Color::new(1.0, 0.78, 0.35, 0.45),
+                );
+                estilo::texto_centro(q.x + 1.0, q.y + dy + 1.0, &nome, 12, BLACK);
+                estilo::texto_centro(q.x, q.y + dy, &nome, 12, estilo::OURO);
             }
-            if let Some(g) = &self.ger { if let Some(c) = g.cidade() {
-                let q = ponto(vec2(c.centro().x,c.centro().y));
-                estilo::texto_centro(q.x,q.y-u(22.0),"Último Abrigo",13,estilo::OURO);
-            } }
+            if let Some(g) = &self.ger {
+                if let Some(c) = g.cidade() {
+                    let q = ponto(vec2(c.centro().x, c.centro().y));
+                    estilo::texto_centro(q.x, q.y - u(22.0), "Último Abrigo", 13, estilo::OURO);
+                }
+            }
             // Stormkeep: the castle ring and its name, with the band.
             {
                 let f = &pl.forte;
                 let q = ponto(vec2(f.centro.x, f.centro.y));
-                draw_circle_lines(q.x, q.y, shared::planalto::FORTE_MURO_RAIO * escala, u(2.0), estilo::OURO);
+                draw_circle_lines(
+                    q.x,
+                    q.y,
+                    shared::planalto::FORTE_MURO_RAIO * escala,
+                    u(2.0),
+                    estilo::OURO,
+                );
                 let (a, b) = shared::planalto::FORTE_NIVEIS;
-                let nome = format!("{} · {}–{}", shared::idioma::tr(shared::planalto::FORTE_NOME), a, b);
+                let nome = format!(
+                    "{} · {}–{}",
+                    shared::idioma::tr(shared::planalto::FORTE_NOME),
+                    a,
+                    b
+                );
                 estilo::texto_centro(q.x + 1.0, q.y + 1.0, &nome, 13, BLACK);
                 estilo::texto_centro(q.x, q.y, &nome, 13, estilo::OURO);
             }
-            if let Some((_,c)) = pl.campo(agora_unix) {
-                let q = ponto(vec2(c.x,c.y));
-                draw_circle_lines(q.x,q.y,32.0*escala,u(2.0),SKYBLUE);
-                estilo::texto_centro(q.x,q.y+u(22.0),"Tempestade · coleta +50%",12,SKYBLUE);
+            if let Some((_, c)) = pl.campo(agora_unix) {
+                let q = ponto(vec2(c.x, c.y));
+                draw_circle_lines(q.x, q.y, 32.0 * escala, u(2.0), SKYBLUE);
+                estilo::texto_centro(q.x, q.y + u(22.0), "Tempestade · coleta +50%", 12, SKYBLUE);
             }
         }
         if let Some(info) = &self.info {
@@ -3540,7 +3940,12 @@ impl Mapa {
                 if !crate::icones_ui::mapa("chefe", q, u(26.0), ouro, 0.0) {
                     crate::telegrafico::desenha_coroa(q, u(8.0));
                 }
-                let t = format!("{} · Nv {}{}", ch.nome, shared::progressao::texto_de_nivel(ch.nivel as u32), volta_em(ch));
+                let t = format!(
+                    "{} · Nv {}{}",
+                    ch.nome,
+                    shared::progressao::texto_de_nivel(ch.nivel as u32),
+                    volta_em(ch)
+                );
                 estilo::texto_centro(
                     q.x + 1.0,
                     q.y + u(23.0),
@@ -3584,9 +3989,23 @@ impl Mapa {
                 if rp >= u(14.0) {
                     if let Some(b) = z.bichos.first() {
                         let t = if z.forte {
-                            format!("Stronghold · {} · Lv {}", info.nome(b.0), shared::progressao::texto_de_faixa(z.lv_min as u32, z.lv_max as u32))
+                            format!(
+                                "Stronghold · {} · Lv {}",
+                                info.nome(b.0),
+                                shared::progressao::texto_de_faixa(
+                                    z.lv_min as u32,
+                                    z.lv_max as u32
+                                )
+                            )
                         } else {
-                            format!("{} · Nv {}", info.nome(b.0), shared::progressao::texto_de_faixa(z.lv_min as u32, z.lv_max as u32))
+                            format!(
+                                "{} · Nv {}",
+                                info.nome(b.0),
+                                shared::progressao::texto_de_faixa(
+                                    z.lv_min as u32,
+                                    z.lv_max as u32
+                                )
+                            )
                         };
                         estilo::texto_centro(
                             q.x + 1.0,
@@ -3624,16 +4043,38 @@ impl Mapa {
                 let rp = (raio * escala).max(u(10.0));
                 let forca = (*pct as f32 / melhor).clamp(0.25, 1.0);
                 draw_circle(q.x, q.y, rp, Color::new(1.0, 0.80, 0.25, 0.22 * forca));
-                draw_poly_lines(q.x, q.y, 48, rp + u(2.0), 0.0, u(3.0), estilo::alfa(estilo::OURO, pulso * forca));
+                draw_poly_lines(
+                    q.x,
+                    q.y,
+                    48,
+                    rp + u(2.0),
+                    0.0,
+                    u(3.0),
+                    estilo::alfa(estilo::OURO, pulso * forca),
+                );
                 if i == 0 {
-                    draw_poly_lines(q.x, q.y, 48, rp + u(7.0) + u(4.0) * pulso, 0.0, u(2.0), estilo::alfa(WHITE, 0.6 * pulso));
+                    draw_poly_lines(
+                        q.x,
+                        q.y,
+                        48,
+                        rp + u(7.0) + u(4.0) * pulso,
+                        0.0,
+                        u(2.0),
+                        estilo::alfa(WHITE, 0.6 * pulso),
+                    );
                 }
                 let t = if self.destaque.as_ref().is_some_and(|d| d.2) {
                     "Boss".to_string()
                 } else {
                     format!("{pct}%")
                 };
-                estilo::texto_centro_forte(q.x + 1.0, q.y - rp - u(5.0), &t, 15, Color::new(0.0, 0.0, 0.0, 0.85));
+                estilo::texto_centro_forte(
+                    q.x + 1.0,
+                    q.y - rp - u(5.0),
+                    &t,
+                    15,
+                    Color::new(0.0, 0.0, 0.0, 0.85),
+                );
                 estilo::texto_centro_forte(q.x, q.y - rp - u(6.0), &t, 15, estilo::OURO);
             }
         }
@@ -3725,7 +4166,11 @@ impl Mapa {
         if no_mar {
             corpos_no_mar(world, &ponto, &|_| true, u(1.3));
         }
-        if let Some(d) = self.viagem.destino().or(self.destino_mar.filter(|_| no_mar)) {
+        if let Some(d) = self
+            .viagem
+            .destino()
+            .or(self.destino_mar.filter(|_| no_mar))
+        {
             let q = ponto(d);
             if let Some(eu) = eu {
                 let p = ponto(eu);

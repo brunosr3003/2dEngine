@@ -24,10 +24,18 @@ impl GameWorld {
                 Some(sl) if sl.qty > 0 => (sl.item_id, sl.instance),
                 _ => (0, None),
             },
-            AlvoDaForja::Equipado(slot) => (s.equipment.get(slot).unwrap_or(0), s.equipment.get_inst(slot)),
+            AlvoDaForja::Equipado(slot) => (
+                s.equipment.get(slot).unwrap_or(0),
+                s.equipment.get_inst(slot),
+            ),
         };
         let recusa = |s: &Session, estrelas: u8, motivo: String| {
-            let _ = s.handle.to_client.send(ServerMessage::AscensaoResultado { ok: false, estrelas, item_id, motivo });
+            let _ = s.handle.to_client.send(ServerMessage::AscensaoResultado {
+                ok: false,
+                estrelas,
+                item_id,
+                motivo,
+            });
         };
         let Some(mut inst) = inst.filter(|_| es::ascendivel(item_id)) else {
             recusa(s, 0, es::NAO_ASCENDIVEL.into());
@@ -37,10 +45,16 @@ impl GameWorld {
             recusa(s, inst.estrelas, es::NO_TOPO.into());
             return;
         };
-        let (tem_e, tem_ds) =
-            (crate::craft::tem(&s.inventory, ESSENCIA_RENASCIMENTO), crate::craft::tem(&s.inventory, DARKSTEEL));
+        let (tem_e, tem_ds) = (
+            crate::craft::tem(&s.inventory, ESSENCIA_RENASCIMENTO),
+            crate::craft::tem(&s.inventory, DARKSTEEL),
+        );
         if tem_e < essencia || tem_ds < ds {
-            recusa(s, inst.estrelas, format!("needs {essencia} Rebirth Essence and {ds} Darksteel"));
+            recusa(
+                s,
+                inst.estrelas,
+                format!("needs {essencia} Rebirth Essence and {ds} Darksteel"),
+            );
             return;
         }
         crate::craft::consumir(&mut s.inventory, ESSENCIA_RENASCIMENTO, essencia);
@@ -50,14 +64,24 @@ impl GameWorld {
             AlvoDaForja::Bolsa(i) => s.inventory[i as usize].instance = Some(inst),
             AlvoDaForja::Equipado(slot) => {
                 s.equipment.set(slot, Some(item_id), Some(inst));
-                s.stats =
-                    effective_stats_rv(&s.equipment, &s.allocated_points, &s.proficiencies, s.xp, s.renascimentos, &s.arvore);
+                s.stats = effective_stats_rv(
+                    &s.equipment,
+                    &s.allocated_points,
+                    &s.proficiencies,
+                    s.xp,
+                    s.renascimentos,
+                    &s.arvore,
+                );
                 s.mp_current = s.mp_current.min(s.stats.mp_max as f32);
                 s.stats_dirty = true;
             }
         }
         s.inventory_dirty = true;
-        tracing::info!("[ascensao] {} subiu o item {item_id} pra {} estrelas", s.name, inst.estrelas);
+        tracing::info!(
+            "[ascensao] {} subiu o item {item_id} pra {} estrelas",
+            s.name,
+            inst.estrelas
+        );
         crate::telemetria::conta_de(&s.name, "ascensao", inst.estrelas, 1);
         let _ = s.handle.to_client.send(ServerMessage::AscensaoResultado {
             ok: true,
@@ -102,7 +126,10 @@ impl GameWorld {
             es::Entrega::Item { id, qtd } => {
                 let tem = crate::craft::tem(&s.inventory, ESSENCIA_RENASCIMENTO);
                 if tem < o.preco {
-                    let t = format!("Not enough Rebirth Essence: {} costs {} Essence.", o.nome, o.preco);
+                    let t = format!(
+                        "Not enough Rebirth Essence: {} costs {} Essence.",
+                        o.nome, o.preco
+                    );
                     self.send_chat_to(sid, &t);
                     return;
                 }
@@ -113,11 +140,20 @@ impl GameWorld {
                     format!("Bought {} for {} Rebirth Essence.", o.nome, o.preco)
                 } else {
                     let quando = (now_ms() / 1000) as i64;
-                    s.dungeon.postar(id, qtd, None, es::MOTIVO_CORREIO_LOJA_ESSENCIA, quando);
-                    format!("Bought {} for {} Rebirth Essence. Your bag is full: it went to the Mail.", o.nome, o.preco)
+                    s.dungeon
+                        .postar(id, qtd, None, es::MOTIVO_CORREIO_LOJA_ESSENCIA, quando);
+                    format!(
+                        "Bought {} for {} Rebirth Essence. Your bag is full: it went to the Mail.",
+                        o.nome, o.preco
+                    )
                 };
                 s.inventory_dirty = true;
-                tracing::info!("[loja_essencia] {} comprou {} por {}", s.name, o.nome, o.preco);
+                tracing::info!(
+                    "[loja_essencia] {} comprou {} por {}",
+                    s.name,
+                    o.nome,
+                    o.preco
+                );
                 crate::telemetria::conta_de(&s.name, "loja_essencia", o.id, 1);
                 self.save_pending = true;
                 self.send_chat_to(sid, &t);
@@ -139,12 +175,27 @@ mod testes {
         let sid = SessionId(([127, 0, 0, 1], 47_301).into());
         let (tx, rx) = mpsc::unbounded_channel();
         std::mem::forget(rx);
-        w.on_connect(SessionHandle { id: sid, to_client: tx });
+        w.on_connect(SessionHandle {
+            id: sid,
+            to_client: tx,
+        });
         let eid = EntityId(4_730);
-        let e = w.ecs.spawn((NetId(eid), Position(Vec2::new(10.0, 10.0)),
-            Velocity(Vec2::ZERO), EntityKind::Player, Health { current: 100, max: 100 },
-            PlayerTag { name: "Estrelado".into(), player_id: PlayerId(49),
-                attack_anim_pending: None, combo_step_pending: None }));
+        let e = w.ecs.spawn((
+            NetId(eid),
+            Position(Vec2::new(10.0, 10.0)),
+            Velocity(Vec2::ZERO),
+            EntityKind::Player,
+            Health {
+                current: 100,
+                max: 100,
+            },
+            PlayerTag {
+                name: "Estrelado".into(),
+                player_id: PlayerId(49),
+                attack_anim_pending: None,
+                combo_step_pending: None,
+            },
+        ));
         let s = w.sessions.get_mut(&sid).unwrap();
         s.logged_in = true;
         s.entity = Some(e);
@@ -162,7 +213,11 @@ mod testes {
         }
         // One stack in a free slot: the test economy has no stack sizes.
         let livre = s.inventory.iter().position(|x| x.qty == 0).unwrap();
-        s.inventory[livre] = shared::InventorySlot { item_id: item, qty: qtd, instance: None };
+        s.inventory[livre] = shared::InventorySlot {
+            item_id: item,
+            qty: qtd,
+            instance: None,
+        };
     }
 
     fn tem(w: &GameWorld, sid: SessionId, item: u16) -> u32 {
@@ -173,16 +228,33 @@ mod testes {
     fn com_katana(w: &mut GameWorld, sid: SessionId) {
         let s = w.sessions.get_mut(&sid).unwrap();
         let k = shared::ItemInstance::roll_for(shared::item_id::KATANA, 30, || 0.5).unwrap();
-        s.equipment.set(EquipSlot::Weapon, Some(shared::item_id::KATANA), Some(k));
-        s.stats = effective_stats_rv(&s.equipment, &s.allocated_points, &s.proficiencies, s.xp, s.renascimentos, &s.arvore);
+        s.equipment
+            .set(EquipSlot::Weapon, Some(shared::item_id::KATANA), Some(k));
+        s.stats = effective_stats_rv(
+            &s.equipment,
+            &s.allocated_points,
+            &s.proficiencies,
+            s.xp,
+            s.renascimentos,
+            &s.arvore,
+        );
     }
 
     fn ascender(w: &mut GameWorld, sid: SessionId) {
-        w.on_message(sid, ClientMessage::Ascender { alvo: AlvoDaForja::Equipado(EquipSlot::Weapon) });
+        w.on_message(
+            sid,
+            ClientMessage::Ascender {
+                alvo: AlvoDaForja::Equipado(EquipSlot::Weapon),
+            },
+        );
     }
 
     fn estrelas(w: &GameWorld, sid: SessionId) -> u8 {
-        w.sessions[&sid].equipment.get_inst(EquipSlot::Weapon).unwrap().estrelas
+        w.sessions[&sid]
+            .equipment
+            .get_inst(EquipSlot::Weapon)
+            .unwrap()
+            .estrelas
     }
 
     #[test]
@@ -201,8 +273,19 @@ mod testes {
         assert_eq!(tem(&w, sid, ESSENCIA_RENASCIMENTO), 5);
         assert_eq!(tem(&w, sid, DARKSTEEL), 98_000);
         let s = &w.sessions[&sid];
-        assert!(s.stats.attack_damage > antes, "{} > {antes}", s.stats.attack_damage);
-        let conta = effective_stats_rv(&s.equipment, &s.allocated_points, &s.proficiencies, s.xp, s.renascimentos, &s.arvore);
+        assert!(
+            s.stats.attack_damage > antes,
+            "{} > {antes}",
+            s.stats.attack_damage
+        );
+        let conta = effective_stats_rv(
+            &s.equipment,
+            &s.allocated_points,
+            &s.proficiencies,
+            s.xp,
+            s.renascimentos,
+            &s.arvore,
+        );
         assert_eq!(s.stats.attack_damage, conta.attack_damage);
         // 5 Essence is not the 20 of the second star.
         ascender(&mut w, sid);
@@ -220,7 +303,10 @@ mod testes {
             ascender(&mut w, sid);
         }
         assert_eq!(estrelas(&w, sid), es::ESTRELAS_MAX);
-        assert_eq!(tem(&w, sid, ESSENCIA_RENASCIMENTO), 1_000 - es::essencia_ate_o_topo());
+        assert_eq!(
+            tem(&w, sid, ESSENCIA_RENASCIMENTO),
+            1_000 - es::essencia_ate_o_topo()
+        );
         assert_eq!(tem(&w, sid, DARKSTEEL), 100_000 - 62_000);
     }
 
@@ -230,17 +316,34 @@ mod testes {
         let k = shared::ItemInstance::roll_for(shared::item_id::KATANA, 30, || 0.5).unwrap();
         {
             let s = w.sessions.get_mut(&sid).unwrap();
-            s.inventory[0] = shared::InventorySlot { item_id: shared::item_id::KATANA, qty: 1, instance: Some(k) };
+            s.inventory[0] = shared::InventorySlot {
+                item_id: shared::item_id::KATANA,
+                qty: 1,
+                instance: Some(k),
+            };
         }
         dar(&mut w, sid, ESSENCIA_RENASCIMENTO, 10);
         dar(&mut w, sid, DARKSTEEL, 2_000);
-        w.on_message(sid, ClientMessage::Ascender { alvo: AlvoDaForja::Bolsa(0) });
+        w.on_message(
+            sid,
+            ClientMessage::Ascender {
+                alvo: AlvoDaForja::Bolsa(0),
+            },
+        );
         assert_eq!(w.sessions[&sid].inventory[0].instance.unwrap().estrelas, 1);
         assert_eq!(tem(&w, sid, ESSENCIA_RENASCIMENTO), 0);
         // A stack of material is not gear.
-        let i = w.sessions[&sid].inventory.iter().position(|s| s.item_id == DARKSTEEL);
+        let i = w.sessions[&sid]
+            .inventory
+            .iter()
+            .position(|s| s.item_id == DARKSTEEL);
         if let Some(i) = i {
-            w.on_message(sid, ClientMessage::Ascender { alvo: AlvoDaForja::Bolsa(i as u16) });
+            w.on_message(
+                sid,
+                ClientMessage::Ascender {
+                    alvo: AlvoDaForja::Bolsa(i as u16),
+                },
+            );
         }
         assert_eq!(w.sessions[&sid].inventory[0].instance.unwrap().estrelas, 1);
     }
@@ -268,12 +371,31 @@ mod testes {
         a.estrelas = 1;
         b.estrelas = 3;
         let mut inv = vec![shared::InventorySlot::default(); 10];
-        inv[0] = shared::InventorySlot { item_id: shared::item_id::KATANA, qty: 1, instance: Some(a) };
-        inv[1] = shared::InventorySlot { item_id: shared::item_id::KATANA, qty: 1, instance: Some(b) };
+        inv[0] = shared::InventorySlot {
+            item_id: shared::item_id::KATANA,
+            qty: 1,
+            instance: Some(a),
+        };
+        inv[1] = shared::InventorySlot {
+            item_id: shared::item_id::KATANA,
+            qty: 1,
+            instance: Some(b),
+        };
         let cobre = shared::forja::custo_de_aprimorar(a.grau(), a.tier());
-        assert!(add_to_inventory(&mut inv, shared::item_id::COPPER, cobre, None));
+        assert!(add_to_inventory(
+            &mut inv,
+            shared::item_id::COPPER,
+            cobre,
+            None
+        ));
         let r = crate::craft::aprimorar(&mut inv, 0, 1, 100, &mut |id, nivel, cor, tier| {
-            shared::ItemInstance::roll_em(shared::items::item_template(id), nivel, cor, tier, || 0.5)
+            shared::ItemInstance::roll_em(
+                shared::items::item_template(id),
+                nivel,
+                cor,
+                tier,
+                || 0.5,
+            )
         });
         assert!(r.is_ok(), "{r:?}");
         assert_eq!(inv[0].instance.unwrap().estrelas, 3);

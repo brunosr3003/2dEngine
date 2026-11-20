@@ -142,13 +142,15 @@ pub fn do_mob(tag: shared::EntityTag, kind: u16, boss: bool) -> Option<(&'static
             // The scale is corrected in `fator_do_modelo_de_chefe`.
             Some(Corpo::Bicho(7)) | Some(Corpo::Bicho(0)) | None => Some(BICHOS[4]),
             // The Storm Pegasus moves like the lynx and looks like a pegasus.
-            Some(_) if kind == shared::bosses::PEGASUS => {
-                BICHOS.iter().copied().find(|(n, _)| *n == "bichos/pegasus_stag")
-            }
+            Some(_) if kind == shared::bosses::PEGASUS => BICHOS
+                .iter()
+                .copied()
+                .find(|(n, _)| *n == "bichos/pegasus_stag"),
             // The Sky Dragon Mech fights as the Iron Bear and looks like a dragon.
-            Some(_) if kind == shared::bosses::DRAGAO_DA_ESPIRAL => {
-                BICHOS.iter().copied().find(|(n, _)| *n == "bichos/mech_dragon")
-            }
+            Some(_) if kind == shared::bosses::DRAGAO_DA_ESPIRAL => BICHOS
+                .iter()
+                .copied()
+                .find(|(n, _)| *n == "bichos/mech_dragon"),
             Some(Corpo::Bicho(k)) => do_mob(tag, k, false).or(Some(BICHOS[4])),
             Some(_) => None,
         };

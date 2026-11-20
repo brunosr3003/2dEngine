@@ -116,7 +116,10 @@ impl Joystick {
         let (r, b) = if segurando {
             (self.raio, self.base)
         } else {
-            (RAIO_BASE * z.s * crate::hud_custom::tamanho("joystick"), Self::base_em_repouso(z))
+            (
+                RAIO_BASE * z.s * crate::hud_custom::tamanho("joystick"),
+                Self::base_em_repouso(z),
+            )
         };
         if !segurando {
             draw_circle(b.x, b.y, r, estilo::alfa(estilo::FUNDO, 0.28));

@@ -58,7 +58,10 @@ pub const DANO_RECEBIDO_POR_NIVEL: f32 = 0.12;
 
 /// How many penalised levels the mob is above the player.
 pub fn degraus_acima(nivel_jogador: u32, nivel_mob: u32) -> u32 {
-    nivel_mob.saturating_sub(nivel_jogador).saturating_sub(GAP_LIVRE).min(GAP_MAX)
+    nivel_mob
+        .saturating_sub(nivel_jogador)
+        .saturating_sub(GAP_LIVRE)
+        .min(GAP_MAX)
 }
 
 /// Multiplier on the player's damage against a mob of `nivel_mob`.
@@ -125,7 +128,9 @@ mod testes_do_inicio_da_pistola {
     #[test]
     fn bonus_cheio_no_um_some_no_trinta_e_nunca_e_negativo() {
         let (d, e) = bonus_inicial_da_pistola(1);
-        assert!((d - PISTOLA_INICIO_DANO).abs() < 1e-6 && (e - PISTOLA_INICIO_ESQUIVA).abs() < 1e-6);
+        assert!(
+            (d - PISTOLA_INICIO_DANO).abs() < 1e-6 && (e - PISTOLA_INICIO_ESQUIVA).abs() < 1e-6
+        );
         assert_eq!(bonus_inicial_da_pistola(0), bonus_inicial_da_pistola(1));
         let mut antes = (f32::MAX, f32::MAX);
         for n in 0..=200 {
@@ -143,8 +148,15 @@ mod testes_do_inicio_da_pistola {
     fn so_a_pistola_ganha_a_esquiva_do_inicio() {
         assert!((chance_de_esquiva(item_id::PISTOLAS, 0, 1) - PISTOLA_INICIO_ESQUIVA).abs() < 1e-6);
         assert_eq!(chance_de_esquiva(item_id::KATANA, 0, 1), 0.0);
-        assert_eq!(chance_de_esquiva(item_id::PISTOLAS, 10, 60), chance_de_esquiva(item_id::PISTOLAS, 10, 30));
-        assert_eq!(chance_de_esquiva(item_id::PISTOLAS, 10_000, 1), ESQUIVA_MAXIMA, "same cap");
+        assert_eq!(
+            chance_de_esquiva(item_id::PISTOLAS, 10, 60),
+            chance_de_esquiva(item_id::PISTOLAS, 10, 30)
+        );
+        assert_eq!(
+            chance_de_esquiva(item_id::PISTOLAS, 10_000, 1),
+            ESQUIVA_MAXIMA,
+            "same cap"
+        );
     }
 }
 
@@ -157,7 +169,10 @@ mod tests {
         assert_eq!(mult_dano_do_mob(51, 54), 1.0, "three levels above are free");
         assert!((mult_dano_contra_mob(51, 60) - 0.58).abs() < 1e-5);
         assert!((mult_dano_do_mob(51, 60) - 1.72).abs() < 1e-5);
-        assert!((mult_dano_contra_mob(40, 80) - 0.30).abs() < 1e-5, "capped at ten levels");
+        assert!(
+            (mult_dano_contra_mob(40, 80) - 0.30).abs() < 1e-5,
+            "capped at ten levels"
+        );
         assert_eq!(mult_dano_do_mob(60, 40), 1.0, "a lower mob is unchanged");
     }
     use super::*;
@@ -175,14 +190,20 @@ mod testes_da_esquiva {
             assert_eq!(chance_de_esquiva(arma, 0, 60), 0.0);
             let c = chance_de_esquiva(arma, 40, 60);
             assert!((c - 0.10).abs() < 1e-6, "{arma}: {c}");
-            assert!(c < chance_de_esquiva(item_id::PISTOLAS, 40, 60), "pistol must dodge more");
+            assert!(
+                c < chance_de_esquiva(item_id::PISTOLAS, 40, 60),
+                "pistol must dodge more"
+            );
             assert_eq!(chance_de_esquiva(arma, 10_000, 60), ESQUIVA_MAXIMA_GERAL);
         }
         assert!(ESQUIVA_MAXIMA_GERAL < ESQUIVA_MAXIMA);
         assert_eq!(chance_de_esquiva(item_id::PISTOLAS, 0, 60), 0.0);
         let quinze = chance_de_esquiva(item_id::PISTOLAS, 42, 15); // all-DEX, level 15
         assert!((0.15..=ESQUIVA_MAXIMA).contains(&quinze), "{quinze}");
-        assert_eq!(chance_de_esquiva(item_id::PISTOLAS, 10_000, 60), ESQUIVA_MAXIMA);
+        assert_eq!(
+            chance_de_esquiva(item_id::PISTOLAS, 10_000, 60),
+            ESQUIVA_MAXIMA
+        );
     }
 }
 
@@ -213,8 +234,10 @@ mod testes_xp_por_nivel {
         assert_eq!(fator_xp_por_nivel(30, 22), 1.0, "8 below: still full");
         assert!((fator_xp_por_nivel(30, 21) - 0.95).abs() < 1e-6);
         assert!((fator_xp_por_nivel(30, 15) - 0.65).abs() < 1e-6);
-        assert!((fator_xp_por_nivel(41, 22) - 0.45).abs() < 1e-6, "Anubis in Geleira 22");
+        assert!(
+            (fator_xp_por_nivel(41, 22) - 0.45).abs() < 1e-6,
+            "Anubis in Geleira 22"
+        );
         assert_eq!(fator_xp_por_nivel(80, 1), XP_PISO);
     }
 }
-

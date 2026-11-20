@@ -180,7 +180,13 @@ pub fn precisa_da_ilha(d: &QuestDef, status: u8, giver_aqui: bool) -> bool {
 }
 
 /// Why `pode_aceitar` said no, in words the player can act on.
-pub fn por_que_nao_aceita(d: &QuestDef, level: u32, faction: u8, active: &[CharQuest], now: i64) -> String {
+pub fn por_que_nao_aceita(
+    d: &QuestDef,
+    level: u32,
+    faction: u8,
+    active: &[CharQuest],
+    now: i64,
+) -> String {
     use quests::quest_status as st;
     if let Some(c) = active.iter().find(|c| c.quest_id == d.id) {
         if c.status == st::ACTIVE || c.status == st::READY {
@@ -198,7 +204,10 @@ pub fn por_que_nao_aceita(d: &QuestDef, level: u32, faction: u8, active: &[CharQ
         return "coming soon.".into();
     }
     if level < quests::nivel_pedido(d) {
-        return format!("requires level {}.", shared::progressao::texto_de_nivel(quests::nivel_pedido(d)));
+        return format!(
+            "requires level {}.",
+            shared::progressao::texto_de_nivel(quests::nivel_pedido(d))
+        );
     }
     if d.faction != 0 && d.faction != faction {
         return "not for your faction.".into();
@@ -603,7 +612,11 @@ pub fn avancar_conversa(active: &mut [CharQuest], papel: u16) -> Mudancas {
 }
 
 /// `avancar_conversa` on island `zona` (`conta_nesta_ilha`).
-pub fn avancar_conversa_na_ilha(active: &mut [CharQuest], papel: u16, zona: Option<&str>) -> Mudancas {
+pub fn avancar_conversa_na_ilha(
+    active: &mut [CharQuest],
+    papel: u16,
+    zona: Option<&str>,
+) -> Mudancas {
     let mut mudou = Vec::new();
     for c in active.iter_mut() {
         if c.status != quests::quest_status::ACTIVE {
@@ -632,7 +645,11 @@ pub fn avancar_conversa_na_ilha(active: &mut [CharQuest], papel: u16, zona: Opti
 /// daily XP potion was withheld because today's cap
 /// (`quests::POCOES_XP_GRATIS_POR_DIA`) was already reached. Only the area
 /// dailies pay XP potions; each pays 1 while the cap lasts.
-pub fn pocoes_xp_a_pagar(d: &QuestDef, diario: &mut shared::prime::Diario, agora_unix: i64) -> (u32, bool) {
+pub fn pocoes_xp_a_pagar(
+    d: &QuestDef,
+    diario: &mut shared::prime::Diario,
+    agora_unix: i64,
+) -> (u32, bool) {
     let qtd = d.reward_item2_qty as u32;
     if d.reward_item2 != shared::item_id::XP_POTION || qtd == 0 {
         return (qtd, false);
@@ -742,9 +759,8 @@ pub fn zona_do_bicho_com_forte(
                 .fold(0.0, f32::max)
         }
     };
-    let longe = |z: &(glam::Vec2, u32, u32, bool)| {
-        z.0.distance(eu) * if z.3 { FORTE_ENCURTA } else { 1.0 }
-    };
+    let longe =
+        |z: &(glam::Vec2, u32, u32, bool)| z.0.distance(eu) * if z.3 { FORTE_ENCURTA } else { 1.0 };
     let perto = |v: &mut Vec<&(glam::Vec2, u32, u32, bool)>| {
         v.sort_by(|a, b| longe(a).total_cmp(&longe(b)));
         v.first().map(|z| z.0)
@@ -847,11 +863,26 @@ mod testes {
     #[test]
     fn missao_de_outra_ilha_leva_ao_barco_quando_precisa() {
         use quests::quest_status::{ACTIVE, READY};
-        let caca = quests::QUESTS.iter().find(|d| quests::zona_da_missao(d.id) == Some("ilha_gelo") && d.obj_kind == quests::objective_kind::KILL).unwrap();
+        let caca = quests::QUESTS
+            .iter()
+            .find(|d| {
+                quests::zona_da_missao(d.id) == Some("ilha_gelo")
+                    && d.obj_kind == quests::objective_kind::KILL
+            })
+            .unwrap();
         assert!(precisa_da_ilha(caca, ACTIVE, true));
-        assert!(!precisa_da_ilha(quests::quest_by_id(501).unwrap(), ACTIVE, true), "talking counts anywhere");
-        assert!(precisa_da_ilha(caca, READY, false), "the outpost lives there");
-        assert!(!precisa_da_ilha(caca, READY, true), "a Master here takes it");
+        assert!(
+            !precisa_da_ilha(quests::quest_by_id(501).unwrap(), ACTIVE, true),
+            "talking counts anywhere"
+        );
+        assert!(
+            precisa_da_ilha(caca, READY, false),
+            "the outpost lives there"
+        );
+        assert!(
+            !precisa_da_ilha(caca, READY, true),
+            "a Master here takes it"
+        );
     }
 
     /// A refused quest says why (owner, 05/10/2026: quests "available" that
@@ -860,10 +891,24 @@ mod testes {
     fn recusa_diz_o_motivo() {
         let d502 = quests::quest_by_id(502).unwrap();
         assert!(!pode_aceitar(d502, 1, 0, &[], 0));
-        assert!(por_que_nao_aceita(d502, 1, 0, &[], 0).starts_with("complete \""), "502 needs 501");
-        let ativa = [CharQuest { quest_id: 501, status: quests::quest_status::ACTIVE, progress: 0, cooldown_until: 0 }];
-        assert_eq!(por_que_nao_aceita(quests::quest_by_id(501).unwrap(), 1, 0, &ativa, 0), "you already have this quest.");
-        let alto = quests::QUESTS.iter().find(|q| q.min_level > 10 && q.requires == 0 && !q.em_breve && q.faction == 0).unwrap();
+        assert!(
+            por_que_nao_aceita(d502, 1, 0, &[], 0).starts_with("complete \""),
+            "502 needs 501"
+        );
+        let ativa = [CharQuest {
+            quest_id: 501,
+            status: quests::quest_status::ACTIVE,
+            progress: 0,
+            cooldown_until: 0,
+        }];
+        assert_eq!(
+            por_que_nao_aceita(quests::quest_by_id(501).unwrap(), 1, 0, &ativa, 0),
+            "you already have this quest."
+        );
+        let alto = quests::QUESTS
+            .iter()
+            .find(|q| q.min_level > 10 && q.requires == 0 && !q.em_breve && q.faction == 0)
+            .unwrap();
         assert!(por_que_nao_aceita(alto, 1, 0, &[], 0).starts_with("requires level"));
     }
 
@@ -875,8 +920,17 @@ mod testes {
         let d = quests::quest_by_id(501).unwrap();
         assert_eq!(quests::zona_da_missao(501), Some("ilha_inicial"));
         assert!(conta_nesta_ilha(d, "ilha_gelo"));
-        let mut ativas = vec![CharQuest { quest_id: 501, status: quests::quest_status::ACTIVE, progress: 0, cooldown_until: 0 }];
-        let mudou = avancar_conversa_na_ilha(&mut ativas, shared::construcao::Papel::Alquimista as u16, Some("ilha_abissal"));
+        let mut ativas = vec![CharQuest {
+            quest_id: 501,
+            status: quests::quest_status::ACTIVE,
+            progress: 0,
+            cooldown_until: 0,
+        }];
+        let mudou = avancar_conversa_na_ilha(
+            &mut ativas,
+            shared::construcao::Papel::Alquimista as u16,
+            Some("ilha_abissal"),
+        );
         assert_eq!(mudou.len(), 1);
         assert_eq!(ativas[0].status, quests::quest_status::READY);
     }
@@ -1012,15 +1066,28 @@ mod testes {
         // 810+: the Glacier's chain; 102 (COLLECT steel) is an item quest.
         let caca = quests::QUESTS
             .iter()
-            .find(|d| quests::zona_da_missao(d.id) == Some("ilha_gelo") && d.obj_kind == quests::objective_kind::KILL && d.obj_target != 0 && d.obj_target != quests::ALVO_QUALQUER_CHEFE)
+            .find(|d| {
+                quests::zona_da_missao(d.id) == Some("ilha_gelo")
+                    && d.obj_kind == quests::objective_kind::KILL
+                    && d.obj_target != 0
+                    && d.obj_target != quests::ALVO_QUALQUER_CHEFE
+            })
             .expect("a Glacier hunt");
         assert!(conta_nesta_ilha(caca, "ilha_gelo"));
         assert!(!conta_nesta_ilha(caca, "ilha_inicial"));
         let mut a = vec![cq(caca.id, ACTIVE, 0)];
         let kind = caca.obj_target - 1;
-        assert!(avancar_kill_na_ilha(&mut a, Some(kind), None, false, Some("ilha_inicial")).is_empty());
-        assert_eq!(avancar_kill_na_ilha(&mut a, Some(kind), None, false, Some("ilha_gelo")).len(), 1);
-        assert!(conta_nesta_ilha(def(102), "ilha_gelo"), "items count anywhere");
+        assert!(
+            avancar_kill_na_ilha(&mut a, Some(kind), None, false, Some("ilha_inicial")).is_empty()
+        );
+        assert_eq!(
+            avancar_kill_na_ilha(&mut a, Some(kind), None, false, Some("ilha_gelo")).len(),
+            1
+        );
+        assert!(
+            conta_nesta_ilha(def(102), "ilha_gelo"),
+            "items count anywhere"
+        );
     }
 
     #[test]
@@ -1065,12 +1132,19 @@ mod testes {
             .find(|d| d.obj_kind == quests::objective_kind::KILL && d.obj_target == alvo)
             .expect("an archer kill quest");
         let mut a = vec![cq(q.id, ACTIVE, 0)];
-        assert_eq!(avancar_kill(&mut a, Some(gelo), None).len(), 1, "the variant did not count");
+        assert_eq!(
+            avancar_kill(&mut a, Some(gelo), None).len(),
+            1,
+            "the variant did not count"
+        );
         let mago = shared::bestiary::kinds_of_species(quests::mob_kind::MAGO)
             .into_iter()
             .find(|k| *k != quests::mob_kind::MAGO)
             .unwrap();
-        assert!(avancar_kill(&mut a, Some(mago), None).is_empty(), "a mage variant counted for archers");
+        assert!(
+            avancar_kill(&mut a, Some(mago), None).is_empty(),
+            "a mage variant counted for archers"
+        );
     }
 
     #[test]
@@ -1404,15 +1478,23 @@ mod testes_historia {
         let [_, madeira, _, _] = historia::CHAVES_DA_HISTORIA[1];
         let d = quest_by_id(madeira).unwrap();
         assert_eq!(d.obj_kind, objective_kind::TER);
-        let ativa = || vec![CharQuest {
-            quest_id: madeira,
-            status: quest_status::ACTIVE,
-            progress: 0,
-            cooldown_until: 0,
-        }];
+        let ativa = || {
+            vec![CharQuest {
+                quest_id: madeira,
+                status: quest_status::ACTIVE,
+                progress: 0,
+                cooldown_until: 0,
+            }]
+        };
         // Already carrying more than asked: READY on the first check.
         let mut q = ativa();
-        let bolsa = |item: u16| if item == d.obj_target { d.obj_count + 40 } else { 0 };
+        let bolsa = |item: u16| {
+            if item == d.obj_target {
+                d.obj_count + 40
+            } else {
+                0
+            }
+        };
         assert_eq!(
             checar_posse(&mut q, &bolsa),
             vec![(madeira, d.obj_count, quest_status::READY)]
@@ -1420,14 +1502,31 @@ mod testes_historia {
         // Short: progress is the bag, and it is re-sent only on change.
         let mut q = ativa();
         let pouco = |_: u16| 10;
-        assert_eq!(checar_posse(&mut q, &pouco), vec![(madeira, 10, quest_status::ACTIVE)]);
-        assert!(checar_posse(&mut q, &pouco).is_empty(), "re-sent without a change");
+        assert_eq!(
+            checar_posse(&mut q, &pouco),
+            vec![(madeira, 10, quest_status::ACTIVE)]
+        );
+        assert!(
+            checar_posse(&mut q, &pouco).is_empty(),
+            "re-sent without a change"
+        );
         let menos = |_: u16| 4;
-        assert_eq!(checar_posse(&mut q, &menos), vec![(madeira, 4, quest_status::ACTIVE)]);
+        assert_eq!(
+            checar_posse(&mut q, &menos),
+            vec![(madeira, 4, quest_status::ACTIVE)]
+        );
         // Never consumed: the turn-in takes nothing from the bag.
-        let pronta = CharQuest { quest_id: madeira, status: quest_status::READY, progress: d.obj_count, cooldown_until: 0 };
+        let pronta = CharQuest {
+            quest_id: madeira,
+            status: quest_status::READY,
+            progress: d.obj_count,
+            cooldown_until: 0,
+        };
         assert_eq!(checar_entrega(d, &pronta, d.obj_count), Ok(0));
-        assert!(!matches!(d.obj_kind, objective_kind::COLLECT | objective_kind::DELIVER));
+        assert!(!matches!(
+            d.obj_kind,
+            objective_kind::COLLECT | objective_kind::DELIVER
+        ));
     }
 
     /// Indices do epilogo seguem sem fim e com id estavel; o marcador e o
@@ -1643,7 +1742,10 @@ mod testes_diarias {
         }
         for id in [502u16, 503, 504, 533] {
             let d = quest_by_id(id).unwrap();
-            assert!(!shared::quests::paga_pocao_xp(d), "{id} still pays an XP potion");
+            assert!(
+                !shared::quests::paga_pocao_xp(d),
+                "{id} still pays an XP potion"
+            );
             assert_ne!(d.reward_item, shared::item_id::XP_POTION, "{id}");
         }
         assert_eq!(quest_by_id(501).unwrap().reward_item2, 0);
@@ -1674,9 +1776,15 @@ mod testes_diarias {
         assert_eq!(diario.pocoes_xp_hoje(shared::dungeon::dia(hoje)), 3);
         // Next game day: the counter is back.
         let amanha = hoje + 86_400;
-        assert_eq!(pocoes_xp_a_pagar(quest_by_id(601).unwrap(), &mut diario, amanha), (1, false));
+        assert_eq!(
+            pocoes_xp_a_pagar(quest_by_id(601).unwrap(), &mut diario, amanha),
+            (1, false)
+        );
         // A craft daily pays its Fortune potion and never touches the cap.
-        assert_eq!(pocoes_xp_a_pagar(quest_by_id(603).unwrap(), &mut diario, amanha), (1, false));
+        assert_eq!(
+            pocoes_xp_a_pagar(quest_by_id(603).unwrap(), &mut diario, amanha),
+            (1, false)
+        );
         assert_eq!(diario.pocoes_xp_hoje(shared::dungeon::dia(amanha)), 1);
     }
 
@@ -1802,8 +1910,15 @@ mod testes_do_passo_fantasma {
                 },
             ];
             let dado = garantir_historia(&mut q);
-            assert_eq!(dado, Some(novo), "{velho}: o cliente nao soube do passo novo");
-            assert!(q.iter().all(|c| c.quest_id != velho), "{velho} ficou no log");
+            assert_eq!(
+                dado,
+                Some(novo),
+                "{velho}: o cliente nao soube do passo novo"
+            );
+            assert!(
+                q.iter().all(|c| c.quest_id != velho),
+                "{velho} ficou no log"
+            );
             let atual = passo_atual(&q).expect("sem passo atual");
             assert_eq!(atual.quest_id, novo, "{velho} nao foi pra trava");
             assert_eq!(atual.status, shared::quests::quest_status::ACTIVE);
@@ -1880,11 +1995,18 @@ mod testes_do_alvo_existe {
         let todas = quests::QUESTS.iter().chain(shared::historia::PASSOS.iter());
         let mut faltam = Vec::new();
         for d in todas {
-            if d.obj_kind != objective_kind::KILL || d.obj_target == 0 || d.obj_target == ALVO_QUALQUER_CHEFE {
+            if d.obj_kind != objective_kind::KILL
+                || d.obj_target == 0
+                || d.obj_target == ALVO_QUALQUER_CHEFE
+            {
                 continue;
             }
-            let Some(zona) = quests::zona_da_missao(d.id) else { continue };
-            let Some(def) = shared::terreno::def_da_zona(zona) else { continue };
+            let Some(zona) = quests::zona_da_missao(d.id) else {
+                continue;
+            };
+            let Some(def) = shared::terreno::def_da_zona(zona) else {
+                continue;
+            };
             let especie = d.obj_target - 1;
             let nasce = crate::economy::kinds_do_bioma(def.bioma)
                 .iter()
@@ -1893,9 +2015,17 @@ mod testes_do_alvo_existe {
                 // A field boss of that island (511-513 hunt the Bosque's).
                 || shared::bosses::chefe(especie).is_some_and(|c| c.zona == zona);
             if !nasce {
-                faltam.push(format!("{} \"{}\" on {zona}: species {especie} never spawns there", d.id, d.title));
+                faltam.push(format!(
+                    "{} \"{}\" on {zona}: species {especie} never spawns there",
+                    d.id, d.title
+                ));
             }
         }
-        assert!(faltam.is_empty(), "{} kill quest(s) without their mob:\n{}", faltam.len(), faltam.join("\n"));
+        assert!(
+            faltam.is_empty(),
+            "{} kill quest(s) without their mob:\n{}",
+            faltam.len(),
+            faltam.join("\n")
+        );
     }
 }

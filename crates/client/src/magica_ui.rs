@@ -313,7 +313,9 @@ impl MagicaUi {
         let larg = (rod.w - folga * (n as f32 - 1.0)) / n as f32;
         (
             y + alto + 15.0 * f,
-            (0..n).map(|k| Rect::new(rod.x + k as f32 * (larg + folga), y, larg, alto)).collect(),
+            (0..n)
+                .map(|k| Rect::new(rod.x + k as f32 * (larg + folga), y, larg, alto))
+                .collect(),
         )
     }
 
@@ -600,7 +602,9 @@ impl MagicaUi {
             }
             let viajar = Rect::new(rod.x, rod.y + 5.0 * f, rod.w, 38.0 * f);
             let pode_viajar = grau != e.grau_atual && grau > 0 && grau <= e.grau_maximo;
-            if ui::botao(viajar, "Switch island without spending a pass", pode_viajar) && pode_viajar {
+            if ui::botao(viajar, "Switch island without spending a pass", pode_viajar)
+                && pode_viajar
+            {
                 pedido = Some(PedidoMagica::Trocar { grau });
                 self.aberto = false;
             }
@@ -675,7 +679,10 @@ impl MagicaUi {
             if let Some(nv) = shared::magica::NIVEIS.iter().find(|n| n.grau == grau) {
                 let (txt, cor) = if e.grau_maximo < nv.grau {
                     (
-                        format!("Opens at {} power", crate::bolsa::milhar(nv.poder_exigido() as u64)),
+                        format!(
+                            "Opens at {} power",
+                            crate::bolsa::milhar(nv.poder_exigido() as u64)
+                        ),
                         estilo::SUAVE,
                     )
                 } else if nv.acima_do_nivel(e.meu_nivel) {

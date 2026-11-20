@@ -115,7 +115,14 @@ pub async fn iniciar(pool: PgPool) -> anyhow::Result<()> {
             anunciado.retain(|id, _| novos.iter().any(|e| e.id == *id));
             let mut atual = EVENTOS.write();
             if *atual != novos {
-                tracing::info!("bonus events now: {}", novos.iter().map(|e| e.titulo()).collect::<Vec<_>>().join(" | "));
+                tracing::info!(
+                    "bonus events now: {}",
+                    novos
+                        .iter()
+                        .map(|e| e.titulo())
+                        .collect::<Vec<_>>()
+                        .join(" | ")
+                );
                 *atual = novos;
                 VERSAO.fetch_add(1, Ordering::Relaxed);
             }

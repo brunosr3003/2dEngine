@@ -10,9 +10,11 @@
 //! * **Glow**: a soft additive halo round each light in view, tested
 //!   against depth so a wall in front hides it.
 
-use macroquad::prelude::*;
 use crate::relogio::get_time;
-use macroquad::miniquad::{BlendFactor, BlendState, BlendValue, Comparison, Equation, PipelineParams};
+use macroquad::miniquad::{
+    BlendFactor, BlendState, BlendValue, Comparison, Equation, PipelineParams,
+};
+use macroquad::prelude::*;
 use shared::kogen::{LuzDaCidade, TipoDeLuz};
 
 /// How far from the camera's target a light still counts (units).
@@ -46,7 +48,12 @@ fn centro(l: &LuzDaCidade, chao: &dyn Fn(f32, f32) -> f32) -> Vec3 {
 
 /// Abyssia's lights now (`shared::abissal::luzes`): (where, reach, colour,
 /// strength, jellyfish?) within `alcance` of `alvo`. Jellyfish bob.
-fn do_fundo(alvo: Vec2, alcance: f32, chao: &dyn Fn(f32, f32) -> f32, t: f32) -> Vec<(f32, Vec3, f32, [f32; 3], f32, bool)> {
+fn do_fundo(
+    alvo: Vec2,
+    alcance: f32,
+    chao: &dyn Fn(f32, f32) -> f32,
+    t: f32,
+) -> Vec<(f32, Vec3, f32, [f32; 3], f32, bool)> {
     shared::abissal::luzes()
         .iter()
         .filter_map(|l| {
@@ -54,9 +61,19 @@ fn do_fundo(alvo: Vec2, alcance: f32, chao: &dyn Fn(f32, f32) -> f32, t: f32) ->
             if d2 > alcance * alcance {
                 return None;
             }
-            let bob = if l.agua_viva { 0.6 * (t * 0.7 + l.seed as f32 * 1.3).sin() } else { 0.0 };
+            let bob = if l.agua_viva {
+                0.6 * (t * 0.7 + l.seed as f32 * 1.3).sin()
+            } else {
+                0.0
+            };
             let p = vec3(l.pos.x, chao(l.pos.x, l.pos.y) + l.alto + bob, l.pos.y);
-            let forca = if l.agua_viva { 1.1 + 0.25 * (t * 1.6 + l.seed as f32).sin() } else if l.coral { 0.65 } else { 1.25 };
+            let forca = if l.agua_viva {
+                1.1 + 0.25 * (t * 1.6 + l.seed as f32).sin()
+            } else if l.coral {
+                0.65
+            } else {
+                1.25
+            };
             Some((d2, p, l.raio, l.cor, forca, l.agua_viva))
         })
         .collect()
@@ -73,8 +90,11 @@ pub fn preparar(ligado: bool, alvo: Vec2, chao: &dyn Fn(f32, f32) -> f32) {
     if crate::render3d::abismo() {
         let mut perto = do_fundo(alvo, ALCANCE, chao, t);
         perto.sort_by(|a, b| a.0.total_cmp(&b.0));
-        let luzes: Vec<(Vec3, f32, [f32; 3], f32)> =
-            perto.iter().take(crate::gpu_estatica::MAX_LUZES).map(|l| (l.1, l.2, l.3, l.4)).collect();
+        let luzes: Vec<(Vec3, f32, [f32; 3], f32)> = perto
+            .iter()
+            .take(crate::gpu_estatica::MAX_LUZES)
+            .map(|l| (l.1, l.2, l.3, l.4))
+            .collect();
         crate::gpu_estatica::define_luzes(&luzes);
         return;
     }
@@ -137,14 +157,26 @@ fn material() -> Material {
 }
 
 /// A soft disc facing the camera: bright core, fading edge.
-fn halo(vertices: &mut Vec<Vertex>, indices: &mut Vec<u16>, p: Vec3, raio: f32, cor: Color, dir: Vec3, cima: Vec3) {
+fn halo(
+    vertices: &mut Vec<Vertex>,
+    indices: &mut Vec<u16>,
+    p: Vec3,
+    raio: f32,
+    cor: Color,
+    dir: Vec3,
+    cima: Vec3,
+) {
     const LADOS: u16 = 16;
     let base = vertices.len() as u16;
     vertices.push(Vertex::new2(p, Vec2::ZERO, cor));
     for i in 0..LADOS {
         let a = i as f32 / LADOS as f32 * std::f32::consts::TAU;
         let q = p + (dir * a.cos() + cima * a.sin()) * raio;
-        vertices.push(Vertex::new2(q, Vec2::ZERO, Color::new(cor.r, cor.g, cor.b, 0.0)));
+        vertices.push(Vertex::new2(
+            q,
+            Vec2::ZERO,
+            Color::new(cor.r, cor.g, cor.b, 0.0),
+        ));
     }
     for i in 0..LADOS {
         indices.extend_from_slice(&[base, base + 1 + i, base + 1 + (i + 1) % LADOS]);
@@ -169,8 +201,24 @@ pub fn desenha_halos(cam: &Camera3D, chao: &dyn Fn(f32, f32) -> f32) {
                 halo(&mut vertices, &mut indices, p, 0.55, c(0.7), dir, cima);
                 for k in 0..3 {
                     let off = (dir * (k as f32 - 1.0) * 0.18) - Vec3::Y * 0.5;
-                    halo(&mut vertices, &mut indices, p + off, 0.22, c(0.45), dir, cima);
-                    halo(&mut vertices, &mut indices, p + off - Vec3::Y * 0.4, 0.16, c(0.3), dir, cima);
+                    halo(
+                        &mut vertices,
+                        &mut indices,
+                        p + off,
+                        0.22,
+                        c(0.45),
+                        dir,
+                        cima,
+                    );
+                    halo(
+                        &mut vertices,
+                        &mut indices,
+                        p + off - Vec3::Y * 0.4,
+                        0.16,
+                        c(0.3),
+                        dir,
+                        cima,
+                    );
                 }
             } else {
                 halo(&mut vertices, &mut indices, p, 2.4, c(0.22), dir, cima);
@@ -178,7 +226,10 @@ pub fn desenha_halos(cam: &Camera3D, chao: &dyn Fn(f32, f32) -> f32) {
             }
         }
     }
-    for l in shared::kogen::luzes().iter().filter(|_| !crate::render3d::abismo()) {
+    for l in shared::kogen::luzes()
+        .iter()
+        .filter(|_| !crate::render3d::abismo())
+    {
         if dist2(l, alvo) > ALCANCE_DO_HALO * ALCANCE_DO_HALO {
             continue;
         }
@@ -201,6 +252,10 @@ pub fn desenha_halos(cam: &Camera3D, chao: &dyn Fn(f32, f32) -> f32) {
         return;
     }
     gl_use_material(&material());
-    draw_mesh(&Mesh { vertices, indices, texture: None });
+    draw_mesh(&Mesh {
+        vertices,
+        indices,
+        texture: None,
+    });
     gl_use_default_material();
 }

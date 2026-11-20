@@ -843,7 +843,8 @@ impl VoxCache {
         }
         if let Some(resto) = nome.strip_prefix("bicho:") {
             if let Some((altura, arquivo)) = resto.split_once(':') {
-                self.load_bicho(arquivo, altura.parse().unwrap_or(1.0)).await;
+                self.load_bicho(arquivo, altura.parse().unwrap_or(1.0))
+                    .await;
             }
             self.tentados.insert(nome);
             return true;

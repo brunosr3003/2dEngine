@@ -49,7 +49,13 @@ mod testes {
             }
         }
         // Copper, gold, keys and potions are untouched.
-        for id in [item_id::COPPER, item_id::GOLD, item_id::SCALE, item_id::HIDE, item_id::GLITTERING_POWDER] {
+        for id in [
+            item_id::COPPER,
+            item_id::GOLD,
+            item_id::SCALE,
+            item_id::HIDE,
+            item_id::GLITTERING_POWDER,
+        ] {
             assert_eq!(fator_em_mob(id), 1.0, "{id}");
         }
     }

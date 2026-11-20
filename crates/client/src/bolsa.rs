@@ -28,10 +28,13 @@ use crate::render3d;
 use crate::ui;
 use crate::vox::VoxCache;
 
-
 // Capture dimensions agree with the HUD; normal gameplay uses the window.
-fn screen_width() -> f32 { render3d::tela().0 }
-fn screen_height() -> f32 { render3d::tela().1 }
+fn screen_width() -> f32 {
+    render3d::tela().0
+}
+fn screen_height() -> f32 {
+    render3d::tela().1
+}
 
 const COLUNAS: usize = 8;
 const VAO: f32 = 6.0;
@@ -132,7 +135,12 @@ pub enum AtalhoMercado {
 /// Which market shortcuts an item in the bag gets: everything can be looked
 /// up; bound items cannot be sold; buy orders only for what stacks with no
 /// instance (`shared::mercado::pode_pedir_item`).
-pub fn atalhos_de_mercado(item_id: u16, slot: usize, tem_instancia: bool, vinculado: bool) -> Vec<(&'static str, AtalhoMercado)> {
+pub fn atalhos_de_mercado(
+    item_id: u16,
+    slot: usize,
+    tem_instancia: bool,
+    vinculado: bool,
+) -> Vec<(&'static str, AtalhoMercado)> {
     if item_id == 0 {
         return Vec::new();
     }
@@ -325,7 +333,9 @@ fn tipo(id: u16) -> Tipo {
 fn aba_de(t: Tipo) -> Aba {
     match t {
         Tipo::Arma(_) | Tipo::Slot(_) => Aba::Equip,
-        Tipo::Pocao(_) | Tipo::Pergaminho | Tipo::RacaoPet | Tipo::SkillPet | Tipo::Cosmetico => Aba::Consumivel,
+        Tipo::Pocao(_) | Tipo::Pergaminho | Tipo::RacaoPet | Tipo::SkillPet | Tipo::Cosmetico => {
+            Aba::Consumivel
+        }
         _ => Aba::Material,
     }
 }
@@ -370,7 +380,8 @@ pub(crate) fn curta(q: u32) -> String {
         format!("{}k", q / 1000)
     } else if q >= 1000 {
         // O decimal do idioma, e nao a virgula fixa: 1,5k em pt e 1.5k em en.
-        format!("{:.1}k", q as f32 / 1000.0).replace('.', &shared::idioma::separadores().1.to_string())
+        format!("{:.1}k", q as f32 / 1000.0)
+            .replace('.', &shared::idioma::separadores().1.to_string())
     } else {
         q.to_string()
     }
@@ -567,7 +578,9 @@ impl Bolsa {
             Sel::Equip(slot) => Some(Acao::Desequipar(slot)),
             Sel::Inv(i) => match tipo(self.peca(s)?.id) {
                 Tipo::Arma(_) | Tipo::Slot(_) => Some(Acao::Equipar(i)),
-                Tipo::Pocao(_) | Tipo::Pergaminho | Tipo::Skin | Tipo::Cosmetico => Some(Acao::Usar(i)),
+                Tipo::Pocao(_) | Tipo::Pergaminho | Tipo::Skin | Tipo::Cosmetico => {
+                    Some(Acao::Usar(i))
+                }
                 _ => None,
             },
         }
@@ -606,7 +619,10 @@ impl Bolsa {
             },
             Acao::Organizar => Some(ClientMessage::InventoryAutoArrange),
             Acao::Recomendado => {
-                self.recomendado = Some(Recomendando { enviado: None, feitos: 0 });
+                self.recomendado = Some(Recomendando {
+                    enviado: None,
+                    feitos: 0,
+                });
                 self.passo_recomendado()
             }
             Acao::Expandir => Some(ClientMessage::ExpandirArmazem { banco: false }),
@@ -624,13 +640,17 @@ impl Bolsa {
         if !self.aberta {
             return None;
         }
-        let pedido =
-            crate::hud_estilo::no_painel(escala(), || self.desenha_na_escala(vox, solido, receitas));
+        let pedido = crate::hud_estilo::no_painel(escala(), || {
+            self.desenha_na_escala(vox, solido, receitas)
+        });
         pedido.or_else(|| self.passo_recomendado())
     }
 
     fn conteudo_do_slot(&self, i: usize) -> Option<(u16, u32, Option<ItemInstance>)> {
-        self.slots.get(i).filter(|x| x.qty > 0).map(|x| (x.item_id, x.qty, x.instance))
+        self.slots
+            .get(i)
+            .filter(|x| x.qty > 0)
+            .map(|x| (x.item_id, x.qty, x.instance))
     }
 
     /// The next bag piece "Equip best" puts on: the biggest power gain over
@@ -641,13 +661,23 @@ impl Bolsa {
     fn proxima_recomendada(&self) -> Option<usize> {
         let mut melhor: Option<(usize, i32)> = None;
         for i in 0..self.slots.len() {
-            let Some(peca) = self.peca(Sel::Inv(i)) else { continue };
-            let Some(slot) = shared::equip_slot_of(peca.id) else { continue };
-            if peca.inst.is_some_and(|x| x.nivel_para_usar() > self.nivel.max(1)) {
+            let Some(peca) = self.peca(Sel::Inv(i)) else {
+                continue;
+            };
+            let Some(slot) = shared::equip_slot_of(peca.id) else {
+                continue;
+            };
+            if peca
+                .inst
+                .is_some_and(|x| x.nivel_para_usar() > self.nivel.max(1))
+            {
                 continue;
             }
             let vestido = self.peca(Sel::Equip(slot));
-            let mesmo_tipo = matches!(slot, EquipSlot::Weapon | EquipSlot::Offhand | EquipSlot::Armor);
+            let mesmo_tipo = matches!(
+                slot,
+                EquipSlot::Weapon | EquipSlot::Offhand | EquipSlot::Armor
+            );
             if mesmo_tipo && vestido.as_ref().is_some_and(|v| v.id != peca.id) {
                 continue;
             }
@@ -1185,11 +1215,7 @@ impl Bolsa {
         receitas: &[shared::protocol::CraftRecipeNet],
     ) -> Option<Acao> {
         let cor = cor_do_tier(peca.grau());
-        crate::hud_estilo::ret_arredondado(
-            r,
-            crate::hud_estilo::RAIO,
-            crate::hud_estilo::FUNDO,
-        );
+        crate::hud_estilo::ret_arredondado(r, crate::hud_estilo::RAIO, crate::hud_estilo::FUNDO);
         crate::hud_estilo::painel_destaque(r, cor);
         crate::hud_estilo::borda_arredondada(r, crate::hud_estilo::RAIO, 1.0, com_alfa(cor, 0.55));
 
@@ -1230,7 +1256,13 @@ impl Bolsa {
         // ASCENSION stars (`shared::essencia`): ★★★☆☆ after the class.
         if let Some(i) = peca.inst.filter(|i| i.estrelas > 0) {
             let x = tx + crate::hud_estilo::medir(&classe, 16) + u(12.0);
-            desenha_estrelas(x, r.y + u(56.0), u(7.0), i.estrelas, shared::essencia::ESTRELAS_MAX);
+            desenha_estrelas(
+                x,
+                r.y + u(56.0),
+                u(7.0),
+                i.estrelas,
+                shared::essencia::ESTRELAS_MAX,
+            );
         }
         if let Some(i) = peca.inst {
             ui::texto(
@@ -1359,11 +1391,27 @@ impl Bolsa {
             // the item, like a piece's ascension.
             let nv = shared::navio::dados(peca.inst.as_ref(), peca.id);
             let linhas = [
-                ("Hull", format!("{} / {}", nv.casco, shared::navio::casco_total(peca.id, &nv))),
-                ("Speed", format!("{:.1}", shared::navio::velocidade_do_navio(peca.id, &nv))),
+                (
+                    "Hull",
+                    format!(
+                        "{} / {}",
+                        nv.casco,
+                        shared::navio::casco_total(peca.id, &nv)
+                    ),
+                ),
+                (
+                    "Speed",
+                    format!("{:.1}", shared::navio::velocidade_do_navio(peca.id, &nv)),
+                ),
                 // Turning inertia: the bigger the hull, the slower it turns.
-                ("Turning", shared::navio::rotulo_do_giro(peca.id, &nv).to_string()),
-                ("Cannon", format!("×{:.2}", shared::navio::mult_do_canhao(peca.id, &nv))),
+                (
+                    "Turning",
+                    shared::navio::rotulo_do_giro(peca.id, &nv).to_string(),
+                ),
+                (
+                    "Cannon",
+                    format!("×{:.2}", shared::navio::mult_do_canhao(peca.id, &nv)),
+                ),
             ];
             for (rot, val) in linhas {
                 ui::texto(r.x + u(20.0), y + u(4.0), rot, 17, TEXTO);
@@ -1372,7 +1420,13 @@ impl Bolsa {
                 y += u(22.0);
             }
             for eixo in shared::navio::Eixo::TODOS {
-                ui::texto(r.x + u(20.0), y + u(4.0), eixo.rotulo_das_estrelas(), 15, APAGADO);
+                ui::texto(
+                    r.x + u(20.0),
+                    y + u(4.0),
+                    eixo.rotulo_das_estrelas(),
+                    15,
+                    APAGADO,
+                );
                 let raio = u(6.0);
                 let largura = raio * 2.3 * shared::navio::ESTRELAS_MAX as f32;
                 desenha_estrelas(
@@ -1388,8 +1442,12 @@ impl Bolsa {
                 (0, 0) => None,
                 (v, f) => Some(
                     [
-                        v.checked_sub(1).and_then(|i| shared::navio::VELAS.get(i as usize)).map(|x| x.nome),
-                        f.checked_sub(1).and_then(|i| shared::navio::FIGURAS.get(i as usize)).map(|x| x.1),
+                        v.checked_sub(1)
+                            .and_then(|i| shared::navio::VELAS.get(i as usize))
+                            .map(|x| x.nome),
+                        f.checked_sub(1)
+                            .and_then(|i| shared::navio::FIGURAS.get(i as usize))
+                            .map(|x| x.1),
                     ]
                     .into_iter()
                     .flatten()
@@ -1402,13 +1460,28 @@ impl Bolsa {
                 y += u(22.0);
             }
             if nv.avariado {
-                ui::texto(r.x + u(20.0), y + u(6.0), "Damaged: the Harbour Captain repairs it.", 15, VERMELHO);
+                ui::texto(
+                    r.x + u(20.0),
+                    y + u(6.0),
+                    "Damaged: the Harbour Captain repairs it.",
+                    15,
+                    VERMELHO,
+                );
             }
         } else if let Some((pet, efeito)) = shared::acessorios::tipo(peca.id) {
             ui::texto(r.x + u(20.0), y + u(4.0), efeito.nome(), 17, VERDE);
             y += u(28.0);
-            ui::texto(r.x + u(20.0), y + u(4.0),
-                if pet { "Active with a pet equipped" } else { "Active with a mount equipped" }, 15, APAGADO);
+            ui::texto(
+                r.x + u(20.0),
+                y + u(4.0),
+                if pet {
+                    "Active with a pet equipped"
+                } else {
+                    "Active with a mount equipped"
+                },
+                15,
+                APAGADO,
+            );
         } else if let Some(i) = peca.inst {
             let atributos = [
                 ("Attack", i.attack_damage),
@@ -1476,6 +1549,12 @@ impl Bolsa {
                 Tipo::Material if peca.id == item_id::PRANCHA_DE_NAUFRAGIO => {
                     "From the sea only: the Shipwright builds hulls and ship stars with it."
                 }
+                Tipo::Material if peca.id == item_id::NAVAL_TOKEN => {
+                    "Earned from naval combat and sea elites. Spend it at the Shipwright's naval shop."
+                }
+                Tipo::Material if peca.id == item_id::FRAGMENTO_NAVAL => {
+                    "Rare material from a salvaged player wreck."
+                }
                 Tipo::Arma(_) | Tipo::Slot(_) => "Peça básica, sem instância de atributos.",
                 _ => "Crafting material.",
             };
@@ -1523,7 +1602,12 @@ impl Bolsa {
         }
         // Market shortcuts (codes 10+): the market opens from anywhere.
         let atalhos = match sel {
-            Sel::Inv(i) => atalhos_de_mercado(peca.id, i, peca.inst.is_some(), self.mercado_vinculados.contains(&peca.id)),
+            Sel::Inv(i) => atalhos_de_mercado(
+                peca.id,
+                i,
+                peca.inst.is_some(),
+                self.mercado_vinculados.contains(&peca.id),
+            ),
             Sel::Equip(_) => Vec::new(),
         };
         for (n, (rotulo, _)) in atalhos.iter().enumerate() {
@@ -1781,7 +1865,13 @@ fn celula(
             if let Some(n) = p.inst.map(|i| i.estrelas).filter(|n| *n > 0) {
                 let raio = (r.w * 0.09).max(u(4.0));
                 desenha_estrelas(r.x + u(3.0) + raio, r.y + r.h - u(3.0) - raio, raio, 1, 1);
-                ui::texto(r.x + u(5.0) + raio * 2.0, r.y + r.h - u(4.0), &n.to_string(), fonte, ui::OURO_CLARO);
+                ui::texto(
+                    r.x + u(5.0) + raio * 2.0,
+                    r.y + r.h - u(4.0),
+                    &n.to_string(),
+                    fonte,
+                    ui::OURO_CLARO,
+                );
             }
             if p.qty > 1 {
                 let t = curta(p.qty);
@@ -1859,10 +1949,25 @@ pub(crate) fn icone_do_item_com(r: Rect, id: u16, a: f32, palco: Option<(&VoxCac
         let raio = r.w.min(r.h) * 0.27;
         let ponta = vec2(c.x, c.y - raio * 2.1);
         draw_circle(c.x, c.y, raio * 1.35, Color::new(1.0, 0.78, 0.30, 0.18 * a));
-        draw_triangle(ponta, vec2(c.x - raio * 0.93, c.y - raio * 0.35), vec2(c.x + raio * 0.93, c.y - raio * 0.35), Color::new(0.98, 0.70, 0.22, a));
+        draw_triangle(
+            ponta,
+            vec2(c.x - raio * 0.93, c.y - raio * 0.35),
+            vec2(c.x + raio * 0.93, c.y - raio * 0.35),
+            Color::new(0.98, 0.70, 0.22, a),
+        );
         draw_circle(c.x, c.y, raio, Color::new(0.98, 0.70, 0.22, a));
-        draw_circle(c.x, c.y + raio * 0.08, raio * 0.66, Color::new(1.0, 0.90, 0.55, a));
-        draw_circle(c.x - raio * 0.18, c.y - raio * 0.12, raio * 0.28, Color::new(1.0, 1.0, 0.95, a));
+        draw_circle(
+            c.x,
+            c.y + raio * 0.08,
+            raio * 0.66,
+            Color::new(1.0, 0.90, 0.55, a),
+        );
+        draw_circle(
+            c.x - raio * 0.18,
+            c.y - raio * 0.12,
+            raio * 0.28,
+            Color::new(1.0, 1.0, 0.95, a),
+        );
         return;
     }
     if icone_de_bicho(r, id, palco) {
@@ -2195,13 +2300,13 @@ fn VAZIA_A(a: f32) -> Color {
 /// (`aparencia`/`skins`, packed) and the glow of its gear (`auras`). The bag
 /// draws the player with it; the rankings, any player of the top.
 pub(crate) fn desenha_boneco(
-r: Rect,
-vox: &VoxCache,
-solido: &Material,
-aparencia: u32,
-skins: u64,
-auras: u64,
-conjunto: u8,
+    r: Rect,
+    vox: &VoxCache,
+    solido: &Material,
+    aparencia: u32,
+    skins: u64,
+    auras: u64,
+    conjunto: u8,
 ) {
     if r.w < 20.0 || r.h < 20.0 {
         return;
@@ -2288,22 +2393,35 @@ conjunto: u8,
     );
 }
 
-
 #[cfg(test)]
 mod testes_atalhos_de_mercado {
     use super::*;
 
     #[test]
     fn atalhos_so_quando_cabem() {
-        let rot = |v: Vec<(&'static str, AtalhoMercado)>| v.into_iter().map(|(r, _)| r).collect::<Vec<_>>();
+        let rot = |v: Vec<(&'static str, AtalhoMercado)>| {
+            v.into_iter().map(|(r, _)| r).collect::<Vec<_>>()
+        };
         // A material: all three.
         let minerio = shared::item_id::DARKSTEEL;
-        assert_eq!(rot(atalhos_de_mercado(minerio, 3, false, false)), ["View on market", "Sell", "Buy order"]);
-        assert_eq!(atalhos_de_mercado(minerio, 3, false, false)[1].1, AtalhoMercado::Vender(3));
+        assert_eq!(
+            rot(atalhos_de_mercado(minerio, 3, false, false)),
+            ["View on market", "Sell", "Buy order"]
+        );
+        assert_eq!(
+            atalhos_de_mercado(minerio, 3, false, false)[1].1,
+            AtalhoMercado::Vender(3)
+        );
         // Gear has an instance: no buy order.
-        assert_eq!(rot(atalhos_de_mercado(shared::item_id::KATANA, 0, true, false)), ["View on market", "Sell"]);
+        assert_eq!(
+            rot(atalhos_de_mercado(shared::item_id::KATANA, 0, true, false)),
+            ["View on market", "Sell"]
+        );
         // Bound: look only.
-        assert_eq!(rot(atalhos_de_mercado(minerio, 0, false, true)), ["View on market"]);
+        assert_eq!(
+            rot(atalhos_de_mercado(minerio, 0, false, true)),
+            ["View on market"]
+        );
         assert!(atalhos_de_mercado(0, 0, false, false).is_empty());
     }
 }

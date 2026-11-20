@@ -211,7 +211,11 @@ impl ConfigCombate {
                 linha.y + 18.0,
                 nome_do_pvp(v),
                 14,
-                if escolhido { estilo::OURO } else { estilo::TEXTO },
+                if escolhido {
+                    estilo::OURO
+                } else {
+                    estilo::TEXTO
+                },
             );
             if clicou && linha.toca(m) && *pvp != v {
                 *pvp = v;

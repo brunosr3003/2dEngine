@@ -23,10 +23,13 @@ use macroquad::prelude::*;
 use shared::loja::{OfertaRelampago, PedidoLoja};
 use shared::protocol::ClientMessage;
 
+use crate::hud_estilo as estilo;
+use crate::loja_tp::{
+    botao_ouro, brilho_radial, etiqueta_estado, faiscas, selo, CIANO, LILAS, NOITE, OURO_CLARO,
+    VERDE_POSSE,
+};
 #[allow(unused_imports)]
 use crate::ui::Toque as _;
-use crate::hud_estilo as estilo;
-use crate::loja_tp::{botao_ouro, brilho_radial, etiqueta_estado, faiscas, selo, CIANO, LILAS, NOITE, OURO_CLARO, VERDE_POSSE};
 
 /// Real payments exist here (Google Play Billing).
 pub const PODE_PAGAR: bool = cfg!(target_os = "android");
@@ -103,7 +106,9 @@ pub fn faixa(preco: u32) -> usize {
 
 impl OfertasUi {
     fn pedido() -> ClientMessage {
-        ClientMessage::Loja { pedido: PedidoLoja::OfertasRelampago }
+        ClientMessage::Loja {
+            pedido: PedidoLoja::OfertasRelampago,
+        }
     }
 
     /// This client can buy: Android (Google Play), or any client while the
@@ -125,7 +130,11 @@ impl OfertasUi {
         self.aberto = true;
         self.foco = None;
         self.rolagem.zera();
-        if self.pode_pagar() { vec![Self::pedido()] } else { Vec::new() }
+        if self.pode_pagar() {
+            vec![Self::pedido()]
+        } else {
+            Vec::new()
+        }
     }
 
     pub fn fechar(&mut self) {
@@ -222,7 +231,11 @@ impl OfertasUi {
     /// login).
     pub fn oferta_do_produto(&mut self, produto: &str) -> Option<String> {
         if let Some(id) = self.pendente.take() {
-            if self.ofertas.iter().any(|(o, _, _)| o.id == id && o.produto_play == produto) {
+            if self
+                .ofertas
+                .iter()
+                .any(|(o, _, _)| o.id == id && o.produto_play == produto)
+            {
                 return Some(id);
             }
         }
@@ -236,14 +249,22 @@ impl OfertasUi {
         if !self.aberto {
             return Vec::new();
         }
-        if self.foco.as_ref().is_some_and(|id| !self.ofertas.iter().any(|(o, _, _)| &o.id == id)) {
+        if self
+            .foco
+            .as_ref()
+            .is_some_and(|id| !self.ofertas.iter().any(|(o, _, _)| &o.id == id))
+        {
             // Bought or expired: back to the list (the result shows there).
             self.foco = None;
         }
         if self.foco.is_some() {
-            return estilo::no_painel(estilo::escala_do_painel(BASE_FOCO.x, BASE_FOCO.y), || self.desenha_foco(nomes));
+            return estilo::no_painel(estilo::escala_do_painel(BASE_FOCO.x, BASE_FOCO.y), || {
+                self.desenha_foco(nomes)
+            });
         }
-        estilo::no_painel(estilo::escala_do_painel(BASE_LISTA.x, BASE_LISTA.y), || self.desenha_lista(nomes))
+        estilo::no_painel(estilo::escala_do_painel(BASE_LISTA.x, BASE_LISTA.y), || {
+            self.desenha_lista(nomes)
+        })
     }
 
     /// The buy button was tapped: Google Play on Android, or the simulated
@@ -270,13 +291,29 @@ impl OfertasUi {
     /// buttons are off.
     fn rodape(&self, cx: f32, y: f32, largura: f32) {
         let (t, cor): (&str, Color) = if self.em_voo {
-            (if self.simulado { "Processing…" } else { "Waiting for Google Play…" }, estilo::SUAVE)
+            (
+                if self.simulado {
+                    "Processing…"
+                } else {
+                    "Waiting for Google Play…"
+                },
+                estilo::SUAVE,
+            )
         } else if let Some((ok, t)) = &self.ultimo {
-            (t.as_str(), if *ok { estilo::VERDE } else { estilo::VERMELHO })
+            (
+                t.as_str(),
+                if *ok { estilo::VERDE } else { estilo::VERMELHO },
+            )
         } else if !self.pode_pagar() {
-            ("Flash offers are available in the Android app (Google Play).", estilo::SUAVE)
+            (
+                "Flash offers are available in the Android app (Google Play).",
+                estilo::SUAVE,
+            )
         } else if self.simulado {
-            ("Test server: simulated payment, nobody is charged.", estilo::SUAVE)
+            (
+                "Test server: simulated payment, nobody is charged.",
+                estilo::SUAVE,
+            )
         } else {
             return;
         };
@@ -292,7 +329,13 @@ impl OfertasUi {
     /// The close "X" in the corner; true when tapped.
     fn fechar_tocado(p: Rect, f: f32, m: Vec2, clicou: bool) -> bool {
         let fechar = Rect::new(p.x + p.w - 48.0 * f, p.y + 8.0 * f, 40.0 * f, 40.0 * f);
-        estilo::texto_centro(fechar.center().x, fechar.center().y + 7.0 * f, "X", 18, estilo::TEXTO);
+        estilo::texto_centro(
+            fechar.center().x,
+            fechar.center().y + 7.0 * f,
+            "X",
+            18,
+            estilo::TEXTO,
+        );
         clicou && fechar.toca(m)
     }
 
@@ -302,7 +345,12 @@ impl OfertasUi {
         let seguro = crate::hud_layout::tela_segura();
         let w = (BASE_FOCO.x * f).min(seguro.w - 16.0);
         let h = (BASE_FOCO.y * f).min(seguro.h - 16.0);
-        let p = Rect::new(seguro.center().x - w * 0.5, seguro.center().y - h * 0.5, w, h);
+        let p = Rect::new(
+            seguro.center().x - w * 0.5,
+            seguro.center().y - h * 0.5,
+            w,
+            h,
+        );
         crate::hud_layout::escurece(0.55);
         estilo::painel_destaque(p, estilo::OURO);
         let m = Vec2::from(mouse_position());
@@ -311,15 +359,41 @@ impl OfertasUi {
             self.fechar();
             return Vec::new();
         }
-        let Some((o, fim, valor)) = self.ofertas.iter().find(|(o, _, _)| Some(&o.id) == self.foco.as_ref()).cloned() else {
+        let Some((o, fim, valor)) = self
+            .ofertas
+            .iter()
+            .find(|(o, _, _)| Some(&o.id) == self.foco.as_ref())
+            .cloned()
+        else {
             return Vec::new();
         };
-        estilo::texto_centro_forte(p.center().x, p.y + 34.0 * f, motivo(&o.gatilho), 15, estilo::TEXTO);
-        let r = Rect::new(p.x + 16.0 * f, p.y + 52.0 * f, p.w - 32.0 * f, p.h - 52.0 * f - 34.0 * f);
+        estilo::texto_centro_forte(
+            p.center().x,
+            p.y + 34.0 * f,
+            motivo(&o.gatilho),
+            15,
+            estilo::TEXTO,
+        );
+        let r = Rect::new(
+            p.x + 16.0 * f,
+            p.y + 52.0 * f,
+            p.w - 32.0 * f,
+            p.h - 52.0 * f - 34.0 * f,
+        );
         let em_pe = r.h >= altura_vertical(&o, r.w, f, 0.0) || r.w < LARGURA_DEITADA * f;
         let modo = if em_pe { Modo::EmPe } else { Modo::Deitado };
-        let aperto = if em_pe { aperto_para_caber(&o, r.w, r.h, f) } else { 0.0 };
-        let c = Cartao { o: &o, resta: fim - get_time(), valor, comprada: false, aperto };
+        let aperto = if em_pe {
+            aperto_para_caber(&o, r.w, r.h, f)
+        } else {
+            0.0
+        };
+        let c = Cartao {
+            o: &o,
+            resta: fim - get_time(),
+            valor,
+            comprada: false,
+            aperto,
+        };
         let livre = self.pode_pagar() && !self.em_voo;
         let toque = clicou.then_some(m);
         let compra = desenha_cartao(r, &c, modo, nomes, f, m, toque, livre, get_time());
@@ -343,7 +417,12 @@ impl OfertasUi {
         } else {
             (BASE_LISTA.y * f).min(seguro.h - 16.0)
         };
-        let p = Rect::new(seguro.center().x - w * 0.5, seguro.center().y - h * 0.5, w, h);
+        let p = Rect::new(
+            seguro.center().x - w * 0.5,
+            seguro.center().y - h * 0.5,
+            w,
+            h,
+        );
         crate::hud_layout::escurece(0.45);
         estilo::painel_destaque(p, estilo::OURO);
         let m = Vec2::from(mouse_position());
@@ -367,18 +446,36 @@ impl OfertasUi {
         }
         let agora = get_time();
         self.ofertas.retain(|(_, fim, _)| *fim > agora - 1.0);
-        let area = Rect::new(p.x + 12.0 * f, p.y + 70.0 * f, p.w - 24.0 * f, p.h - 70.0 * f - 30.0 * f);
-        let dentro = Rect::new(area.x + 6.0 * f, area.y + 6.0 * f, area.w - 18.0 * f, area.h);
+        let area = Rect::new(
+            p.x + 12.0 * f,
+            p.y + 70.0 * f,
+            p.w - 24.0 * f,
+            p.h - 70.0 * f - 30.0 * f,
+        );
+        let dentro = Rect::new(
+            area.x + 6.0 * f,
+            area.y + 6.0 * f,
+            area.w - 18.0 * f,
+            area.h,
+        );
         // The cards: what is open, then what was bought here.
         let mut cartoes: Vec<Cartao> = self
             .ofertas
             .iter()
-            .map(|(o, fim, valor)| Cartao { o, resta: fim - agora, valor: *valor, comprada: false, aperto: 0.0 })
-            .chain(
-                self.compradas
-                    .iter()
-                    .map(|(o, valor)| Cartao { o, resta: 0.0, valor: *valor, comprada: true, aperto: 0.0 }),
-            )
+            .map(|(o, fim, valor)| Cartao {
+                o,
+                resta: fim - agora,
+                valor: *valor,
+                comprada: false,
+                aperto: 0.0,
+            })
+            .chain(self.compradas.iter().map(|(o, valor)| Cartao {
+                o,
+                resta: 0.0,
+                valor: *valor,
+                comprada: true,
+                aperto: 0.0,
+            }))
             .collect();
         let vao = 14.0 * f;
         let (mut colunas, mut modo) = grade(dentro, cartoes.len(), f);
@@ -386,7 +483,10 @@ impl OfertasUi {
             // Standing cards that can't fit the view even with the smallest
             // crystal (phone landscape): one lying card per row instead.
             let cw = (dentro.w - vao * (colunas as f32 - 1.0)) / colunas as f32;
-            if cartoes.iter().any(|c| altura_vertical(c.o, cw, f, f32::MAX) > dentro.h - 6.0 * f) {
+            if cartoes
+                .iter()
+                .any(|c| altura_vertical(c.o, cw, f, f32::MAX) > dentro.h - 6.0 * f)
+            {
                 (colunas, modo) = (1, Modo::Deitado);
             }
         }
@@ -394,7 +494,10 @@ impl OfertasUi {
         if modo == Modo::EmPe {
             // A standing card taller than the view gives up crystal first,
             // so the buy button shows without scrolling.
-            let aperto = cartoes.iter().map(|c| aperto_para_caber(c.o, cw, dentro.h - 6.0 * f, f)).fold(0.0_f32, f32::max);
+            let aperto = cartoes
+                .iter()
+                .map(|c| aperto_para_caber(c.o, cw, dentro.h - 6.0 * f, f))
+                .fold(0.0_f32, f32::max);
             for c in &mut cartoes {
                 c.aperto = aperto;
             }
@@ -432,13 +535,28 @@ impl OfertasUi {
             if r.y > area.y + area.h || r.y + r.h < area.y {
                 continue;
             }
-            if desenha_cartao(r, c, modo, nomes, f, mira, toque, livre, agora + i as f64 * 0.9) {
+            if desenha_cartao(
+                r,
+                c,
+                modo,
+                nomes,
+                f,
+                mira,
+                toque,
+                livre,
+                agora + i as f64 * 0.9,
+            ) {
                 comprar = Some((c.o.id.clone(), c.o.produto_play.clone()));
             }
         }
         let mut y = topo + linhas as f32 * (ch + vao);
         if cartoes.is_empty() {
-            vazio(Rect::new(dentro.x, y, dentro.w, vazio_h - vao), self.pode_pagar(), f, agora);
+            vazio(
+                Rect::new(dentro.x, y, dentro.w, vazio_h - vao),
+                self.pode_pagar(),
+                f,
+                agora,
+            );
             y += vazio_h;
         }
         // THE "RATE US" PROMOTION (owner, 10/11/2026: rate on Google Play,
@@ -496,7 +614,11 @@ struct Cartao<'a> {
 /// The offer's title in the player's language.
 fn titulo_de(o: &OfertaRelampago) -> String {
     let pt = shared::idioma::atual() == shared::idioma::Idioma::Pt;
-    if pt { o.titulo_pt.clone().unwrap_or_else(|| o.titulo.clone()) } else { o.titulo.clone() }
+    if pt {
+        o.titulo_pt.clone().unwrap_or_else(|| o.titulo.clone())
+    } else {
+        o.titulo.clone()
+    }
 }
 
 /// Why a bonus pack popped (`pacotes_bonus::Gatilho::chave`).
@@ -542,8 +664,13 @@ fn desenha_icone(i: &Icone, r: Rect) {
         Icone::Ouro => estilo::icone_ouro(r.center(), r.w * 0.72),
         Icone::Energia => estilo::icone_energia(r.center(), r.w * 0.72),
         Icone::Item(id)
-            if [it::PERGAMINHO_INVOCA_MONTARIA, it::PERGAMINHO_INVOCA_PET, it::PERGAMINHO_INVOCA_CHAVE, it::PERGAMINHO_INVOCA_TOMO]
-                .contains(id) =>
+            if [
+                it::PERGAMINHO_INVOCA_MONTARIA,
+                it::PERGAMINHO_INVOCA_PET,
+                it::PERGAMINHO_INVOCA_CHAVE,
+                it::PERGAMINHO_INVOCA_TOMO,
+            ]
+            .contains(id) =>
         {
             crate::invocacao_ui::icone_pergaminho_de(*id, r.center(), r.w * 0.9)
         }
@@ -553,14 +680,25 @@ fn desenha_icone(i: &Icone, r: Rect) {
 
 /// The BONUS on top of the TP, one line each: gold, Energy, a single built
 /// piece, then the items. A set of gear is its own strip (`pecas`).
-fn linhas_do_bonus(o: &OfertaRelampago, nomes: &HashMap<u16, String>) -> Vec<(Icone, String, Color)> {
+fn linhas_do_bonus(
+    o: &OfertaRelampago,
+    nomes: &HashMap<u16, String>,
+) -> Vec<(Icone, String, Color)> {
     let tr = |s: &str| shared::idioma::tr(s).into_owned();
     let mut linhas = Vec::new();
     if o.ouro > 0 {
-        linhas.push((Icone::Ouro, format!("{} Gold", shared::idioma::milhar(o.ouro)), estilo::TEXTO));
+        linhas.push((
+            Icone::Ouro,
+            format!("{} Gold", shared::idioma::milhar(o.ouro)),
+            estilo::TEXTO,
+        ));
     }
     if o.energia > 0 {
-        linhas.push((Icone::Energia, format!("{} Energy", shared::idioma::milhar(o.energia)), estilo::TEXTO));
+        linhas.push((
+            Icone::Energia,
+            format!("{} Energy", shared::idioma::milhar(o.energia)),
+            estilo::TEXTO,
+        ));
     }
     if let [(id, inst)] = o.pecas.as_slice() {
         let nome = nomes.get(id).cloned().unwrap_or_else(|| format!("#{id}"));
@@ -572,7 +710,11 @@ fn linhas_do_bonus(o: &OfertaRelampago, nomes: &HashMap<u16, String>) -> Vec<(Ic
     }
     for (id, q) in &o.itens {
         let nome = nomes.get(id).cloned().unwrap_or_else(|| format!("#{id}"));
-        linhas.push((Icone::Item(*id), format!("{} {}", shared::idioma::milhar(*q as u64), tr(&nome)), estilo::TEXTO));
+        linhas.push((
+            Icone::Item(*id),
+            format!("{} {}", shared::idioma::milhar(*q as u64), tr(&nome)),
+            estilo::TEXTO,
+        ));
     }
     linhas
 }
@@ -586,7 +728,11 @@ const LINHA: f32 = 32.0;
 
 /// Columns of the bonus list in a column `w` wide.
 fn colunas_do_bonus(w: f32, f: f32) -> usize {
-    if w >= 340.0 * f { 2 } else { 1 }
+    if w >= 340.0 * f {
+        2
+    } else {
+        1
+    }
 }
 
 /// Height of the bonus block (list, gear strip, power) in a column `w` wide.
@@ -666,7 +812,10 @@ fn brilho_passando(r: Rect, f: f32, agora: f64) {
     let x = r.x - bw + t * (r.w + bw + inclina);
     let dentro = |v: f32| v.clamp(r.x + 6.0 * f, r.x + r.w - 6.0 * f);
     let (a, b) = (vec2(dentro(x), r.y + 2.0), vec2(dentro(x + bw), r.y + 2.0));
-    let (c, d) = (vec2(dentro(x + bw - inclina), r.y + r.h - 2.0), vec2(dentro(x - inclina), r.y + r.h - 2.0));
+    let (c, d) = (
+        vec2(dentro(x + bw - inclina), r.y + r.h - 2.0),
+        vec2(dentro(x - inclina), r.y + r.h - 2.0),
+    );
     let cor = estilo::alfa(WHITE, 0.07 * (t * std::f32::consts::PI).sin());
     draw_triangle(a, b, c, cor);
     draw_triangle(a, c, d, cor);
@@ -683,17 +832,42 @@ fn pilula_relogio(direita: f32, y: f32, resta: f64, f: f32) {
         r,
         r.h * 0.5,
         1.0,
-        if urgente { estilo::alfa(estilo::VERMELHO, 0.8) } else { estilo::alfa(WHITE, 0.18) },
+        if urgente {
+            estilo::alfa(estilo::VERMELHO, 0.8)
+        } else {
+            estilo::alfa(WHITE, 0.18)
+        },
     );
-    estilo::texto_centro_forte(r.center().x, r.center().y + 13.0 * f * 0.36, &t, 13, if urgente { estilo::VERMELHO } else { estilo::TEXTO });
+    estilo::texto_centro_forte(
+        r.center().x,
+        r.center().y + 13.0 * f * 0.36,
+        &t,
+        13,
+        if urgente {
+            estilo::VERMELHO
+        } else {
+            estilo::TEXTO
+        },
+    );
 }
 
 /// A green pill ("×12 VALUE") centered at `cx`; returns its height.
 fn pilula_valor(cx: f32, y: f32, t: &str, f: f32) -> f32 {
     let w = estilo::medir_forte(t, 12) + 24.0 * f;
     let r = Rect::new(cx - w * 0.5, y, w, 24.0 * f);
-    estilo::ret_gradiente(r, r.h * 0.5, Color::new(0.52, 0.95, 0.66, 1.0), Color::new(0.22, 0.66, 0.42, 1.0));
-    estilo::texto_centro_forte(r.center().x, r.center().y + 12.0 * f * 0.36, t, 12, Color::new(0.03, 0.18, 0.08, 1.0));
+    estilo::ret_gradiente(
+        r,
+        r.h * 0.5,
+        Color::new(0.52, 0.95, 0.66, 1.0),
+        Color::new(0.22, 0.66, 0.42, 1.0),
+    );
+    estilo::texto_centro_forte(
+        r.center().x,
+        r.center().y + 12.0 * f * 0.36,
+        t,
+        12,
+        Color::new(0.03, 0.18, 0.08, 1.0),
+    );
     r.h
 }
 
@@ -706,7 +880,14 @@ fn valia(cx: f32, y: f32, valor: u64) {
     estilo::texto(x, y, &rotulo, 13, estilo::SUAVE);
     let xv = x + wr + 6.0;
     estilo::texto_forte(xv, y, &v, 14, estilo::SUAVE);
-    draw_line(xv - 1.0, y - 5.0, xv + wv + 1.0, y - 5.0, 1.6, estilo::alfa(estilo::VERMELHO, 0.85));
+    draw_line(
+        xv - 1.0,
+        y - 5.0,
+        xv + wv + 1.0,
+        y - 5.0,
+        1.6,
+        estilo::alfa(estilo::VERMELHO, 0.85),
+    );
 }
 
 /// "PLUS" between two thin lines: where the TP ends and the bonus starts.
@@ -714,13 +895,34 @@ fn divisor(x: f32, y: f32, w: f32, f: f32, cor: Color) {
     let t = shared::idioma::tr("PLUS").into_owned();
     let tw = estilo::medir_forte(&t, 11);
     let cx = x + w * 0.5;
-    draw_line(x, y - 4.0 * f, cx - tw * 0.5 - 8.0 * f, y - 4.0 * f, 1.0, estilo::alfa(cor, 0.35));
-    draw_line(cx + tw * 0.5 + 8.0 * f, y - 4.0 * f, x + w, y - 4.0 * f, 1.0, estilo::alfa(cor, 0.35));
+    draw_line(
+        x,
+        y - 4.0 * f,
+        cx - tw * 0.5 - 8.0 * f,
+        y - 4.0 * f,
+        1.0,
+        estilo::alfa(cor, 0.35),
+    );
+    draw_line(
+        cx + tw * 0.5 + 8.0 * f,
+        y - 4.0 * f,
+        x + w,
+        y - 4.0 * f,
+        1.0,
+        estilo::alfa(cor, 0.35),
+    );
     estilo::texto_centro_forte(cx, y, &t, 11, estilo::alfa(cor, 0.9));
 }
 
 /// The bonus block from (`x`, `y`) in a column `w` wide; returns the y after.
-fn desenha_bonus(o: &OfertaRelampago, nomes: &HashMap<u16, String>, x: f32, mut y: f32, w: f32, f: f32) -> f32 {
+fn desenha_bonus(
+    o: &OfertaRelampago,
+    nomes: &HashMap<u16, String>,
+    x: f32,
+    mut y: f32,
+    w: f32,
+    f: f32,
+) -> f32 {
     let linhas = linhas_do_bonus(o, nomes);
     let colunas = colunas_do_bonus(w, f);
     let cw = w / colunas as f32;
@@ -729,24 +931,48 @@ fn desenha_bonus(o: &OfertaRelampago, nomes: &HashMap<u16, String>, x: f32, mut 
         let lx = x + (i % colunas) as f32 * cw;
         let ly = y + (i / colunas) as f32 * LINHA * f;
         desenha_icone(icone, Rect::new(lx, ly, lado, lado));
-        estilo::texto_ajustado(texto, lx + lado + 8.0 * f, ly + lado * 0.7, cw - lado - 14.0 * f, 14, *cor);
+        estilo::texto_ajustado(
+            texto,
+            lx + lado + 8.0 * f,
+            ly + lado * 0.7,
+            cw - lado - 14.0 * f,
+            14,
+            *cor,
+        );
     }
     y += linhas.len().div_ceil(colunas) as f32 * LINHA * f;
     if tem_faixa_de_pecas(o) {
         let grau = o.pecas.first().map_or(3, |(_, i)| i.rarity);
         let rotulo = format!("{} blue pieces", o.pecas.len());
-        estilo::texto_forte(x, y + 13.0 * f, &rotulo, 13, crate::combinar_anim::cor_do_grau(grau));
+        estilo::texto_forte(
+            x,
+            y + 13.0 * f,
+            &rotulo,
+            13,
+            crate::combinar_anim::cor_do_grau(grau),
+        );
         y += 20.0 * f;
         let lp = 30.0 * f;
         let por_linha = ((w + 6.0 * f) / (lp + 6.0 * f)).floor().max(1.0) as usize;
         for (i, (id, inst)) in o.pecas.iter().enumerate() {
-            let r = Rect::new(x + (i % por_linha) as f32 * (lp + 6.0 * f), y + (i / por_linha) as f32 * (lp + 6.0 * f), lp, lp);
+            let r = Rect::new(
+                x + (i % por_linha) as f32 * (lp + 6.0 * f),
+                y + (i / por_linha) as f32 * (lp + 6.0 * f),
+                lp,
+                lp,
+            );
             desenha_icone(&Icone::Peca(*id, inst.rarity), r);
         }
         y += o.pecas.len().div_ceil(por_linha) as f32 * (lp + 6.0 * f) + 2.0 * f;
     }
     if let Some((antes, depois)) = o.poder {
-        estilo::texto_forte(x, y + 18.0 * f, &texto_do_poder(antes, depois), 15, estilo::VERDE);
+        estilo::texto_forte(
+            x,
+            y + 18.0 * f,
+            &texto_do_poder(antes, depois),
+            15,
+            estilo::VERDE,
+        );
         y += 26.0 * f;
     }
     y
@@ -754,13 +980,27 @@ fn desenha_bonus(o: &OfertaRelampago, nomes: &HashMap<u16, String>, x: f32, mut 
 
 /// The hero: the TP crystal floating in its glow, "+400 TP" under it and the
 /// value pill. `topo` is where the crystal's box starts; returns the y after.
-fn desenha_heroi(c: &Cartao, cx: f32, topo: f32, lado: f32, caixa: Rect, f: f32, agora: f64) -> f32 {
+fn desenha_heroi(
+    c: &Cartao,
+    cx: f32,
+    topo: f32,
+    lado: f32,
+    caixa: Rect,
+    f: f32,
+    agora: f64,
+) -> f32 {
     let (acento, _) = cores_da_faixa(faixa(c.o.preco_centavos));
     let flutua = (agora as f32 * 1.6).sin() * 4.0 * f;
     let centro = vec2(cx, topo + lado * 0.5 + flutua);
     brilho_radial(centro, lado * 0.85, acento, 0.24);
     if !c.comprada {
-        faiscas(caixa, agora, 8, f, 40 + faixa(c.o.preco_centavos) as u32 * 10);
+        faiscas(
+            caixa,
+            agora,
+            8,
+            f,
+            40 + faixa(c.o.preco_centavos) as u32 * 10,
+        );
     }
     let arte = format!("tp_{}", faixa(c.o.preco_centavos) + 2);
     if !crate::icones_ui::loja(&arte, centro, lado, 1.0) {
@@ -768,7 +1008,14 @@ fn desenha_heroi(c: &Cartao, cx: f32, topo: f32, lado: f32, caixa: Rect, f: f32,
     }
     let mut y = topo + lado + 38.0 * f;
     let manchete = format!("+{} TP", shared::idioma::milhar(c.o.tp as u64));
-    estilo::texto_sombra(cx - estilo::medir_forte(&manchete, 30) * 0.5, y, &manchete, 30, OURO_CLARO, true);
+    estilo::texto_sombra(
+        cx - estilo::medir_forte(&manchete, 30) * 0.5,
+        y,
+        &manchete,
+        30,
+        OURO_CLARO,
+        true,
+    );
     y += 10.0 * f;
     if let Some(x) = multiplicador(c.valor, c.o.preco_centavos) {
         let t = format!("×{x} VALUE");
@@ -780,7 +1027,15 @@ fn desenha_heroi(c: &Cartao, cx: f32, topo: f32, lado: f32, caixa: Rect, f: f32,
 /// The buy button (or the PURCHASED tag) with the crossed-out worth above.
 /// Returns true when tapped.
 #[allow(clippy::too_many_arguments)]
-fn desenha_compra(c: &Cartao, b: Rect, m: Vec2, toque: Option<Vec2>, livre: bool, f: f32, agora: f64) -> bool {
+fn desenha_compra(
+    c: &Cartao,
+    b: Rect,
+    m: Vec2,
+    toque: Option<Vec2>,
+    livre: bool,
+    f: f32,
+    agora: f64,
+) -> bool {
     if c.valor > c.o.preco_centavos as u64 {
         valia(b.center().x, b.y - 10.0 * f, c.valor);
     }
@@ -789,7 +1044,11 @@ fn desenha_compra(c: &Cartao, b: Rect, m: Vec2, toque: Option<Vec2>, livre: bool
         return false;
     }
     let ativo = livre && c.resta > 0.0;
-    let rotulo = format!("{}  {}", shared::idioma::tr("Buy"), preco(c.o.preco_centavos));
+    let rotulo = format!(
+        "{}  {}",
+        shared::idioma::tr("Buy"),
+        preco(c.o.preco_centavos)
+    );
     botao_ouro(b, &rotulo, ativo, ativo && b.toca(m), f, agora);
     ativo && toque.is_some_and(|t| b.toca(t))
 }
@@ -820,7 +1079,11 @@ fn desenha_cartao(
     }
     estilo::sombra(r, rc, 1.0);
     estilo::ret_gradiente(r, rc, alto, NOITE);
-    let borda = if c.comprada { estilo::alfa(VERDE_POSSE, 0.7) } else { estilo::alfa(acento, 0.55 + 0.3 * pulso) };
+    let borda = if c.comprada {
+        estilo::alfa(VERDE_POSSE, 0.7)
+    } else {
+        estilo::alfa(acento, 0.55 + 0.3 * pulso)
+    };
     estilo::borda_arredondada(r, rc, (if t == 2 { 2.0 } else { 1.4 }) * f.max(0.8), borda);
     if !c.comprada {
         brilho_passando(r, f, agora);
@@ -833,7 +1096,12 @@ fn desenha_cartao(
     } else {
         "FLASH OFFER"
     };
-    selo(vec2(r.x + 12.0 * f, r.y + 12.0 * f), tag, f, t == 2 || c.o.nova);
+    selo(
+        vec2(r.x + 12.0 * f, r.y + 12.0 * f),
+        tag,
+        f,
+        t == 2 || c.o.nova,
+    );
     if !c.comprada {
         pilula_relogio(r.x + r.w - 12.0 * f, r.y + 12.0 * f, c.resta, f);
     }
@@ -844,15 +1112,28 @@ fn desenha_cartao(
             if tw <= r.w - 28.0 * f {
                 estilo::texto_centro_forte(r.center().x, r.y + 62.0 * f, &titulo, 20, estilo::OURO);
             } else {
-                estilo::texto_ajustado(&titulo, r.x + 14.0 * f, r.y + 62.0 * f, r.w - 28.0 * f, 20, estilo::OURO);
+                estilo::texto_ajustado(
+                    &titulo,
+                    r.x + 14.0 * f,
+                    r.y + 62.0 * f,
+                    r.w - 28.0 * f,
+                    20,
+                    estilo::OURO,
+                );
             }
             let lado = lado_em_pe(r.w, f, c.aperto);
             let topo = r.y + 76.0 * f;
             let caixa = Rect::new(r.x, topo - 6.0 * f, r.w, lado + 30.0 * f);
-            let y = desenha_heroi(c, r.center().x, topo, lado, caixa, f, agora).max(topo + lado + 78.0 * f);
+            let y = desenha_heroi(c, r.center().x, topo, lado, caixa, f, agora)
+                .max(topo + lado + 78.0 * f);
             divisor(r.x + 14.0 * f, y + 4.0 * f, r.w - 28.0 * f, f, acento);
             desenha_bonus(c.o, nomes, r.x + 14.0 * f, y + 18.0 * f, r.w - 28.0 * f, f);
-            let b = Rect::new(r.x + 14.0 * f, r.y + r.h - 62.0 * f, r.w - 28.0 * f, 50.0 * f);
+            let b = Rect::new(
+                r.x + 14.0 * f,
+                r.y + r.h - 62.0 * f,
+                r.w - 28.0 * f,
+                50.0 * f,
+            );
             desenha_compra(c, b, m, toque, livre, f, agora)
         }
         Modo::Deitado => {
@@ -861,7 +1142,14 @@ fn desenha_cartao(
             let topo = r.y + 42.0 * f;
             let caixa = Rect::new(r.x, topo - 6.0 * f, hw, lado + 30.0 * f);
             desenha_heroi(c, r.x + hw * 0.5, topo, lado, caixa, f, agora);
-            draw_line(r.x + hw, r.y + 16.0 * f, r.x + hw, r.y + r.h - 16.0 * f, 1.0, estilo::alfa(acento, 0.25));
+            draw_line(
+                r.x + hw,
+                r.y + 16.0 * f,
+                r.x + hw,
+                r.y + r.h - 16.0 * f,
+                1.0,
+                estilo::alfa(acento, 0.25),
+            );
             let x = r.x + hw + 16.0 * f;
             let w = r.x + r.w - 14.0 * f - x;
             // The title sits below the tags' row (the clock on the right).
@@ -869,7 +1157,12 @@ fn desenha_cartao(
             divisor(x, r.y + 80.0 * f, w, f, acento);
             desenha_bonus(c.o, nomes, x, r.y + 92.0 * f, w, f);
             let bw = (w * 0.55).clamp(170.0 * f, 260.0 * f).min(w);
-            let b = Rect::new(r.x + r.w - 14.0 * f - bw, r.y + r.h - 60.0 * f, bw, 48.0 * f);
+            let b = Rect::new(
+                r.x + r.w - 14.0 * f - bw,
+                r.y + r.h - 60.0 * f,
+                bw,
+                48.0 * f,
+            );
             desenha_compra(c, b, m, toque, livre, f, agora)
         }
     }
@@ -881,17 +1174,38 @@ fn vazio(r: Rect, pode_pagar: bool, f: f32, agora: f64) {
     estilo::ret_gradiente(r, 16.0 * f, Color::new(0.14, 0.09, 0.26, 0.9), NOITE);
     estilo::borda_arredondada(r, 16.0 * f, 1.0, estilo::alfa(LILAS, 0.25));
     let lado = 64.0 * f;
-    let c = vec2(r.center().x, r.y + 20.0 * f + lado * 0.5 + (agora as f32 * 1.2).sin() * 3.0 * f);
+    let c = vec2(
+        r.center().x,
+        r.y + 20.0 * f + lado * 0.5 + (agora as f32 * 1.2).sin() * 3.0 * f,
+    );
     brilho_radial(c, lado * 0.8, LILAS, 0.16);
     if !crate::icones_ui::loja("tp_2", c, lado, 0.55) {
         estilo::icone_tp(c, lado);
     }
     let y = r.y + 40.0 * f + lado;
     if pode_pagar {
-        estilo::texto_centro_forte(r.center().x, y, "No flash offer right now.", 16, estilo::TEXTO);
-        estilo::texto_centro(r.center().x, y + 24.0 * f, "Keep leveling up: new offers unlock at higher levels.", 13, estilo::SUAVE);
+        estilo::texto_centro_forte(
+            r.center().x,
+            y,
+            "No flash offer right now.",
+            16,
+            estilo::TEXTO,
+        );
+        estilo::texto_centro(
+            r.center().x,
+            y + 24.0 * f,
+            "Keep leveling up: new offers unlock at higher levels.",
+            13,
+            estilo::SUAVE,
+        );
     } else {
-        estilo::texto_centro(r.center().x, y + 10.0 * f, "Flash offers are available in the Android app (Google Play).", 14, estilo::SUAVE);
+        estilo::texto_centro(
+            r.center().x,
+            y + 10.0 * f,
+            "Flash offers are available in the Android app (Google Play).",
+            14,
+            estilo::SUAVE,
+        );
     }
 }
 
@@ -900,14 +1214,23 @@ const DISCORD: &str = "https://discord.gg/WpbF3EcVg";
 /// The Rate-us card's height at width `w`: one band when the buttons fit
 /// beside the text, two when they go below it.
 fn promo_altura(w: f32, f: f32) -> f32 {
-    if w >= 700.0 * f { PROMO_H * f } else { (PROMO_H + 52.0) * f }
+    if w >= 700.0 * f {
+        PROMO_H * f
+    } else {
+        (PROMO_H + 52.0) * f
+    }
 }
 
 /// The "Rate us & get a gift" card, compact: the gift's icon, what to do and
 /// what comes, and the two buttons (Google Play, Discord). The gift is sent
 /// by the staff by mail once the screenshot is on Discord.
 fn desenha_promo_avaliacao(r: Rect, f: f32, m: Vec2, toque: Option<Vec2>) {
-    estilo::ret_gradiente(r, 12.0 * f, Color::new(0.07, 0.20, 0.12, 0.95), Color::new(0.03, 0.08, 0.05, 0.95));
+    estilo::ret_gradiente(
+        r,
+        12.0 * f,
+        Color::new(0.07, 0.20, 0.12, 0.95),
+        Color::new(0.03, 0.08, 0.05, 0.95),
+    );
     estilo::borda_arredondada(r, 12.0 * f, 1.0, estilo::alfa(estilo::VERDE, 0.45));
     let lado = 40.0 * f;
     crate::invocacao_ui::icone_pergaminho_de(
@@ -919,8 +1242,18 @@ fn desenha_promo_avaliacao(r: Rect, f: f32, m: Vec2, toque: Option<Vec2>) {
     let largo = r.w >= 700.0 * f;
     let bw = 180.0 * f;
     let bh = 38.0 * f;
-    let texto_w = if largo { r.w - (x - r.x) - 2.0 * bw - 34.0 * f } else { r.w - (x - r.x) - 14.0 * f };
-    estilo::texto_forte(x, r.y + 26.0 * f, "Rate us & get a gift!", 16, estilo::VERDE);
+    let texto_w = if largo {
+        r.w - (x - r.x) - 2.0 * bw - 34.0 * f
+    } else {
+        r.w - (x - r.x) - 14.0 * f
+    };
+    estilo::texto_forte(
+        x,
+        r.y + 26.0 * f,
+        "Rate us & get a gift!",
+        16,
+        estilo::VERDE,
+    );
     estilo::texto_ajustado(
         "Rate Tempest on Google Play and post a screenshot of your review on our Discord.",
         x,
@@ -937,11 +1270,25 @@ fn desenha_promo_avaliacao(r: Rect, f: f32, m: Vec2, toque: Option<Vec2>) {
         12,
         Color::new(0.99, 0.86, 0.45, 1.0),
     );
-    let by = if largo { r.center().y - bh * 0.5 } else { r.y + r.h - bh - 12.0 * f };
+    let by = if largo {
+        r.center().y - bh * 0.5
+    } else {
+        r.y + r.h - bh - 12.0 * f
+    };
     let discord = Rect::new(r.x + r.w - bw - 14.0 * f, by, bw, bh);
     let play = Rect::new(discord.x - bw - 10.0 * f, by, bw, bh);
-    estilo::botao(play, "Rate on Google Play", estilo::estado(play.toca(m), false, false, false), true);
-    estilo::botao(discord, "Open Discord", estilo::estado(discord.toca(m), false, false, false), false);
+    estilo::botao(
+        play,
+        "Rate on Google Play",
+        estilo::estado(play.toca(m), false, false, false),
+        true,
+    );
+    estilo::botao(
+        discord,
+        "Open Discord",
+        estilo::estado(discord.toca(m), false, false, false),
+        false,
+    );
     if toque.is_some_and(|t| play.toca(t)) {
         crate::avaliacao::abrir_loja();
     } else if toque.is_some_and(|t| discord.toca(t)) {
@@ -980,9 +1327,15 @@ mod testes {
         assert_eq!(grade(pc, 3, 1.0), (3, Modo::EmPe));
         assert_eq!(grade(pc, 1, 1.0), (1, Modo::Deitado));
         // Phone landscape (short area): one per row, lying.
-        assert_eq!(grade(Rect::new(0.0, 0.0, 840.0, 260.0), 3, 1.0), (1, Modo::Deitado));
+        assert_eq!(
+            grade(Rect::new(0.0, 0.0, 840.0, 260.0), 3, 1.0),
+            (1, Modo::Deitado)
+        );
         // Very narrow: standing, one column.
-        assert_eq!(grade(Rect::new(0.0, 0.0, 300.0, 600.0), 2, 1.0), (1, Modo::EmPe));
+        assert_eq!(
+            grade(Rect::new(0.0, 0.0, 300.0, 600.0), 2, 1.0),
+            (1, Modo::EmPe)
+        );
     }
 }
 
@@ -990,12 +1343,23 @@ mod testes {
 /// then a popped bonus pack) — `ofertas.png` and `ofertas_foco.png`.
 #[cfg(debug_assertions)]
 pub async fn previa() {
-    let saida = std::env::var("MMO_PREVIA_SAIDA").unwrap_or_else(|_| "/tmp/tempest-ofertas-preview".into());
+    let saida =
+        std::env::var("MMO_PREVIA_SAIDA").unwrap_or_else(|_| "/tmp/tempest-ofertas-preview".into());
     std::fs::create_dir_all(&saida).unwrap();
     next_frame().await;
     let rt = render_target(screen_width() as u32, screen_height() as u32);
-    let mut ui = OfertasUi { aberto: true, simulado: true, ..Default::default() };
-    let amostra = |id: &str, titulo: &str, preco: u32, ouro: u64, energia: u64, itens: Vec<(u16, u32)>, gatilho: &str| OfertaRelampago {
+    let mut ui = OfertasUi {
+        aberto: true,
+        simulado: true,
+        ..Default::default()
+    };
+    let amostra = |id: &str,
+                   titulo: &str,
+                   preco: u32,
+                   ouro: u64,
+                   energia: u64,
+                   itens: Vec<(u16, u32)>,
+                   gatilho: &str| OfertaRelampago {
         id: id.into(),
         titulo: titulo.into(),
         titulo_pt: None,
@@ -1023,9 +1387,41 @@ pub async fn previa() {
         nomes.insert(id, n.to_string());
     }
     let lista = vec![
-        amostra("a", "Starter Pack", 99, 10_000, 10_000, vec![(it::DARKSTEEL, 10_000)], "porao_inicial"),
-        amostra("b", "Level 50 Pack", 499, 0, 20_000, vec![(it::PERGAMINHO_INVOCA_PET, 1), (it::PERGAMINHO_INVOCA_CHAVE, 2), (it::DARKSTEEL, 5_000)], ""),
-        amostra("c", "Level 100 Pack", 1500, 100_000, 0, vec![(it::PERGAMINHO_INVOCA_PET, 2), (it::PERGAMINHO_INVOCA_MONTARIA, 2), (it::DARKSTEEL, 50_000)], ""),
+        amostra(
+            "a",
+            "Starter Pack",
+            99,
+            10_000,
+            10_000,
+            vec![(it::DARKSTEEL, 10_000)],
+            "porao_inicial",
+        ),
+        amostra(
+            "b",
+            "Level 50 Pack",
+            499,
+            0,
+            20_000,
+            vec![
+                (it::PERGAMINHO_INVOCA_PET, 1),
+                (it::PERGAMINHO_INVOCA_CHAVE, 2),
+                (it::DARKSTEEL, 5_000),
+            ],
+            "",
+        ),
+        amostra(
+            "c",
+            "Level 100 Pack",
+            1500,
+            100_000,
+            0,
+            vec![
+                (it::PERGAMINHO_INVOCA_PET, 2),
+                (it::PERGAMINHO_INVOCA_MONTARIA, 2),
+                (it::DARKSTEEL, 50_000),
+            ],
+            "",
+        ),
     ];
     for (nome, foco) in [("ofertas", false), ("ofertas_foco", true)] {
         ui.receber(lista.clone());
@@ -1038,7 +1434,9 @@ pub async fn previa() {
             clear_background(Color::new(0.10, 0.14, 0.12, 1.0));
             let _ = ui.desenha(&nomes);
             unsafe { get_internal_gl().flush() };
-            rt.texture.get_texture_data().export_png(&format!("{saida}/{nome}.png"));
+            rt.texture
+                .get_texture_data()
+                .export_png(&format!("{saida}/{nome}.png"));
             set_default_camera();
             next_frame().await;
         }

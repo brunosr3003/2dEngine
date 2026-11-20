@@ -239,7 +239,9 @@ impl GameWorld {
         );
         if e.energia > 0 {
             s.skills_dirty = true;
-            let _ = s.handle.to_client.send(ServerMessage::ProgressoDeSkills { progresso: s.skill_progress.clone() });
+            let _ = s.handle.to_client.send(ServerMessage::ProgressoDeSkills {
+                progresso: s.skill_progress.clone(),
+            });
         }
         s.inventory_dirty = true;
         tracing::info!("[presenca] {personagem} recebeu {id}: {e:?}");
@@ -258,8 +260,17 @@ mod tests {
         let mut gold = 0;
         let mut energia = 100;
         let mut dg = shared::dungeon::DadosDungeon::default();
-        let e = entregar(&[Premio { item_id: pr::ENERGIA, qtd: 5_000 }],
-            &mut gold, &mut energia, |_, _| panic!("Energia nao e item"), &mut dg, 1);
+        let e = entregar(
+            &[Premio {
+                item_id: pr::ENERGIA,
+                qtd: 5_000,
+            }],
+            &mut gold,
+            &mut energia,
+            |_, _| panic!("Energia nao e item"),
+            &mut dg,
+            1,
+        );
         assert_eq!(energia, 5_100);
         assert_eq!(e.energia, 5_000);
         assert!(dg.correio.is_empty());

@@ -247,7 +247,10 @@ fn salgueiro(r: &mut Rng) -> Volume {
     let h = r.i(14, 18);
     let raio = r.i(6, 8);
     let lado = raio + 2;
-    let mut v = Volume::novo([-lado, 0, -lado], [lado * 2 + 1, h + raio + 3, lado * 2 + 1]);
+    let mut v = Volume::novo(
+        [-lado, 0, -lado],
+        [lado * 2 + 1, h + raio + 3, lado * 2 + 1],
+    );
     let (lx, lz) = (r.sinal() * 0.6, r.sinal() * 0.6);
     for iy in 0..=h {
         let t = iy as f32 / h as f32;
@@ -257,7 +260,13 @@ fn salgueiro(r: &mut Rng) -> Volume {
         }
     }
     let (cx, cz) = (lx.round() as i32, lz.round() as i32);
-    let folha = |r: &mut Rng| if r.proximo() % 100 < 64 { Material::PetalaRosa } else { Material::PetalaBranca };
+    let folha = |r: &mut Rng| {
+        if r.proximo() % 100 < 64 {
+            Material::PetalaRosa
+        } else {
+            Material::PetalaBranca
+        }
+    };
     // The dome: flattened, so the strands hang from a wide rim.
     bolha(&mut v, r, cx, h, cz, raio, raio as f32 * 0.55, folha);
     // The strands: from points on the rim, straight down, of varying length.
@@ -265,7 +274,10 @@ fn salgueiro(r: &mut Rng) -> Volume {
     for k in 0..fios {
         let a = k as f32 / fios as f32 * std::f32::consts::TAU + r.f() * 0.3;
         let rr = raio as f32 * (0.75 + r.f() * 0.25);
-        let (fx, fz) = (cx + (a.sin() * rr).round() as i32, cz + (a.cos() * rr).round() as i32);
+        let (fx, fz) = (
+            cx + (a.sin() * rr).round() as i32,
+            cz + (a.cos() * rr).round() as i32,
+        );
         let comp = r.i(h / 3, h * 2 / 3);
         for d in 0..comp {
             let y = h - 1 - d;
@@ -510,10 +522,23 @@ fn pena(r: &mut Rng) -> Volume {
         let s = r.sinal() as i32;
         for iy in 0..h {
             // Bends over in the top third.
-            let curva = if iy > h * 2 / 3 { (iy - h * 2 / 3) / 2 } else { 0 };
+            let curva = if iy > h * 2 / 3 {
+                (iy - h * 2 / 3) / 2
+            } else {
+                0
+            };
             let (x, z) = (ix + dx * curva * s, iz + dz * curva * s);
             let alto = iy > h / 2;
-            v.poe(x, iy, z, if alto { Material::PetalaBranca } else { Material::FolhaCeleste });
+            v.poe(
+                x,
+                iy,
+                z,
+                if alto {
+                    Material::PetalaBranca
+                } else {
+                    Material::FolhaCeleste
+                },
+            );
             if alto {
                 // The vane: one voxel to each side across the bend.
                 v.poe(x + dz, iy, z + dx, Material::PetalaBranca);
@@ -624,7 +649,11 @@ fn anemona(r: &mut Rng) -> Volume {
 fn leque(r: &mut Rng) -> Volume {
     let mut v = caixa_vazia(5, 12);
     let ao_longo_de_x = r.i(0, 1) == 0;
-    let cor = if r.i(0, 1) == 0 { Material::Coral } else { Material::PetalaRoxa };
+    let cor = if r.i(0, 1) == 0 {
+        Material::Coral
+    } else {
+        Material::PetalaRoxa
+    };
     for iy in 0..r.i(7, 10) {
         let largura = (iy / 2 + 1).min(5);
         for k in -largura..=largura {
@@ -646,7 +675,11 @@ fn concha(r: &mut Rng) -> Volume {
         for x in -raio..=raio {
             for z in -raio..=raio {
                 if x * x + z * z <= raio * raio {
-                    let m = if (iy + (x + z).abs()) % 3 == 0 { Material::PetalaRosa } else { Material::Marmore };
+                    let m = if (iy + (x + z).abs()) % 3 == 0 {
+                        Material::PetalaRosa
+                    } else {
+                        Material::Marmore
+                    };
                     v.poe(x, iy, z, m);
                 }
             }
@@ -968,8 +1001,25 @@ pub fn destroco(tier: u8, variante: u32) -> Modelo {
     // A barrel: round 4 × 4, hooped.
     let barril_em_pe = |v: &mut Volume, cx: i32, cz: i32, alto: i32| {
         for y in 1..=alto {
-            let m = if y == 2 || y == alto - 1 { Material::RochaEscura } else { Material::Terra };
-            for (dx, dz) in [(0, 0), (1, 0), (0, 1), (1, 1), (-1, 0), (-1, 1), (2, 0), (2, 1), (0, -1), (1, -1), (0, 2), (1, 2)] {
+            let m = if y == 2 || y == alto - 1 {
+                Material::RochaEscura
+            } else {
+                Material::Terra
+            };
+            for (dx, dz) in [
+                (0, 0),
+                (1, 0),
+                (0, 1),
+                (1, 1),
+                (-1, 0),
+                (-1, 1),
+                (2, 0),
+                (2, 1),
+                (0, -1),
+                (1, -1),
+                (0, 2),
+                (1, 2),
+            ] {
                 v.poe(cx + dx, y, cz + dz, m);
             }
         }
@@ -1029,12 +1079,24 @@ pub fn destroco(tier: u8, variante: u32) -> Modelo {
         for y in 1..=4 {
             for dz in 0..5 {
                 for dx in 0..5 {
-                    let aresta = (dx == 0 || dx == 4) as i32 + (dz == 0 || dz == 4) as i32 + (y == 1 || y == 4) as i32 >= 2;
+                    let aresta = (dx == 0 || dx == 4) as i32
+                        + (dz == 0 || dz == 4) as i32
+                        + (y == 1 || y == 4) as i32
+                        >= 2;
                     let topo = y == 4 && (1..4).contains(&dx) && (1..4).contains(&dz);
                     if topo {
                         continue;
                     }
-                    v.poe(cx + dx, y, cz + dz, if aresta { Material::Tronco } else { Material::Caminho });
+                    v.poe(
+                        cx + dx,
+                        y,
+                        cz + dz,
+                        if aresta {
+                            Material::Tronco
+                        } else {
+                            Material::Caminho
+                        },
+                    );
                 }
             }
         }

@@ -11,7 +11,10 @@ use crate::hud_estilo as estilo;
 
 const ATRIBUTOS: [(&str, &str); STAT_COUNT] = [
     ("FOR", "+1 attack · +2 health"),
-    ("DES", "+1 dexterity · crit/attack · +0.25% dodge · pistol: +1 health, +0.5% dodge"),
+    (
+        "DES",
+        "+1 dexterity · crit/attack · +0.25% dodge · pistol: +1 health, +0.5% dodge",
+    ),
     ("INT", "+1 magic damage · +2 mana · -0.1% skill cooldown"),
     ("VIT", "+5 health · regeneration"),
     // SPD is retired (not drawn, can't be raised): `shared::stat_ativo`.
@@ -157,14 +160,28 @@ impl FichaUi {
         use shared::renascimento as rn;
         let f = estilo::fator_texto();
         let seguro = crate::hud_layout::tela_segura();
-        let (w, h) = ((680.0 * f).min(seguro.w - 24.0), (400.0 * f).min(seguro.h - 24.0));
-        let r = Rect::new(seguro.center().x - w * 0.5, seguro.center().y - h * 0.5, w, h);
+        let (w, h) = (
+            (680.0 * f).min(seguro.w - 24.0),
+            (400.0 * f).min(seguro.h - 24.0),
+        );
+        let r = Rect::new(
+            seguro.center().x - w * 0.5,
+            seguro.center().y - h * 0.5,
+            w,
+            h,
+        );
         crate::hud_layout::escurece(0.5);
         estilo::painel(r);
         let n = self.renascimentos + 1;
         let x = r.x + 24.0 * f;
         let larg = w - 48.0 * f;
-        estilo::texto_forte(x, r.y + 40.0 * f, &format!("Rebirth {n}?"), 22, estilo::OURO);
+        estilo::texto_forte(
+            x,
+            r.y + 40.0 * f,
+            &format!("Rebirth {n}?"),
+            22,
+            estilo::OURO,
+        );
         let mut linhas: Vec<(String, Color)> = vec![
             ("Resets: back to level 1, and your attribute points (their Energy is refunded).".into(), estilo::VERMELHO),
             ("Keeps: items and gear, gold, TP, pets, mounts, proficiencies, story, skill tiers.".into(), estilo::TEXTO),
@@ -182,11 +199,17 @@ impl FichaUi {
             ),
         ];
         if let Some(m) = rn::marco_de(n) {
-            linhas.push((format!("This rebirth: {}", shared::idioma::tr(m)), estilo::OURO));
+            linhas.push((
+                format!("This rebirth: {}", shared::idioma::tr(m)),
+                estilo::OURO,
+            ));
         }
         let prox = rn::proximo_marco(n);
         if let Some(m) = rn::marco_de(prox) {
-            linhas.push((format!("Next milestone: Rebirth {prox} · {}", shared::idioma::tr(m)), estilo::SUAVE));
+            linhas.push((
+                format!("Next milestone: Rebirth {prox} · {}", shared::idioma::tr(m)),
+                estilo::SUAVE,
+            ));
         }
         for (i, (t, cor)) in linhas.iter().enumerate() {
             estilo::texto_ajustado(t, x, r.y + (82.0 + i as f32 * 30.0) * f, larg, 14, *cor);
@@ -196,8 +219,18 @@ impl FichaUi {
         let by = r.y + r.h - 22.0 * f - bh;
         let cancelar = Rect::new(x, by, bw, bh);
         let renascer = Rect::new(cancelar.x + bw + 12.0 * f, by, bw, bh);
-        estilo::botao(cancelar, "Cancel", estilo::estado_de(cancelar, false, false), false);
-        estilo::botao(renascer, "Be reborn", estilo::estado_de(renascer, false, false), true);
+        estilo::botao(
+            cancelar,
+            "Cancel",
+            estilo::estado_de(cancelar, false, false),
+            false,
+        );
+        estilo::botao(
+            renascer,
+            "Be reborn",
+            estilo::estado_de(renascer, false, false),
+            true,
+        );
         if !crate::foco::clique() {
             return None;
         }
@@ -226,7 +259,11 @@ impl FichaUi {
         let f = estilo::fator_texto();
         // O nivel na tela (escala exibida, 15/11/2026): pelo XP; sem XP
         // ainda, o interno convertido.
-        let mult = if mult_xp > 0 { mult_xp } else { shared::DEFAULT_XP_MULTIPLIER };
+        let mult = if mult_xp > 0 {
+            mult_xp
+        } else {
+            shared::DEFAULT_XP_MULTIPLIER
+        };
         let nivel_tela = if xp > 0 {
             shared::progressao::nivel_exibido(xp, mult)
         } else {
@@ -262,7 +299,12 @@ impl FichaUi {
         // THE PATH TREE (`arvore_ui`), from the first rebirth on.
         if self.renascimentos > 0 {
             let b = Rect::new(p.x + p.w - 262.0 * f, p.y + 12.0 * f, 200.0 * f, 32.0 * f);
-            estilo::botao(b, "PATHS", estilo::estado_de(b, false, false), self.caminhos_livres);
+            estilo::botao(
+                b,
+                "PATHS",
+                estilo::estado_de(b, false, false),
+                self.caminhos_livres,
+            );
             if self.caminhos_livres {
                 crate::hud::selo(b);
             }
@@ -299,7 +341,11 @@ impl FichaUi {
                 format!("Level {}", nivel_tela)
             },
             15,
-            if r > 0 { crate::renascimento_vfx::cor_de(r) } else { estilo::SUAVE },
+            if r > 0 {
+                crate::renascimento_vfx::cor_de(r)
+            } else {
+                estilo::SUAVE
+            },
         );
         // REBIRTH at the cap (`shared::renascimento::pode_renascer`, on the
         // internal level): opens the confirmation.
@@ -563,7 +609,12 @@ impl FichaUi {
     }
 
     fn desenha_proficiencias(
-        &mut self, dir: Rect, f: f32, clique: bool, mouse: Vec2, arma_equipada: Option<u16>,
+        &mut self,
+        dir: Rect,
+        f: f32,
+        clique: bool,
+        mouse: Vec2,
+        arma_equipada: Option<u16>,
     ) {
         const NOMES: [&str; shared::PROF_COUNT] =
             ["Sword and shield", "Katana", "Pistols", "Magic ring"];
@@ -575,38 +626,77 @@ impl FichaUi {
         ];
         if let Some(i) = self.prof_selecionada {
             let voltar = Rect::new(dir.x + 10.0 * f, dir.y + 51.0 * f, 92.0 * f, 34.0 * f);
-            estilo::botao(voltar, "BACK", estilo::estado_de(voltar, false, false), false);
+            estilo::botao(
+                voltar,
+                "BACK",
+                estilo::estado_de(voltar, false, false),
+                false,
+            );
             if clique && voltar.toca(mouse) {
                 self.prof_selecionada = None;
                 return;
             }
             let xp = self.proficiencias.map_or(0, |v| v[i]);
             let nivel = shared::proficiency_level(xp);
-            estilo::texto_forte(dir.x + 116.0 * f, dir.y + 76.0 * f,
-                &format!("{}  ·  Lv. {nivel}", NOMES[i]), 18, estilo::OURO);
+            estilo::texto_forte(
+                dir.x + 116.0 * f,
+                dir.y + 76.0 * f,
+                &format!("{}  ·  Lv. {nivel}", NOMES[i]),
+                18,
+                estilo::OURO,
+            );
             let ativo = arma_equipada == Some(ARMAS[i]);
-            estilo::texto(dir.x + 14.0 * f, dir.y + 111.0 * f,
-                if ativo { "Bonuses active with the equipped weapon" } else { "Equip this weapon to activate the bonuses" },
-                14, if ativo { estilo::VERDE } else { estilo::SUAVE });
+            estilo::texto(
+                dir.x + 14.0 * f,
+                dir.y + 111.0 * f,
+                if ativo {
+                    "Bonuses active with the equipped weapon"
+                } else {
+                    "Equip this weapon to activate the bonuses"
+                },
+                14,
+                if ativo { estilo::VERDE } else { estilo::SUAVE },
+            );
             let b = bonus_proficiencia(ARMAS[i], nivel);
             let bonus = [
-                ("Maximum health", b.0), ("Maximum mana", b.1), ("Attack", b.2),
-                ("Defence", b.3), ("Dexterity", b.4), ("Wisdom", b.5),
+                ("Maximum health", b.0),
+                ("Maximum mana", b.1),
+                ("Attack", b.2),
+                ("Defence", b.3),
+                ("Dexterity", b.4),
+                ("Wisdom", b.5),
             ];
             let mut linha = 0;
             for (rotulo, valor) in bonus {
-                if valor == 0 { continue; }
+                if valor == 0 {
+                    continue;
+                }
                 let y = dir.y + (145.0 + linha as f32 * 45.0) * f;
                 estilo::texto(dir.x + 14.0 * f, y, rotulo, 15, estilo::TEXTO);
-                estilo::texto_forte(dir.x + 250.0 * f, y,
-                    &format!("+{valor}"), 17, if ativo { estilo::VERDE } else { estilo::SUAVE });
+                estilo::texto_forte(
+                    dir.x + 250.0 * f,
+                    y,
+                    &format!("+{valor}"),
+                    17,
+                    if ativo { estilo::VERDE } else { estilo::SUAVE },
+                );
                 linha += 1;
             }
-            estilo::texto(dir.x + 14.0 * f, dir.y + 281.0 * f,
-                "Os bônus são calculados pelo seu nível atual.", 12, estilo::SUAVE);
+            estilo::texto(
+                dir.x + 14.0 * f,
+                dir.y + 281.0 * f,
+                "Os bônus são calculados pelo seu nível atual.",
+                12,
+                estilo::SUAVE,
+            );
             if i == 1 || i == 2 {
-                estilo::texto(dir.x + 14.0 * f, dir.y + 304.0 * f,
-                    "Destreza também aumenta o dano desta arma.", 12, estilo::SUAVE);
+                estilo::texto(
+                    dir.x + 14.0 * f,
+                    dir.y + 304.0 * f,
+                    "Destreza também aumenta o dano desta arma.",
+                    12,
+                    estilo::SUAVE,
+                );
             }
             return;
         }
@@ -679,9 +769,14 @@ impl FichaUi {
 fn bonus_proficiencia(arma: u16, nivel: u32) -> (i32, i32, i32, i32, i32, i32) {
     let b = shared::weapon_scaling(arma);
     let n = nivel as f32;
-    ((b.hp_max * n) as i32, (b.mp_max * n) as i32,
-     (b.attack_damage * n) as i32, (b.defense * n) as i32,
-     (b.dex * n) as i32, (b.wis * n) as i32)
+    (
+        (b.hp_max * n) as i32,
+        (b.mp_max * n) as i32,
+        (b.attack_damage * n) as i32,
+        (b.defense * n) as i32,
+        (b.dex * n) as i32,
+        (b.wis * n) as i32,
+    )
 }
 
 #[cfg(test)]
@@ -690,8 +785,14 @@ mod tests {
 
     #[test]
     fn bonus_da_ficha_usa_o_mesmo_truncamento_do_combate() {
-        assert_eq!(bonus_proficiencia(shared::item_id::PISTOLAS, 52), (0, 0, 5, 0, 26, 0));
-        assert_eq!(bonus_proficiencia(shared::item_id::ESPADA_E_ESCUDO, 3), (3, 0, 0, 0, 0, 0));
+        assert_eq!(
+            bonus_proficiencia(shared::item_id::PISTOLAS, 52),
+            (0, 0, 5, 0, 26, 0)
+        );
+        assert_eq!(
+            bonus_proficiencia(shared::item_id::ESPADA_E_ESCUDO, 3),
+            (3, 0, 0, 0, 0, 0)
+        );
     }
 
     #[test]
@@ -702,7 +803,9 @@ mod tests {
         assert!(!ui.pode_alocar(0), "sem snapshot nao pode gastar");
         ui.atualizar_pontos(2, [1, 2, 3, 4, 5, 6], [0; STAT_COUNT]);
         assert_eq!(ui.pontos_disponiveis(), Some(2));
-        assert!((0..shared::STAT_COUNT).filter(|&i| shared::stat_ativo(i)).all(|i| ui.pode_alocar(i)));
+        assert!((0..shared::STAT_COUNT)
+            .filter(|&i| shared::stat_ativo(i))
+            .all(|i| ui.pode_alocar(i)));
         assert!(!ui.pode_alocar(shared::stat_idx::SPD), "SPD is retired");
         assert!(!ui.pode_alocar(shared::STAT_COUNT));
         ui.atualizar_pontos(0, [1, 2, 3, 4, 5, 6], [0; STAT_COUNT]);
@@ -789,7 +892,9 @@ mod tests {
             "faltando 1 de Energia nenhum atributo aceita"
         );
         ui.energia = 10;
-        assert!((0..STAT_COUNT).filter(|&i| shared::stat_ativo(i)).all(|i| ui.pode_alocar(i)));
+        assert!((0..STAT_COUNT)
+            .filter(|&i| shared::stat_ativo(i))
+            .all(|i| ui.pode_alocar(i)));
         // O preco acompanha o que ja' esta' alocado, igual ao servidor.
         ui.atualizar_pontos(5, [4, 3, 2, 1, 0, 0], [0; STAT_COUNT]);
         assert_eq!(ui.custo_do_proximo_ponto(), 10 + 5 * 10);
@@ -798,7 +903,9 @@ mod tests {
             "10 nao paga 60"
         );
         ui.energia = 60;
-        assert!((0..STAT_COUNT).filter(|&i| shared::stat_ativo(i)).all(|i| ui.pode_alocar(i)));
+        assert!((0..STAT_COUNT)
+            .filter(|&i| shared::stat_ativo(i))
+            .all(|i| ui.pode_alocar(i)));
         // Sem ponto livre nao adianta ter Energia.
         ui.atualizar_pontos(0, [4, 3, 2, 1, 0, 0], [0; STAT_COUNT]);
         assert!((0..STAT_COUNT).all(|i| !ui.pode_alocar(i)));
@@ -830,8 +937,15 @@ pub async fn previa() {
     for _ in 0..3 {
         crate::render3d::camera_padrao();
         clear_background(Color::new(0.08, 0.12, 0.16, 1.0));
-        ui.desenha("Camteste", 16, (xp16 + xp17) / 2, 1, Some(&stats), 1_480,
-            Some(shared::item_id::PISTOLAS));
+        ui.desenha(
+            "Camteste",
+            16,
+            (xp16 + xp17) / 2,
+            1,
+            Some(&stats),
+            1_480,
+            Some(shared::item_id::PISTOLAS),
+        );
         unsafe { get_internal_gl().flush() };
         rt.texture
             .get_texture_data()
@@ -841,8 +955,17 @@ pub async fn previa() {
     ui.prof_selecionada = Some(2);
     crate::render3d::camera_padrao();
     clear_background(Color::new(0.08, 0.12, 0.16, 1.0));
-    ui.desenha("Camteste", 16, (xp16 + xp17) / 2, 1, Some(&stats), 1_480,
-        Some(shared::item_id::PISTOLAS));
+    ui.desenha(
+        "Camteste",
+        16,
+        (xp16 + xp17) / 2,
+        1,
+        Some(&stats),
+        1_480,
+        Some(shared::item_id::PISTOLAS),
+    );
     unsafe { get_internal_gl().flush() };
-    rt.texture.get_texture_data().export_png(&format!("{saida}/ficha-detalhe.png"));
+    rt.texture
+        .get_texture_data()
+        .export_png(&format!("{saida}/ficha-detalhe.png"));
 }

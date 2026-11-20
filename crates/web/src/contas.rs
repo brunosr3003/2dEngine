@@ -119,9 +119,16 @@ pub struct Contas {
 }
 
 /// `GET /api/auth/confirmar?token=…` — o link do e-mail de boas-vindas.
-pub async fn confirmar(State(st): State<Contas>, Query(q): Query<HashMap<String, String>>) -> Response {
+pub async fn confirmar(
+    State(st): State<Contas>,
+    Query(q): Query<HashMap<String, String>>,
+) -> Response {
     let Some(token) = q.get("token") else {
-        return (StatusCode::BAD_REQUEST, pagina(false, "Link inválido", "Faltou o código.")).into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            pagina(false, "Link inválido", "Faltou o código."),
+        )
+            .into_response();
     };
     match consome(&st.pool, token, TIPO_CONFIRMACAO).await {
         Ok(Some(id)) => {
@@ -299,11 +306,13 @@ pub async fn reset(State(st): State<Contas>, Json(req): Json<ResetReq>) -> Respo
     // "Esqueci minha senha" é o que a pessoa faz quando desconfia que alguém
     // entrou. Deixar de pé um "remember me" emitido antes manteria esse
     // alguém dentro justamente depois do conserto.
-    let r = sqlx::query("UPDATE accounts SET password_hash = $1, email_confirmado = TRUE WHERE id = $2")
-        .bind(&hash)
-        .bind(id)
-        .execute(&st.pool)
-        .await;
+    let r = sqlx::query(
+        "UPDATE accounts SET password_hash = $1, email_confirmado = TRUE WHERE id = $2",
+    )
+    .bind(&hash)
+    .bind(id)
+    .execute(&st.pool)
+    .await;
     if let Err(e) = r {
         tracing::error!("reset update: {e:?}");
         return StatusCode::INTERNAL_SERVER_ERROR.into_response();

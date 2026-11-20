@@ -30,7 +30,12 @@ impl GameWorld {
             Ok((id, grau, tier)) => {
                 session.inventory_dirty = true;
                 self.save_pending = true;
-                crate::telemetria::conta_de(&session.name, "aprimorar", format!("{grau}-{tier}"), 1);
+                crate::telemetria::conta_de(
+                    &session.name,
+                    "aprimorar",
+                    format!("{grau}-{tier}"),
+                    1,
+                );
                 (true, String::new(), id, grau, tier)
             }
             Err(m) => (false, m, 0, 0, 0),
@@ -98,7 +103,10 @@ impl GameWorld {
         };
         let _ = session.handle.to_client.send(msg);
         let garantias = session.dungeon.garantias.clone();
-        let _ = session.handle.to_client.send(ServerMessage::GarantiasDeCombinar { garantias });
+        let _ = session
+            .handle
+            .to_client
+            .send(ServerMessage::GarantiasDeCombinar { garantias });
     }
 }
 

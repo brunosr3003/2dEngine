@@ -241,9 +241,13 @@ pub async fn migrar(pool: &sqlx::PgPool) -> anyhow::Result<()> {
         .execute(&mut *tx).await?.rows_affected()>0;
     if sem_vigor {
         sqlx::query("DELETE FROM loot_drops WHERE item_id = $1")
-            .bind(STAMINA_POTION as i32).execute(&mut *tx).await?;
+            .bind(STAMINA_POTION as i32)
+            .execute(&mut *tx)
+            .await?;
         sqlx::query("DELETE FROM vendor_shop_items WHERE item_id = $1")
-            .bind(STAMINA_POTION as i32).execute(&mut *tx).await?;
+            .bind(STAMINA_POTION as i32)
+            .execute(&mut *tx)
+            .await?;
         sqlx::query("UPDATE economy_version SET version=version+1 WHERE id=1")
             .execute(&mut *tx)
             .await?;
@@ -534,9 +538,16 @@ mod testes {
     /// the whole island look broken.
     #[test]
     fn todo_bicho_paga_cobre_sempre() {
-        for tabela in [BASE, BASE_PRAIA, BASE_ILHAS, BASE_VARIANTES, BASE_VARIANTES_CELESTE, BASE_VARIANTES_KOGEN, BASE_VARIANTES_ABISSAL] {
-            let kinds: std::collections::BTreeSet<i32> =
-                tabela.iter().map(|(k, ..)| *k).collect();
+        for tabela in [
+            BASE,
+            BASE_PRAIA,
+            BASE_ILHAS,
+            BASE_VARIANTES,
+            BASE_VARIANTES_CELESTE,
+            BASE_VARIANTES_KOGEN,
+            BASE_VARIANTES_ABISSAL,
+        ] {
+            let kinds: std::collections::BTreeSet<i32> = tabela.iter().map(|(k, ..)| *k).collect();
             for k in kinds {
                 let cobre = tabela
                     .iter()
@@ -552,12 +563,17 @@ mod testes {
     #[test]
     fn nenhum_mob_da_chave() {
         let chaves = shared::item_id::todas_as_chaves();
-        for tabela in [BASE, BASE_PRAIA, BASE_ILHAS, BASE_VARIANTES, BASE_VARIANTES_CELESTE, BASE_VARIANTES_KOGEN, BASE_VARIANTES_ABISSAL] {
+        for tabela in [
+            BASE,
+            BASE_PRAIA,
+            BASE_ILHAS,
+            BASE_VARIANTES,
+            BASE_VARIANTES_CELESTE,
+            BASE_VARIANTES_KOGEN,
+            BASE_VARIANTES_ABISSAL,
+        ] {
             for (k, item, ..) in tabela {
-                assert!(
-                    !chaves.contains(item),
-                    "kind {k} larga a chave {item}"
-                );
+                assert!(!chaves.contains(item), "kind {k} larga a chave {item}");
             }
         }
     }

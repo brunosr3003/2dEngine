@@ -1,6 +1,9 @@
 # Sistema de Barcos
 
-**Status:** Proposta de redesign (18/11/2026)
+**Status:** barcos, Estaleiro, combate, economia naval, autonomia e alianças
+via grupo estão implementados na versão de teste; skins completas de casco e
+polimento audiovisual continuam pendentes (20/11/2026). Ver
+`BARCOS-IMPLEMENTACAO.md`.
 
 ## Visão Geral
 
@@ -282,25 +285,27 @@ pub struct BarcoBase {
 ## Fases de Implementação
 
 ### Fase 1: Dados e Backend
-- [ ] Definir structs de barco novo
-- [ ] Migração de barcos antigos
-- [ ] Sistema de pontos e cálculo de stats
-- [ ] Lógica de upgrade T1→T4
+- [x] Definir structs de barco novo
+- [x] Migração de barcos antigos
+- [x] Sistema de pontos e cálculo de stats
+- [x] Lógica de upgrade T1→T4
 
 ### Fase 2: UI
-- [ ] Painel de alocação de pontos
-- [ ] Galeria de barcos (9 tipos)
-- [ ] Sistema de respec
-- [ ] Tooltips e comparação
+- [x] Painel de alocação de pontos
+- [x] Galeria de barcos (9 tipos)
+- [x] Sistema de respec
+- [x] Tooltips e preview dos stats
 
 ### Fase 3: Visual
-- [ ] Modelos 3D dos 9 barcos base
+- [x] Visual procedural por tamanho/variante integrado ao preview e ao mar
 - [ ] Variações por tier (textura/detalhes)
-- [ ] Sistema de skins
+- [x] Velas e figuras de proa cosméticas
+- [ ] Skins completas de casco
 
 ### Fase 4: Balanço
-- [ ] Testar builds
-- [ ] Ajustar pontos/stats
+- [x] Testes automatizados de tipos, tiers, migração e limites
+- [x] Primeira passagem de pontos/stats em unidades reais
+- [ ] Playtest e ajuste fino das nove builds
 - [ ] Feedback de players
 
 ---
@@ -317,4 +322,4 @@ pub struct BarcoBase {
 
 **Documento criado:** 18/11/2026  
 **Autor:** Bruno + Claude  
-**Status:** Proposta em revisão
+**Status:** Implementação funcional em teste; arte por tier e playtest ainda pendentes

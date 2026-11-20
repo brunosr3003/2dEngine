@@ -18,13 +18,22 @@ pub async fn abrir(vox: &VoxCache) {
     ] {
         // MMO_PREVIA_ANEL=<n>: the player wears ring skin n (index + 1 into
         // `SKINS_DE_ARMA`), to see a ring skin's glow and circle in the world.
-        let anel = std::env::var("MMO_PREVIA_ANEL").ok().and_then(|v| v.parse::<u8>().ok()).unwrap_or(0);
+        let anel = std::env::var("MMO_PREVIA_ANEL")
+            .ok()
+            .and_then(|v| v.parse::<u8>().ok())
+            .unwrap_or(0);
         let skins = if id == 1 {
-            shared::aparencia::Aparencia { armas: [0, 0, 0, anel], ..Default::default() }.empacota_skins()
+            shared::aparencia::Aparencia {
+                armas: [0, 0, 0, anel],
+                ..Default::default()
+            }
+            .empacota_skins()
         } else {
             0
         };
-        metas.push(shared::EntityMeta { skins, cla: String::new(),
+        metas.push(shared::EntityMeta {
+            skins,
+            cla: String::new(),
             pk: Default::default(),
             auras: 0,
             id: shared::EntityId(id),
@@ -36,7 +45,8 @@ pub async fn abrir(vox: &VoxCache) {
             nivel: 10,
             desafio: None,
             aparencia: 0,
-            poder: 0, renascimentos: 0,
+            poder: 0,
+            renascimentos: 0,
         });
         estados.push(shared::EntityState::quantize(
             shared::EntityId(id),
@@ -56,7 +66,10 @@ pub async fn abrir(vox: &VoxCache) {
     let mut escolha = 0usize;
     let mut pausa = false;
     let automatico = std::env::var("MMO_PREVIA_EXPORTAR").is_ok();
-    let tier: u8 = std::env::var("MMO_PREVIA_TIER").ok().and_then(|v| v.parse().ok()).unwrap_or(1);
+    let tier: u8 = std::env::var("MMO_PREVIA_TIER")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(1);
     let previa_hud = std::env::var("MMO_PREVIA_HUD").is_ok();
     let mut habilidades = crate::habilidades::Habilidades::default();
     habilidades.catalogo = catalogo.clone();

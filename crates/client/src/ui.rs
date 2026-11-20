@@ -131,13 +131,19 @@ fn agora_s() -> f64 {
 }
 
 fn mesmo_ret(a: Rect, b: Rect) -> bool {
-    (a.x - b.x).abs() < 1.0 && (a.y - b.y).abs() < 1.0 && (a.w - b.w).abs() < 1.0 && (a.h - b.h).abs() < 1.0
+    (a.x - b.x).abs() < 1.0
+        && (a.y - b.y).abs() < 1.0
+        && (a.w - b.w).abs() < 1.0
+        && (a.h - b.h).abs() < 1.0
 }
 
 /// `o` holds `r` whole: a list area around its rows, a panel around its
 /// buttons. A container never competes with what is inside it.
 fn contem_ret(o: Rect, r: Rect) -> bool {
-    o.x <= r.x + 0.5 && o.y <= r.y + 0.5 && o.x + o.w >= r.x + r.w - 0.5 && o.y + o.h >= r.y + r.h - 0.5
+    o.x <= r.x + 0.5
+        && o.y <= r.y + 0.5
+        && o.x + o.w >= r.x + r.w - 0.5
+        && o.y + o.h >= r.y + r.h - 0.5
 }
 
 fn distancia(r: Rect, p: Vec2) -> f32 {
@@ -236,7 +242,9 @@ pub fn botao(r: Rect, rotulo: &str, ativo: bool) -> bool {
     // O "x" de fechar e' icone, nao rotulo: botao discreto.
     estilo::botao(r, rotulo, e, false);
     let clicou = sobre && crate::foco::clique();
-    if clicou { crate::sons::tocar(crate::sons::Som::Clique); }
+    if clicou {
+        crate::sons::tocar(crate::sons::Som::Clique);
+    }
     clicou
 }
 
@@ -456,7 +464,10 @@ mod testes_do_alvo {
         }
         // Taps across the row and above/below it, inside the grown margins.
         for k in 0..60 {
-            let p = vec2(-20.0 + k as f32 * 3.5, if k % 2 == 0 { -25.0 } else { 50.0 });
+            let p = vec2(
+                -20.0 + k as f32 * 3.5,
+                if k % 2 == 0 { -25.0 } else { 50.0 },
+            );
             let ganhou: Vec<usize> = (0..5)
                 .filter(|&i| toca_com_alvo(slots[i], p, alvo, t))
                 .collect();
@@ -464,11 +475,15 @@ mod testes_do_alvo {
         }
         // On the drawing of slot 2: slot 2, and only it.
         let c = slots[2].center();
-        let ganhou: Vec<usize> = (0..5).filter(|&i| toca_com_alvo(slots[i], c, alvo, t)).collect();
+        let ganhou: Vec<usize> = (0..5)
+            .filter(|&i| toca_com_alvo(slots[i], c, alvo, t))
+            .collect();
         assert_eq!(ganhou, vec![2]);
         // Just above slot 3 (in the margin): slot 3 — the nearest.
         let p = vec2(slots[3].center().x, -20.0);
-        let ganhou: Vec<usize> = (0..5).filter(|&i| toca_com_alvo(slots[i], p, alvo, t)).collect();
+        let ganhou: Vec<usize> = (0..5)
+            .filter(|&i| toca_com_alvo(slots[i], p, alvo, t))
+            .collect();
         assert_eq!(ganhou, vec![3]);
     }
 

@@ -60,24 +60,29 @@ impl Novidades {
         // Read the finger itself: a quick iOS tap can start and end between
         // frames, and must not depend on the simulated mouse position.
         let toque_continuar = touches().iter().any(|t| {
-            matches!(t.phase, TouchPhase::Started | TouchPhase::Ended)
-                && continuar.toca(t.position)
+            matches!(t.phase, TouchPhase::Started | TouchPhase::Ended) && continuar.toca(t.position)
         });
-        if ui::botao(
-            continuar,
-            "Continue",
-            true,
-        ) || toque_continuar || is_key_pressed(KeyCode::Escape)
+        if ui::botao(continuar, "Continue", true)
+            || toque_continuar
+            || is_key_pressed(KeyCode::Escape)
         {
             self.aberta = false;
             self.arrasto = None;
             if let Some(p) = arquivo_lido() {
-                std::thread::spawn(move || { let _ = std::fs::write(p, NOTAS); });
+                std::thread::spawn(move || {
+                    let _ = std::fs::write(p, NOTAS);
+                });
             }
             return true;
         }
 
-        estilo::texto(r.x + 24.0, r.y + 34.0, "WHAT'S NEW IN TEMPEST", 20, ui::OURO);
+        estilo::texto(
+            r.x + 24.0,
+            r.y + 34.0,
+            "WHAT'S NEW IN TEMPEST",
+            20,
+            ui::OURO,
+        );
         let mut notas = NOTAS.lines();
         estilo::texto(
             r.x + 24.0,

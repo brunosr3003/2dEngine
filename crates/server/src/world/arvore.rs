@@ -96,7 +96,8 @@ impl GameWorld {
             // Retired (15/11/2026, owner: Rebirth Essence is only for item
             // ascension). The reset is gold only (`Redistribuir`).
             PedidoArvore::RedistribuirComEssencia => {
-                aviso = Some("Path resets are paid in gold: use Reset paths in the path tree.".into());
+                aviso =
+                    Some("Path resets are paid in gold: use Reset paths in the path tree.".into());
             }
             PedidoArvore::Redistribuir => {
                 let gastos = s.arvore.gastos();
@@ -106,19 +107,33 @@ impl GameWorld {
                 } else if s.downed {
                     aviso = Some("You cannot reset the paths while downed.".into());
                 } else if s.gold < custo {
-                    aviso = Some(format!("Not enough gold: resetting the paths costs {custo} gold."));
+                    aviso = Some(format!(
+                        "Not enough gold: resetting the paths costs {custo} gold."
+                    ));
                 } else {
                     s.gold -= custo;
                     s.arvore = av::Arvore::default();
                     mudou = true;
-                    aviso = Some(format!("Paths reset: {gastos} points back for {custo} gold."));
-                    tracing::info!("[arvore] {} redistribuiu {gastos} pontos por {custo} de ouro", s.name);
+                    aviso = Some(format!(
+                        "Paths reset: {gastos} points back for {custo} gold."
+                    ));
+                    tracing::info!(
+                        "[arvore] {} redistribuiu {gastos} pontos por {custo} de ouro",
+                        s.name
+                    );
                     crate::telemetria::conta_de(&s.name, "arvore_redistribuir", gastos, 1);
                 }
             }
         }
         if mudou {
-            s.stats = effective_stats_rv(&s.equipment, &s.allocated_points, &s.proficiencies, s.xp, s.renascimentos, &s.arvore);
+            s.stats = effective_stats_rv(
+                &s.equipment,
+                &s.allocated_points,
+                &s.proficiencies,
+                s.xp,
+                s.renascimentos,
+                &s.arvore,
+            );
             s.mp_current = s.mp_current.min(s.stats.mp_max as f32);
             s.poise_current = s.poise_current.min(s.stats.poise_max as f32);
             s.stats_dirty = true;
@@ -151,12 +166,27 @@ mod testes {
         let sid = SessionId(([127, 0, 0, 1], 47_101).into());
         let (tx, rx) = mpsc::unbounded_channel();
         std::mem::forget(rx);
-        w.on_connect(SessionHandle { id: sid, to_client: tx });
+        w.on_connect(SessionHandle {
+            id: sid,
+            to_client: tx,
+        });
         let eid = EntityId(4_710);
-        let e = w.ecs.spawn((NetId(eid), Position(Vec2::new(10.0, 10.0)),
-            Velocity(Vec2::ZERO), EntityKind::Player, Health { current: 100, max: 100 },
-            PlayerTag { name: "Arvoredo".into(), player_id: PlayerId(48),
-                attack_anim_pending: None, combo_step_pending: None }));
+        let e = w.ecs.spawn((
+            NetId(eid),
+            Position(Vec2::new(10.0, 10.0)),
+            Velocity(Vec2::ZERO),
+            EntityKind::Player,
+            Health {
+                current: 100,
+                max: 100,
+            },
+            PlayerTag {
+                name: "Arvoredo".into(),
+                player_id: PlayerId(48),
+                attack_anim_pending: None,
+                combo_step_pending: None,
+            },
+        ));
         let s = w.sessions.get_mut(&sid).unwrap();
         s.logged_in = true;
         s.entity = Some(e);
@@ -173,11 +203,23 @@ mod testes {
         s.xp = shared::progressao::xp_do_nivel_exibido(nivel, mult);
         s.last_level = shared::level_of_xp_with_mult(s.xp, mult);
         s.equipment.weapon = Some(shared::item_id::ESPADA_E_ESCUDO);
-        s.stats = effective_stats_rv(&s.equipment, &s.allocated_points, &s.proficiencies, s.xp, s.renascimentos, &s.arvore);
+        s.stats = effective_stats_rv(
+            &s.equipment,
+            &s.allocated_points,
+            &s.proficiencies,
+            s.xp,
+            s.renascimentos,
+            &s.arvore,
+        );
     }
 
     fn aprender(w: &mut GameWorld, sid: SessionId, no: u16) {
-        w.on_message(sid, ClientMessage::Arvore { pedido: PedidoArvore::Aprender { no } });
+        w.on_message(
+            sid,
+            ClientMessage::Arvore {
+                pedido: PedidoArvore::Aprender { no },
+            },
+        );
     }
 
     /// The central line of path `c`, `n` nodes deep (`Arvore::com_nos`).
@@ -207,18 +249,31 @@ mod testes {
             aprender(&mut w, sid, id);
         }
         let s = &w.sessions[&sid];
-        assert_eq!(s.arvore.ids(), espinha(av::Caminho::Guardiao, 8), "the 9th (3 points) did not fit");
+        assert_eq!(
+            s.arvore.ids(),
+            espinha(av::Caminho::Guardiao, 8),
+            "the 9th (3 points) did not fit"
+        );
         assert_eq!(s.arvore.gastos(), 14);
         assert!(s.arvore.possui_ativa(6) && s.arvore.possui_ativa(7));
         assert!(s.stats.defense >= antes.defense);
         assert!(s.stats.damage_reduction_pct > antes.damage_reduction_pct);
-        let sem = effective_stats_r(&s.equipment, &s.allocated_points, &s.proficiencies, s.xp, s.renascimentos);
+        let sem = effective_stats_r(
+            &s.equipment,
+            &s.allocated_points,
+            &s.proficiencies,
+            s.xp,
+            s.renascimentos,
+        );
         assert_eq!(antes.hp_max, sem.hp_max);
         // One point left: a ring-1 node of another arm still fits.
         aprender(&mut w, sid, espinha(av::Caminho::Assassino, 1)[0]);
         assert_eq!(w.sessions[&sid].arvore.livres(15), 0);
         let e = w.sessions[&sid].entity.unwrap();
-        assert_eq!(w.ecs.get::<&Health>(e).unwrap().max, w.sessions[&sid].stats.hp_max);
+        assert_eq!(
+            w.ecs.get::<&Health>(e).unwrap().max,
+            w.sessions[&sid].stats.hp_max
+        );
     }
 
     #[test]
@@ -227,13 +282,26 @@ mod testes {
         com(&mut w, sid, 1, 100);
         let linha = espinha(av::Caminho::Assassino, 3);
         aprender(&mut w, sid, linha[2]);
-        assert_eq!(w.sessions[&sid].arvore, av::Arvore::default(), "not linked to anything owned");
+        assert_eq!(
+            w.sessions[&sid].arvore,
+            av::Arvore::default(),
+            "not linked to anything owned"
+        );
         aprender(&mut w, sid, linha[0]);
         aprender(&mut w, sid, linha[0]);
-        assert_eq!(w.sessions[&sid].arvore.ids(), vec![linha[0]], "the double tap bought once");
+        assert_eq!(
+            w.sessions[&sid].arvore.ids(),
+            vec![linha[0]],
+            "the double tap bought once"
+        );
         assert_eq!(w.sessions[&sid].arvore.gastos(), 1);
         // The retired linear request changes nothing.
-        w.on_message(sid, ClientMessage::Arvore { pedido: PedidoArvore::Gastar { caminho: 0, no: 1 } });
+        w.on_message(
+            sid,
+            ClientMessage::Arvore {
+                pedido: PedidoArvore::Gastar { caminho: 0, no: 1 },
+            },
+        );
         assert_eq!(w.sessions[&sid].arvore.ids(), vec![linha[0]]);
     }
 
@@ -241,7 +309,10 @@ mod testes {
     fn corsario_soma_no_bonus_de_economia() {
         let (mut w, sid) = mundo_com_um();
         com(&mut w, sid, 3, 1);
-        assert_eq!(w.sessions[&sid].bonus_economia(), shared::acessorios::Bonus::default());
+        assert_eq!(
+            w.sessions[&sid].bonus_economia(),
+            shared::acessorios::Bonus::default()
+        );
         for id in espinha(av::Caminho::Corsario, 6) {
             aprender(&mut w, sid, id);
         }
@@ -262,8 +333,15 @@ mod testes {
         }
         let s = &w.sessions[&sid];
         // Lethal Fury's node +5% and Death's Edge +30%.
-        assert!((s.extra_de_dano_crit(agora) - 0.35).abs() < 1e-4, "{}", s.extra_de_dano_crit(agora));
-        assert!(super::super::golpe_critico_com(100, s.extra_de_dano_crit(agora)) > super::super::golpe_critico(100));
+        assert!(
+            (s.extra_de_dano_crit(agora) - 0.35).abs() < 1e-4,
+            "{}",
+            s.extra_de_dano_crit(agora)
+        );
+        assert!(
+            super::super::golpe_critico_com(100, s.extra_de_dano_crit(agora))
+                > super::super::golpe_critico(100)
+        );
     }
 
     #[test]
@@ -276,16 +354,30 @@ mod testes {
         let crit = w.sessions[&sid].stats.crit_chance;
         assert_eq!(w.sessions[&sid].arvore.gastos(), 3);
         w.sessions.get_mut(&sid).unwrap().gold = 2_999;
-        w.on_message(sid, ClientMessage::Arvore { pedido: PedidoArvore::Redistribuir });
+        w.on_message(
+            sid,
+            ClientMessage::Arvore {
+                pedido: PedidoArvore::Redistribuir,
+            },
+        );
         assert_eq!(w.sessions[&sid].arvore.gastos(), 3);
         assert_eq!(w.sessions[&sid].gold, 2_999);
         w.sessions.get_mut(&sid).unwrap().gold = 5_000;
-        w.on_message(sid, ClientMessage::Arvore { pedido: PedidoArvore::Redistribuir });
+        w.on_message(
+            sid,
+            ClientMessage::Arvore {
+                pedido: PedidoArvore::Redistribuir,
+            },
+        );
         let s = &w.sessions[&sid];
         assert_eq!(s.arvore, av::Arvore::default());
         assert_eq!(s.gold, 2_000, "3 points x 1,000 gold");
         assert!(s.stats.crit_chance < crit);
-        assert_eq!(s.arvore.livres(s.pontos_da_arvore()), 10, "every point free again");
+        assert_eq!(
+            s.arvore.livres(s.pontos_da_arvore()),
+            10,
+            "every point free again"
+        );
     }
 
     /// The Essence reset is retired: the request is refused and nothing is
@@ -298,7 +390,12 @@ mod testes {
             aprender(&mut w, sid, id);
         }
         let antes = w.sessions[&sid].arvore;
-        w.on_message(sid, ClientMessage::Arvore { pedido: PedidoArvore::RedistribuirComEssencia });
+        w.on_message(
+            sid,
+            ClientMessage::Arvore {
+                pedido: PedidoArvore::RedistribuirComEssencia,
+            },
+        );
         assert_eq!(w.sessions[&sid].arvore, antes);
     }
 
@@ -324,7 +421,16 @@ mod testes {
         assert_eq!(s.renascimentos, 2);
         assert_eq!(s.arvore.ids(), ids);
         assert_eq!(s.arvore.livres(s.pontos_da_arvore()), 0);
-        let sem = effective_stats_r(&s.equipment, &s.allocated_points, &s.proficiencies, s.xp, s.renascimentos);
-        assert!(s.stats.attack_damage > sem.attack_damage, "the Mage nodes still count after the rebirth");
+        let sem = effective_stats_r(
+            &s.equipment,
+            &s.allocated_points,
+            &s.proficiencies,
+            s.xp,
+            s.renascimentos,
+        );
+        assert!(
+            s.stats.attack_damage > sem.attack_damage,
+            "the Mage nodes still count after the rebirth"
+        );
     }
 }

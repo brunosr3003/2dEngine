@@ -15,8 +15,8 @@
 //!   stops at its end (`world.rs`, the input loop).
 //! - CREW: a party member close by boards ("Board <name>'s ship"); their
 //!   own ship is stowed. Docking lands everyone aboard at that port; sinking
-//!   sends everyone to the dock; a captain who leaves drops the crew at the
-//!   nearest dock.
+//!   sends everyone to the dock. An absent captain gets two minutes to
+//!   reconnect before the autonomous hull returns the crew safely.
 
 use super::*;
 use shared::conves as cv;
@@ -31,6 +31,10 @@ pub struct ABordo {
     pub capitao: SessionId,
     pub local: Vec2,
     pub leme: bool,
+    /// HOSTILE BOARDING (naval PvP): I jumped onto a defeated enemy hull. I
+    /// stand on that ship, but I am not its captain's crew: my own hull (if
+    /// any) is still mine and the ship's owner still commands the wreck.
+    pub hostil: bool,
 }
 
 /// The ship entity's own data. Its hull is the entity's `Health`.
@@ -41,6 +45,23 @@ pub struct NavioEnt {
     pub classe: usize,
     /// The bow's unit direction (the captain's `Leme`).
     pub rumo: Vec2,
+    /// Zero-hull state: the wreck remains boardable until this simulation
+    /// time. Zero means the ship is sailing normally.
+    pub derrotado_ate: f32,
+    /// Natural drift while defeated; helm input never changes it.
+    pub deriva: Vec2,
+    /// The generated PvP reward can be claimed only once.
+    pub saqueado: bool,
+    /// When the captain left this hull (0 = under direct command).
+    pub autonomo_desde: f32,
+    /// Next defensive broadside while under automatic command.
+    pub proximo_tiro_autonomo: f32,
+}
+
+impl NavioEnt {
+    pub fn derrotado(&self, agora: f32) -> bool {
+        self.derrotado_ate > 0.0 && agora < self.derrotado_ate
+    }
 }
 
 /// What a sea mob needs of the ship a player stands on.
@@ -57,40 +78,64 @@ pub struct AlvoNoMar {
 /// shark at the side reaches the ship whoever it picked aboard.
 pub fn casco_mais_perto(a: &AlvoNoMar, p: Vec2) -> Vec2 {
     let l = cv::para_local(a.centro, a.rumo, p);
-    let q = Vec2::new(l.x.clamp(-cv::meia_boca(a.classe), cv::meia_boca(a.classe)), l.y.clamp(-cv::meio_comp(a.classe), cv::meio_comp(a.classe)));
+    let q = Vec2::new(
+        l.x.clamp(-cv::meia_boca(a.classe), cv::meia_boca(a.classe)),
+        l.y.clamp(-cv::meio_comp(a.classe), cv::meio_comp(a.classe)),
+    );
     cv::do_mundo(a.centro, a.rumo, q)
 }
 
 impl GameWorld {
     /// The ship this session stands on, and its captain.
     pub(crate) fn navio_de(&self, sid: SessionId) -> Option<(hecs::Entity, SessionId)> {
-        self.sessions.get(&sid)?.conves.map(|c| (c.navio, c.capitao))
+        self.sessions
+            .get(&sid)?
+            .conves
+            .map(|c| (c.navio, c.capitao))
     }
 
-    /// Who commands the hull this session is on (itself when not aboard).
+    /// Who commands the hull this session is on (itself when not aboard). A
+    /// hostile boarder keeps their own command: the wreck under their feet is
+    /// only the battlefield.
     pub(crate) fn capitao_de(&self, sid: SessionId) -> SessionId {
-        self.navio_de(sid).map_or(sid, |(_, c)| c)
+        self.sessions
+            .get(&sid)
+            .and_then(|s| s.conves)
+            .filter(|c| !c.hostil)
+            .map_or(sid, |c| c.capitao)
     }
 
     /// The HULL's position: the ship this session stands on, else its body.
     pub(crate) fn pos_do_casco(&self, sid: SessionId) -> Option<Vec2> {
         match self.navio_de(sid) {
-            Some((e, _)) => self.ecs.get::<&Position>(e).ok().map(|p| p.0).or_else(|| self.pos_do_jogador(sid)),
+            Some((e, _)) => self
+                .ecs
+                .get::<&Position>(e)
+                .ok()
+                .map(|p| p.0)
+                .or_else(|| self.pos_do_jogador(sid)),
             None => self.pos_do_jogador(sid),
         }
     }
 
     /// The hull's velocity (its entity's), or the body's.
     pub(crate) fn vel_do_casco(&self, sid: SessionId) -> Vec2 {
-        let e = self.navio_de(sid).map(|(e, _)| e).or_else(|| self.sessions.get(&sid).and_then(|s| s.entity));
-        e.and_then(|e| self.ecs.get::<&Velocity>(e).ok().map(|v| v.0)).unwrap_or(Vec2::ZERO)
+        let e = self
+            .navio_de(sid)
+            .map(|(e, _)| e)
+            .or_else(|| self.sessions.get(&sid).and_then(|s| s.entity));
+        e.and_then(|e| self.ecs.get::<&Velocity>(e).ok().map(|v| v.0))
+            .unwrap_or(Vec2::ZERO)
     }
 
-    /// The crew of `capitao`'s ship (not counting the captain).
+    /// The crew of `capitao`'s ship (not counting the captain). Hostile
+    /// boarders stand on the same planks but are not crew.
     pub(crate) fn tripulacao_de(&self, capitao: SessionId) -> Vec<SessionId> {
         self.sessions
             .iter()
-            .filter(|(id, s)| **id != capitao && s.conves.is_some_and(|c| c.capitao == capitao))
+            .filter(|(id, s)| {
+                **id != capitao && s.conves.is_some_and(|c| !c.hostil && c.capitao == capitao)
+            })
             .map(|(id, _)| *id)
             .collect()
     }
@@ -103,10 +148,25 @@ impl GameWorld {
         }
         for s in self.sessions.values() {
             let Some(c) = s.conves else { continue };
-            let Ok(n) = self.ecs.get::<&NavioEnt>(c.navio) else { continue };
-            let Some(centro) = self.ecs.get::<&Position>(c.navio).ok().map(|p| p.0) else { continue };
-            let vel = self.ecs.get::<&Velocity>(c.navio).map_or(Vec2::ZERO, |v| v.0);
-            m.insert(s.entity_id, AlvoNoMar { centro, rumo: n.rumo, vel, classe: n.classe });
+            let Ok(n) = self.ecs.get::<&NavioEnt>(c.navio) else {
+                continue;
+            };
+            let Some(centro) = self.ecs.get::<&Position>(c.navio).ok().map(|p| p.0) else {
+                continue;
+            };
+            let vel = self
+                .ecs
+                .get::<&Velocity>(c.navio)
+                .map_or(Vec2::ZERO, |v| v.0);
+            m.insert(
+                s.entity_id,
+                AlvoNoMar {
+                    centro,
+                    rumo: n.rumo,
+                    vel,
+                    classe: n.classe,
+                },
+            );
         }
         m
     }
@@ -125,7 +185,7 @@ impl GameWorld {
             return false;
         };
         let p = self.agua_no_mar(corpo);
-        let classe = nv::classe(item);
+        let classe = nv::classe_do_navio(item, &d);
         // Bow out to sea: away from the nearest island.
         let rumo = match self.sessions.get(&sid).and_then(|s| s.leme_do_mar.rumo()) {
             Some(r) => r,
@@ -142,17 +202,39 @@ impl GameWorld {
             Position(p),
             Velocity(Vec2::ZERO),
             EntityKind::Navio(item),
-            Health { current: d.casco as i32, max: total.max(1) },
-            NavioEnt { dono: sid, item, classe, rumo },
+            Health {
+                current: d.casco as i32,
+                max: total.max(1),
+            },
+            NavioEnt {
+                dono: sid,
+                item,
+                classe,
+                rumo,
+                derrotado_ate: 0.0,
+                deriva: Vec2::ZERO,
+                saqueado: false,
+                autonomo_desde: 0.0,
+                proximo_tiro_autonomo: 0.0,
+            },
         ));
-        let lugar = local.map(|l| cv::ponto_livre(classe, l)).unwrap_or_else(|| cv::leme(classe));
+        let lugar = local
+            .map(|l| cv::ponto_livre(classe, l))
+            .unwrap_or_else(|| cv::leme(classe));
         if let Some(s) = self.sessions.get_mut(&sid) {
             if !s.leme_do_mar.pronto {
                 s.leme_do_mar.proa = rumo.y.atan2(rumo.x);
                 s.leme_do_mar.pronto = true;
             }
             s.leme_do_mar.vel = 0.0;
-            s.conves = Some(ABordo { navio: e, navio_eid: eid, capitao: sid, local: lugar, leme: local.is_none() });
+            s.conves = Some(ABordo {
+                navio: e,
+                navio_eid: eid,
+                capitao: sid,
+                local: lugar,
+                leme: local.is_none(),
+                hostil: false,
+            });
         }
         self.por_no_conves(sid);
         true
@@ -160,10 +242,19 @@ impl GameWorld {
 
     /// The body's world position from its deck place, now.
     pub(crate) fn por_no_conves(&mut self, sid: SessionId) {
-        let Some(s) = self.sessions.get(&sid) else { return };
-        let (Some(c), Some(corpo)) = (s.conves, s.entity) else { return };
-        let Some(p) = self.ecs.get::<&Position>(c.navio).ok().map(|p| p.0) else { return };
-        let rumo = self.ecs.get::<&NavioEnt>(c.navio).map_or(Vec2::Y, |n| n.rumo);
+        let Some(s) = self.sessions.get(&sid) else {
+            return;
+        };
+        let (Some(c), Some(corpo)) = (s.conves, s.entity) else {
+            return;
+        };
+        let Some(p) = self.ecs.get::<&Position>(c.navio).ok().map(|p| p.0) else {
+            return;
+        };
+        let rumo = self
+            .ecs
+            .get::<&NavioEnt>(c.navio)
+            .map_or(Vec2::Y, |n| n.rumo);
         if let Ok(mut q) = self.ecs.get::<&mut Position>(corpo) {
             q.0 = cv::do_mundo(p, rumo, c.local);
         }
@@ -177,8 +268,12 @@ impl GameWorld {
                 if let Ok(mut q) = self.ecs.get::<&mut Position>(e) {
                     q.0 = p;
                 }
-                let a_bordo: Vec<SessionId> =
-                    self.sessions.iter().filter(|(_, s)| s.conves.is_some_and(|c| c.navio == e)).map(|(id, _)| *id).collect();
+                let a_bordo: Vec<SessionId> = self
+                    .sessions
+                    .iter()
+                    .filter(|(_, s)| s.conves.is_some_and(|c| c.navio == e))
+                    .map(|(id, _)| *id)
+                    .collect();
                 for s in a_bordo {
                     self.por_no_conves(s);
                 }
@@ -217,14 +312,65 @@ impl GameWorld {
             }
             return;
         }
-        // 1. Ships without their captain aboard.
-        let navios: Vec<(hecs::Entity, SessionId)> =
-            self.ecs.query::<&NavioEnt>().iter().map(|(e, n)| (e, n.dono)).collect();
+        // 1. A captain away leaves the hull under automatic command for two
+        // minutes. Leaving the sea process is different: the entity goes at once.
+        let navios: Vec<(hecs::Entity, SessionId)> = self
+            .ecs
+            .query::<&NavioEnt>()
+            .iter()
+            .map(|(e, n)| (e, n.dono))
+            .collect();
         for (e, dono) in navios {
-            let fica = self.sessions.get(&dono).is_some_and(|s| {
-                s.logged_in && s.entity.is_some() && !self.saindo_da_zona(s) && s.conves.is_some_and(|c| c.navio == e && c.capitao == dono)
+            let (fica, saindo, existe) =
+                self.sessions.get(&dono).map_or((false, false, false), |s| {
+                    (
+                        s.logged_in
+                            && s.entity.is_some()
+                            && !self.saindo_da_zona(s)
+                            && s.conves.is_some_and(|c| c.navio == e && c.capitao == dono),
+                        self.saindo_da_zona(s),
+                        true,
+                    )
+                });
+            if fica {
+                let retomou = self
+                    .ecs
+                    .get::<&NavioEnt>(e)
+                    .is_ok_and(|n| n.autonomo_desde > 0.0);
+                if retomou {
+                    if let Ok(mut n) = self.ecs.get::<&mut NavioEnt>(e) {
+                        n.autonomo_desde = 0.0;
+                        n.proximo_tiro_autonomo = 0.0;
+                    }
+                    if let Some(s) = self.sessions.get_mut(&dono) {
+                        s.rota.limpa();
+                    }
+                }
+                continue;
+            }
+            if !existe || saindo {
+                self.despachar_navio(e);
+                continue;
+            }
+            let agora = self.sim_time_s;
+            let comecou = self
+                .ecs
+                .get::<&NavioEnt>(e)
+                .is_ok_and(|n| n.autonomo_desde <= 0.0);
+            if comecou {
+                if let Ok(mut n) = self.ecs.get::<&mut NavioEnt>(e) {
+                    n.autonomo_desde = agora.max(0.001);
+                    n.proximo_tiro_autonomo = agora;
+                }
+                if let Ok(mut v) = self.ecs.get::<&mut Velocity>(e) {
+                    v.0 = Vec2::ZERO;
+                }
+                self.prepara_retorno_autonomo(e, dono);
+            }
+            let venceu = self.ecs.get::<&NavioEnt>(e).is_ok_and(|n| {
+                n.autonomo_desde > 0.0 && agora - n.autonomo_desde >= nv::AUTONOMIA_NAVAL_S
             });
-            if !fica {
+            if venceu {
                 self.despachar_navio(e);
             }
         }
@@ -239,16 +385,27 @@ impl GameWorld {
             if let Some(s) = self.sessions.get_mut(&sid) {
                 s.conves = None;
             }
-            let saindo = self.sessions.get(&sid).is_some_and(|s| self.saindo_da_zona(s));
+            let saindo = self
+                .sessions
+                .get(&sid)
+                .is_some_and(|s| self.saindo_da_zona(s));
             if !saindo {
-                self.levar_ao_cais(sid, "Your captain left the sea. You are put ashore at the nearest dock.");
+                self.levar_ao_cais(
+                    sid,
+                    "Your captain left the sea. You are put ashore at the nearest dock.",
+                );
             }
         }
         // 3. At sea and not aboard: sail out (login, arrival), else ashore.
         let soltos: Vec<SessionId> = self
             .sessions
             .iter()
-            .filter(|(_, s)| s.logged_in && s.entity.is_some() && s.conves.is_none() && !self.zona_de_saida.contains_key(&s.name))
+            .filter(|(_, s)| {
+                s.logged_in
+                    && s.entity.is_some()
+                    && s.conves.is_none()
+                    && !self.zona_de_saida.contains_key(&s.name)
+            })
             .map(|(id, _)| *id)
             .collect();
         let tenta_o_cais = self.tick % 30 == 0;
@@ -256,31 +413,43 @@ impl GameWorld {
             if !self.lancar_navio(sid, None) && tenta_o_cais {
                 // At sea without a ship that floats (unequipped out there, a
                 // hull that sank): the sea washes them ashore.
-                self.levar_ao_cais(sid, "Without a ship that floats, the sea washes you ashore at the nearest dock.");
+                self.levar_ao_cais(
+                    sid,
+                    "Without a ship that floats, the sea washes you ashore at the nearest dock.",
+                );
             }
         }
         // 4. The hull on the entity (what the others see on the wire), and
         // its class (a new hull built at sea).
-        let cascos: Vec<(hecs::Entity, i32, i32, u16)> = self
+        let cascos: Vec<(hecs::Entity, i32, i32, u16, usize)> = self
             .sessions
             .iter()
             .filter_map(|(id, s)| {
                 let c = s.conves.filter(|c| c.capitao == *id)?;
                 let item = s.equipment.navio.filter(|i| shared::item_id::e_navio(*i))?;
                 let d = nv::dados(s.equipment.navio_inst.as_ref(), item);
-                Some((c.navio, d.casco as i32, nv::casco_total(item, &d) as i32, item))
+                Some((
+                    c.navio,
+                    d.casco as i32,
+                    nv::casco_total(item, &d) as i32,
+                    item,
+                    nv::classe_do_navio(item, &d),
+                ))
             })
             .collect();
-        for (e, casco, total, item) in cascos {
+        for (e, casco, total, item, classe) in cascos {
             if let Ok(mut h) = self.ecs.get::<&mut Health>(e) {
                 h.current = casco;
                 h.max = total.max(1);
             }
-            let mudou = self.ecs.get::<&NavioEnt>(e).is_ok_and(|n| n.item != item);
+            let mudou = self
+                .ecs
+                .get::<&NavioEnt>(e)
+                .is_ok_and(|n| n.item != item || n.classe != classe);
             if mudou {
                 if let Ok(mut n) = self.ecs.get::<&mut NavioEnt>(e) {
                     n.item = item;
-                    n.classe = nv::classe(item);
+                    n.classe = classe;
                 }
                 if let Ok(mut k) = self.ecs.get::<&mut EntityKind>(e) {
                     *k = EntityKind::Navio(item);
@@ -289,22 +458,194 @@ impl GameWorld {
         }
     }
 
+    fn prepara_retorno_autonomo(&mut self, e: hecs::Entity, dono: SessionId) {
+        let Some(p) = self.ecs.get::<&Position>(e).ok().map(|p| p.0) else {
+            return;
+        };
+        let barrado = self.sessions.get(&dono).is_some_and(|s| self.pk_barrado(s));
+        let mut ilhas = shared::mar::ilhas().iter().collect::<Vec<_>>();
+        ilhas.sort_by(|a, b| {
+            a.fundeadouro()
+                .distance(p)
+                .total_cmp(&b.fundeadouro().distance(p))
+        });
+        let rota = ilhas.into_iter().find_map(|i| {
+            let destino = i.fundeadouro();
+            super::navio::caminho_no_mar_com(p, destino, barrado).map(|r| (r, destino))
+        });
+        if let Some(s) = self.sessions.get_mut(&dono) {
+            if let Some((r, destino)) = rota {
+                s.rota =
+                    shared::terreno::SeguidorDeRota::nova(r, destino).com_folga(nv::FOLGA_DA_ROTA);
+                s.travado_desde = None;
+            } else {
+                s.rota.limpa();
+            }
+        }
+        let avisar: Vec<SessionId> = self
+            .sessions
+            .iter()
+            .filter(|(id, s)| **id != dono && s.logged_in && s.conves.is_some_and(|c| c.navio == e))
+            .map(|(id, _)| *id)
+            .collect();
+        for sid in avisar {
+            self.avisa_missao(
+                sid,
+                "The captain is away: the ship will defend itself and return to a dock in two minutes."
+                    .into(),
+            );
+        }
+    }
+
+    pub(crate) fn tick_navios_autonomos(&mut self) {
+        let agora = self.sim_time_s;
+        let navios: Vec<(hecs::Entity, SessionId, Vec2, Vec2, f32, bool)> = self
+            .ecs
+            .query::<(&Position, &NavioEnt)>()
+            .iter()
+            .filter(|(_, (_, n))| n.autonomo_desde > 0.0)
+            .map(|(e, (p, n))| {
+                (
+                    e,
+                    n.dono,
+                    p.0,
+                    n.rumo,
+                    n.proximo_tiro_autonomo,
+                    n.derrotado(agora),
+                )
+            })
+            .collect();
+        for (e, dono, p, rumo, proximo, derrotado) in navios {
+            if derrotado {
+                if let Ok(mut v) = self.ecs.get::<&mut Velocity>(e) {
+                    v.0 = Vec2::ZERO;
+                }
+                continue;
+            }
+            let vel = if let Some(s) = self.sessions.get_mut(&dono) {
+                let (v, giro, arranque) = Self::manobra_no_mar(s);
+                let dir = if s.rota.vazia() {
+                    None
+                } else {
+                    nv::direcao_na_rota(&mut s.rota, &s.leme_do_mar, p, v, giro, arranque)
+                };
+                let dir = dir.unwrap_or(Vec2::ZERO);
+                let quer = dir.length().min(1.0)
+                    * Self::velocidade_no_mar(s, agora)
+                    * nv::AUTONOMIA_VELOCIDADE;
+                s.leme_do_mar
+                    .governa(dir, quer, v, giro, arranque, shared::TICK_DT)
+            } else {
+                Vec2::ZERO
+            };
+            if let Ok(mut v) = self.ecs.get::<&mut Velocity>(e) {
+                v.0 = vel;
+            }
+            if agora >= proximo {
+                let disparou = self.bordada_autonoma(e, dono, p, rumo);
+                if let Ok(mut n) = self.ecs.get::<&mut NavioEnt>(e) {
+                    n.proximo_tiro_autonomo = agora
+                        + if disparou {
+                            nv::HABILIDADES[0].espera_s
+                        } else {
+                            0.5
+                        };
+                }
+            }
+        }
+    }
+
+    fn bordada_autonoma(&mut self, e: hecs::Entity, dono: SessionId, de: Vec2, rumo: Vec2) -> bool {
+        let agora = self.sim_time_s;
+        let Some(dono_eid) = self.sessions.get(&dono).map(|s| s.entity_id) else {
+            return false;
+        };
+        let agressores: Vec<EntityId> = self
+            .sessions
+            .get(&dono)
+            .map(|s| {
+                s.agressores
+                    .iter()
+                    .filter(|(_, ate)| **ate > agora)
+                    .map(|(id, _)| *id)
+                    .collect()
+            })
+            .unwrap_or_default();
+        let alvo = self
+            .sessions
+            .values()
+            .filter(|s| agressores.contains(&s.entity_id))
+            .filter_map(|s| {
+                let p = self.pos_do_casco(s.handle.id)?;
+                let dist = de.distance(p);
+                (dist <= nv::HABILIDADES[0].alcance
+                    && nv::no_costado(de, rumo, p)
+                    && !self.in_safe_zone(p)
+                    && self.can_damage_player(dono_eid, s.entity_id))
+                .then_some((dist, s.handle.id, s.entity_id, p))
+            })
+            .min_by(|a, b| a.0.total_cmp(&b.0));
+        let Some((_, alvo_sid, alvo_eid, p)) = alvo else {
+            return false;
+        };
+        let Some((item, dados)) = self.navio_equipado(dono) else {
+            return false;
+        };
+        let nivel = self.nivel_de_sid(dono);
+        let hab = &nv::HABILIDADES[0];
+        let dano =
+            (nv::dano_do_canhao(hab, nivel, item, &dados) / nv::LEQUE_DA_BORDADA as i32).max(1);
+        let mira = nv::mira_com_avanco_da_skill(hab, de, p, self.vel_do_casco(alvo_sid));
+        let base = (mira - de).y.atan2((mira - de).x);
+        let alcance = de.distance(mira);
+        for ab in nv::aberturas_do_leque() {
+            let (sin, cos) = (base + ab).sin_cos();
+            let m = de + Vec2::new(cos, sin) * alcance;
+            self.disparar_bala(dono_eid, alvo_eid, de, m, dano, false, false);
+            for s in self.sessions.values().filter(|s| s.logged_in) {
+                let _ = s.handle.to_client.send(ServerMessage::SkillImpactFx {
+                    skill_id: nv::id_de_skill(hab.id),
+                    caster_eid: dono_eid,
+                    caster_pos: de,
+                    target_pos: m,
+                    tier: 0,
+                });
+            }
+        }
+        let _ = e;
+        true
+    }
+
     /// THE SHIPS SAIL AND THE DECKS RIDE ALONG (right after the bodies'
     /// pass, which skips everyone aboard). Each ship moves on its velocity
     /// (set by its captain's helm, `world.rs`) against the coast
     /// (`mover_raspando`; a PK captain's peaceful waters are coast too);
     /// then each body aboard takes its deck step (`shared::conves::mover`:
     /// the rails are walls) and its world position is `ship × local`.
-    pub(crate) fn mover_navios_e_conves(&mut self, dt: f32, barreira: &HashMap<hecs::Entity, (bool, Option<Vec2>)>) {
+    pub(crate) fn mover_navios_e_conves(
+        &mut self,
+        dt: f32,
+        barreira: &HashMap<hecs::Entity, (bool, Option<Vec2>)>,
+    ) {
         if !self.no_mar() {
             return;
         }
         let mut bateu = Vec::new();
-        let navios: Vec<(hecs::Entity, Vec2, Vec2, SessionId)> = self
+        let agora = self.sim_time_s;
+        let navios: Vec<(hecs::Entity, Vec2, Vec2, SessionId, bool)> = self
             .ecs
             .query::<(&Position, &Velocity, &NavioEnt)>()
             .iter()
-            .map(|(e, (p, v, n))| (e, p.0, v.0, n.dono))
+            .map(|(e, (p, v, n))| {
+                let derrotado = n.derrotado(agora);
+                (
+                    e,
+                    p.0,
+                    if derrotado { n.deriva } else { v.0 },
+                    n.dono,
+                    derrotado,
+                )
+            })
             .collect();
         // Where each deck was before it sailed: a body something else moved
         // this tick (a leap, a blink, a knockback by position) is read back
@@ -315,11 +656,18 @@ impl GameWorld {
             .iter()
             .map(|(e, (p, n))| (e, (p.0, n.rumo)))
             .collect();
-        for (e, pos, vel, dono) in navios {
+        for (e, pos, vel, dono, derrotado) in navios {
             let (barrado, empurra) = barreira.get(&e).copied().unwrap_or((false, None));
-            let v = empurra.unwrap_or(vel);
+            // A defeated hull only drifts: helm input and pushes never change it.
+            let v = if derrotado {
+                vel
+            } else {
+                empurra.unwrap_or(vel)
+            };
             let livre = |x: f32, z: f32| shared::mar::navegavel(x, z);
-            let fechada = |x: f32, z: f32| shared::mar::navegavel(x, z) && !shared::mar::aguas_pacificas(Vec2::new(x, z));
+            let fechada = |x: f32, z: f32| {
+                shared::mar::navegavel(x, z) && !shared::mar::aguas_pacificas(Vec2::new(x, z))
+            };
             let novo = if barrado {
                 let p = nv::mover_raspando(&fechada, pos, v, dt, nv::RAIO_DO_CASCO);
                 let sem = nv::mover_raspando(&livre, pos, v, dt, nv::RAIO_DO_CASCO);
@@ -330,7 +678,9 @@ impl GameWorld {
             } else {
                 nv::mover_raspando(&livre, pos, v, dt, nv::RAIO_DO_CASCO)
             };
-            let rumo = self.sessions.get(&dono).and_then(|s| s.leme_do_mar.rumo());
+            let rumo = (!derrotado)
+                .then(|| self.sessions.get(&dono).and_then(|s| s.leme_do_mar.rumo()))
+                .flatten();
             if let Ok(mut q) = self.ecs.get::<&mut Position>(e) {
                 q.0 = novo;
             }
@@ -349,11 +699,23 @@ impl GameWorld {
             .filter_map(|(id, s)| Some((*id, s.conves?, s.entity?)))
             .collect();
         for (sid, c, corpo) in a_bordo {
-            let Some(centro) = self.ecs.get::<&Position>(c.navio).ok().map(|p| p.0) else { continue };
-            let Some((rumo, classe)) = self.ecs.get::<&NavioEnt>(c.navio).ok().map(|n| (n.rumo, n.classe)) else { continue };
+            let Some(centro) = self.ecs.get::<&Position>(c.navio).ok().map(|p| p.0) else {
+                continue;
+            };
+            let Some((rumo, classe)) = self
+                .ecs
+                .get::<&NavioEnt>(c.navio)
+                .ok()
+                .map(|n| (n.rumo, n.classe))
+            else {
+                continue;
+            };
             let passo = self.ecs.get::<&Velocity>(corpo).map_or(Vec2::ZERO, |v| v.0);
             let mut base = c.local;
-            if let (Some((c0, r0)), Some(agora)) = (antes.get(&c.navio), self.ecs.get::<&Position>(corpo).ok().map(|p| p.0)) {
+            if let (Some((c0, r0)), Some(agora)) = (
+                antes.get(&c.navio),
+                self.ecs.get::<&Position>(corpo).ok().map(|p| p.0),
+            ) {
                 if agora.distance(cv::do_mundo(*c0, *r0, c.local)) > 0.05 {
                     // Moved off its deck place by something else: where it
                     // landed on the deck (off the rail = the nearest plank).
@@ -387,13 +749,21 @@ impl GameWorld {
             .values()
             .filter_map(|s| {
                 let c = s.conves?;
-                let p = s.entity.and_then(|e| self.ecs.get::<&Position>(e).ok().map(|p| p.0))?;
-                Some((cv::NoConves::novo(s.entity_id, c.navio_eid, c.local, c.leme), p))
+                let p = s
+                    .entity
+                    .and_then(|e| self.ecs.get::<&Position>(e).ok().map(|p| p.0))?;
+                Some((
+                    cv::NoConves::novo(s.entity_id, c.navio_eid, c.local, c.leme),
+                    p,
+                ))
             })
             .collect();
         let raio = AOI_RADIUS + 2.0;
-        let centros: HashMap<SessionId, Vec2> =
-            self.sessions.keys().filter_map(|id| Some((*id, self.pos_do_jogador(*id)?))).collect();
+        let centros: HashMap<SessionId, Vec2> = self
+            .sessions
+            .keys()
+            .filter_map(|id| Some((*id, self.pos_do_jogador(*id)?)))
+            .collect();
         for (sid, s) in self.sessions.iter_mut() {
             let Some(eu) = centros.get(sid) else { continue };
             let mut lista = Vec::new();
@@ -408,10 +778,20 @@ impl GameWorld {
                     lista.push(*n);
                 }
             }
-            let saiu: Vec<EntityId> = s.conves_enviado.keys().filter(|id| !vistos.contains(id)).copied().collect();
+            let saiu: Vec<EntityId> = s
+                .conves_enviado
+                .keys()
+                .filter(|id| !vistos.contains(id))
+                .copied()
+                .collect();
             for id in saiu {
                 s.conves_enviado.remove(&id);
-                lista.push(cv::NoConves { id, navio: EntityId(0), local: [0, 0], leme: false });
+                lista.push(cv::NoConves {
+                    id,
+                    navio: EntityId(0),
+                    local: [0, 0],
+                    leme: false,
+                });
             }
             if !lista.is_empty() {
                 let _ = s.handle.to_client.send(ServerMessage::Conves { lista });
@@ -455,14 +835,17 @@ impl GameWorld {
         self.por_no_conves(sid);
     }
 
-    /// BOARD a party member's ship (`PedidoNavio::Embarcar`): close by, my
-    /// own ship stowed (it leaves the sea; nothing is lost). `capitao` = my
-    /// OWN entity: back to my own ship, alongside.
+    /// BOARD another ship (`PedidoNavio::Embarcar`). Party members board
+    /// cooperatively as crew; anyone else may board a DEFEATED or abandoned
+    /// hull within boarding range (naval PvP). Their own ship stays nearby
+    /// under automatic command. `capitao` = my OWN entity: back to my ship.
     pub(crate) fn embarcar_no_navio(&mut self, sid: SessionId, capitao: EntityId) {
         if !self.no_mar() {
             return;
         }
-        let Some(eu) = self.sessions.get(&sid) else { return };
+        let Some(eu) = self.sessions.get(&sid) else {
+            return;
+        };
         let (meu_eid, meu_grupo, minha) = (eu.entity_id, eu.party_id, eu.conves);
         if capitao == meu_eid {
             self.voltar_ao_meu_navio(sid);
@@ -470,20 +853,38 @@ impl GameWorld {
         }
         // `capitao` = the captain's body, or the ship itself (the client
         // knows the ship).
-        let Some((alvo_sid, alvo)) = self
+        let por_capitao = self
             .sessions
             .iter()
-            .find(|(id, s)| s.entity_id == capitao || s.conves.is_some_and(|c| c.navio_eid == capitao && c.capitao == **id))
-            .map(|(id, s)| (*id, s.conves))
-        else {
+            .find(|(id, s)| {
+                s.entity_id == capitao
+                    || s.conves
+                        .is_some_and(|c| c.navio_eid == capitao && c.capitao == **id)
+            })
+            .and_then(|(id, s)| s.conves.filter(|c| c.capitao == *id).map(|c| (*id, c)));
+        let por_casco = self
+            .ecs
+            .query::<(&NetId, &NavioEnt)>()
+            .iter()
+            .find(|(_, (net, _))| net.0 == capitao)
+            .map(|(navio, (net, n))| {
+                (
+                    n.dono,
+                    ABordo {
+                        navio,
+                        navio_eid: net.0,
+                        capitao: n.dono,
+                        local: cv::leme(n.classe),
+                        leme: false,
+                        hostil: false,
+                    },
+                )
+            });
+        let Some((alvo_sid, alvo)) = por_capitao.or(por_casco) else {
             return;
         };
-        let Some(alvo) = alvo.filter(|c| c.capitao == alvo_sid) else {
-            self.avisa_missao(sid, "That ship has no captain aboard.".into());
-            return;
-        };
-        if meu_grupo.is_none() || self.sessions.get(&alvo_sid).and_then(|s| s.party_id) != meu_grupo {
-            self.avisa_missao(sid, "Only your party can board each other's ships.".into());
+        if alvo_sid == sid {
+            self.voltar_ao_meu_navio(sid);
             return;
         }
         if minha.is_some_and(|c| c.navio == alvo.navio) {
@@ -493,41 +894,182 @@ impl GameWorld {
             self.avisa_missao(sid, "Your own crew is aboard: you can't leave them.".into());
             return;
         }
-        let (Some(aqui), Some(la)) = (self.pos_do_casco(sid), self.ecs.get::<&Position>(alvo.navio).ok().map(|p| p.0)) else {
+        let (Some(aqui), Some(la)) = (
+            self.pos_do_casco(sid),
+            self.ecs.get::<&Position>(alvo.navio).ok().map(|p| p.0),
+        ) else {
             return;
         };
-        if aqui.distance(la) > cv::ALCANCE_DO_EMBARQUE {
-            self.avisa_missao(sid, "Sail alongside your party's ship to board it.".into());
+        let alvo_derrotado = self
+            .ecs
+            .get::<&NavioEnt>(alvo.navio)
+            .is_ok_and(|n| n.derrotado(self.sim_time_s));
+        let mesmo_grupo = meu_grupo.is_some()
+            && self.sessions.get(&alvo_sid).and_then(|s| s.party_id) == meu_grupo;
+        let hostil = !mesmo_grupo;
+        if hostil && !alvo_derrotado {
+            self.avisa_missao(
+                sid,
+                "Only your party can board a ship that is still sailing.".into(),
+            );
             return;
         }
-        // My own ship is stowed.
-        if let Some(c) = minha.filter(|c| c.capitao == sid) {
-            self.despachar_navio(c.navio);
+        let alcance = if hostil {
+            nv::ABORDAGEM_ALCANCE
+        } else {
+            cv::ALCANCE_DO_EMBARQUE
+        };
+        if aqui.distance(la) > alcance {
+            self.avisa_missao(
+                sid,
+                if hostil {
+                    "Sail alongside the defeated ship to board it.".into()
+                } else {
+                    "Sail alongside your party's ship to board it.".into()
+                },
+            );
+            return;
         }
-        let classe = self.ecs.get::<&NavioEnt>(alvo.navio).map_or(0, |n| n.classe);
-        let n = self.tripulacao_de(alvo_sid).len();
+        if hostil {
+            if self.in_safe_zone(la) {
+                self.avisa_missao(sid, "You cannot board in the safe zone.".into());
+                return;
+            }
+            let dono_eid = self
+                .sessions
+                .get(&alvo_sid)
+                .map_or(meu_eid, |s| s.entity_id);
+            if !self.can_damage_player(meu_eid, dono_eid) {
+                self.avisa_missao(sid, "You cannot board that ship now.".into());
+                return;
+            }
+        }
+        let Some((item, dados)) = self.navio_equipado(alvo_sid) else {
+            return;
+        };
+        let ocupantes = self
+            .sessions
+            .values()
+            .filter(|s| s.conves.is_some_and(|c| c.navio == alvo.navio))
+            .count();
+        if ocupantes >= nv::capacidade_do_navio(item, &dados) {
+            self.avisa_missao(sid, "That ship is full.".into());
+            return;
+        }
+        // A party member joins the other crew and stows their hull. A hostile
+        // captain is only boarding temporarily, so their hull stays at sea
+        // under automatic command.
+        if !hostil {
+            if let Some(c) = minha.filter(|c| c.capitao == sid) {
+                self.despachar_navio(c.navio);
+            }
+        }
+        let classe = self
+            .ecs
+            .get::<&NavioEnt>(alvo.navio)
+            .map_or(0, |n| n.classe);
+        let n = self
+            .sessions
+            .values()
+            .filter(|s| s.conves.is_some_and(|c| c.navio == alvo.navio && !c.hostil))
+            .count()
+            .saturating_sub(1);
         if let Some(s) = self.sessions.get_mut(&sid) {
-            s.conves = Some(ABordo { navio: alvo.navio, navio_eid: alvo.navio_eid, capitao: alvo_sid, local: cv::lugar_da_tripulacao(classe, n), leme: false });
+            s.conves = Some(ABordo {
+                navio: alvo.navio,
+                navio_eid: alvo.navio_eid,
+                capitao: alvo_sid,
+                local: if hostil {
+                    cv::lugar_da_tripulacao(classe, ocupantes)
+                } else {
+                    cv::lugar_da_tripulacao(classe, n)
+                },
+                leme: false,
+                hostil,
+            });
             s.leme_do_mar = Default::default();
             s.piloto = Default::default();
             s.rota.limpa();
+            if hostil {
+                s.reparando_vela_ate = 0.0;
+                s.reparando_navio = None;
+                s.saqueando_navio_ate = 0.0;
+                s.saqueando_navio = None;
+            }
         }
         self.por_no_conves(sid);
         let (meu_nome, nome) = (self.nome_de(sid), self.nome_de(alvo_sid));
-        self.avisa_missao(sid, format!("You board {nome}'s ship."));
-        self.avisa_missao(alvo_sid, format!("{meu_nome} came aboard."));
+        if hostil {
+            self.avisa_missao(sid, format!("You board {nome}'s defeated ship."));
+            self.avisa_missao(alvo_sid, format!("{meu_nome} boarded your wreck!"));
+        } else {
+            self.avisa_missao(sid, format!("You board {nome}'s ship."));
+            self.avisa_missao(alvo_sid, format!("{meu_nome} came aboard."));
+        }
     }
 
-    /// Crew back to their own ship, launched alongside the captain's.
+    /// Back to the captain's own hull. A hostile boarder normally left it at
+    /// sea under automatic command; ordinary crew still launches their
+    /// stowed hull alongside the ship they are leaving.
     fn voltar_ao_meu_navio(&mut self, sid: SessionId) {
-        let Some(c) = self.sessions.get(&sid).and_then(|s| s.conves) else { return };
+        let Some(c) = self.sessions.get(&sid).and_then(|s| s.conves) else {
+            return;
+        };
         if c.capitao == sid {
             return;
         }
-        let Some(la) = self.ecs.get::<&Position>(c.navio).ok().map(|p| p.0) else { return };
-        let (rumo, classe) = self.ecs.get::<&NavioEnt>(c.navio).map_or((Vec2::Y, 0), |n| (n.rumo, n.classe));
+        let proprio = self
+            .ecs
+            .query::<(&NetId, &NavioEnt, &Position)>()
+            .iter()
+            .find(|(e, (_, n, _))| n.dono == sid && *e != c.navio)
+            .map(|(e, (net, n, p))| (e, net.0, n.classe, n.derrotado(self.sim_time_s), p.0));
+        if let Some((navio, navio_eid, classe, derrotado, pos)) = proprio {
+            let aqui = self.ecs.get::<&Position>(c.navio).ok().map_or(pos, |p| p.0);
+            if derrotado {
+                self.avisa_missao(
+                    sid,
+                    "Your own ship is a wreck and cannot receive you.".into(),
+                );
+                return;
+            }
+            if aqui.distance(pos) > cv::ALCANCE_DO_EMBARQUE {
+                self.avisa_missao(sid, "Sail alongside your own ship to return aboard.".into());
+                return;
+            }
+            if let Ok(mut n) = self.ecs.get::<&mut NavioEnt>(navio) {
+                n.autonomo_desde = 0.0;
+                n.proximo_tiro_autonomo = 0.0;
+            }
+            if let Some(s) = self.sessions.get_mut(&sid) {
+                s.conves = Some(ABordo {
+                    navio,
+                    navio_eid,
+                    capitao: sid,
+                    local: cv::leme(classe),
+                    leme: true,
+                    hostil: false,
+                });
+                s.rota.limpa();
+                s.leme_do_mar = Default::default();
+            }
+            self.por_no_conves(sid);
+            self.avisa_missao(sid, "You return to your own ship.".into());
+            return;
+        }
+        let Some(la) = self.ecs.get::<&Position>(c.navio).ok().map(|p| p.0) else {
+            return;
+        };
+        let (rumo, classe) = self
+            .ecs
+            .get::<&NavioEnt>(c.navio)
+            .map_or((Vec2::Y, 0), |n| (n.rumo, n.classe));
         let lado = cv::do_mundo(la, rumo, Vec2::new(cv::meia_boca(classe) * 2.0 + 4.0, 0.0));
-        let antes = self.sessions.get(&sid).and_then(|s| s.entity).and_then(|e| self.ecs.get::<&Position>(e).ok().map(|p| p.0));
+        let antes = self
+            .sessions
+            .get(&sid)
+            .and_then(|s| s.entity)
+            .and_then(|e| self.ecs.get::<&Position>(e).ok().map(|p| p.0));
         if let Some(s) = self.sessions.get_mut(&sid) {
             s.conves = None;
         }
@@ -542,7 +1084,10 @@ impl GameWorld {
             if let Some(s) = self.sessions.get_mut(&sid) {
                 s.conves = Some(c);
             }
-            self.avisa_missao(sid, "Your own ship can't sail: it needs a repair at a dock.".into());
+            self.avisa_missao(
+                sid,
+                "Your own ship can't sail: it needs a repair at a dock.".into(),
+            );
         }
     }
 
@@ -554,7 +1099,11 @@ impl GameWorld {
         let Some(eu) = self.pos_do_casco(sid) else {
             return false;
         };
-        let volta = self.sessions.get(&sid).map(|s| s.zona_volta.clone()).unwrap_or_default();
+        let volta = self
+            .sessions
+            .get(&sid)
+            .map(|s| s.zona_volta.clone())
+            .unwrap_or_default();
         let mut ordem: Vec<usize> = shared::mar::ilhas().iter().map(|v| v.ilha).collect();
         ordem.sort_by(|a, b| {
             let chave = |i: &usize| {
@@ -564,7 +1113,10 @@ impl GameWorld {
             let (ka, kb) = (chave(a), chave(b));
             ka.0.cmp(&kb.0).then(ka.1.total_cmp(&kb.1))
         });
-        let indice = self.sessions.get(&sid).and_then(|s| crate::quests::indice_da_historia(&s.quests));
+        let indice = self
+            .sessions
+            .get(&sid)
+            .and_then(|s| crate::quests::indice_da_historia(&s.quests));
         for i in ordem {
             if !shared::viagem::liberada(i, indice) {
                 continue;
@@ -602,22 +1154,43 @@ mod testes {
         w.zona = shared::mar::ZONA.into();
         w.ilha = Some(shared::terreno::Ilha::da_ilha(&shared::mar::DEF));
         w.safe_zones.clear();
-        w.diretorio = Some(crate::canais::Diretorio::para_teste(&["ilha_inicial", "ilha_gelo", "ilha_deserto"]));
+        w.diretorio = Some(crate::canais::Diretorio::para_teste(&[
+            "ilha_inicial",
+            "ilha_gelo",
+            "ilha_deserto",
+        ]));
         let (sid, rx) = marujo(&mut w, 47_470, 4_700, "Marujo", shared::mar::ninhos()[0]);
         (w, sid, rx)
     }
 
-    fn marujo(w: &mut GameWorld, porta: u16, eid: u32, nome: &str, p: Vec2) -> (SessionId, mpsc::UnboundedReceiver<ServerMessage>) {
+    fn marujo(
+        w: &mut GameWorld,
+        porta: u16,
+        eid: u32,
+        nome: &str,
+        p: Vec2,
+    ) -> (SessionId, mpsc::UnboundedReceiver<ServerMessage>) {
         let sid = SessionId(([127, 0, 0, 1], porta).into());
         let (tx, rx) = mpsc::unbounded_channel();
-        w.on_connect(SessionHandle { id: sid, to_client: tx });
+        w.on_connect(SessionHandle {
+            id: sid,
+            to_client: tx,
+        });
         let e = w.ecs.spawn((
             NetId(EntityId(eid)),
             Position(p),
             Velocity(Vec2::ZERO),
             EntityKind::Player,
-            Health { current: 100, max: 100 },
-            PlayerTag { name: nome.into(), player_id: PlayerId(eid as u64), attack_anim_pending: None, combo_step_pending: None },
+            Health {
+                current: 100,
+                max: 100,
+            },
+            PlayerTag {
+                name: nome.into(),
+                player_id: PlayerId(eid as u64),
+                attack_anim_pending: None,
+                combo_step_pending: None,
+            },
             shared::Solido,
         ));
         let s = w.sessions.get_mut(&sid).unwrap();
@@ -631,7 +1204,11 @@ mod testes {
     }
 
     fn com_casco(w: &mut GameWorld, sid: SessionId, item: u16) {
-        w.sessions.get_mut(&sid).unwrap().equipment.set(shared::EquipSlot::Navio, Some(item), Some(nv::instancia_nova(item)));
+        w.sessions.get_mut(&sid).unwrap().equipment.set(
+            shared::EquipSlot::Navio,
+            Some(item),
+            Some(nv::instancia_nova(item)),
+        );
     }
 
     fn anda(w: &mut GameWorld, sid: SessionId, dir: Vec2, segundos: f32) {
@@ -639,7 +1216,13 @@ mod testes {
         for k in 0..n {
             for (id, s) in w.sessions.iter_mut() {
                 let d = if *id == sid { dir } else { Vec2::ZERO };
-                s.pending_input = Some(InputFrame { seq: k, tick: k, move_dir: d, aim: Vec2::ZERO, buttons: 0 });
+                s.pending_input = Some(InputFrame {
+                    seq: k,
+                    tick: k,
+                    move_dir: d,
+                    aim: Vec2::ZERO,
+                    buttons: 0,
+                });
             }
             w.step(shared::TICK_DT);
         }
@@ -674,7 +1257,7 @@ mod testes {
         let n = w.ecs.get::<&NavioEnt>(c.navio).map(|n| *n).unwrap();
         assert_eq!(n.dono, sid);
         let h = w.ecs.get::<&Health>(c.navio).map(|h| *h).unwrap();
-        assert_eq!(h.current, nv::casco_max(shared::item_id::NAVIO_CHALUPA) as i32);
+        assert_eq!(h.current, w.navio_equipado(sid).unwrap().1.casco as i32);
         let centro = w.pos_do_casco(sid).unwrap();
         assert!(corpo(&w, sid).distance(cv::do_mundo(centro, n.rumo, cv::leme(0))) < 1e-3);
     }
@@ -693,18 +1276,29 @@ mod testes {
         let navio0 = w.pos_do_casco(sid).unwrap();
         anda(&mut w, sid, Vec2::ZERO, 0.4);
         let navio1 = w.pos_do_casco(sid).unwrap();
-        assert!(navio1.distance(navio0) > 0.5, "the ship should coast: {navio0} → {navio1}");
+        assert!(
+            navio1.distance(navio0) > 0.5,
+            "the ship should coast: {navio0} → {navio1}"
+        );
         let c = conves(&w, sid);
         assert!(c.local.distance(local0) < 1e-4, "the body slid on deck");
         let rumo = w.ecs.get::<&NavioEnt>(c.navio).unwrap().rumo;
-        assert!(corpo(&w, sid).distance(cv::do_mundo(navio1, rumo, c.local)) < 1e-3, "the body is not where the deck is");
+        assert!(
+            corpo(&w, sid).distance(cv::do_mundo(navio1, rumo, c.local)) < 1e-3,
+            "the body is not where the deck is"
+        );
     }
 
     /// THE RAILS ARE WALLS AND THE MASTS BLOCK, on every class: walking any
     /// way for seconds never takes the body off the deck.
     #[test]
     fn ninguem_sai_do_conves_andando() {
-        for item in [shared::item_id::NAVIO_CHALUPA, shared::item_id::NAVIO_ESCUNA, shared::item_id::NAVIO_GALEAO, shared::item_id::NAVIO_NAU] {
+        for item in [
+            shared::item_id::NAVIO_CHALUPA,
+            shared::item_id::NAVIO_ESCUNA,
+            shared::item_id::NAVIO_GALEAO,
+            shared::item_id::NAVIO_NAU,
+        ] {
             let (mut w, sid, _rx) = mundo();
             com_casco(&mut w, sid, item);
             w.step(shared::TICK_DT);
@@ -714,10 +1308,17 @@ mod testes {
                 let a = k as f32 / 8.0 * std::f32::consts::TAU;
                 anda(&mut w, sid, Vec2::new(a.cos(), a.sin()), 1.5);
                 let c = conves(&w, sid);
-                assert!(cv::cabe(classe, c.local), "class {classe}: off the deck at {}", c.local);
+                assert!(
+                    cv::cabe(classe, c.local),
+                    "class {classe}: off the deck at {}",
+                    c.local
+                );
                 let rumo = w.ecs.get::<&NavioEnt>(c.navio).unwrap().rumo;
                 let l = cv::para_local(w.pos_do_casco(sid).unwrap(), rumo, corpo(&w, sid));
-                assert!(l.x.abs() <= cv::meia_boca(classe) && l.y.abs() <= cv::meio_comp(classe), "class {classe}: body off the hull {l}");
+                assert!(
+                    l.x.abs() <= cv::meia_boca(classe) && l.y.abs() <= cv::meio_comp(classe),
+                    "class {classe}: body off the hull {l}"
+                );
             }
             let mastro = cv::mastros(classe).next().unwrap();
             let mut p = mastro - Vec2::new(0.0, 1.2);
@@ -738,18 +1339,33 @@ mod testes {
         let antes = w.pos_do_casco(sid).unwrap();
         anda(&mut w, sid, Vec2::new(0.0, 1.0), 1.5);
         let c = conves(&w, sid);
-        assert!(w.pos_do_casco(sid).unwrap().distance(antes) > 4.0, "the helm did not sail");
+        assert!(
+            w.pos_do_casco(sid).unwrap().distance(antes) > 4.0,
+            "the helm did not sail"
+        );
         assert_eq!(c.local, cv::leme(0), "the helmsman left the wheel");
         w.handle_navio(sid, PedidoNavio::Leme { pegar: false });
         let local = conves(&w, sid).local;
         anda(&mut w, sid, Vec2::new(0.0, 1.0), 3.0);
         let c = conves(&w, sid);
-        assert!(c.local.distance(local) > 1.0, "off the helm the stick should walk the body");
-        assert!(w.vel_do_casco(sid).length() < 0.05, "with no route the ship should lie still");
+        assert!(
+            c.local.distance(local) > 1.0,
+            "off the helm the stick should walk the body"
+        );
+        assert!(
+            w.vel_do_casco(sid).length() < 0.05,
+            "with no route the ship should lie still"
+        );
         w.handle_navio(sid, PedidoNavio::Leme { pegar: true });
         let longe = conves(&w, sid).local.distance(cv::roda(0)) > cv::ALCANCE_DO_LEME;
         assert_eq!(conves(&w, sid).leme, !longe);
-        w.sessions.get_mut(&sid).unwrap().conves.as_mut().unwrap().local = cv::leme(0);
+        w.sessions
+            .get_mut(&sid)
+            .unwrap()
+            .conves
+            .as_mut()
+            .unwrap()
+            .local = cv::leme(0);
         w.handle_navio(sid, PedidoNavio::Leme { pegar: true });
         assert!(conves(&w, sid).leme);
     }
@@ -771,8 +1387,16 @@ mod testes {
         w.handle_navio(sid, PedidoNavio::Leme { pegar: false });
         anda(&mut w, sid, Vec2::ZERO, 12.0);
         let fim = w.pos_do_casco(sid).unwrap();
-        assert!(fim.distance(para) < 4.0, "the ship stopped at {fim}, {} from its destination", fim.distance(para));
-        assert!(w.vel_do_casco(sid).length() < 0.2, "it did not stop: {}", w.vel_do_casco(sid));
+        assert!(
+            fim.distance(para) < 4.0,
+            "the ship stopped at {fim}, {} from its destination",
+            fim.distance(para)
+        );
+        assert!(
+            w.vel_do_casco(sid).length() < 0.2,
+            "it did not stop: {}",
+            w.vel_do_casco(sid)
+        );
         assert!(!conves(&w, sid).leme);
     }
 
@@ -796,7 +1420,18 @@ mod testes {
         w.handle_mover_para(sid, para);
         // Under way at the helm first.
         for k in 0..30u32 {
-            w.on_message(sid, ClientMessage::Input { input: InputFrame { seq: k, tick: k, move_dir: Vec2::ZERO, aim: Vec2::ZERO, buttons: 0 } });
+            w.on_message(
+                sid,
+                ClientMessage::Input {
+                    input: InputFrame {
+                        seq: k,
+                        tick: k,
+                        move_dir: Vec2::ZERO,
+                        aim: Vec2::ZERO,
+                        buttons: 0,
+                    },
+                },
+            );
             w.step(shared::TICK_DT);
         }
         w.handle_navio(sid, PedidoNavio::Leme { pegar: false });
@@ -806,7 +1441,18 @@ mod testes {
         for k in 30..(30 + 14 * 30u32) {
             // Walking about on deck the whole way.
             let a = k as f32 * 0.05;
-            w.on_message(sid, ClientMessage::Input { input: InputFrame { seq: k, tick: k, move_dir: Vec2::new(a.cos(), a.sin()), aim: Vec2::ZERO, buttons: 0 } });
+            w.on_message(
+                sid,
+                ClientMessage::Input {
+                    input: InputFrame {
+                        seq: k,
+                        tick: k,
+                        move_dir: Vec2::new(a.cos(), a.sin()),
+                        aim: Vec2::ZERO,
+                        buttons: 0,
+                    },
+                },
+            );
             w.step(shared::TICK_DT);
             fim = w.pos_do_casco(sid).unwrap();
             if fim.distance(para) > 6.0 && w.vel_do_casco(sid).length() < 0.5 && k > 60 {
@@ -814,9 +1460,19 @@ mod testes {
             }
         }
         assert!(!conves(&w, sid).leme);
-        assert_eq!(parado_no_meio, 0, "the ship stopped before the end of its route");
-        assert!(fim.distance(para) < 4.0, "the ship ended {} from its destination", fim.distance(para));
-        assert!(w.vel_do_casco(sid).length() < 0.2, "it did not stop at the end");
+        assert_eq!(
+            parado_no_meio, 0,
+            "the ship stopped before the end of its route"
+        );
+        assert!(
+            fim.distance(para) < 4.0,
+            "the ship ended {} from its destination",
+            fim.distance(para)
+        );
+        assert!(
+            w.vel_do_casco(sid).length() < 0.2,
+            "it did not stop at the end"
+        );
     }
 
     /// PETS STAY HOME: at sea no pet body exists for a player with one.
@@ -829,11 +1485,19 @@ mod testes {
             w.step(shared::TICK_DT);
         }
         assert!(conves(&w, sid).capitao == sid);
-        assert_eq!(w.ecs.query::<&super::super::pets::PetTag>().iter().count(), 0, "a pet walks on the water");
+        assert_eq!(
+            w.ecs.query::<&super::super::pets::PetTag>().iter().count(),
+            0,
+            "a pet walks on the water"
+        );
         // Ashore (another zone), it comes back.
         w.zona = "ilha_inicial".into();
         w.step(shared::TICK_DT);
-        assert_eq!(w.ecs.query::<&super::super::pets::PetTag>().iter().count(), 1, "the pet did not come back on land");
+        assert_eq!(
+            w.ecs.query::<&super::super::pets::PetTag>().iter().count(),
+            1,
+            "the pet did not come back on land"
+        );
     }
 
     /// MELEE FROM THE RAIL HITS A SURFACED MOB.
@@ -844,7 +1508,13 @@ mod testes {
         w.handle_navio(sid, PedidoNavio::Leme { pegar: false });
         let c = conves(&w, sid);
         let hw = cv::meia_largura_andavel(0, 0.0).unwrap();
-        w.sessions.get_mut(&sid).unwrap().conves.as_mut().unwrap().local = Vec2::new(hw, 0.0);
+        w.sessions
+            .get_mut(&sid)
+            .unwrap()
+            .conves
+            .as_mut()
+            .unwrap()
+            .local = Vec2::new(hw, 0.0);
         w.por_no_conves(sid);
         let rumo = w.ecs.get::<&NavioEnt>(c.navio).unwrap().rumo;
         let centro = w.pos_do_casco(sid).unwrap();
@@ -852,7 +1522,10 @@ mod testes {
         w.place_enemy(onde, super::super::navio::TUBARAO, 0.0);
         let mut bicho = None;
         for (_, (n, t, h)) in w.ecs.query_mut::<(&NetId, &mut EnemyTag, &mut Health)>() {
-            *h = Health { current: 5_000, max: 5_000 };
+            *h = Health {
+                current: 5_000,
+                max: 5_000,
+            };
             t.dead = false;
             t.spawn_grace_until = 0.0;
             t.stunned_until = 1e9;
@@ -861,9 +1534,16 @@ mod testes {
         let bicho = bicho.unwrap();
         w.sessions.get_mut(&sid).unwrap().target = Some(bicho);
         anda(&mut w, sid, Vec2::ZERO, 2.0);
-        let vida = w.ecs.query::<(&NetId, &Health)>().iter().find(|(_, (n, _))| n.0 == bicho).map(|(_, (_, h))| h.current).unwrap();
+        let vida = w
+            .ecs
+            .query::<(&NetId, &Health)>()
+            .iter()
+            .find(|(_, (n, _))| n.0 == bicho)
+            .map(|(_, (_, h))| h.current)
+            .unwrap();
         assert!(vida < 5_000, "the sword from the rail never landed");
-        assert_eq!(w.navio_equipado(sid).unwrap().1.casco, nv::casco_max(shared::item_id::NAVIO_CHALUPA));
+        let (_, d) = w.navio_equipado(sid).unwrap();
+        assert_eq!(d.casco, nv::casco_total(shared::item_id::NAVIO_CHALUPA, &d));
     }
 
     fn em_grupo(w: &mut GameWorld, a: SessionId, b: SessionId) {
@@ -875,7 +1555,9 @@ mod testes {
     #[test]
     fn a_tripulacao_embarca_e_desce_no_cais() {
         let (mut w, sid, mut rx) = mundo();
-        let cais = shared::mar::vista_da_zona("ilha_inicial").unwrap().fundeadouro();
+        let cais = shared::mar::vista_da_zona("ilha_inicial")
+            .unwrap()
+            .fundeadouro();
         w.por_navio_em(sid, cais);
         let (b, mut rx_b) = marujo(&mut w, 47_471, 4_701, "Grumete", cais + Vec2::new(6.0, 0.0));
         w.step(shared::TICK_DT);
@@ -897,37 +1579,157 @@ mod testes {
         assert!(!conves(&w, b).leme);
         w.handle_navio(sid, PedidoNavio::Atracar { ilha: 0 });
         assert_eq!(trocou(&mut rx).as_deref(), Some("ilha_inicial"));
-        assert_eq!(trocou(&mut rx_b).as_deref(), Some("ilha_inicial"), "the crew stayed at sea");
+        assert_eq!(
+            trocou(&mut rx_b).as_deref(),
+            Some("ilha_inicial"),
+            "the crew stayed at sea"
+        );
     }
 
-    /// SINKING SENDS EVERYONE ABOARD TO THE DOCK.
+    /// SINKING SENDS EVERYONE ABOARD TO THE DOCK — but only when the defeated
+    /// wreck is actually given up (or its timer runs out).
     #[test]
     fn afundar_leva_todo_mundo_ao_cais() {
         let (mut w, sid, mut rx) = mundo();
-        let (b, mut rx_b) = marujo(&mut w, 47_472, 4_702, "Grumete", shared::mar::ninhos()[0] + Vec2::new(5.0, 0.0));
+        let (b, mut rx_b) = marujo(
+            &mut w,
+            47_472,
+            4_702,
+            "Grumete",
+            shared::mar::ninhos()[0] + Vec2::new(5.0, 0.0),
+        );
         w.step(shared::TICK_DT);
         em_grupo(&mut w, sid, b);
         let capitao = w.sessions[&sid].entity_id;
         w.handle_navio(b, PedidoNavio::Embarcar { capitao });
         assert_eq!(conves(&w, b).capitao, sid);
         w.dano_no_casco(sid, 100_000, None);
+        assert!(
+            !w.navio_equipado(sid).unwrap().1.avariado,
+            "zero hull is a boardable wreck first"
+        );
+        assert!(
+            trocou(&mut rx).is_none(),
+            "the captain stays aboard the wreck"
+        );
+        w.handle_navio(sid, PedidoNavio::Afundar);
         assert!(w.navio_equipado(sid).unwrap().1.avariado);
-        assert!(trocou(&mut rx).is_some(), "the captain stayed at sea");
-        assert!(trocou(&mut rx_b).is_some(), "the crew stayed at sea");
+        assert!(trocou(&mut rx).is_some(), "the captain goes ashore");
+        assert!(trocou(&mut rx_b).is_some(), "the crew goes ashore");
     }
 
-    /// A CAPTAIN WHO LEAVES drops the crew at the nearest dock.
+    /// HOSTILE BOARDING: a player in a PK mode can board a defeated stranger's
+    /// wreck, keeps their own command while standing on it, and can claim the
+    /// generated salvage once.
+    #[test]
+    fn abordagem_hostil_saqueia_o_destroc_uma_vez() {
+        let (mut w, sid, _rx) = mundo();
+        let longe = *shared::mar::ninhos()
+            .iter()
+            .find(|n| !shared::mar::aguas_pacificas(**n) && !shared::mar::sem_lei(**n))
+            .expect("a nest in PvP waters");
+        let (b, mut rx_b) = marujo(&mut w, 47_472, 4_702, "Pirata", longe + Vec2::new(5.0, 0.0));
+        w.step(shared::TICK_DT);
+        w.por_navio_em(sid, longe);
+        w.por_navio_em(b, longe + Vec2::new(5.0, 0.0));
+        let navio_do_pirata = conves(&w, b).navio;
+        let navio_do_marujo = conves(&w, sid).navio;
+        w.dano_no_casco(sid, 100_000, None);
+        w.sessions.get_mut(&b).unwrap().pk_modo = shared::pk::LIVRE;
+        let capitao = w.sessions[&sid].entity_id;
+        w.handle_navio(b, PedidoNavio::Embarcar { capitao });
+        let c = conves(&w, b);
+        let avisos: Vec<String> = std::iter::from_fn(|| rx_b.try_recv().ok())
+            .filter_map(|m| match m {
+                ServerMessage::Chat { text, .. } => Some(text),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            c.navio, navio_do_marujo,
+            "the pirate is on the wreck: {avisos:?}"
+        );
+        assert!(c.hostil, "but not as crew");
+        assert_eq!(w.capitao_de(b), b, "a boarder keeps their own command");
+        assert!(w.tripulacao_de(sid).is_empty(), "boarders are not crew");
+        assert!(
+            w.ecs.contains(navio_do_pirata),
+            "the pirate's own ship must remain at sea while they board"
+        );
+        w.tick_mar();
+        assert!(
+            w.ecs
+                .get::<&NavioEnt>(navio_do_pirata)
+                .unwrap()
+                .autonomo_desde
+                > 0.0,
+            "the empty hull did not enter automatic command"
+        );
+
+        let ouro_antes = w.sessions[&b].gold;
+        w.handle_navio(b, PedidoNavio::Saquear);
+        assert!(w.sessions[&b].saqueando_navio.is_some());
+        w.sim_time_s += nv::SAQUE_NAVAL_S + 0.1;
+        w.tick_mar();
+        assert!(w.sessions[&b].gold > ouro_antes);
+        assert!(
+            crate::craft::tem(&w.sessions[&b].inventory, shared::item_id::NAVAL_TOKEN)
+                >= nv::SAQUE_TOKEN_MIN
+        );
+        assert!(w.ecs.get::<&NavioEnt>(navio_do_marujo).unwrap().saqueado);
+        w.handle_navio(b, PedidoNavio::Saquear);
+        assert!(
+            w.sessions[&b].saqueando_navio.is_none(),
+            "a claimed wreck cannot be looted again"
+        );
+        let meu_navio_eid = w.ecs.get::<&NetId>(navio_do_pirata).unwrap().0;
+        let perto = w.ecs.get::<&Position>(navio_do_marujo).unwrap().0 + Vec2::new(3.0, 0.0);
+        w.ecs.get::<&mut Position>(navio_do_pirata).unwrap().0 = perto;
+        w.handle_navio(
+            b,
+            PedidoNavio::Embarcar {
+                capitao: meu_navio_eid,
+            },
+        );
+        assert_eq!(conves(&w, b).navio, navio_do_pirata);
+        assert_eq!(
+            w.ecs
+                .get::<&NavioEnt>(navio_do_pirata)
+                .unwrap()
+                .autonomo_desde,
+            0.0,
+            "taking the helm did not stop automatic command"
+        );
+    }
+
+    /// A disconnected captain gets a two-minute grace while the hull returns
+    /// automatically; only after that is the crew put ashore.
     #[test]
     fn sem_o_capitao_a_tripulacao_vai_ao_cais() {
         let (mut w, sid, _rx) = mundo();
-        let (b, mut rx_b) = marujo(&mut w, 47_473, 4_703, "Grumete", shared::mar::ninhos()[0] + Vec2::new(5.0, 0.0));
+        let (b, mut rx_b) = marujo(
+            &mut w,
+            47_473,
+            4_703,
+            "Grumete",
+            shared::mar::ninhos()[0] + Vec2::new(5.0, 0.0),
+        );
         w.step(shared::TICK_DT);
         em_grupo(&mut w, sid, b);
         let capitao = w.sessions[&sid].entity_id;
         w.handle_navio(b, PedidoNavio::Embarcar { capitao });
         w.sessions.get_mut(&sid).unwrap().logged_in = false;
         w.step(shared::TICK_DT);
-        assert!(trocou(&mut rx_b).is_some(), "the crew was left at sea without a ship");
+        assert!(
+            trocou(&mut rx_b).is_none(),
+            "the reconnect grace was skipped"
+        );
+        w.sim_time_s += nv::AUTONOMIA_NAVAL_S + 0.1;
+        w.step(shared::TICK_DT);
+        assert!(
+            trocou(&mut rx_b).is_some(),
+            "the crew was left at sea without a ship"
+        );
     }
 
     /// RECONNECT: a character saved at sea comes back on its own deck.
@@ -959,11 +1761,19 @@ mod testes {
         while rx.try_recv().is_ok() {}
         let e = w.sessions[&sid].entity.unwrap();
         for k in 0..30 {
-            w.sessions.get_mut(&sid).unwrap().pending_input =
-                Some(InputFrame { seq: k, tick: k, move_dir: Vec2::new(0.0, -1.0), aim: Vec2::ZERO, buttons: buttons::SPRINT });
+            w.sessions.get_mut(&sid).unwrap().pending_input = Some(InputFrame {
+                seq: k,
+                tick: k,
+                move_dir: Vec2::new(0.0, -1.0),
+                aim: Vec2::ZERO,
+                buttons: buttons::SPRINT,
+            });
             w.step(shared::TICK_DT);
             let v = w.ecs.get::<&Velocity>(e).unwrap().0;
-            assert!(v.length() <= nv::TETO_DO_FIO, "the body's wire velocity {v} passes the i8");
+            assert!(
+                v.length() <= nv::TETO_DO_FIO,
+                "the body's wire velocity {v} passes the i8"
+            );
         }
         let mut linhas = 0;
         while let Ok(m) = rx.try_recv() {
@@ -971,7 +1781,10 @@ mod testes {
                 linhas += lista.len();
             }
         }
-        assert!(linhas > 0 && linhas <= 30, "deck rows: {linhas} in 30 ticks for one walker");
+        assert!(
+            linhas > 0 && linhas <= 30,
+            "deck rows: {linhas} in 30 ticks for one walker"
+        );
         anda(&mut w, sid, Vec2::ZERO, 0.3);
         while rx.try_recv().is_ok() {}
         anda(&mut w, sid, Vec2::ZERO, 0.5);

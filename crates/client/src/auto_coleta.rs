@@ -440,8 +440,12 @@ impl AutoColeta {
 /// way and the step would never advance.
 pub fn tipos_da_missao(def: &shared::quests::QuestDef) -> ([bool; 5], bool) {
     use shared::quests::{objective_kind, tutorial};
-    if def.obj_kind == objective_kind::TUTORIAL && matches!(def.obj_target,
-        tutorial::COLETA_ENERGIA | tutorial::PONTO_ATRIBUTO | tutorial::EVOLUIR_SKILL) {
+    if def.obj_kind == objective_kind::TUTORIAL
+        && matches!(
+            def.obj_target,
+            tutorial::COLETA_ENERGIA | tutorial::PONTO_ATRIBUTO | tutorial::EVOLUIR_SKILL
+        )
+    {
         return ([false; 5], true);
     }
     // TER (have N of a key material): wood → logs only; steel of colour c →
@@ -758,7 +762,10 @@ mod tests {
         let mut t = 0.2;
         let mut x = 0.0f32;
         let pedido = loop {
-            assert!(t < prazo_de_ida(30.0) + 2.0, "andou pra sempre sem desistir");
+            assert!(
+                t < prazo_de_ida(30.0) + 2.0,
+                "andou pra sempre sem desistir"
+            );
             // Back and forth along a wall: moves, never arrives.
             x = if x > 0.0 { 0.0 } else { 3.0 };
             match b.passo(vec2(x, 0.0), t, true) {
@@ -832,7 +839,10 @@ impl BauDoAuto {
             let perto = baus
                 .iter()
                 .filter(|(b, _)| !self.desistiu.contains(b))
-                .min_by(|a, b| eu.distance_squared(a.1).total_cmp(&eu.distance_squared(b.1)));
+                .min_by(|a, b| {
+                    eu.distance_squared(a.1)
+                        .total_cmp(&eu.distance_squared(b.1))
+                });
             let Some((id, _)) = perto else {
                 return AcaoBau::Nada;
             };
@@ -842,7 +852,11 @@ impl BauDoAuto {
             self.pediu_em = f64::MIN;
         }
         let id = self.alvo.unwrap();
-        let onde = baus.iter().find(|(b, _)| *b == id).map(|(_, p)| *p).unwrap();
+        let onde = baus
+            .iter()
+            .find(|(b, _)| *b == id)
+            .map(|(_, p)| *p)
+            .unwrap();
         if eu.distance(onde) > PERTO_DO_BAU {
             self.tocou_em = None;
             if agora - self.pediu_em >= RELIGA_S {
@@ -881,8 +895,14 @@ mod testes_do_bau {
         let mut b = BauDoAuto::default();
         let id = shared::EntityId(7);
         let bau = vec2(10.0, 0.0);
-        assert!(matches!(b.passo(Vec2::ZERO, &[(id, bau)], 0.0), AcaoBau::Ir(_)));
-        assert_eq!(b.passo(vec2(9.0, 0.0), &[(id, bau)], 1.0), AcaoBau::Abrir(id));
+        assert!(matches!(
+            b.passo(Vec2::ZERO, &[(id, bau)], 0.0),
+            AcaoBau::Ir(_)
+        ));
+        assert_eq!(
+            b.passo(vec2(9.0, 0.0), &[(id, bau)], 1.0),
+            AcaoBau::Abrir(id)
+        );
         assert_eq!(b.passo(vec2(9.0, 0.0), &[(id, bau)], 5.0), AcaoBau::Esperar);
         assert_eq!(b.passo(vec2(9.0, 0.0), &[], 11.0), AcaoBau::Terminou);
         assert_eq!(b.passo(vec2(9.0, 0.0), &[], 12.0), AcaoBau::Nada);

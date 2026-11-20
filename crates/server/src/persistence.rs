@@ -441,7 +441,8 @@ async fn init_schema_travado(pool: &PgPool) -> Result<()> {
     sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS pk_modo SMALLINT NOT NULL DEFAULT 0, ADD COLUMN IF NOT EXISTS pk_decai_s BIGINT NOT NULL DEFAULT 0")
         .execute(pool).await?;
     sqlx::query("UPDATE characters SET pk_modo = 1 WHERE pk_hostil AND pk_modo = 0")
-        .execute(pool).await?;
+        .execute(pool)
+        .await?;
     sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS fame BIGINT NOT NULL DEFAULT 0")
         .execute(pool)
         .await?;
@@ -602,9 +603,11 @@ async fn init_schema_travado(pool: &PgPool) -> Result<()> {
     // The column may already exist NULLABLE from the old open sea
     // (September 2026): then the ADD below is a no-op and NULLs crash the
     // load ("unexpected null", 16/11/2026 on the test box). Normalise it.
-    sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS zona_volta TEXT NOT NULL DEFAULT ''")
-        .execute(pool)
-        .await?;
+    sqlx::query(
+        "ALTER TABLE characters ADD COLUMN IF NOT EXISTS zona_volta TEXT NOT NULL DEFAULT ''",
+    )
+    .execute(pool)
+    .await?;
     sqlx::query("UPDATE characters SET zona_volta = '' WHERE zona_volta IS NULL")
         .execute(pool)
         .await?;
@@ -629,9 +632,11 @@ async fn init_schema_travado(pool: &PgPool) -> Result<()> {
     .execute(pool)
     .await?;
     // The path tree (`shared::arvore`, rebirth phase 2).
-    sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS arvore_json TEXT NOT NULL DEFAULT ''")
-        .execute(pool)
-        .await?;
+    sqlx::query(
+        "ALTER TABLE characters ADD COLUMN IF NOT EXISTS arvore_json TEXT NOT NULL DEFAULT ''",
+    )
+    .execute(pool)
+    .await?;
     // Pocoes de Fortuna e de Sorte, e a barra de itens configurada.
     sqlx::query(
         "ALTER TABLE characters ADD COLUMN IF NOT EXISTS fortuna_ate BIGINT NOT NULL DEFAULT 0",
@@ -684,8 +689,11 @@ async fn init_schema_travado(pool: &PgPool) -> Result<()> {
     // A COLONIA (docs/COLONIA.md) num JSON so'. Vazio = `DadosColonia::default`:
     // nivel 1 nos tres eixos e sem a quest, que e' o que todo personagem que
     // ja' existe le' no primeiro login depois desta coluna.
-    sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS colonia_json TEXT NOT NULL DEFAULT ''")
-        .execute(pool).await?;
+    sqlx::query(
+        "ALTER TABLE characters ADD COLUMN IF NOT EXISTS colonia_json TEXT NOT NULL DEFAULT ''",
+    )
+    .execute(pool)
+    .await?;
     sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS gold BIGINT NOT NULL DEFAULT 0")
         .execute(pool)
         .await?;
@@ -1132,11 +1140,21 @@ fn merece_chalupa(indice_da_historia: Option<u32>, tem_navio: bool) -> bool {
 /// Posts the Sloop to the Mail unless a ship is already there. `true` =
 /// posted.
 fn postar_chalupa(dados: &mut shared::dungeon::DadosDungeon, agora: i64) -> bool {
-    if dados.correio.iter().any(|c| shared::item_id::e_navio(c.item_id)) {
+    if dados
+        .correio
+        .iter()
+        .any(|c| shared::item_id::e_navio(c.item_id))
+    {
         return false;
     }
     let id = shared::item_id::NAVIO_CHALUPA;
-    dados.postar(id, 1, Some(shared::navio::instancia_nova(id)), shared::navio::MOTIVO_CORREIO_NAVIO, agora);
+    dados.postar(
+        id,
+        1,
+        Some(shared::navio::instancia_nova(id)),
+        shared::navio::MOTIVO_CORREIO_NAVIO,
+        agora,
+    );
     true
 }
 
@@ -1155,12 +1173,15 @@ async fn migrar_chalupa_dos_antigos(pool: &PgPool) -> Result<()> {
     }
     // A brand-new database has no quest table yet, and no old players.
     let tem_quests: bool = sqlx::query_scalar("SELECT to_regclass('character_quests') IS NOT NULL")
-        .fetch_one(&mut *tx).await?;
+        .fetch_one(&mut *tx)
+        .await?;
     if !tem_quests {
         tx.commit().await?;
         return Ok(());
     }
-    let navios: Vec<i32> = (shared::item_id::NAVIO_CHALUPA..=shared::item_id::NAVIO_ULTIMO).map(|i| i as i32).collect();
+    let navios: Vec<i32> = (shared::item_id::NAVIO_CHALUPA..=shared::item_id::NAVIO_ULTIMO)
+        .map(|i| i as i32)
+        .collect();
     let rows: Vec<(String, String, i32, bool)> = sqlx::query_as(
         "SELECT c.name, c.dungeon_json, q.progress,                 EXISTS (SELECT 1 FROM equipment e WHERE e.character_name = c.name AND e.item_id = ANY($2))              OR EXISTS (SELECT 1 FROM inventory i WHERE i.character_name = c.name AND i.item_id = ANY($2))              OR EXISTS (SELECT 1 FROM vault v WHERE v.character_name = c.name AND v.item_id = ANY($2))          FROM characters c JOIN character_quests q ON q.char_name = c.name AND q.quest_id = $1          FOR UPDATE OF c",
     )
@@ -1176,8 +1197,11 @@ async fn migrar_chalupa_dos_antigos(pool: &PgPool) -> Result<()> {
         if !merece_chalupa(Some(progresso.max(0) as u32), tem_navio) {
             continue;
         }
-        let mut dados: shared::dungeon::DadosDungeon =
-            if dj.is_empty() { Default::default() } else { serde_json::from_str(&dj)? };
+        let mut dados: shared::dungeon::DadosDungeon = if dj.is_empty() {
+            Default::default()
+        } else {
+            serde_json::from_str(&dj)?
+        };
         if !postar_chalupa(&mut dados, agora) {
             continue;
         }
@@ -1225,14 +1249,27 @@ async fn migrar_bau_da_ilha(pool: &PgPool) -> Result<()> {
             tracing::warn!("bau da ilha: colonia_json ilegivel de {nome}, ficou como estava");
             continue;
         };
-        let bau: Vec<_> = col.bau.drain(..).filter(|s| s.qty > 0 && s.item_id != 0).collect();
+        let bau: Vec<_> = col
+            .bau
+            .drain(..)
+            .filter(|s| s.qty > 0 && s.item_id != 0)
+            .collect();
         if bau.is_empty() {
             continue;
         }
-        let mut dados: shared::dungeon::DadosDungeon =
-            if dj.is_empty() { Default::default() } else { serde_json::from_str(&dj)? };
+        let mut dados: shared::dungeon::DadosDungeon = if dj.is_empty() {
+            Default::default()
+        } else {
+            serde_json::from_str(&dj)?
+        };
         for s in &bau {
-            dados.postar(s.item_id, s.qty, s.instance, shared::colonia::MOTIVO_CORREIO_BAU_DA_ILHA, agora);
+            dados.postar(
+                s.item_id,
+                s.qty,
+                s.instance,
+                shared::colonia::MOTIVO_CORREIO_BAU_DA_ILHA,
+                agora,
+            );
         }
         sqlx::query("UPDATE characters SET colonia_json = $1, dungeon_json = $2 WHERE name = $3")
             .bind(serde_json::to_string(&col)?)
@@ -1244,7 +1281,9 @@ async fn migrar_bau_da_ilha(pool: &PgPool) -> Result<()> {
         itens += bau.len() as u32;
     }
     tx.commit().await?;
-    tracing::info!("bau da ilha: {itens} pilha(s) de {personagens} personagem(ns) foram pro correio");
+    tracing::info!(
+        "bau da ilha: {itens} pilha(s) de {personagens} personagem(ns) foram pro correio"
+    );
     Ok(())
 }
 
@@ -1255,7 +1294,8 @@ async fn migrar_pergaminho_volta(pool: &PgPool) -> Result<()> {
     if nova {
         sqlx::query("UPDATE items SET active = TRUE, buy_price = $1 WHERE id = 359")
             .bind(shared::viagem::PRECO_PERGAMINHO as i32)
-            .execute(&mut *tx).await?;
+            .execute(&mut *tx)
+            .await?;
         sqlx::query(
             "INSERT INTO vendor_shop_items (shop_id, item_id, sort_order) VALUES ($1, 359, 99) ON CONFLICT DO NOTHING",
         )
@@ -1269,22 +1309,36 @@ async fn migrar_pergaminho_volta(pool: &PgPool) -> Result<()> {
 /// Seed inicial: insere defaults pros itens/enemies que ainda não estão no DB.
 async fn migrar_viagem_montada(pool: &PgPool) -> Result<()> {
     let mut tx = pool.begin().await?;
-    let nova = sqlx::query("INSERT INTO migracoes_de_dados(nome) VALUES ('viagem_montada_v1') ON CONFLICT DO NOTHING")
-        .execute(&mut *tx).await?.rows_affected() > 0;
+    let nova = sqlx::query(
+        "INSERT INTO migracoes_de_dados(nome) VALUES ('viagem_montada_v1') ON CONFLICT DO NOTHING",
+    )
+    .execute(&mut *tx)
+    .await?
+    .rows_affected()
+        > 0;
     // The retirement ran ONCE (it used to run on every boot); the scroll came
     // back on 15/11/2026 (`migrar_pergaminho_volta`).
     if nova {
-        sqlx::query("DELETE FROM vendor_shop_items WHERE item_id = 359").execute(&mut *tx).await?;
-        sqlx::query("UPDATE items SET active = FALSE, buy_price = NULL WHERE id = 359").execute(&mut *tx).await?;
+        sqlx::query("DELETE FROM vendor_shop_items WHERE item_id = 359")
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query("UPDATE items SET active = FALSE, buy_price = NULL WHERE id = 359")
+            .execute(&mut *tx)
+            .await?;
         for tabela in ["inventory", "vault"] {
             sqlx::query(&format!("UPDATE {tabela} SET item_id = $1, qty = qty * 100, instance_data = NULL WHERE item_id = 359"))
                 .bind(shared::item_id::COPPER as i32).execute(&mut *tx).await?;
         }
-        let rows: Vec<(String, String)> = sqlx::query_as("SELECT name, dungeon_json FROM characters FOR UPDATE")
-            .fetch_all(&mut *tx).await?;
+        let rows: Vec<(String, String)> =
+            sqlx::query_as("SELECT name, dungeon_json FROM characters FOR UPDATE")
+                .fetch_all(&mut *tx)
+                .await?;
         for (nome, json) in rows {
-            let mut dados: shared::dungeon::DadosDungeon = if json.is_empty() { Default::default() }
-                else { serde_json::from_str(&json)? };
+            let mut dados: shared::dungeon::DadosDungeon = if json.is_empty() {
+                Default::default()
+            } else {
+                serde_json::from_str(&json)?
+            };
             for carta in &mut dados.correio {
                 if carta.item_id == shared::item_id::PERGAMINHO_TELEPORTE {
                     carta.item_id = shared::item_id::COPPER;
@@ -1293,10 +1347,20 @@ async fn migrar_viagem_montada(pool: &PgPool) -> Result<()> {
                 }
             }
             // Presente da atualizacao, uma vez por personagem existente.
-            dados.postar(shared::item_id::PERGAMINHO_INVOCA_MONTARIA, 1, None, 3,
-                std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_secs() as i64);
+            dados.postar(
+                shared::item_id::PERGAMINHO_INVOCA_MONTARIA,
+                1,
+                None,
+                3,
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)?
+                    .as_secs() as i64,
+            );
             sqlx::query("UPDATE characters SET dungeon_json = $2 WHERE name = $1")
-                .bind(nome).bind(serde_json::to_string(&dados)?).execute(&mut *tx).await?;
+                .bind(nome)
+                .bind(serde_json::to_string(&dados)?)
+                .execute(&mut *tx)
+                .await?;
         }
     }
     tx.commit().await?;
@@ -2959,6 +3023,43 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
             dex: (0, 0),
             wis: (0, 0),
         },
+        // NAVAL PVP: the generated wreck reward (never taken from the loser).
+        S {
+            id: item_id::NAVAL_TOKEN as i32,
+            name: "Naval Token",
+            sell: 25,
+            buy: None,
+            ord: None,
+            stack: 9999,
+            slot: None,
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
+        S {
+            id: item_id::FRAGMENTO_NAVAL as i32,
+            name: "Naval Fragment",
+            sell: 12,
+            buy: None,
+            ord: None,
+            stack: 9999,
+            slot: None,
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
         // SHIP COSMETICS (`navio::VELAS`, `navio::FIGURAS`): TP shop only,
         // so no NPC price (`sell: 0`).
         S {
@@ -3561,11 +3662,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
     // loja NEGOCIAVEIS: quem farma compra no mercado por gold.
     {
         let mut consumiveis: Vec<(i32, String, i32)> = vec![
-            (
-                item_id::RACAO_DE_PET as i32,
-                "Pet Feed".to_string(),
-                50,
-            ),
+            (item_id::RACAO_DE_PET as i32, "Pet Feed".to_string(), 50),
             (
                 item_id::REMOVEDOR_DE_SKILL_PET as i32,
                 "Pet Skill Remover".to_string(),
@@ -3639,7 +3736,11 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
     // Um acessorio utilitario por pet e por montaria. Sem atributos no template.
     for id in shared::acessorios::PET_INICIO..shared::acessorios::MONTARIA_INICIO + 8 {
         let (pet, _) = shared::acessorios::tipo(id).unwrap();
-        let slot = if pet { shared::EquipSlot::AcessorioPet } else { shared::EquipSlot::AcessorioMontaria };
+        let slot = if pet {
+            shared::EquipSlot::AcessorioPet
+        } else {
+            shared::EquipSlot::AcessorioMontaria
+        };
         sqlx::query(
             "INSERT INTO items (id, name, sell_price, buy_price, shop_order, stack_max, equip_slot, item_level, icon_col, icon_row) \
              VALUES ($1,$2,1000,5000,NULL,1,$3,1,-1,-1) \
@@ -3831,7 +3932,11 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         (76, "Coral Behemoth", "Coral Octopus"),
     ] {
         sqlx::query("UPDATE enemy_kinds SET name = $3 WHERE kind = $1 AND name = $2")
-            .bind(kind).bind(old).bind(new).execute(pool).await?;
+            .bind(kind)
+            .bind(old)
+            .bind(new)
+            .execute(pool)
+            .await?;
     }
     // Giant Crab now uses the real crab archetype. Preserve custom tuning.
     sqlx::query("UPDATE enemy_kinds SET hp_max = 220, speed = 1.5, attack_damage = 15, attack_cooldown = 2.4, attack_range = 1.9, xp_reward = 60, defense = 10, size_scale = 1.0 WHERE kind = 74 AND hp_max = 280 AND attack_damage = 18 AND defense = 8")
@@ -4036,11 +4141,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
                     item_id::CINTO,
                 ],
             ),
-            (
-                6,
-                "Archer",
-                &[item_id::PISTOLAS, item_id::COLDRE],
-            ),
+            (6, "Archer", &[item_id::PISTOLAS, item_id::COLDRE]),
         ];
         for (sid, name, items) in shops {
             sqlx::query(
@@ -4119,8 +4220,10 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
     }
     for item in shared::acessorios::PET_INICIO..shared::acessorios::MONTARIA_INICIO + 8 {
         let next_order: i32 = sqlx::query_scalar(
-            "SELECT COALESCE(MAX(sort_order), -1) + 1 FROM vendor_shop_items WHERE shop_id = 1"
-        ).fetch_one(pool).await?;
+            "SELECT COALESCE(MAX(sort_order), -1) + 1 FROM vendor_shop_items WHERE shop_id = 1",
+        )
+        .fetch_one(pool)
+        .await?;
         sqlx::query(
             "INSERT INTO vendor_shop_items (shop_id, item_id, sort_order) VALUES (1, $1, $2) ON CONFLICT DO NOTHING"
         ).bind(item as i32).bind(next_order).execute(pool).await?;
@@ -4601,9 +4704,13 @@ async fn load(pool: &PgPool, so: Option<&str>) -> Result<HashMap<String, Charact
         .map(|(n, a, v, g)| (n, (a, v, g.max(0) as u64)))
         .collect();
     // Faction — query separada (TEXT). Parse tolerante; default Peacemain.
-    let pk_map: HashMap<String, (bool, i64, i16, i64)> =
-        busca!((String, bool, i64, i16, i64), "name, pk_hostil, pk_points, pk_modo, pk_decai_s")
-            .into_iter().map(|(n, h, p, m, d)| (n, (h, p, m, d))).collect();
+    let pk_map: HashMap<String, (bool, i64, i16, i64)> = busca!(
+        (String, bool, i64, i16, i64),
+        "name, pk_hostil, pk_points, pk_modo, pk_decai_s"
+    )
+    .into_iter()
+    .map(|(n, h, p, m, d)| (n, (h, p, m, d)))
+    .collect();
     let faction_rows = busca!((String, String), "name, faction");
     let faction_map: HashMap<String, shared::Faction> = faction_rows
         .into_iter()
@@ -4667,16 +4774,20 @@ async fn load(pool: &PgPool, so: Option<&str>) -> Result<HashMap<String, Charact
         .into_iter()
         .map(|(n, m, d, u)| (n, (m, d, u)))
         .collect();
-    let diarios: HashMap<String, String> =
-        busca!((String, String), "name, diario_json").into_iter().collect();
+    let diarios: HashMap<String, String> = busca!((String, String), "name, diario_json")
+        .into_iter()
+        .collect();
     let voltas: HashMap<String, String> =
-        busca!((String, String), "name, COALESCE(zona_volta, '')").into_iter().collect();
+        busca!((String, String), "name, COALESCE(zona_volta, '')")
+            .into_iter()
+            .collect();
     let renascimentos: HashMap<String, u32> = busca!((String, i32), "name, renascimentos")
         .into_iter()
         .map(|(n, r)| (n, r.max(0) as u32))
         .collect();
-    let arvores: HashMap<String, String> =
-        busca!((String, String), "name, arvore_json").into_iter().collect();
+    let arvores: HashMap<String, String> = busca!((String, String), "name, arvore_json")
+        .into_iter()
+        .collect();
     let prefs = busca!((String, String), "name, preferencias_json");
     let prefs_map: HashMap<String, String> = prefs.into_iter().collect();
     let colonia = busca!((String, String), "name, colonia_json");
@@ -4696,20 +4807,8 @@ async fn load(pool: &PgPool, so: Option<&str>) -> Result<HashMap<String, Charact
         .collect();
 
     let mut out = HashMap::with_capacity(rows.len());
-    for (
-        name,
-        x,
-        y,
-        hp,
-        max_hp,
-        xp,
-        fame,
-        aura,
-        unspent,
-        allocated_vec,
-        sp_earned,
-        sp_spent,
-    ) in rows
+    for (name, x, y, hp, max_hp, xp, fame, aura, unspent, allocated_vec, sp_earned, sp_spent) in
+        rows
     {
         let (account_id, visual_json, gold) =
             extras_map.get(&name).cloned().unwrap_or((None, None, 0));
@@ -5229,8 +5328,7 @@ async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
             .and_then(|v| serde_json::to_string(v).ok());
         let skill_progress_json =
             serde_json::to_string(&row.skill_progress).unwrap_or_else(|_| "{}".to_string());
-        let colonia_json =
-            serde_json::to_string(&row.colonia).unwrap_or_else(|_| "{}".to_string());
+        let colonia_json = serde_json::to_string(&row.colonia).unwrap_or_else(|_| "{}".to_string());
         sqlx::query(
             "INSERT INTO characters (name, x, y, hp, max_hp, xp, fame, aura,
                                      unspent_points, allocated_points,
@@ -5315,17 +5413,25 @@ async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
         .execute(&mut *tx)
         .await?;
         sqlx::query("UPDATE characters SET diario_json = $2 WHERE name = $1")
-            .bind(&row.name).bind(&row.diario_json)
-            .execute(&mut *tx).await?;
+            .bind(&row.name)
+            .bind(&row.diario_json)
+            .execute(&mut *tx)
+            .await?;
         sqlx::query("UPDATE characters SET zona_volta = $2 WHERE name = $1")
-            .bind(&row.name).bind(&row.zona_volta)
-            .execute(&mut *tx).await?;
+            .bind(&row.name)
+            .bind(&row.zona_volta)
+            .execute(&mut *tx)
+            .await?;
         sqlx::query("UPDATE characters SET renascimentos = $2 WHERE name = $1")
-            .bind(&row.name).bind(row.renascimentos.min(i32::MAX as u32) as i32)
-            .execute(&mut *tx).await?;
+            .bind(&row.name)
+            .bind(row.renascimentos.min(i32::MAX as u32) as i32)
+            .execute(&mut *tx)
+            .await?;
         sqlx::query("UPDATE characters SET arvore_json = $2 WHERE name = $1")
-            .bind(&row.name).bind(row.arvore.para_json())
-            .execute(&mut *tx).await?;
+            .bind(&row.name)
+            .bind(row.arvore.para_json())
+            .execute(&mut *tx)
+            .await?;
         sqlx::query("UPDATE characters SET pk_hostil = $2, pk_points = $3, pk_modo = $4, pk_decai_s = $5 WHERE name = $1")
             .bind(&row.name).bind(row.pk.hostil).bind(row.pk.pontos as i64)
             .bind(row.pk.modo as i16).bind(row.pk_decai_s as i64)
@@ -5445,7 +5551,9 @@ async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
     tx.commit().await?;
     // Quests + pontos de facção (fora da tx; reconcilia character_quests).
     for row in &batch.rows {
-        if let Err(e) = crate::quests::save_char(pool, &row.name, &row.quests, row.faction_points).await {
+        if let Err(e) =
+            crate::quests::save_char(pool, &row.name, &row.quests, row.faction_points).await
+        {
             tracing::error!("quests of '{}' not saved: {e:?}", row.name);
         }
     }
@@ -5502,7 +5610,10 @@ mod testes_chalupa_dos_antigos {
     fn so_quem_passou_do_passo_e_nao_tem_navio() {
         let p = shared::historia::indice(shared::historia::PASSO_DA_CHALUPA).unwrap();
         assert!(!merece_chalupa(None, false));
-        assert!(!merece_chalupa(Some(p), false), "on the step: the step itself gives it");
+        assert!(
+            !merece_chalupa(Some(p), false),
+            "on the step: the step itself gives it"
+        );
         assert!(merece_chalupa(Some(p + 1), false));
         assert!(!merece_chalupa(Some(p + 1), true), "already has one");
     }
@@ -5513,7 +5624,11 @@ mod testes_chalupa_dos_antigos {
         let mut d = shared::dungeon::DadosDungeon::default();
         assert!(postar_chalupa(&mut d, 1));
         assert!(!postar_chalupa(&mut d, 2));
-        let navios: Vec<_> = d.correio.iter().filter(|c| shared::item_id::e_navio(c.item_id)).collect();
+        let navios: Vec<_> = d
+            .correio
+            .iter()
+            .filter(|c| shared::item_id::e_navio(c.item_id))
+            .collect();
         assert_eq!(navios.len(), 1);
         assert_eq!(navios[0].motivo, shared::navio::MOTIVO_CORREIO_NAVIO);
         assert!(navios[0].instance.is_some_and(|i| i.navio.is_some()));
@@ -5529,9 +5644,18 @@ mod testes_chalupa_dos_antigos {
         let url = std::env::var("MMO_MIGRACAO_TEST_URL").unwrap();
         let schema = format!("teste_chalupa_{}", std::process::id());
         let admin = PgPool::connect(&url).await.unwrap();
-        sqlx::query(&format!("CREATE SCHEMA {schema}")).execute(&admin).await.unwrap();
-        let opts = PgConnectOptions::from_str(&url).unwrap().options([("search_path", schema.as_str())]);
-        let pool = sqlx::postgres::PgPoolOptions::new().max_connections(1).connect_with(opts).await.unwrap();
+        sqlx::query(&format!("CREATE SCHEMA {schema}"))
+            .execute(&admin)
+            .await
+            .unwrap();
+        let opts = PgConnectOptions::from_str(&url)
+            .unwrap()
+            .options([("search_path", schema.as_str())]);
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(1)
+            .connect_with(opts)
+            .await
+            .unwrap();
         let passo = shared::historia::indice(shared::historia::PASSO_DA_CHALUPA).unwrap() as i32;
         for sql in [
             "CREATE TABLE migracoes_de_dados(nome TEXT PRIMARY KEY)".to_string(),
@@ -5551,11 +5675,20 @@ mod testes_chalupa_dos_antigos {
         let correio = |nome: &'static str| {
             let pool = pool.clone();
             async move {
-                let j: String = sqlx::query_scalar("SELECT dungeon_json FROM characters WHERE name = $1")
-                    .bind(nome).fetch_one(&pool).await.unwrap();
-                if j.is_empty() { 0 } else {
+                let j: String =
+                    sqlx::query_scalar("SELECT dungeon_json FROM characters WHERE name = $1")
+                        .bind(nome)
+                        .fetch_one(&pool)
+                        .await
+                        .unwrap();
+                if j.is_empty() {
+                    0
+                } else {
                     let d: shared::dungeon::DadosDungeon = serde_json::from_str(&j).unwrap();
-                    d.correio.iter().filter(|c| shared::item_id::e_navio(c.item_id)).count()
+                    d.correio
+                        .iter()
+                        .filter(|c| shared::item_id::e_navio(c.item_id))
+                        .count()
                 }
             }
         };
@@ -5563,7 +5696,10 @@ mod testes_chalupa_dos_antigos {
         assert_eq!(correio("novato").await, 0);
         assert_eq!(correio("marujo").await, 0);
         pool.close().await;
-        sqlx::query(&format!("DROP SCHEMA {schema} CASCADE")).execute(&admin).await.unwrap();
+        sqlx::query(&format!("DROP SCHEMA {schema} CASCADE"))
+            .execute(&admin)
+            .await
+            .unwrap();
     }
 }
 
@@ -5579,9 +5715,18 @@ mod testes_migracao_montaria {
         let url = std::env::var("MMO_MIGRACAO_TEST_URL").unwrap();
         let schema = format!("teste_montaria_{}", std::process::id());
         let admin = PgPool::connect(&url).await.unwrap();
-        sqlx::query(&format!("CREATE SCHEMA {schema}")).execute(&admin).await.unwrap();
-        let opts = PgConnectOptions::from_str(&url).unwrap().options([("search_path", schema.as_str())]);
-        let pool = sqlx::postgres::PgPoolOptions::new().max_connections(1).connect_with(opts).await.unwrap();
+        sqlx::query(&format!("CREATE SCHEMA {schema}"))
+            .execute(&admin)
+            .await
+            .unwrap();
+        let opts = PgConnectOptions::from_str(&url)
+            .unwrap()
+            .options([("search_path", schema.as_str())]);
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(1)
+            .connect_with(opts)
+            .await
+            .unwrap();
         for sql in [
             "CREATE TABLE migracoes_de_dados(nome TEXT PRIMARY KEY)",
             "CREATE TABLE vendor_shop_items(item_id INT)",
@@ -5593,22 +5738,43 @@ mod testes_migracao_montaria {
             "INSERT INTO vendor_shop_items VALUES(359)",
             "INSERT INTO inventory VALUES(359, 3, NULL)",
             "INSERT INTO vault VALUES(359, 2, NULL)",
-        ] { sqlx::query(sql).execute(&pool).await.unwrap(); }
+        ] {
+            sqlx::query(sql).execute(&pool).await.unwrap();
+        }
         let mut dg = shared::dungeon::DadosDungeon::default();
         dg.postar(shared::item_id::PERGAMINHO_TELEPORTE, 4, None, 0, 0);
-        sqlx::query("INSERT INTO characters VALUES('teste', $1)").bind(serde_json::to_string(&dg).unwrap()).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO characters VALUES('teste', $1)")
+            .bind(serde_json::to_string(&dg).unwrap())
+            .execute(&pool)
+            .await
+            .unwrap();
         migrar_viagem_montada(&pool).await.unwrap();
         migrar_viagem_montada(&pool).await.unwrap();
-        let inv: (i32, i32) = sqlx::query_as("SELECT item_id, qty FROM inventory").fetch_one(&pool).await.unwrap();
-        let vault: (i32, i32) = sqlx::query_as("SELECT item_id, qty FROM vault").fetch_one(&pool).await.unwrap();
+        let inv: (i32, i32) = sqlx::query_as("SELECT item_id, qty FROM inventory")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        let vault: (i32, i32) = sqlx::query_as("SELECT item_id, qty FROM vault")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
         assert_eq!(inv, (344, 300));
         assert_eq!(vault, (344, 200));
-        let json: String = sqlx::query_scalar("SELECT dungeon_json FROM characters").fetch_one(&pool).await.unwrap();
+        let json: String = sqlx::query_scalar("SELECT dungeon_json FROM characters")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
         let dg: shared::dungeon::DadosDungeon = serde_json::from_str(&json).unwrap();
         assert_eq!(dg.correio.len(), 2);
         assert_eq!((dg.correio[0].item_id, dg.correio[0].qtd), (344, 400));
-        assert_eq!((dg.correio[1].item_id, dg.correio[1].qtd), (shared::item_id::PERGAMINHO_INVOCA_MONTARIA, 1));
+        assert_eq!(
+            (dg.correio[1].item_id, dg.correio[1].qtd),
+            (shared::item_id::PERGAMINHO_INVOCA_MONTARIA, 1)
+        );
         pool.close().await;
-        sqlx::query(&format!("DROP SCHEMA {schema} CASCADE")).execute(&admin).await.unwrap();
+        sqlx::query(&format!("DROP SCHEMA {schema} CASCADE"))
+            .execute(&admin)
+            .await
+            .unwrap();
     }
 }

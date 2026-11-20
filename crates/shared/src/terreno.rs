@@ -55,7 +55,6 @@ pub const CAMADA_DECK: u8 = 1;
 /// of a ramp) there is no room to pass under: the ramp is the ground there.
 pub const VAO_LIVRE: i32 = 5;
 
-
 /// Quanto um trecho que so' se vence PULANDO custa a mais no A*, em milesimos
 /// de celula.
 ///
@@ -952,7 +951,13 @@ pub fn material_variado(
 pub fn material_de_profundidade(bioma: Bioma, topo: Material, altura: f32, prof: i32) -> Material {
     // The sky islands' cliffs are marble in courses, never brown earth.
     if bioma == Bioma::Celeste {
-        return if prof == 0 { topo } else if prof % 3 == 0 { Material::MarmoreSombra } else { Material::Marmore };
+        return if prof == 0 {
+            topo
+        } else if prof % 3 == 0 {
+            Material::MarmoreSombra
+        } else {
+            Material::Marmore
+        };
     }
     if prof >= 3 {
         return Material::Rocha;
@@ -1338,8 +1343,15 @@ pub fn raio_de_planta(p: Planta) -> Option<f32> {
         Planta::CristalCeu => Some(0.5),
         // A big shell blocks like a stone.
         Planta::Concha => Some(0.5),
-        Planta::Moita | Planta::Flor | Planta::Arbusto | Planta::Samambaia | Planta::Talo
-        | Planta::Lirio | Planta::Pena | Planta::Anemona | Planta::Leque => None,
+        Planta::Moita
+        | Planta::Flor
+        | Planta::Arbusto
+        | Planta::Samambaia
+        | Planta::Talo
+        | Planta::Lirio
+        | Planta::Pena
+        | Planta::Anemona
+        | Planta::Leque => None,
     }
 }
 
@@ -1363,11 +1375,15 @@ pub fn arvore_da_coluna(
         return None;
     }
     // Kōgen-tō: only in the parks (`kogen::so_no_parque`).
-    if ger.e_kogen() && !crate::kogen::so_no_parque(glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO)) {
+    if ger.e_kogen()
+        && !crate::kogen::so_no_parque(glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO))
+    {
         return None;
     }
     // Abyssia: kelp and coral by ring, none in the kingdom (`abissal`).
-    let abissal = ger.e_abissal().then(|| glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO));
+    let abissal = ger
+        .e_abissal()
+        .then(|| glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO));
     if abissal.is_some_and(|q| crate::abissal::densidade_em(q) <= 0.0) {
         return None;
     }
@@ -1408,7 +1424,10 @@ pub fn arvore_da_coluna(
     let prob = if bosque {
         crate::oasis::DENSIDADE_DO_BOSQUE * 0.0025
     } else {
-        densidade_de_arvore(bioma) * 0.0025 * rala * abissal.map_or(1.0, crate::abissal::densidade_em) // coluna = 0,25 m²
+        densidade_de_arvore(bioma)
+            * 0.0025
+            * rala
+            * abissal.map_or(1.0, crate::abissal::densidade_em) // coluna = 0,25 m²
     };
     let h0 = (bx as u32).wrapping_mul(374_761_393) ^ (bz as u32).wrapping_mul(668_265_263);
     let h1 = h0.wrapping_mul(1_274_126_177);
@@ -1436,7 +1455,10 @@ pub fn arvore_da_coluna(
         return None;
     }
     // Campos de energia e minas são clareiras exclusivas do recurso.
-    if ger.zona_de_coleta(bx, bz, topo).is_some_and(|tipo| tipo != 0) {
+    if ger
+        .zona_de_coleta(bx, bz, topo)
+        .is_some_and(|tipo| tipo != 0)
+    {
         return None;
     }
     let f = (h2 >> 20) as f32 / 4096.0;
@@ -1478,10 +1500,14 @@ pub fn planta_da_coluna(
         return None;
     }
     // Kōgen-tō: only in the parks (`kogen::so_no_parque`).
-    if ger.e_kogen() && !crate::kogen::so_no_parque(glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO)) {
+    if ger.e_kogen()
+        && !crate::kogen::so_no_parque(glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO))
+    {
         return None;
     }
-    if ger.e_abissal() && !crate::abissal::planta_livre(glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO)) {
+    if ger.e_abissal()
+        && !crate::abissal::planta_livre(glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO))
+    {
         return None;
     }
     // UM QUARTO das plantas na maquete. A forracao e' o que mais suja: sao
@@ -1526,8 +1552,10 @@ pub fn planta_da_coluna(
     let y = (topo + 1) as f32 * BLOCO;
     let solo = material_variado(bioma, y, declive, false, ger.mancha(bx, bz));
     let especie = especie_de_planta(bioma, (g2 >> 20) as f32 / 4096.0);
-    if matches!(especie, Planta::Pedra) && ger.e_magica()
-        && crate::magica::sem_pedras(glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO)) {
+    if matches!(especie, Planta::Pedra)
+        && ger.e_magica()
+        && crate::magica::sem_pedras(glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO))
+    {
         return None;
     }
 
@@ -1539,7 +1567,11 @@ pub fn planta_da_coluna(
     // ter raleado as árvores a um cinquentavo. Os estorvos nunca tinham sido
     // árvore; eram pedra de chão, e eu tinha acabado de dobrá-los.
     if raio_de_planta(especie).is_some()
-        && (ger.e_arena() || ger.zona_de_coleta(bx, bz, topo).is_some_and(|tipo| tipo != 0)) {
+        && (ger.e_arena()
+            || ger
+                .zona_de_coleta(bx, bz, topo)
+                .is_some_and(|tipo| tipo != 0))
+    {
         return None;
     }
     // Pedra nasce em qualquer chao, inclusive rocha e neve; o resto so' onde o
@@ -1735,7 +1767,9 @@ fn recurso_montanha_da_coluna(
     agua: bool,
     energia: bool,
 ) -> Option<Minerio> {
-    if ger.e_magica() && crate::magica::sem_pedras(glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO)) {
+    if ger.e_magica()
+        && crate::magica::sem_pedras(glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO))
+    {
         return None;
     }
     // NEM PEDRA NEM ENERGIA NA ARENA. O dono: "com mais flores etc que pedra e
@@ -1749,9 +1783,12 @@ fn recurso_montanha_da_coluna(
     // island top passed the threshold and the hunting islands were strewn
     // with rocks.
     if ger.na_ponte_magica(bx, bz)
-        || (ger.e_celeste() && !crate::celeste::tem_recurso(glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO)))
-        || (ger.e_kogen() && !crate::kogen::so_no_parque(glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO)))
-        || (ger.e_abissal() && !crate::abissal::planta_livre(glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO)))
+        || (ger.e_celeste()
+            && !crate::celeste::tem_recurso(glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO)))
+        || (ger.e_kogen()
+            && !crate::kogen::so_no_parque(glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO)))
+        || (ger.e_abissal()
+            && !crate::abissal::planta_livre(glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO)))
     {
         return None;
     }
@@ -1765,8 +1802,17 @@ fn recurso_montanha_da_coluna(
     } else {
         MINERIO_LIMIAR
     };
-    let campo_planalto = ger.planalto().is_some_and(|p| [2,3].iter().any(|i| p.centro_campo(*i).distance(glam::Vec2::new(bx as f32, bz as f32) * BLOCO) <= 32.0));
-    if y < pico * limiar && !campo_planalto && !(energia && ger.e_abissal() && ger.campo_de_energia(bx,bz)) {
+    let campo_planalto = ger.planalto().is_some_and(|p| {
+        [2, 3].iter().any(|i| {
+            p.centro_campo(*i)
+                .distance(glam::Vec2::new(bx as f32, bz as f32) * BLOCO)
+                <= 32.0
+        })
+    });
+    if y < pico * limiar
+        && !campo_planalto
+        && !(energia && ger.e_abissal() && ger.campo_de_energia(bx, bz))
+    {
         return None;
     }
 
@@ -1799,11 +1845,17 @@ fn recurso_montanha_da_coluna(
     }
     // Dentro do campo, só Energia. As ilhotas de coleta também reservam
     // toda a área ao recurso anunciado, inclusive a orla.
-    if !energia && (ger.campo_de_energia(bx, bz)
-        || ger.recurso_da_ilhota(bx, bz).is_some_and(|t| t == 0 || t == 5)) {
+    if !energia
+        && (ger.campo_de_energia(bx, bz)
+            || ger
+                .recurso_da_ilhota(bx, bz)
+                .is_some_and(|t| t == 0 || t == 5))
+    {
         return None;
     }
-    if ger.planalto().is_some() && !campo_planalto && meu % 4 != 0 { return None; }
+    if ger.planalto().is_some() && !campo_planalto && meu % 4 != 0 {
+        return None;
+    }
     let g0 = meu;
 
     // ── chao limpo ──────────────────────────────────────────────────────
@@ -1866,8 +1918,7 @@ fn recurso_montanha_da_coluna(
         //
         // Lá o tier sai de `magica::tier_da_pedra`, que é o que também faz
         // "recursos melhores" valer: a ilhota da pedra dá a boa.
-        tier: crate::magica::tier_da_pedra(ger, bx, bz)
-            .unwrap_or_else(|| tier_de_minerio(y, pico)),
+        tier: crate::magica::tier_da_pedra(ger, bx, bz).unwrap_or_else(|| tier_de_minerio(y, pico)),
         porte,
         variante: (g1 >> 22) & 0x3f,
         energia,
@@ -2482,8 +2533,9 @@ impl Gerador {
         if self.e_mar() {
             return crate::mar::material_do_topo(bx, bz);
         }
-        (self.e_celeste() && crate::celeste::na_ponte(glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO)))
-            .then_some(Material::Nuvem)
+        (self.e_celeste()
+            && crate::celeste::na_ponte(glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO)))
+        .then_some(Material::Nuvem)
     }
 
     pub fn e_celeste(&self) -> bool {
@@ -2503,7 +2555,10 @@ impl Gerador {
     /// Islands in the sky (Magic Island, Skyreach): no sea, the gaps are a
     /// drop to the cloud floor.
     pub fn e_aerea(&self) -> bool {
-        matches!(self.desenhado, Some(RelevoDesenhado::Magica | RelevoDesenhado::Celeste))
+        matches!(
+            self.desenhado,
+            Some(RelevoDesenhado::Magica | RelevoDesenhado::Celeste)
+        )
     }
 
     /// SKYREACH: the drawn plateaus and bridges, the town on the arrival
@@ -2575,7 +2630,11 @@ impl Gerador {
         // `Cidade::nova` takes BLOCKS: in units the town sat at half the
         // distance, out in Shibuya.
         let c = crate::kogen::centro_da_cidade();
-        g.cidade = Some(Cidade::nova(c.x / BLOCO, c.y / BLOCO, crate::kogen::NIVEL_CHAO));
+        g.cidade = Some(Cidade::nova(
+            c.x / BLOCO,
+            c.y / BLOCO,
+            crate::kogen::NIVEL_CHAO,
+        ));
         g
     }
 
@@ -2593,7 +2652,11 @@ impl Gerador {
         g.porto = None;
         g.oasis = None;
         let c = crate::abissal::centro_da_cidade();
-        g.cidade = Some(Cidade::nova(c.x / BLOCO, c.y / BLOCO, crate::abissal::NIVEL_CHAO));
+        g.cidade = Some(Cidade::nova(
+            c.x / BLOCO,
+            c.y / BLOCO,
+            crate::abissal::NIVEL_CHAO,
+        ));
         g
     }
 
@@ -2888,7 +2951,9 @@ impl Gerador {
             Some(RelevoDesenhado::Abissal) => crate::abissal::bloco_da_coluna(bx, bz),
             _ => self.bloco_cru(bx, bz),
         };
-        let cru = self.planalto().map_or(cru, |p| p.bloco(glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO), cru));
+        let cru = self.planalto().map_or(cru, |p| {
+            p.bloco(glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO), cru)
+        });
         let b = match &self.cidade {
             Some(c) => c.aplainar(bx, bz, cru),
             None => cru,
@@ -2909,10 +2974,17 @@ impl Gerador {
     }
 
     pub fn planalto(&self) -> Option<&crate::planalto::Plano> {
-        self.planalto.get_or_init(|| {
-            (self.semente == ARQUIPELAGO[3].semente && self.raio_blocos == ARQUIPELAGO[3].raio_blocos)
-                .then(|| self.cidade.map(|c| crate::planalto::Plano::novo(c, self.porto))).flatten()
-        }).as_ref()
+        self.planalto
+            .get_or_init(|| {
+                (self.semente == ARQUIPELAGO[3].semente
+                    && self.raio_blocos == ARQUIPELAGO[3].raio_blocos)
+                    .then(|| {
+                        self.cidade
+                            .map(|c| crate::planalto::Plano::novo(c, self.porto))
+                    })
+                    .flatten()
+            })
+            .as_ref()
     }
 
     /// A cidade desta ilha, se ela coube.
@@ -2952,13 +3024,33 @@ impl Gerador {
         if self.e_abissal() {
             return crate::abissal::pintura(glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO));
         }
-        if self.planalto().is_some_and(|p| p.distancia_estrada(glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO)) < crate::planalto::ESTRADA) { return Some(Material::RochaEscura); }
+        if self.planalto().is_some_and(|p| {
+            p.distancia_estrada(glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO))
+                < crate::planalto::ESTRADA
+        }) {
+            return Some(Material::RochaEscura);
+        }
         // The castle's wall walk and tower tops: dressed stone.
-        if let Some(parte) = self.planalto().and_then(|p| p.parte_da_muralha(glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO))) {
+        if let Some(parte) = self
+            .planalto()
+            .and_then(|p| p.parte_da_muralha(glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO)))
+        {
             let xadrez = (bx.div_euclid(2) + bz.div_euclid(2)) % 2 == 0;
             return Some(match parte {
-                crate::planalto::Muro::Torre { .. } => if xadrez { Material::CalcadaEscura } else { Material::Rocha },
-                crate::planalto::Muro::Cortina { .. } => if xadrez { Material::Calcada } else { Material::CalcadaEscura },
+                crate::planalto::Muro::Torre { .. } => {
+                    if xadrez {
+                        Material::CalcadaEscura
+                    } else {
+                        Material::Rocha
+                    }
+                }
+                crate::planalto::Muro::Cortina { .. } => {
+                    if xadrez {
+                        Material::Calcada
+                    } else {
+                        Material::CalcadaEscura
+                    }
+                }
             });
         }
         // Stormkeep's courtyards: flagstones inside the curtain.
@@ -2966,7 +3058,11 @@ impl Gerador {
             let p = glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO);
             if pl.d_forte(p) < crate::planalto::FORTE_MURO_RAIO {
                 let xadrez = (bx.div_euclid(3) + bz.div_euclid(3)) % 2 == 0;
-                return Some(if xadrez { Material::Calcada } else { Material::CalcadaEscura });
+                return Some(if xadrez {
+                    Material::Calcada
+                } else {
+                    Material::CalcadaEscura
+                });
             }
         }
         // A Porão's halls and walls on the Arena (`planta`).
@@ -3008,8 +3104,10 @@ impl Gerador {
     /// nada nasce ali.
     pub fn na_cidade(&self, bx: i32, bz: i32) -> bool {
         let p = glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO);
-        self.planalto().is_some_and(|pl| pl.sem_obstaculo(p)) || self.cidade
-            .is_some_and(|c| c.distancia(p) < c.raio + Cidade::FOLGA_DO_MATO)
+        self.planalto().is_some_and(|pl| pl.sem_obstaculo(p))
+            || self
+                .cidade
+                .is_some_and(|c| c.distancia(p) < c.raio + Cidade::FOLGA_DO_MATO)
             || self
                 .porto
                 .is_some_and(|s| s.contem(p, Cidade::FOLGA_DO_MATO))
@@ -3315,11 +3413,17 @@ impl Gerador {
     /// responde por si: a grade global tem celula de 300 blocos e foi feita
     /// pra ilha de 1,6 km, e numa de 280 u ela cai onde cai.
     pub fn campo_de_energia(&self, bx: i32, bz: i32) -> bool {
-        if self.e_abissal() {return crate::abissal::campo_energia(glam::Vec2::new(bx as f32,bz as f32)*BLOCO);}
+        if self.e_abissal() {
+            return crate::abissal::campo_energia(glam::Vec2::new(bx as f32, bz as f32) * BLOCO);
+        }
         if let Some(p) = self.planalto() {
-            let q = glam::Vec2::new(bx as f32,bz as f32) * BLOCO;
-            if p.centro_campo(2).distance(q) <= 32.0 { return true; }
-            if p.centro_campo(3).distance(q) <= 32.0 { return false; }
+            let q = glam::Vec2::new(bx as f32, bz as f32) * BLOCO;
+            if p.centro_campo(2).distance(q) <= 32.0 {
+                return true;
+            }
+            if p.centro_campo(3).distance(q) <= 32.0 {
+                return false;
+            }
         }
         if self.desenhado == Some(RelevoDesenhado::Magica) {
             return crate::magica::no_campo_de_energia(bx, bz);
@@ -3329,7 +3433,9 @@ impl Gerador {
 
     /// Recurso prometido pela ilhota de coleta; o resto mantém seu bioma.
     fn recurso_da_ilhota(&self, bx: i32, bz: i32) -> Option<u8> {
-        if !self.e_magica() { return None; }
+        if !self.e_magica() {
+            return None;
+        }
         let p = glam::Vec2::new(bx as f32, bz as f32) * BLOCO;
         match crate::magica::ilhota_em(p)?.bonus {
             crate::magica::Bonus::Coleta(t) => Some(t),
@@ -3353,11 +3459,18 @@ impl Gerador {
     /// Clareiras de recurso: 5 Energia, 1..4 pedra, 0 madeira nas ilhotas.
     /// Cliente e servidor consultam isto antes de plantar obstáculos.
     pub fn zona_de_coleta(&self, bx: i32, bz: i32, topo: i32) -> Option<u8> {
-        if self.e_arena() { return None; }
-        if let Some(tipo) = self.recurso_da_ilhota(bx, bz) { return Some(tipo); }
-        if self.campo_de_energia(bx, bz) { return Some(5); }
+        if self.e_arena() {
+            return None;
+        }
+        if let Some(tipo) = self.recurso_da_ilhota(bx, bz) {
+            return Some(tipo);
+        }
+        if self.campo_de_energia(bx, bz) {
+            return Some(5);
+        }
         ((topo + 1) as f32 * BLOCO >= self.pico() * MINERIO_LIMIAR
-            && self.cume_de_minerio(bx, bz, topo)).then_some(1)
+            && self.cume_de_minerio(bx, bz, topo))
+        .then_some(1)
     }
 
     pub fn pico(&self) -> f32 {
@@ -3504,7 +3617,9 @@ const MAGICA: [u8; 4] = *b"TALT";
 const VERSAO: u16 = 11;
 
 impl Ilha {
-    pub fn planalto(&self) -> Option<&crate::planalto::Plano> { self.ger.planalto() }
+    pub fn planalto(&self) -> Option<&crate::planalto::Plano> {
+        self.ger.planalto()
+    }
     pub fn gerar(semente: i32, raio_blocos: i32, bioma: Bioma, escala_altura: f32) -> Self {
         let p = bioma.perfil();
         Self::com_terraco(
@@ -4071,7 +4186,9 @@ impl Ilha {
     /// E sobreposicao acontece — slot de spawn que nao olhou a arvore, ou o
     /// empurrao entre corpos.
     pub fn cabe(&self, de: glam::Vec2, para: glam::Vec2, raio: f32) -> bool {
-        if self.ger.e_magica() && self.agua(para.x, para.y) { return false; }
+        if self.ger.e_magica() && self.agua(para.x, para.y) {
+            return false;
+        }
 
         let (c0x, c0z) = self.celula(de.x.min(para.x) - raio, de.y.min(para.y) - raio);
         let (c1x, c1z) = self.celula(de.x.max(para.x) + raio, de.y.max(para.y) + raio);
@@ -4218,13 +4335,7 @@ impl Ilha {
 
     /// Move um casco pela agua DESTA ilha (ver `mover_casco`). E' o avesso
     /// do `mover_e_deslizar`: aqui terra e' que barra.
-    pub fn mover_no_mar(
-        &self,
-        pos: glam::Vec2,
-        vel: glam::Vec2,
-        dt: f32,
-        raio: f32,
-    ) -> glam::Vec2 {
+    pub fn mover_no_mar(&self, pos: glam::Vec2, vel: glam::Vec2, dt: f32, raio: f32) -> glam::Vec2 {
         mover_casco(&|x, z| self.agua(x, z), pos, vel, dt, raio)
     }
 
@@ -4450,7 +4561,11 @@ impl Ilha {
     /// The height a body on floor `camada` stands at, in units.
     pub fn altura_na(&self, x: f32, z: f32, camada: u8) -> f32 {
         let (ix, iz) = self.coluna(x, z);
-        let b = if camada == CAMADA_DECK { self.deck_bloco(ix, iz).unwrap_or(self.bloco(ix, iz)) } else { self.bloco(ix, iz) };
+        let b = if camada == CAMADA_DECK {
+            self.deck_bloco(ix, iz).unwrap_or(self.bloco(ix, iz))
+        } else {
+            self.bloco(ix, iz)
+        };
         (b + 1) as f32 * BLOCO
     }
 
@@ -4478,7 +4593,10 @@ impl Ilha {
         camada: u8,
     ) -> (glam::Vec2, u8) {
         if !self.tem_deck() {
-            return (self.mover_com_degrau(pos, vel, dt, raio, degrau), CAMADA_CHAO);
+            return (
+                self.mover_com_degrau(pos, vel, dt, raio, degrau),
+                CAMADA_CHAO,
+            );
         }
         let camada = self.camada_em(pos, camada, degrau);
         let p = if camada == CAMADA_DECK {
@@ -4491,7 +4609,14 @@ impl Ilha {
 
     /// `precisa_pular` on floor `camada` (the route follower's auto-jump on
     /// Kōgen-tō: onto a ramp's side, along the deck).
-    pub fn precisa_pular_na(&self, pos: glam::Vec2, vel: glam::Vec2, dt: f32, raio: f32, camada: u8) -> bool {
+    pub fn precisa_pular_na(
+        &self,
+        pos: glam::Vec2,
+        vel: glam::Vec2,
+        dt: f32,
+        raio: f32,
+        camada: u8,
+    ) -> bool {
         if !self.tem_deck() {
             return self.precisa_pular(pos, vel, dt, raio);
         }
@@ -4499,17 +4624,30 @@ impl Ilha {
         if passo < 1e-4 {
             return false;
         }
-        let andando = pos.distance(self.mover_na_camada(pos, vel, dt, raio, DEGRAU_BLOCOS, camada).0);
+        let andando = pos.distance(
+            self.mover_na_camada(pos, vel, dt, raio, DEGRAU_BLOCOS, camada)
+                .0,
+        );
         if andando > passo * 0.5 {
             return false;
         }
-        let pulando = pos.distance(self.mover_na_camada(pos, vel, dt, raio, PULO_BLOCOS, camada).0);
+        let pulando = pos.distance(
+            self.mover_na_camada(pos, vel, dt, raio, PULO_BLOCOS, camada)
+                .0,
+        );
         pulando > andando * 2.0 + 1e-4
     }
 
     /// Walking on a deck: no trees, no houses — only the surface and the
     /// rails. Short steps, one axis at a time, like `mover_com_degrau`.
-    fn mover_no_deck(&self, pos: glam::Vec2, vel: glam::Vec2, dt: f32, raio: f32, degrau: i32) -> glam::Vec2 {
+    fn mover_no_deck(
+        &self,
+        pos: glam::Vec2,
+        vel: glam::Vec2,
+        dt: f32,
+        raio: f32,
+        degrau: i32,
+    ) -> glam::Vec2 {
         const PASSO_MAX: f32 = 0.15;
         let n = ((vel * dt).length() / PASSO_MAX).ceil().clamp(1.0, 8.0) as u32;
         let v = vel * dt / n as f32;
@@ -4564,12 +4702,20 @@ impl Ilha {
     /// `trecho_livre` across floors: walks the segment sample by sample,
     /// switching floor where the body would (`camada_em`). The floor it
     /// arrives on, or `None` if the way is blocked.
-    pub fn trecho_na_camada(&self, de: glam::Vec2, para: glam::Vec2, degrau: i32, camada: u8) -> Option<u8> {
+    pub fn trecho_na_camada(
+        &self,
+        de: glam::Vec2,
+        para: glam::Vec2,
+        degrau: i32,
+        camada: u8,
+    ) -> Option<u8> {
         if !self.tem_deck() {
             return self.trecho_livre(de, para, degrau).then_some(CAMADA_CHAO);
         }
         let mut camada = self.camada_em(de, camada, degrau);
-        if camada == CAMADA_CHAO && !self.trecho_sem_estorvo(de, para, crate::constants::ENTITY_RADIUS) {
+        if camada == CAMADA_CHAO
+            && !self.trecho_sem_estorvo(de, para, crate::constants::ENTITY_RADIUS)
+        {
             return None;
         }
         let n = ((de.distance(para) / BLOCO).ceil() as i32).max(1);
@@ -4639,7 +4785,11 @@ impl Ilha {
         evitar: &[glam::Vec2],
     ) -> Option<Vec<glam::Vec2>> {
         use std::collections::{BinaryHeap, HashMap};
-        if !self.tem_deck() || (camada_de == CAMADA_CHAO && camada_para == CAMADA_CHAO && !self.perto_de_deck(de, para)) {
+        if !self.tem_deck()
+            || (camada_de == CAMADA_CHAO
+                && camada_para == CAMADA_CHAO
+                && !self.perto_de_deck(de, para))
+        {
             return self.caminho_evitando(de, para, orcamento, evitar);
         }
         let lado = BLOCO * PASSO_CAMINHO as f32;
@@ -4725,22 +4875,39 @@ impl Ilha {
             }
             let g = custo[&atual];
             let Some(pa) = ponto(atual) else { continue };
-            for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (1, -1), (-1, 1), (-1, -1)] {
+            for (dx, dz) in [
+                (1, 0),
+                (-1, 0),
+                (0, 1),
+                (0, -1),
+                (1, 1),
+                (1, -1),
+                (-1, 1),
+                (-1, -1),
+            ] {
                 for cam in [CAMADA_CHAO, CAMADA_DECK] {
                     let viz = (atual.0 + dx, atual.1 + dz, cam);
                     let Some(pv) = ponto(viz) else { continue };
-                    if cam == CAMADA_CHAO && viz != fim && self.ocupado(pv, crate::constants::ENTITY_RADIUS) {
+                    if cam == CAMADA_CHAO
+                        && viz != fim
+                        && self.ocupado(pv, crate::constants::ENTITY_RADIUS)
+                    {
                         continue;
                     }
                     let base = if dx != 0 && dz != 0 { 1414 } else { 1000 };
-                    let passo = if self.trecho_na_camada(pa, pv, DEGRAU_BLOCOS, atual.2) == Some(cam) {
-                        base
-                    } else if self.trecho_na_camada(pa, pv, PULO_BLOCOS, atual.2) == Some(cam) {
-                        base + CUSTO_DO_PULO
-                    } else {
-                        continue;
-                    };
-                    let pedagio = evitar.iter().filter(|e| e.distance(pv) < RAIO_DO_DESVIO).count() as i64 * CUSTO_DO_DESVIO;
+                    let passo =
+                        if self.trecho_na_camada(pa, pv, DEGRAU_BLOCOS, atual.2) == Some(cam) {
+                            base
+                        } else if self.trecho_na_camada(pa, pv, PULO_BLOCOS, atual.2) == Some(cam) {
+                            base + CUSTO_DO_PULO
+                        } else {
+                            continue;
+                        };
+                    let pedagio = evitar
+                        .iter()
+                        .filter(|e| e.distance(pv) < RAIO_DO_DESVIO)
+                        .count() as i64
+                        * CUSTO_DO_DESVIO;
                     let novo = g + passo + pedagio;
                     if custo.get(&viz).is_some_and(|&c| c <= novo) {
                         continue;
@@ -4784,9 +4951,15 @@ impl Ilha {
         let n = ((a.distance(b) / 8.0).ceil() as i32).max(1);
         (0..=n).any(|i| {
             let p = a + (b - a) * (i as f32 / n as f32);
-            [glam::Vec2::ZERO, glam::Vec2::new(12.0, 0.0), glam::Vec2::new(-12.0, 0.0), glam::Vec2::new(0.0, 12.0), glam::Vec2::new(0.0, -12.0)]
-                .iter()
-                .any(|o| self.deck_em(p.x + o.x, p.y + o.y).is_some())
+            [
+                glam::Vec2::ZERO,
+                glam::Vec2::new(12.0, 0.0),
+                glam::Vec2::new(-12.0, 0.0),
+                glam::Vec2::new(0.0, 12.0),
+                glam::Vec2::new(0.0, -12.0),
+            ]
+            .iter()
+            .any(|o| self.deck_em(p.x + o.x, p.y + o.y).is_some())
         })
     }
 
@@ -5058,9 +5231,7 @@ impl Ilha {
                             continue;
                         }
                         let c = (contendo.0 + dx, contendo.1 + dz);
-                        let p = *pontos.entry(c).or_insert_with(|| {
-                            ponto_da_celula(c)
-                        });
+                        let p = *pontos.entry(c).or_insert_with(|| ponto_da_celula(c));
                         // Alcancavel NAO basta: a porta tem que estar LIGADA
                         // ao grafo. O cais e' mais estreito que os 4 u da
                         // celula, entao ha' celulas dele que o corpo alcanca
@@ -5087,9 +5258,7 @@ impl Ilha {
                             (-1, -1),
                         ] {
                             let vc = (c.0 + vx, c.1 + vz);
-                            let pv = *pontos.entry(vc).or_insert_with(|| {
-                                ponto_da_celula(vc)
-                            });
+                            let pv = *pontos.entry(vc).or_insert_with(|| ponto_da_celula(vc));
                             if !self.ocupado(pv, crate::constants::ENTITY_RADIUS)
                                 && self.trecho_livre(p, pv, PULO_BLOCOS)
                             {
@@ -5220,12 +5389,10 @@ impl Ilha {
                 // de dois blocos como parede e da' a volta na ilha inteira —
                 // ou nao acha caminho nenhum. Com ele, a rota atravessa; e o
                 // seguidor pula sozinho ao chegar na quina.
-                let pa = *pontos.entry(atual).or_insert_with(|| {
-                    ponto_da_celula(atual)
-                });
-                let pv = *pontos.entry(viz).or_insert_with(|| {
-                    ponto_da_celula(viz)
-                });
+                let pa = *pontos
+                    .entry(atual)
+                    .or_insert_with(|| ponto_da_celula(atual));
+                let pv = *pontos.entry(viz).or_insert_with(|| ponto_da_celula(viz));
                 // Mata fechada: sem ponto livre perto do centro, o ponto da
                 // celula ficou DENTRO do tronco — e o trecho, que ignora
                 // estorvo nas pontas, aprovaria a entrada. Nao e' passagem.
@@ -5278,11 +5445,7 @@ impl Ilha {
         // andar de verdade.
         let mut saida: Vec<glam::Vec2> = rota
             .into_iter()
-            .map(|c| {
-                *pontos.entry(c).or_insert_with(|| {
-                    ponto_da_celula(c)
-                })
-            })
+            .map(|c| *pontos.entry(c).or_insert_with(|| ponto_da_celula(c)))
             .collect();
         // A celula de onde se saiu so' sai da rota se o corpo ENXERGA a
         // seguinte. O A* validou "porta -> segunda", nao "corpo -> segunda":
@@ -5305,9 +5468,7 @@ impl Ilha {
                 de
             };
             saida.pop();
-            let centro = *pontos.entry(fim).or_insert_with(|| {
-                ponto_da_celula(fim)
-            });
+            let centro = *pontos.entry(fim).or_insert_with(|| ponto_da_celula(fim));
             if self.trecho_livre(penultimo, para, PULO_BLOCOS) {
                 saida.push(para);
             } else if self.trecho_livre(centro, para, PULO_BLOCOS) {
@@ -5766,7 +5927,11 @@ impl SeguidorDeRota {
         loop {
             let alvo = *self.pontos.front()?;
             let d = pos.distance(alvo);
-            let chegou = if self.pontos.len() > 1 { Self::CHEGOU.max(self.folga) } else { Self::CHEGOU };
+            let chegou = if self.pontos.len() > 1 {
+                Self::CHEGOU.max(self.folga)
+            } else {
+                Self::CHEGOU
+            };
             if d <= chegou {
                 self.avanca();
                 continue;
@@ -5943,7 +6108,11 @@ impl DefIlha {
         // Only the sea islands: Skyreach has no port, and counting it would
         // turn every existing dock (and move every port village).
         let do_mar = |d: &&DefIlha| tem_porto(d.zona);
-        let outras: Vec<&DefIlha> = ARQUIPELAGO.iter().filter(do_mar).filter(|d| d.zona != self.zona).collect();
+        let outras: Vec<&DefIlha> = ARQUIPELAGO
+            .iter()
+            .filter(do_mar)
+            .filter(|d| d.zona != self.zona)
+            .collect();
         if outras.len() + 1 != ARQUIPELAGO.iter().filter(do_mar).count() {
             return None;
         }
@@ -6058,8 +6227,11 @@ mod testes_da_ilha_magica {
             };
             let mut achados = Vec::new();
             ilha.coletaveis_em(i.centro, i.raio, &mut achados);
-            assert!(achados.iter().all(|c| c.tier == tipo),
-                "{} contém recurso de outro tipo", i.bonus.nome());
+            assert!(
+                achados.iter().all(|c| c.tier == tipo),
+                "{} contém recurso de outro tipo",
+                i.bonus.nome()
+            );
             let n = achados.iter().filter(|c| c.tier == tipo).count();
             println!("{}: {n} nos do tipo {tipo}", i.bonus.nome());
             assert!(
@@ -6076,7 +6248,9 @@ mod testes_da_ilha_magica {
 /// Is the island reached by SEA, with a port? Skyreach floats over the
 /// clouds and Kōgen-tō is reached only by the flying bus: neither has one.
 pub fn tem_porto(zona: &str) -> bool {
-    !crate::celeste::e_celeste(zona) && !crate::kogen::e_kogen(zona) && !crate::abissal::e_abissal(zona)
+    !crate::celeste::e_celeste(zona)
+        && !crate::kogen::e_kogen(zona)
+        && !crate::abissal::e_abissal(zona)
 }
 
 pub fn def_da_zona(zona: &str) -> Option<&'static DefIlha> {
@@ -6106,8 +6280,7 @@ pub fn def_da_zona(zona: &str) -> Option<&'static DefIlha> {
         // UM DEF POR DEGRAU. A `DefIlha` é `'static` no resto do jogo, então
         // os degraus moram numa tabela feita uma vez — construir na hora
         // devolveria referência pra temporário.
-        static DEFS: std::sync::OnceLock<Vec<crate::terreno::DefIlha>> =
-            std::sync::OnceLock::new();
+        static DEFS: std::sync::OnceLock<Vec<crate::terreno::DefIlha>> = std::sync::OnceLock::new();
         let defs = DEFS.get_or_init(|| {
             crate::magica::NIVEIS
                 .iter()
@@ -6417,7 +6590,10 @@ mod testes {
         assert!(i.agua(mar.x, mar.y), "o ponto de partida tinha que ser mar");
         let andou = i.mover_no_mar(mar, glam::Vec2::new(0.0, 4.0), 1.0, 1.2);
         assert!(andou.distance(mar) > 1.0, "o casco nao saiu do lugar");
-        assert!(i.agua(andou.x, andou.y), "o casco parou em terra: {andou:?}");
+        assert!(
+            i.agua(andou.x, andou.y),
+            "o casco parou em terra: {andou:?}"
+        );
 
         // Rumo ao centro da ilha: para na costa, e nao sobe a praia.
         let na_costa = i.mover_no_mar(mar, glam::Vec2::new(-9999.0, 0.0), 1.0, 1.2);
@@ -6551,12 +6727,11 @@ mod testes {
             glam::Vec2::new(57.0, 93.0),
         );
         for montado in [false, true] {
-            let vel =
-                crate::loja::velocidade_de_andar(
-                    crate::constants::PLAYER_SPEED,
-                    montado.then_some(crate::loja::VEL_MONTADO),
-                    1.0,
-                );
+            let vel = crate::loja::velocidade_de_andar(
+                crate::constants::PLAYER_SPEED,
+                montado.then_some(crate::loja::VEL_MONTADO),
+                1.0,
+            );
             let dt = 1.0f32 / 30.0;
             let mut seg = SeguidorDeRota::nova(Vec::new(), para);
             let mut p = de;
@@ -6893,7 +7068,11 @@ mod testes {
             // `o_ultimo_abrigo_e_um_castelo_com_saida_em_toda_estrada`. The
             // ramp rule this test guards is for the open towns.
             let minimo = if ger.planalto().is_some() { 2 } else { 6 };
-            assert!(saidas >= minimo, "{}: so' {saidas} saidas da cidade", d.zona);
+            assert!(
+                saidas >= minimo,
+                "{}: so' {saidas} saidas da cidade",
+                d.zona
+            );
         }
     }
 
@@ -7241,8 +7420,7 @@ mod testes {
         assert!(energias > 0, "ilha sem cristal de Energia");
         assert!(
             cristais.iter().all(|a| pedras.iter().all(|b| {
-                a.coluna != b.coluna
-                    && a.centro.distance(b.centro) >= a.raio + b.raio
+                a.coluna != b.coluna && a.centro.distance(b.centro) >= a.raio + b.raio
             })),
             "cristal de Energia cobre ou compartilha coluna com minerio"
         );
@@ -7423,16 +7601,29 @@ mod testes_do_cais {
     /// wall, forever. From her real spot, walking around the cabin arrives.
     #[test]
     fn atras_da_cabana_do_mestre_nao_prende() {
-        let def = ARQUIPELAGO.iter().find(|d| d.zona == "ilha_inicial").unwrap();
+        let def = ARQUIPELAGO
+            .iter()
+            .find(|d| d.zona == "ilha_inicial")
+            .unwrap();
         let ilha = Ilha::da_ilha(def);
         let de = glam::Vec2::new(115.997, -259.599);
         // Under the eaves, behind the back wall: outside.
-        assert_eq!(crate::vila::saida_do_predio(ilha.vila(), glam::Vec2::new(119.95, -260.94)), None);
+        assert_eq!(
+            crate::vila::saida_do_predio(ilha.vila(), glam::Vec2::new(119.95, -260.94)),
+            None
+        );
         // Inside the room: the door is the way out.
-        assert!(crate::vila::saida_do_predio(ilha.vila(), glam::Vec2::new(117.1, -263.0)).is_some());
+        assert!(
+            crate::vila::saida_do_predio(ilha.vila(), glam::Vec2::new(117.1, -263.0)).is_some()
+        );
         let para = glam::Vec2::new(116.0, -320.0);
         let fim = crate::terreno::testes::simula_ida(&ilha, de, para);
-        assert!(fim.distance(para) < 2.0, "stopped at {:.1},{:.1}", fim.x, fim.y);
+        assert!(
+            fim.distance(para) < 2.0,
+            "stopped at {:.1},{:.1}",
+            fim.x,
+            fim.y
+        );
     }
 
     /// The live case behind that cabin: walking to the outpost NPC aims 2
@@ -7440,15 +7631,33 @@ mod testes_do_cais {
     /// the cabin. The route has to go round to the door, and arrive.
     #[test]
     fn falar_com_o_npc_da_cabana_vindo_de_tras() {
-        let def = ARQUIPELAGO.iter().find(|d| d.zona == "ilha_inicial").unwrap();
+        let def = ARQUIPELAGO
+            .iter()
+            .find(|d| d.zona == "ilha_inicial")
+            .unwrap();
         let ilha = Ilha::da_ilha(def);
         let de = glam::Vec2::new(115.82651, -259.52228);
-        let npc = ilha.vila().npcs.iter().find(|n| n.pos.distance(de) < 15.0).expect("the outpost NPC").pos;
+        let npc = ilha
+            .vila()
+            .npcs
+            .iter()
+            .find(|n| n.pos.distance(de) < 15.0)
+            .expect("the outpost NPC")
+            .pos;
         // `falar_com` in the client.
         let para = npc + (de - npc).normalize_or_zero() * 2.0;
-        assert!(crate::vila::saida_do_predio(ilha.vila(), para).is_some(), "the aim point is inside the cabin");
+        assert!(
+            crate::vila::saida_do_predio(ilha.vila(), para).is_some(),
+            "the aim point is inside the cabin"
+        );
         let fim = crate::terreno::testes::simula_ida(&ilha, de, para);
-        assert!(fim.distance(npc) < 2.5, "stopped at {:.1},{:.1}, {:.1} from the NPC", fim.x, fim.y, fim.distance(npc));
+        assert!(
+            fim.distance(npc) < 2.5,
+            "stopped at {:.1},{:.1}, {:.1} from the NPC",
+            fim.x,
+            fim.y,
+            fim.distance(npc)
+        );
     }
 
     #[test]
@@ -7589,19 +7798,24 @@ mod testes_do_alcance_dos_npcs {
     #[test]
     fn todo_npc_de_vila_esta_ao_alcance_do_auto_path() {
         const ORCAMENTO: usize = 6_000; // o mesmo de `handle_mover_para`
-        // A Geleira tem UM caso conhecido a 3,09 u — 0,09 além do limite, por
-        // degrau de terreno ao lado do Alfaiate. Está registrado aqui em vez
-        // de afrouxar o limite: afrouxar esconderia os outros dez.
+                                        // A Geleira tem UM caso conhecido a 3,09 u — 0,09 além do limite, por
+                                        // degrau de terreno ao lado do Alfaiate. Está registrado aqui em vez
+                                        // de afrouxar o limite: afrouxar esconderia os outros dez.
         const TOLERADOS: &[(&str, &str)] = &[("ilha_gelo", "Tailor")];
         let mut falhas: Vec<String> = Vec::new();
         for zona in ["ilha_inicial", "ilha_gelo", "ilha_planalto", "ilha_bosque"] {
-            let Some(def) = def_da_zona(zona) else { continue };
+            let Some(def) = def_da_zona(zona) else {
+                continue;
+            };
             let ilha = Ilha::da_ilha(def);
             let Some(cid) = ilha.cidade() else { continue };
             let c = cid.centro();
             let praca = ilha.terra_mais_proxima(c.x, c.y, 400.0);
             for n in &ilha.vila().npcs {
-                if TOLERADOS.iter().any(|(z, nm)| *z == zona && n.nome.contains(nm)) {
+                if TOLERADOS
+                    .iter()
+                    .any(|(z, nm)| *z == zona && n.nome.contains(nm))
+                {
                     continue;
                 }
                 let d = match ilha.caminho(praca, n.pos, ORCAMENTO) {
@@ -7627,7 +7841,9 @@ mod testes_do_alcance_dos_npcs {
     #[test]
     fn da_pra_andar_a_prancha_do_porto_inteira() {
         for zona in ["ilha_inicial", "ilha_planalto"] {
-            let Some(def) = def_da_zona(zona) else { continue };
+            let Some(def) = def_da_zona(zona) else {
+                continue;
+            };
             let ilha = Ilha::da_ilha(def);
             let Some(p) = ilha.porto() else { continue };
             let Some(cid) = ilha.cidade() else { continue };
@@ -7676,7 +7892,10 @@ mod testes_do_desvio {
         let alvo = ilha.terra_mais_proxima(alvo.x, alvo.y, 60.0);
 
         let reta = ilha.caminho(praca, alvo, 6_000).expect("rota normal");
-        assert!(reta.len() > 3, "a rota de teste é curta demais pra medir desvio");
+        assert!(
+            reta.len() > 3,
+            "a rota de teste é curta demais pra medir desvio"
+        );
 
         // Bloqueia o MEIO da rota original.
         let meio = reta[reta.len() / 2];
@@ -7685,7 +7904,10 @@ mod testes_do_desvio {
             .expect("com desvio ainda há caminho");
 
         let passa_perto = |r: &[glam::Vec2]| r.iter().any(|p| p.distance(meio) < 2.0);
-        assert!(passa_perto(&reta), "a rota original não passa pelo ponto medido");
+        assert!(
+            passa_perto(&reta),
+            "a rota original não passa pelo ponto medido"
+        );
         assert!(
             !passa_perto(&desviada) || comprimento(&desviada) > comprimento(&reta) + 1.0,
             "o desvio devolveu o mesmo caminho: contornar não aconteceu"

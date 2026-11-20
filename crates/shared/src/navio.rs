@@ -18,7 +18,7 @@
 //! cannon (`custo_da_estrela`, never Rebirth Essence). At sea the skill bar
 //! becomes the SHIP's (`HABILIDADES`: Broadside, Long Gun, Emergency
 //! Repair, Smoke). Every gun fires from the sides. Sail colours and figureheads (`VELAS`, `FIGURAS`) are
-//! cosmetic items from the TP shop.
+//! cosmetic items from the TP shop and the Naval Quartermaster.
 //!
 //! PHASE 4, the Corsair and naval PvP: every world boss drops a COLOSSUS
 //! CHEST that fits only on the ship's DECK (`NavioData::conves`). Opening it
@@ -40,17 +40,17 @@ use crate::items::{ItemInstance, NavioData};
 /// Tamanho do barco (determina capacidade de passageiros).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Tamanho {
-    Pequeno = 0,  // 1-2 passageiros
-    Medio = 1,    // 3-4 passageiros
-    Grande = 2,   // 6-8 passageiros
+    Pequeno = 0, // 1-2 passageiros
+    Medio = 1,   // 3-4 passageiros
+    Grande = 2,  // 6-8 passageiros
 }
 
 /// Variante do barco (determina afinidade de stats base).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Variante {
-    Veloz = 0,   // Afinidade: velocidade + virada
-    Ataque = 1,  // Afinidade: dano
-    Tanque = 2,  // Afinidade: HP
+    Veloz = 0,  // Afinidade: velocidade + virada
+    Ataque = 1, // Afinidade: dano
+    Tanque = 2, // Afinidade: HP
 }
 
 /// Tipo de barco (3 tamanhos × 3 variantes = 9 tipos).
@@ -111,118 +111,125 @@ impl TipoBarco {
     }
 }
 
-/// Stats base de um tipo de barco (antes de pontos alocados e tier mult).
-#[derive(Debug, Clone, Copy)]
+/// Stats em unidades reais: u/s, pontos de casco, multiplicador e rad/s.
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct StatsBase {
-    pub velocidade: u16,
-    pub hp: u16,
-    pub dano: u16,
-    pub virada: u16,  // turning rate (rad/s × 100 para ser inteiro)
+    pub velocidade: f32,
+    pub hp: f32,
+    pub dano: f32,
+    pub virada: f32,
 }
 
 /// Pontos de stat alocados pelo player (máximo por tier).
-pub const PONTOS_POR_TIER: [u8; 5] = [
-    0,  // tier 0 (inválido)
-    10, // T1
-    18, // T2
-    26, // T3
-    34, // T4
-];
+pub const PONTOS_POR_TIER: [u8; 5] = [0, 10, 18, 26, 34];
+pub const PONTO_VELOCIDADE: f32 = 0.02;
+pub const PONTO_HP: f32 = 0.04;
+pub const PONTO_DANO: f32 = 0.04;
+pub const PONTO_VIRADA: f32 = 0.03;
 
-/// Multiplicador de stats por tier (igual sistema de items).
+/// Multiplicador de casco e dano por tier.
 pub fn tier_mult(tier: u8) -> f32 {
     match tier {
-        1 => 0.6,   // 60%
-        2 => 0.9,   // 90%
-        3 => 1.2,   // 120%
-        4 => 1.5,   // 150%
+        1 => 0.6,
+        2 => 0.9,
+        3 => 1.2,
+        4 => 1.5,
         _ => 1.0,
     }
 }
 
-/// Valida se pontos alocados estão dentro do limite do tier.
-pub fn valida_pontos(tier: u8, pontos: [u8; 4]) -> bool {
-    let tier_idx = (tier as usize).min(PONTOS_POR_TIER.len() - 1);
-    let max = PONTOS_POR_TIER[tier_idx];
-    let total: u16 = pontos.iter().map(|&p| p as u16).sum();
-    total <= max as u16
+/// O tier pesa menos na manobra para não deixar o T1 lento demais.
+pub fn tier_mult_manobra(tier: u8) -> f32 {
+    match tier {
+        1 => 0.85,
+        2 => 0.95,
+        3 => 1.05,
+        4 => 1.15,
+        _ => 1.0,
+    }
 }
 
-/// Calcula stats finais de um barco novo.
-pub fn stats_finais_novo(tipo: TipoBarco, tier: u8, pontos: [u8; 4]) -> (u16, u16, u16, u16) {
+pub fn pontos_no_tier(tier: u8) -> Option<u8> {
+    (1..=4)
+        .contains(&tier)
+        .then(|| PONTOS_POR_TIER[tier as usize])
+}
+
+pub fn valida_pontos(tier: u8, pontos: [u8; 4]) -> bool {
+    pontos_no_tier(tier)
+        .is_some_and(|max| pontos.iter().map(|&p| p as u16).sum::<u16>() <= max as u16)
+}
+
+/// Calcula stats finais de um barco novo. Cada ponto incide sobre o stat base.
+pub fn stats_finais_novo(tipo: TipoBarco, tier: u8, pontos: [u8; 4]) -> StatsBase {
     let base = stats_base(tipo);
-    let mult = tier_mult(tier);
-
-    let velocidade = ((base.velocidade + pontos[0] as u16) as f32 * mult) as u16;
-    let hp = ((base.hp + pontos[1] as u16) as f32 * mult) as u16;
-    let dano = ((base.dano + pontos[2] as u16) as f32 * mult) as u16;
-    let virada = ((base.virada + pontos[3] as u16) as f32 * mult) as u16;
-
-    (velocidade, hp, dano, virada)
+    let combate = tier_mult(tier);
+    let manobra = tier_mult_manobra(tier);
+    StatsBase {
+        velocidade: (base.velocidade * manobra * (1.0 + pontos[0] as f32 * PONTO_VELOCIDADE))
+            .min(VELOCIDADE_MAX),
+        hp: base.hp * combate * (1.0 + pontos[1] as f32 * PONTO_HP),
+        dano: base.dano * combate * (1.0 + pontos[2] as f32 * PONTO_DANO),
+        virada: base.virada * manobra * (1.0 + pontos[3] as f32 * PONTO_VIRADA),
+    }
 }
 
 /// Stats base por tipo de barco.
 pub fn stats_base(tipo: TipoBarco) -> StatsBase {
-    // Valores base balanceados (serão ajustados no balanço)
     match (tipo.tamanho, tipo.variante) {
-        // Pequenos: rápidos, frágeis
         (Tamanho::Pequeno, Variante::Veloz) => StatsBase {
-            velocidade: 120,  // muito rápido
-            hp: 2000,         // frágil
-            dano: 80,         // dano baixo
-            virada: 180,      // ágil
+            velocidade: 11.0,
+            hp: 2400.0,
+            dano: 0.95,
+            virada: 1.60,
         },
         (Tamanho::Pequeno, Variante::Ataque) => StatsBase {
-            velocidade: 100,
-            hp: 2200,
-            dano: 110,        // dano médio
-            virada: 160,
+            velocidade: 10.2,
+            hp: 2600.0,
+            dano: 1.10,
+            virada: 1.45,
         },
         (Tamanho::Pequeno, Variante::Tanque) => StatsBase {
-            velocidade: 90,
-            hp: 2800,         // mais HP
-            dano: 90,
-            virada: 150,
+            velocidade: 9.8,
+            hp: 3000.0,
+            dano: 1.00,
+            virada: 1.35,
         },
-
-        // Médios: balanceados
         (Tamanho::Medio, Variante::Veloz) => StatsBase {
-            velocidade: 100,
-            hp: 3500,
-            dano: 100,
-            virada: 140,
+            velocidade: 11.2,
+            hp: 3600.0,
+            dano: 1.10,
+            virada: 1.25,
         },
         (Tamanho::Medio, Variante::Ataque) => StatsBase {
-            velocidade: 90,
-            hp: 3800,
-            dano: 130,        // bom dano
-            virada: 120,
+            velocidade: 10.7,
+            hp: 3800.0,
+            dano: 1.25,
+            virada: 1.15,
         },
         (Tamanho::Medio, Variante::Tanque) => StatsBase {
-            velocidade: 80,
-            hp: 4500,         // tanky
-            dano: 110,
-            virada: 110,
+            velocidade: 10.2,
+            hp: 4500.0,
+            dano: 1.15,
+            virada: 1.05,
         },
-
-        // Grandes: lentos, resistentes
         (Tamanho::Grande, Variante::Veloz) => StatsBase {
-            velocidade: 80,   // "rápido" pra grande
-            hp: 5500,
-            dano: 120,
-            virada: 100,
+            velocidade: 11.0,
+            hp: 5200.0,
+            dano: 1.30,
+            virada: 0.90,
         },
         (Tamanho::Grande, Variante::Ataque) => StatsBase {
-            velocidade: 70,
-            hp: 6000,
-            dano: 160,        // alto dano
-            virada: 90,
+            velocidade: 10.3,
+            hp: 6000.0,
+            dano: 1.50,
+            virada: 0.80,
         },
         (Tamanho::Grande, Variante::Tanque) => StatsBase {
-            velocidade: 60,   // muito lento
-            hp: 7500,         // muito tanky
-            dano: 140,
-            virada: 80,       // vira mal
+            velocidade: 9.8,
+            hp: 7200.0,
+            dano: 1.40,
+            virada: 0.70,
         },
     }
 }
@@ -269,10 +276,54 @@ pub struct Casco {
 /// (`nenhum_casco_passa_do_teto_do_fio`), and the levels are the islands'
 /// bands: the Glacier's, the Waste's, the Plateau's.
 pub const CASCOS: [Casco; 4] = [
-    Casco { item: item_id::NAVIO_CHALUPA, nome: "Sloop", casco: 2400, velocidade: 10.0, nivel: 1, canhao: 1.0, escala: 1.0, mastros: 1, giro: 1.5, arranque_s: 0.6 },
-    Casco { item: item_id::NAVIO_ESCUNA, nome: "Schooner", casco: 3600, velocidade: 11.2, nivel: 15, canhao: 1.15, escala: 1.12, mastros: 2, giro: 1.2, arranque_s: 0.75 },
-    Casco { item: item_id::NAVIO_GALEAO, nome: "Galleon", casco: 5200, velocidade: 12.4, nivel: 30, canhao: 1.3, escala: 1.25, mastros: 3, giro: 0.9, arranque_s: 0.9 },
-    Casco { item: item_id::NAVIO_NAU, nome: "Man-o'-War", casco: 7200, velocidade: 13.4, nivel: 42, canhao: 1.5, escala: 1.38, mastros: 3, giro: 0.7, arranque_s: 1.05 },
+    Casco {
+        item: item_id::NAVIO_CHALUPA,
+        nome: "Sloop",
+        casco: 2400,
+        velocidade: 10.0,
+        nivel: 1,
+        canhao: 1.0,
+        escala: 1.0,
+        mastros: 1,
+        giro: 1.5,
+        arranque_s: 0.6,
+    },
+    Casco {
+        item: item_id::NAVIO_ESCUNA,
+        nome: "Schooner",
+        casco: 3600,
+        velocidade: 11.2,
+        nivel: 15,
+        canhao: 1.15,
+        escala: 1.12,
+        mastros: 2,
+        giro: 1.2,
+        arranque_s: 0.75,
+    },
+    Casco {
+        item: item_id::NAVIO_GALEAO,
+        nome: "Galleon",
+        casco: 5200,
+        velocidade: 12.4,
+        nivel: 30,
+        canhao: 1.3,
+        escala: 1.25,
+        mastros: 3,
+        giro: 0.9,
+        arranque_s: 0.9,
+    },
+    Casco {
+        item: item_id::NAVIO_NAU,
+        nome: "Man-o'-War",
+        casco: 7200,
+        velocidade: 13.4,
+        nivel: 42,
+        canhao: 1.5,
+        escala: 1.38,
+        mastros: 3,
+        giro: 0.7,
+        arranque_s: 1.05,
+    },
 ];
 
 /// What the Shipwright asks to build hull `para`: the hull before it (taken
@@ -360,13 +411,17 @@ pub fn velocidade(id: u16) -> f32 {
 
 /// A brand-new hull.
 pub fn novo(id: u16) -> NavioData {
-    NavioData { casco: casco_max(id), ..Default::default() }
+    NavioData {
+        casco: casco_max(id),
+        ..Default::default()
+    }
 }
 
 /// What the instance says about the ship. `None` (a ship without state yet)
 /// reads as a brand-new hull.
 pub fn dados(inst: Option<&ItemInstance>, id: u16) -> NavioData {
-    inst.and_then(|i| i.navio).unwrap_or_else(|| novo(id))
+    let d = inst.and_then(|i| i.navio).unwrap_or_else(|| novo(id));
+    migrar_antigo(id, &d)
 }
 
 /// The instance a new ship is born with: no stats, grey, bound to nothing.
@@ -374,6 +429,184 @@ pub fn instancia_nova(id: u16) -> ItemInstance {
     let mut i = ItemInstance::vazia_de_grau(1);
     i.navio = Some(novo(id));
     i
+}
+
+pub fn tipo_novo(d: &NavioData) -> Option<TipoBarco> {
+    d.tipo_novo
+        .and_then(TipoBarco::de_id)
+        .filter(|_| (1..=4).contains(&d.tier))
+}
+
+pub fn nome_do_navio(id: u16, d: &NavioData) -> &'static str {
+    tipo_novo(d).map_or_else(|| casco(id).map_or("Ship", |c| c.nome), TipoBarco::nome)
+}
+
+pub fn classe_do_navio(id: u16, d: &NavioData) -> usize {
+    tipo_novo(d).map_or_else(|| classe(id), |t| t.tamanho as usize)
+}
+
+pub fn capacidade_do_navio(id: u16, d: &NavioData) -> usize {
+    tipo_novo(d).map_or_else(
+        || [2, 4, 6, 8][classe(id).min(3)],
+        |t| t.capacidade() as usize,
+    )
+}
+
+pub fn stats_finais(id: u16, d: &NavioData) -> StatsBase {
+    if let Some(tipo) = tipo_novo(d) {
+        return stats_finais_novo(tipo, d.tier, d.pontos);
+    }
+    let c = casco(id).unwrap_or(&CASCOS[0]);
+    StatsBase {
+        velocidade: (c.velocidade * mult_das_estrelas(d, Eixo::Vela)).min(VELOCIDADE_MAX),
+        hp: c.casco as f32 * mult_das_estrelas(d, Eixo::Casco),
+        dano: c.canhao * mult_das_estrelas(d, Eixo::Canhao),
+        virada: c.giro * mult_das_estrelas(d, Eixo::Vela),
+    }
+}
+
+pub fn arranque_do_navio(id: u16, d: &NavioData) -> f32 {
+    tipo_novo(d).map_or_else(|| arranque_s(id), |t| [0.6, 0.8, 1.0][t.tamanho as usize])
+}
+
+fn pontos_migrados(tier: u8, estrelas: [u8; 3]) -> [u8; 4] {
+    let max = pontos_no_tier(tier).unwrap_or(0) as usize;
+    let brutos = [
+        estrelas[1] as usize,
+        estrelas[0] as usize,
+        estrelas[2] as usize,
+        estrelas[1] as usize,
+    ];
+    let total: usize = brutos.iter().sum();
+    if total == 0 || max == 0 {
+        return [0; 4];
+    }
+    let mut pontos = [0usize; 4];
+    for _ in 0..max {
+        let mut melhor = 0;
+        for i in 1..4 {
+            if brutos[i] * (pontos[melhor] + 1) > brutos[melhor] * (pontos[i] + 1) {
+                melhor = i;
+            }
+        }
+        pontos[melhor] += 1;
+    }
+    pontos.map(|p| p as u8)
+}
+
+/// Converte o casco e as estrelas antigas sem remover o item nem cosméticos.
+pub fn migrar_antigo(id: u16, antigo: &NavioData) -> NavioData {
+    if tipo_novo(antigo).is_some() {
+        return *antigo;
+    }
+    let (tipo, tier) = match classe(id) {
+        0 => (
+            TipoBarco {
+                tamanho: Tamanho::Pequeno,
+                variante: Variante::Veloz,
+            },
+            1,
+        ),
+        1 => (
+            TipoBarco {
+                tamanho: Tamanho::Medio,
+                variante: Variante::Ataque,
+            },
+            2,
+        ),
+        2 => (
+            TipoBarco {
+                tamanho: Tamanho::Grande,
+                variante: Variante::Ataque,
+            },
+            3,
+        ),
+        _ => (
+            TipoBarco {
+                tamanho: Tamanho::Grande,
+                variante: Variante::Tanque,
+            },
+            4,
+        ),
+    };
+    let total_antigo = casco_max(id).max(1) as f32;
+    let fracao = antigo.casco as f32 / total_antigo;
+    let mut d = NavioData {
+        casco: 0,
+        avariado: antigo.avariado,
+        estrelas: antigo.estrelas,
+        vela: antigo.vela,
+        figura: antigo.figura,
+        conves: antigo.conves,
+        tipo_novo: Some(tipo.id()),
+        pontos: pontos_migrados(tier, antigo.estrelas),
+        tier,
+    };
+    d.casco = (stats_finais_novo(tipo, tier, d.pontos).hp * fracao)
+        .round()
+        .clamp(0.0, u16::MAX as f32) as u16;
+    d
+}
+
+pub fn novo_tipo(tipo: TipoBarco, tier: u8) -> NavioData {
+    let mut d = NavioData {
+        tipo_novo: Some(tipo.id()),
+        tier: tier.clamp(1, 4),
+        ..Default::default()
+    };
+    d.casco = stats_finais_novo(tipo, d.tier, d.pontos).hp.round() as u16;
+    d
+}
+
+pub fn instancia_nova_tipo(tipo: TipoBarco, tier: u8) -> ItemInstance {
+    let mut inst = ItemInstance::vazia_de_grau(tier.clamp(1, 4));
+    inst.tier = tier.clamp(1, 4);
+    inst.navio = Some(novo_tipo(tipo, tier));
+    inst
+}
+
+pub fn custo_respec(tier: u8) -> u64 {
+    250 * tier.clamp(1, 4) as u64
+}
+
+pub fn custo_upgrade(tier: u8) -> Option<u64> {
+    match tier {
+        1 => Some(500),
+        2 => Some(2_000),
+        3 => Some(6_000),
+        _ => None,
+    }
+}
+
+/// Materiais de um casco T1. A variante escolhe os stats; o tamanho escolhe
+/// a receita. Todo barco criado aqui usa o item 470 e guarda tipo/tier na instância.
+pub fn receita_tipo(tipo: TipoBarco) -> [(u16, u32); 4] {
+    match tipo.tamanho {
+        Tamanho::Pequeno => [
+            (item_id::WOOD_T1, 80),
+            (item_id::na_cor(item_id::STEEL, 1), 30),
+            (item_id::PRANCHA_DE_NAUFRAGIO, 10),
+            (item_id::DARKSTEEL, 0),
+        ],
+        Tamanho::Medio => [
+            (item_id::WOOD_T2, 120),
+            (item_id::na_cor(item_id::STEEL, 2), 60),
+            (item_id::PRANCHA_DE_NAUFRAGIO, 30),
+            (item_id::DARKSTEEL, 20),
+        ],
+        Tamanho::Grande => [
+            (item_id::WOOD_T3, 180),
+            (item_id::na_cor(item_id::STEEL, 3), 100),
+            (item_id::PRANCHA_DE_NAUFRAGIO, 60),
+            (item_id::DARKSTEEL, 50),
+        ],
+    }
+}
+
+/// Alocação inicial e pontos novos de tier são grátis; tirar ou mover pontos
+/// exige o respec, que zera a build antes de uma nova alocação.
+pub fn alocacao_valida(antigos: [u8; 4], novos: [u8; 4], tier: u8) -> bool {
+    valida_pontos(tier, novos) && (0..4).all(|i| novos[i] >= antigos[i])
 }
 
 // ─────────────────────────── ship stars ───────────────────────────
@@ -453,7 +686,11 @@ pub fn custo_da_estrela(estrelas: u8) -> Option<CustoDaEstrela> {
         return None;
     }
     let k = 1u32 << estrelas;
-    Some(CustoDaEstrela { cobre: 1_000 * k, darksteel: 500 * k, pranchas: 5 * (estrelas as u32 + 1) })
+    Some(CustoDaEstrela {
+        cobre: 1_000 * k,
+        darksteel: 500 * k,
+        pranchas: 5 * (estrelas as u32 + 1),
+    })
 }
 
 /// The wire's speed ceiling (`EntityState::vel` is i8 at `POS_SCALE`).
@@ -463,12 +700,12 @@ pub const VELOCIDADE_MAX: f32 = 15.5;
 
 /// Hull points of this ship when full: the class, times the hull stars.
 pub fn casco_total(id: u16, d: &NavioData) -> u16 {
-    ((casco_max(id) as f32) * mult_das_estrelas(d, Eixo::Casco)).round().min(u16::MAX as f32) as u16
+    stats_finais(id, d).hp.round().clamp(0.0, u16::MAX as f32) as u16
 }
 
 /// The ship's speed at sea: the class, times the sail stars.
 pub fn velocidade_do_navio(id: u16, d: &NavioData) -> f32 {
-    (velocidade(id) * mult_das_estrelas(d, Eixo::Vela)).min(VELOCIDADE_MAX)
+    stats_finais(id, d).velocidade.min(VELOCIDADE_MAX)
 }
 
 // ─────────────── turning inertia (16/11/2026, "sensação de barco") ───────────────
@@ -488,7 +725,7 @@ pub const CURVA_DA_ROTA: f32 = 4.0;
 /// The most the heading of ship `id`/`d` turns, rad/s: the class, plus 3%
 /// per sail star (the same bonus as the speed's).
 pub fn giro_max(id: u16, d: &NavioData) -> f32 {
-    casco(id).map_or(CASCOS[0].giro, |c| c.giro) * mult_das_estrelas(d, Eixo::Vela)
+    stats_finais(id, d).virada
 }
 
 /// Seconds from standing still to full speed (and back down) of class `id`.
@@ -535,7 +772,8 @@ fn ang_dif(a: f32, b: f32) -> f32 {
 impl Leme {
     /// Where the bow points, if the ship has a heading.
     pub fn rumo(&self) -> Option<glam::Vec2> {
-        self.pronto.then(|| glam::Vec2::new(self.proa.cos(), self.proa.sin()))
+        self.pronto
+            .then(|| glam::Vec2::new(self.proa.cos(), self.proa.sin()))
     }
 
     /// The hull's velocity now.
@@ -556,7 +794,15 @@ impl Leme {
     /// (slowed by the turn still to make, `FREIO_NA_CURVA`) over
     /// `arranque_s` seconds for a ship of top speed `v_navio`. Returns the
     /// velocity, never above `VELOCIDADE_MAX` (the wire).
-    pub fn governa(&mut self, dir: glam::Vec2, quer: f32, v_navio: f32, giro: f32, arranque_s: f32, dt: f32) -> glam::Vec2 {
+    pub fn governa(
+        &mut self,
+        dir: glam::Vec2,
+        quer: f32,
+        v_navio: f32,
+        giro: f32,
+        arranque_s: f32,
+        dt: f32,
+    ) -> glam::Vec2 {
         let mut alvo_v = 0.0;
         if let Some(d) = dir.try_normalize() {
             let alvo = d.y.atan2(d.x);
@@ -566,7 +812,10 @@ impl Leme {
                 self.pronto = true;
             }
             let passo = giro.max(0.0) * dt;
-            self.proa = ang_dif(self.proa + ang_dif(alvo, self.proa).clamp(-passo, passo), 0.0);
+            self.proa = ang_dif(
+                self.proa + ang_dif(alvo, self.proa).clamp(-passo, passo),
+                0.0,
+            );
             let falta = ang_dif(alvo, self.proa).abs();
             alvo_v = quer.max(0.0) * (1.0 - FREIO_NA_CURVA * falta / std::f32::consts::PI);
         }
@@ -599,7 +848,10 @@ pub fn direcao_na_rota(
     giro: f32,
     arranque_s: f32,
 ) -> Option<glam::Vec2> {
-    let virando = seg.pontos().next().is_some_and(|q| leme.angulo_para(q - p) > 0.5);
+    let virando = seg
+        .pontos()
+        .next()
+        .is_some_and(|q| leme.angulo_para(q - p) > 0.5);
     if virando {
         seg.aguenta();
     }
@@ -658,7 +910,7 @@ pub fn mover_raspando(
 
 /// The cannon multiplier: the class, times the cannon stars.
 pub fn mult_do_canhao(id: u16, d: &NavioData) -> f32 {
-    casco(id).map_or(1.0, |c| c.canhao) * mult_das_estrelas(d, Eixo::Canhao)
+    stats_finais(id, d).dano
 }
 
 /// Copper to repair the hull back to full. Zero when it is full.
@@ -690,12 +942,26 @@ pub fn proximo_casco(id: u16) -> Option<u16> {
 /// The ship a rebuilt hull becomes (class `para`): hull full, the stars and
 /// the cosmetics carried over — nothing invested in the old hull is lost.
 pub fn reconstruido(para: u16, antigo: &NavioData) -> NavioData {
+    let tipo_novo = tipo_novo(antigo).map(|tipo| {
+        TipoBarco {
+            tamanho: match classe(para) {
+                0 => Tamanho::Pequeno,
+                1 => Tamanho::Medio,
+                _ => Tamanho::Grande,
+            },
+            variante: tipo.variante,
+        }
+        .id()
+    });
     let mut d = NavioData {
         estrelas: antigo.estrelas,
         vela: antigo.vela,
         figura: antigo.figura,
         // The treasure on deck moves to the new hull (never destroyed).
         conves: antigo.conves,
+        tipo_novo,
+        pontos: antigo.pontos,
+        tier: (classe(para) as u8 + 1).clamp(1, 4),
         ..Default::default()
     };
     d.casco = casco_total(para, &d);
@@ -716,11 +982,36 @@ pub struct Vela {
 
 /// Sail colours. Append only: the position + 1 is saved on the ship.
 pub const VELAS: [Vela; 5] = [
-    Vela { item: item_id::VELA_BASE, nome: "Crimson Sails", cor: [176, 38, 42], preco_tp: 150 },
-    Vela { item: item_id::VELA_BASE + 1, nome: "Black Sails", cor: [34, 32, 38], preco_tp: 200 },
-    Vela { item: item_id::VELA_BASE + 2, nome: "Royal Blue Sails", cor: [40, 72, 168], preco_tp: 150 },
-    Vela { item: item_id::VELA_BASE + 3, nome: "Emerald Sails", cor: [36, 132, 84], preco_tp: 150 },
-    Vela { item: item_id::VELA_BASE + 4, nome: "Golden Sails", cor: [214, 170, 58], preco_tp: 300 },
+    Vela {
+        item: item_id::VELA_BASE,
+        nome: "Crimson Sails",
+        cor: [176, 38, 42],
+        preco_tp: 150,
+    },
+    Vela {
+        item: item_id::VELA_BASE + 1,
+        nome: "Black Sails",
+        cor: [34, 32, 38],
+        preco_tp: 200,
+    },
+    Vela {
+        item: item_id::VELA_BASE + 2,
+        nome: "Royal Blue Sails",
+        cor: [40, 72, 168],
+        preco_tp: 150,
+    },
+    Vela {
+        item: item_id::VELA_BASE + 3,
+        nome: "Emerald Sails",
+        cor: [36, 132, 84],
+        preco_tp: 150,
+    },
+    Vela {
+        item: item_id::VELA_BASE + 4,
+        nome: "Golden Sails",
+        cor: [214, 170, 58],
+        preco_tp: 300,
+    },
 ];
 
 /// The plain canvas (no sail item applied).
@@ -731,6 +1022,20 @@ pub const FIGURAS: [(u16, &str, u64); 3] = [
     (item_id::FIGURA_BASE, "Mermaid Figurehead", 250),
     (item_id::FIGURA_BASE + 1, "Dragon Figurehead", 300),
     (item_id::FIGURA_BASE + 2, "Eagle Figurehead", 250),
+];
+
+/// The Naval Quartermaster's vendor id and (item, Naval Token price) catalog.
+pub const LOJA_NAVAL: u32 = 90_476;
+pub const TROCAS_NAVAIS: &[(u16, u32)] = &[
+    (item_id::VELA_BASE, 15),
+    (item_id::VELA_BASE + 1, 20),
+    (item_id::VELA_BASE + 2, 15),
+    (item_id::VELA_BASE + 3, 15),
+    (item_id::VELA_BASE + 4, 30),
+    (item_id::FIGURA_BASE, 25),
+    (item_id::FIGURA_BASE + 1, 30),
+    (item_id::FIGURA_BASE + 2, 25),
+    (item_id::PERGAMINHO_INVOCA_PET, 50),
 ];
 
 /// What a cosmetic item does to a ship.
@@ -747,12 +1052,19 @@ pub fn cosmetico(id: u16) -> Option<Cosmetico> {
     if let Some(i) = VELAS.iter().position(|v| v.item == id) {
         return Some(Cosmetico::Vela(i as u8 + 1));
     }
-    FIGURAS.iter().position(|f| f.0 == id).map(|i| Cosmetico::Figura(i as u8 + 1))
+    FIGURAS
+        .iter()
+        .position(|f| f.0 == id)
+        .map(|i| Cosmetico::Figura(i as u8 + 1))
 }
 
 /// English name of a cosmetic item.
 pub fn nome_do_cosmetico(id: u16) -> Option<&'static str> {
-    VELAS.iter().find(|v| v.item == id).map(|v| v.nome).or_else(|| FIGURAS.iter().find(|f| f.0 == id).map(|f| f.1))
+    VELAS
+        .iter()
+        .find(|v| v.item == id)
+        .map(|v| v.nome)
+        .or_else(|| FIGURAS.iter().find(|f| f.0 == id).map(|f| f.1))
 }
 
 /// `d` with cosmetic `c` applied.
@@ -765,7 +1077,9 @@ pub fn aplicar(d: &mut NavioData, c: Cosmetico) {
 
 /// The sail's RGB for `vela` (0 = canvas).
 pub fn cor_da_vela(vela: u8) -> [u8; 3] {
-    vela.checked_sub(1).and_then(|i| VELAS.get(i as usize)).map_or(VELA_PADRAO, |v| v.cor)
+    vela.checked_sub(1)
+        .and_then(|i| VELAS.get(i as usize))
+        .map_or(VELA_PADRAO, |v| v.cor)
 }
 
 /// How a ship looks, as other players see it.
@@ -782,10 +1096,14 @@ pub struct Visual {
 impl Visual {
     pub fn de(id: u16, d: &NavioData) -> Visual {
         Visual {
-            classe: classe(id) as u8,
+            classe: classe_do_navio(id, d) as u8,
             vela: d.vela,
             figura: d.figura,
-            estrelas: d.estrelas.iter().map(|e| (*e).min(ESTRELAS_MAX)).sum(),
+            estrelas: if tipo_novo(d).is_some() {
+                d.tier.saturating_sub(1).saturating_mul(5)
+            } else {
+                d.estrelas.iter().map(|e| (*e).min(ESTRELAS_MAX)).sum()
+            },
         }
     }
 
@@ -819,14 +1137,19 @@ pub const BAU_DO_COLOSSO_LIGADO: bool = false;
 /// What a ship skill does.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Efeito {
-    /// Every enemy within `alcance` off the ship's beam (its sides).
+    /// Every enemy within `alcance` off the ship's beam (its sides), in a
+    /// fan of `LEQUE_DA_BORDADA` balls (`aberturas_do_leque`).
     Bordada,
-    /// One shot at the selected target within `alcance`.
+    /// One shot at the selected target within `alcance`, flying fast
+    /// (`tempo_de_voo_rapido`).
     Canhonaco,
     /// Heals `REPARO_FRACAO` of the full hull.
     Reparo,
     /// Untargetable for `FUMACA_S`, faster for `FUMACA_VELOCIDADE_S`.
     Fumaca,
+    /// One low-damage shot; on a hull hit the enemy ship sails at
+    /// `CORRENTE_MULT` speed for `CORRENTE_S` (PvP naval, docs/PVP-NAVAL.md).
+    Corrente,
 }
 
 /// A ship skill. Mana-free: they use the ship, not the player.
@@ -846,17 +1169,19 @@ pub struct HabilidadeDoNavio {
     pub auto: bool,
 }
 
-/// THE SHIP'S BAR: skill slots 1-4 at sea.
-pub const HABILIDADES: [HabilidadeDoNavio; 4] = [
+/// THE SHIP'S BAR: skill slots 1-5 at sea.
+pub const HABILIDADES: [HabilidadeDoNavio; 5] = [
     HabilidadeDoNavio {
         id: 0,
         nome: "Broadside",
-        descricao: "Both sides fire: cannon damage to every enemy within 12 m off the ship's sides.",
+        descricao: "Both sides fire a fan of five balls per enemy within 12 m off the ship's sides.",
         efeito: Efeito::Bordada,
         espera_s: 6.0,
         alcance: 12.0,
         // Gameplay remake (16/11/2026): 1.5 with the sea mobs' tougher hide
         // (`VIDA_DO_BICHO_DO_MAR`): a same-level mob takes 3-5 Broadsides.
+        // PvP naval (18/11/2026): the damage is the SUM of the fan's balls
+        // (`LEQUE_DA_BORDADA`) — all five landing is the old full hit.
         mult: 1.5,
         auto: true,
     },
@@ -866,11 +1191,13 @@ pub const HABILIDADES: [HabilidadeDoNavio; 4] = [
         // se sim tira, tudo tem que sair de lado"): no more bow gun. This is
         // a long SIDE shot: it needs the target off one of the ship's sides.
         nome: "Long Gun",
-        descricao: "A long-range side shot at your target, up to 22 m away, when it is off one of your sides.",
+        descricao: "A fast long-range side shot at your target, up to 22 m away, when it is off one of your sides.",
         efeito: Efeito::Canhonaco,
         // Gameplay remake: the opener and the chaser, not the main gun. At
         // 2.2 every 4 s it out-damaged the Broadside three to one and a
         // fight lasted four seconds (`a_luta_no_mar_dura_dez_a_vinte_e_cinco_s`).
+        // 18/11/2026: the ball flies fast (`tempo_de_voo_rapido`), so at
+        // range it is a poke you aim, not an arc you wait on.
         espera_s: 5.0,
         alcance: 22.0,
         mult: 0.6,
@@ -896,6 +1223,16 @@ pub const HABILIDADES: [HabilidadeDoNavio; 4] = [
         mult: 0.0,
         auto: false,
     },
+    HabilidadeDoNavio {
+        id: 4,
+        nome: "Chain Shot",
+        descricao: "A chained ball at your target: little damage, but a hull hit slows the enemy ship to half speed for 5 s.",
+        efeito: Efeito::Corrente,
+        espera_s: 20.0,
+        alcance: 18.0,
+        mult: 0.4,
+        auto: true,
+    },
 ];
 
 /// Cooldown ids of the ship skills in `SkillsState` and their FX (far from
@@ -908,7 +1245,8 @@ pub fn id_de_skill(h: u8) -> u32 {
 
 /// The ship skill behind cooldown/FX id `id`, if it is one.
 pub fn habilidade_do_id(id: u32) -> Option<&'static HabilidadeDoNavio> {
-    id.checked_sub(ID_SKILL_BASE).and_then(|h| HABILIDADES.get(h as usize))
+    id.checked_sub(ID_SKILL_BASE)
+        .and_then(|h| HABILIDADES.get(h as usize))
 }
 
 pub fn habilidade(h: u8) -> Option<&'static HabilidadeDoNavio> {
@@ -932,6 +1270,69 @@ pub const BORDADA_COS_MAX: f32 = 0.85;
 /// hull; the PK modes decide whether it may happen at all).
 pub const PVP_CANHAO: f32 = 1.0;
 
+/// CHAIN SHOT (PvP naval, 18/11/2026): a hull hit slows the enemy ship to
+/// this share of its speed for `CORRENTE_S`.
+pub const CORRENTE_MULT: f32 = 0.5;
+pub const CORRENTE_S: f32 = 5.0;
+
+/// NAVAL DEFEAT (PvP naval phases 2–6).
+pub const AFUNDAMENTO_S: f32 = 12.0 * 60.0;
+pub const REPARAR_VELA_S: f32 = 45.0;
+pub const CASCO_APOS_REPARO: f32 = 0.10;
+pub const DERIVA_DERROTADO: f32 = 0.35;
+pub const SAQUE_NAVAL_S: f32 = 10.0;
+/// Generated PvP wreck loot: gold and the naval items. It is created by the
+/// system on the defeated hull and never taken from the victim's inventory.
+pub const SAQUE_OURO_MIN: u64 = 500;
+pub const SAQUE_OURO_MAX: u64 = 2_000;
+pub const SAQUE_TOKEN_MIN: u32 = 1;
+pub const SAQUE_TOKEN_MAX: u32 = 3;
+pub const SAQUE_FRAGMENTO_MIN: u32 = 1;
+pub const SAQUE_FRAGMENTO_MAX: u32 = 2;
+/// PvE token source: every sea elite pays one; common sea mobs pay one at this chance.
+pub const TOKENS_DO_ELITE: u32 = 1;
+pub const CHANCE_TOKEN_DO_BICHO: f32 = 0.08;
+/// An unlooted wreck leaves this barrel for anyone who sails close enough.
+pub const BARRIL_COLETA_S: f32 = SAQUE_NAVAL_S;
+pub const BARRIL_DURA_S: f32 = 15.0 * 60.0;
+/// Party ships/decks inside this radius share a completed wreck salvage.
+pub const ALCANCE_DIVISAO_SAQUE: f32 = 30.0;
+/// NPC role carried in `EntityMeta.kind`, also used by the sea map.
+pub const PAPEL_BARRIL_NAVAL: u8 = 124;
+pub const RESPAWN_NAVAL_BASE_S: f32 = 5.0;
+pub const RESPAWN_NAVAL_RESET_S: f32 = 90.0;
+pub const ABORDAGEM_ALCANCE: f32 = 9.0;
+/// Reconnection grace before an abandoned hull returns its crew to a dock.
+pub const AUTONOMIA_NAVAL_S: f32 = 120.0;
+pub const AUTONOMIA_VELOCIDADE: f32 = 0.55;
+
+/// THE NAVEL PvP LOOT ROLL for a defeated hull of character level `nivel`.
+/// `rng` returns 0..1 (so tests can pin it). Gold scales a little with the
+/// defeated ship's level; tokens and fragments stay in the design's tight
+/// 1-3 / 1-2 range.
+pub fn saque_naval(nivel: u32, rng: &mut dyn FnMut() -> f32) -> (u64, u32, u32) {
+    let mut t = |min: u64, max: u64| {
+        let f = rng().clamp(0.0, 1.0) as f64;
+        (min as f64 + (max - min) as f64 * f).round() as u64
+    };
+    let escala = 1.0 + ((nivel.saturating_sub(1)) as f64 / 80.0).min(0.5);
+    let ouro = ((t(SAQUE_OURO_MIN, SAQUE_OURO_MAX) as f64) * escala).round() as u64;
+    let tokens = t(SAQUE_TOKEN_MIN as u64, SAQUE_TOKEN_MAX as u64) as u32;
+    let fragmentos = t(SAQUE_FRAGMENTO_MIN as u64, SAQUE_FRAGMENTO_MAX as u64) as u32;
+    (ouro, tokens, fragmentos)
+}
+
+/// BROADSIDE FAN (PvP naval): the broadside fires this many balls per
+/// target, spread by these angles (radians) around the aimed point. Each
+/// ball carries `1/n` of the skill's damage: all five landing is the old
+/// full hit, and a turn sheds the outer balls.
+pub const LEQUE_DA_BORDADA: usize = 5;
+
+/// The fan's angles around the aim, `LEQUE_DA_BORDADA` of them.
+pub fn aberturas_do_leque() -> [f32; LEQUE_DA_BORDADA] {
+    [-0.16, -0.08, 0.0, 0.08, 0.16]
+}
+
 // ─────────────────────── gameplay remake (16/11/2026) ───────────────────────
 
 /// CANNONBALLS FLY (docs/NAVEGACAO.md, "gameplay remake"): the hit lands
@@ -952,11 +1353,41 @@ pub fn tempo_de_voo(dist: f32) -> f32 {
     (VOO_MIN_S + dist.max(0.0) / VELOCIDADE_DA_BALA).min(VOO_MAX_S)
 }
 
+/// THE LONG GUN'S FAST BALL (18/11/2026): twice the speed, a lower ceiling,
+/// so the long poke reads as a flat, quick shot rather than a high arc.
+pub const VELOCIDADE_DA_BALA_RAPIDA: f32 = 60.0;
+pub const VOO_MAX_RAPIDO_S: f32 = 0.7;
+
+/// Flight time of the Long Gun's ball over `dist` units. Same rule as
+/// `tempo_de_voo`: client and server read the same number.
+pub fn tempo_de_voo_rapido(dist: f32) -> f32 {
+    (VOO_MIN_S + dist.max(0.0) / VELOCIDADE_DA_BALA_RAPIDA).min(VOO_MAX_RAPIDO_S)
+}
+
+/// Flight time of skill `hab`'s ball over `dist` units.
+pub fn tempo_de_voo_da_skill(hab: &HabilidadeDoNavio, dist: f32) -> f32 {
+    match hab.efeito {
+        Efeito::Canhonaco => tempo_de_voo_rapido(dist),
+        _ => tempo_de_voo(dist),
+    }
+}
+
 /// Where to aim at a target at `alvo` moving at `vel`: where it will be when
 /// the ball lands (one step of lead, enough for a mob or a ship holding its
 /// course; turning still dodges).
 pub fn mira_com_avanco(de: glam::Vec2, alvo: glam::Vec2, vel: glam::Vec2) -> glam::Vec2 {
     let t = tempo_de_voo(de.distance(alvo));
+    alvo + vel * t
+}
+
+/// The same for skill `hab`: the Long Gun's fast ball leads less.
+pub fn mira_com_avanco_da_skill(
+    hab: &HabilidadeDoNavio,
+    de: glam::Vec2,
+    alvo: glam::Vec2,
+    vel: glam::Vec2,
+) -> glam::Vec2 {
+    let t = tempo_de_voo_da_skill(hab, de.distance(alvo));
     alvo + vel * t
 }
 
@@ -1086,6 +1517,13 @@ pub const PEGAR_S: f32 = 4.0;
 pub const ALCANCE_DO_TESOURO: f32 = 6.0;
 /// `ColetaEstado.tipo` while hauling a treasure aboard.
 pub const TIPO_COLETA_TESOURO: u8 = crate::forte::TIPO_COLETA + 10;
+/// `ColetaEstado.tipo` while repairing a defeated ship's sail.
+pub const TIPO_COLETA_REPARO_VELA: u8 = crate::forte::TIPO_COLETA + 11;
+/// `ColetaEstado.tipo` while looting a defeated enemy hull.
+pub const TIPO_COLETA_SAQUE: u8 = crate::forte::TIPO_COLETA + 12;
+/// Channel names for the sea HUD.
+pub const NOME_DO_REPARO_VELA: &str = "Sail repair";
+pub const NOME_DO_SAQUE: &str = "Wreck salvage";
 /// Wreck Planks in a Colossus Chest at x1.0.
 pub const PRANCHAS_DO_COLOSSO: u32 = 10;
 /// English name of the chest.
@@ -1134,7 +1572,13 @@ pub fn conta_atracacao(t: &mut crate::items::Tesouro, ilha: usize, de: &str) -> 
 /// IS THE SHIP MARKED? Derived, never stored: treasure on deck, or the
 /// trail of `TRILHA_DA_MARCA_S` after the deck emptied (`marca_ate`, in the
 /// sea process's clock), or the Corsair's Pirate's Code. Only at sea.
-pub fn marcado(no_mar: bool, conves: bool, agora: f32, marca_ate: f32, codigo_pirata: bool) -> bool {
+pub fn marcado(
+    no_mar: bool,
+    conves: bool,
+    agora: f32,
+    marca_ate: f32,
+    codigo_pirata: bool,
+) -> bool {
     no_mar && (conves || agora < marca_ate || codigo_pirata)
 }
 
@@ -1142,7 +1586,10 @@ pub fn marcado(no_mar: bool, conves: bool, agora: f32, marca_ate: f32, codigo_pi
 /// Ship slot: the bag, the bank, the market, a trade and the Mail all refuse
 /// it. That is what makes "take it to another island" mean sailing.
 pub fn preso_ao_conves(item_id: u16, inst: Option<&ItemInstance>) -> bool {
-    item_id::e_navio(item_id) && inst.and_then(|i| i.navio).is_some_and(|d| d.conves.is_some())
+    item_id::e_navio(item_id)
+        && inst
+            .and_then(|i| i.navio)
+            .is_some_and(|d| d.conves.is_some())
 }
 
 /// Seconds to haul a floating treasure aboard with the Corsair's
@@ -1164,7 +1611,11 @@ pub fn conteudo_do_colosso(
 ) -> Vec<crate::dungeon::Premio> {
     use crate::dungeon::Premio;
     let escala = |q: u32| ((q as f32 * mult).round() as u32).max(q.min(1));
-    let pranchas = Premio { item_id: item_id::PRANCHA_DE_NAUFRAGIO, qtd: escala(PRANCHAS_DO_COLOSSO), peca: None };
+    let pranchas = Premio {
+        item_id: item_id::PRANCHA_DE_NAUFRAGIO,
+        qtd: escala(PRANCHAS_DO_COLOSSO),
+        peca: None,
+    };
     let Some(c) = crate::dungeon::conteudo(crate::forte::conteudo_do_chefe(t.chefe)) else {
         return vec![pranchas];
     };
@@ -1174,15 +1625,32 @@ pub fn conteudo_do_colosso(
         .itens
         .into_iter()
         .filter(|p| !chaves.contains(&p.item_id))
-        .map(|p| if p.peca.is_some() { p } else { Premio { qtd: escala(p.qtd), ..p } })
+        .map(|p| {
+            if p.peca.is_some() {
+                p
+            } else {
+                Premio {
+                    qtd: escala(p.qtd),
+                    ..p
+                }
+            }
+        })
         .collect();
     if bau.marcas > 0 {
-        v.push(Premio { item_id: item_id::MARCAS_TEMPESTADE, qtd: escala(bau.marcas), peca: None });
+        v.push(Premio {
+            item_id: item_id::MARCAS_TEMPESTADE,
+            qtd: escala(bau.marcas),
+            peca: None,
+        });
     }
     let rolagens = if mult >= 2.0 { 2 } else { 1 };
     for _ in 0..rolagens {
         if let Some(k) = crate::forte::chave_do_bau(4, c.nivel_min, rng(), rng()) {
-            v.push(Premio { item_id: k, qtd: 1, peca: None });
+            v.push(Premio {
+                item_id: k,
+                qtd: 1,
+                peca: None,
+            });
         }
     }
     v.push(pranchas);
@@ -1219,7 +1687,24 @@ pub enum PedidoNavio {
     Leme { pegar: bool },
     /// At sea: board the ship of party member `capitao` (their ship's
     /// entity), close by. My own ship is stowed. Appended.
-    Embarcar { capitao: crate::components::EntityId },
+    Embarcar {
+        capitao: crate::components::EntityId,
+    },
+    /// Craft de um dos nove cascos T1 (`TipoBarco::de_id`). Appended.
+    ConstruirTipo { tipo: u8 },
+    /// Aplica uma build sem remover pontos já alocados. Appended.
+    Alocar { pontos: [u8; 4] },
+    /// Zera a build por ouro, permitindo realocar. Appended.
+    Respec,
+    /// Equipado + um casco idêntico na bolsa + ouro = próximo tier. Appended.
+    UpgradeTier,
+    /// Give up a defeated hull immediately. The crew takes the real naval
+    /// death penalty and returns to the last dock.
+    Afundar,
+    /// Start/cancel the 45 s sail repair on my defeated hull.
+    RepararVela { iniciar: bool },
+    /// Loot the defeated enemy hull whose deck I am standing on.
+    Saquear,
 }
 
 /// The ship's state, for the Captain's buttons and the hull bar.
@@ -1241,7 +1726,10 @@ impl EstadoNavio {
     /// The state of the ship in `id`/`inst` (`None` = no ship).
     pub fn de(id: Option<u16>, inst: Option<&ItemInstance>, zarpar: bool) -> Self {
         let Some(id) = id.filter(|i| item_id::e_navio(*i)) else {
-            return Self { zarpar, ..Default::default() };
+            return Self {
+                zarpar,
+                ..Default::default()
+            };
         };
         let d = dados(inst, id);
         Self {
@@ -1279,9 +1767,74 @@ mod testes {
             let v = c.velocidade * mult_das_estrelas(&cheio, Eixo::Vela);
             assert!(v < teto, "{} at {v} u/s passes the wire's {teto}", c.nome);
             assert!(v <= VELOCIDADE_MAX, "{} at {v} is clamped", c.nome);
-            assert!(c.velocidade > crate::PLAYER_SPEED, "a ship slower than walking");
+            assert!(
+                c.velocidade > crate::PLAYER_SPEED,
+                "a ship slower than walking"
+            );
             let fumaca = (velocidade_do_navio(c.item, &cheio) * FUMACA_MULT).min(VELOCIDADE_MAX);
             assert!(fumaca < teto);
+        }
+    }
+
+    #[test]
+    fn os_nove_tipos_usam_tiers_e_pontos_reais() {
+        for id in 0..9 {
+            let tipo = TipoBarco::de_id(id).unwrap();
+            assert_eq!(tipo.id(), id);
+            assert_eq!(tipo.capacidade(), [2, 4, 8][tipo.tamanho as usize]);
+            let base = stats_finais_novo(tipo, 1, [0; 4]);
+            assert!(base.velocidade > crate::PLAYER_SPEED && base.velocidade < VELOCIDADE_MAX);
+            assert!(base.hp > 0.0 && base.dano > 0.0 && base.virada > 0.0);
+            for tier in 1..=4 {
+                let limite = pontos_no_tier(tier).unwrap() as usize;
+                let pontos = [limite as u8, 0, 0, 0];
+                assert!(valida_pontos(tier, pontos));
+                assert!(!valida_pontos(tier, [limite as u8 + 1, 0, 0, 0]));
+                let stats = stats_finais_novo(tipo, tier, pontos);
+                assert!(stats.velocidade < TETO_DO_FIO);
+                assert!(stats.hp <= u16::MAX as f32);
+                if tier < 4 {
+                    assert!(
+                        stats_finais_novo(tipo, tier + 1, [0; 4]).hp
+                            > stats_finais_novo(tipo, tier, [0; 4]).hp
+                    );
+                }
+            }
+        }
+        assert!(!valida_pontos(0, [0; 4]));
+        assert!(!valida_pontos(5, [0; 4]));
+        assert_eq!(custo_upgrade(4), None);
+    }
+
+    #[test]
+    fn migracao_preserva_cosmeticos_tesouro_e_a_fracao_do_casco() {
+        for id in [
+            item_id::NAVIO_CHALUPA,
+            item_id::NAVIO_ESCUNA,
+            item_id::NAVIO_GALEAO,
+            item_id::NAVIO_NAU,
+        ] {
+            let carga = tesouro_novo(1, 1, Some(0));
+            let antigo = NavioData {
+                casco: casco_max(id) / 2,
+                avariado: true,
+                estrelas: [2, 3, 4],
+                vela: 2,
+                figura: 1,
+                conves: Some(carga),
+                ..Default::default()
+            };
+            let d = migrar_antigo(id, &antigo);
+            assert!(tipo_novo(&d).is_some());
+            assert!(valida_pontos(d.tier, d.pontos));
+            assert_eq!(
+                d.pontos.iter().map(|p| *p as u16).sum::<u16>(),
+                pontos_no_tier(d.tier).unwrap() as u16
+            );
+            assert_eq!((d.vela, d.figura, d.conves), (2, 1, Some(carga)));
+            assert!(d.avariado);
+            let esperado = (casco_total(id, &d) / 2) as f32;
+            assert!((d.casco as f32 - esperado).abs() <= 1.0);
         }
     }
 
@@ -1293,15 +1846,25 @@ mod testes {
             let (a, b) = (par[0], par[1]);
             assert!(b.casco > a.casco, "{} hull", b.nome);
             assert!(b.velocidade > a.velocidade, "{} speed", b.nome);
-            assert!(b.velocidade - a.velocidade <= 1.5, "{}: a bit more speed, not a leap", b.nome);
+            assert!(
+                b.velocidade - a.velocidade <= 1.5,
+                "{}: a bit more speed, not a leap",
+                b.nome
+            );
             assert!(b.nivel > a.nivel && b.canhao > a.canhao);
             assert_eq!(proximo_casco(a.item), Some(b.item));
             let r = receita_depois_de(a.item).unwrap();
-            assert!(r.materiais.iter().any(|(i, q)| *i == item_id::PRANCHA_DE_NAUFRAGIO && *q > 0));
+            assert!(r
+                .materiais
+                .iter()
+                .any(|(i, q)| *i == item_id::PRANCHA_DE_NAUFRAGIO && *q > 0));
         }
         assert_eq!(proximo_casco(item_id::NAVIO_NAU), None);
         assert!(CASCOS.iter().all(|c| item_id::e_navio(c.item)));
-        assert_eq!(CASCOS.len(), (item_id::NAVIO_ULTIMO - item_id::NAVIO_CHALUPA + 1) as usize);
+        assert_eq!(
+            CASCOS.len(),
+            (item_id::NAVIO_ULTIMO - item_id::NAVIO_CHALUPA + 1) as usize
+        );
         // The crossing stays sensible: a 600 u crossing at the slowest and
         // the fastest hull.
         assert!(600.0 / CASCOS[0].velocidade <= 60.0);
@@ -1312,10 +1875,18 @@ mod testes {
     /// what it says.
     #[test]
     fn estrelas_custam_cada_vez_mais_e_param_em_cinco() {
-        let mut antes = CustoDaEstrela { cobre: 0, darksteel: 0, pranchas: 0 };
+        let mut antes = CustoDaEstrela {
+            cobre: 0,
+            darksteel: 0,
+            pranchas: 0,
+        };
         for e in 0..ESTRELAS_MAX {
             let c = custo_da_estrela(e).unwrap();
-            assert!(c.cobre > antes.cobre && c.darksteel > antes.darksteel && c.pranchas > antes.pranchas);
+            assert!(
+                c.cobre > antes.cobre
+                    && c.darksteel > antes.darksteel
+                    && c.pranchas > antes.pranchas
+            );
             antes = c;
         }
         assert_eq!(custo_da_estrela(ESTRELAS_MAX), None);
@@ -1338,7 +1909,12 @@ mod testes {
         assert_eq!(velho.estrelas, [0, 0, 0]);
         assert_eq!((velho.vela, velho.figura), (0, 0));
         let mut inst = instancia_nova(item_id::NAVIO_GALEAO);
-        inst.navio = Some(NavioData { estrelas: [3, 1, 5], vela: 2, figura: 1, ..novo(item_id::NAVIO_GALEAO) });
+        inst.navio = Some(NavioData {
+            estrelas: [3, 1, 5],
+            vela: 2,
+            figura: 1,
+            ..novo(item_id::NAVIO_GALEAO)
+        });
         let json = serde_json::to_string(&inst).unwrap();
         let volta: ItemInstance = serde_json::from_str(&json).unwrap();
         assert_eq!(volta.navio, inst.navio);
@@ -1350,7 +1926,15 @@ mod testes {
     #[test]
     fn reconstruir_leva_estrelas_e_cosmeticos_com_o_casco_cheio() {
         let carga = tesouro_novo(10, 12, Some(0));
-        let velho = NavioData { casco: 10, avariado: true, estrelas: [2, 3, 4], vela: 1, figura: 2, conves: Some(carga) };
+        let velho = NavioData {
+            casco: 10,
+            avariado: true,
+            estrelas: [2, 3, 4],
+            vela: 1,
+            figura: 2,
+            conves: Some(carga),
+            ..Default::default()
+        };
         let d = reconstruido(item_id::NAVIO_ESCUNA, &velho);
         assert_eq!(d.estrelas, [2, 3, 4]);
         assert_eq!(d.conves, Some(carga), "the treasure moves to the new hull");
@@ -1363,14 +1947,28 @@ mod testes {
     fn reparo_cobra_o_que_falta_e_nada_cheio() {
         let id = item_id::NAVIO_CHALUPA;
         assert_eq!(custo_do_reparo(id, &novo(id)), 0);
-        let afundado = NavioData { casco: 0, avariado: true, ..Default::default() };
+        let afundado = NavioData {
+            casco: 0,
+            avariado: true,
+            ..Default::default()
+        };
         assert_eq!(custo_do_reparo(id, &afundado), 240);
         assert!(!pode_zarpar(&afundado));
         assert!(pode_zarpar(&novo(id)));
-        assert_eq!(dados(None, id), novo(id), "no state reads as a new hull");
-        // The hull stars raise the full hull, and so the full repair.
-        let estrelado = NavioData { casco: 0, avariado: true, estrelas: [5, 0, 0], ..Default::default() };
-        assert_eq!(custo_do_reparo(id, &estrelado), 336);
+        assert_eq!(
+            dados(None, id),
+            migrar_antigo(id, &novo(id)),
+            "no state reads as a migrated new hull"
+        );
+        // Old hull stars become build points, which raise the full repair.
+        let estrelado = NavioData {
+            casco: 0,
+            avariado: true,
+            estrelas: [5, 0, 0],
+            ..Default::default()
+        };
+        let migrado = migrar_antigo(id, &estrelado);
+        assert_eq!(custo_do_reparo(id, &migrado), 202);
     }
 
     #[test]
@@ -1400,7 +1998,11 @@ mod testes {
         d.estrelas = [5, 5, 5];
         let v = Visual::de(item_id::NAVIO_NAU, &d);
         let fio = v.no_fio();
-        assert_eq!(fio & 0xFF_FFFF_FFFF, 0, "bytes 0-4 are the weapon and mount skins");
+        assert_eq!(
+            fio & 0xFF_FFFF_FFFF,
+            0,
+            "bytes 0-4 are the weapon and mount skins"
+        );
         assert_eq!(Visual::do_fio(fio | 0x12_3456_789A), v);
         assert_eq!(Visual::do_fio(0).classe, 0, "no ship info draws a Sloop");
     }
@@ -1413,26 +2015,65 @@ mod testes {
             assert_eq!(h.id as usize, i);
             assert!(h.espera_s > 0.0);
             assert_eq!(habilidade_do_id(id_de_skill(h.id)), Some(h));
-            assert_eq!(h.auto, h.mult > 0.0, "{}: AUTO only for the attacks", h.nome);
+            assert_eq!(
+                h.auto,
+                h.mult > 0.0,
+                "{}: AUTO only for the attacks",
+                h.nome
+            );
         }
         let bordada = &HABILIDADES[0];
-        let sloop = dano_do_canhao(bordada, 30, item_id::NAVIO_CHALUPA, &novo(item_id::NAVIO_CHALUPA));
-        let nau = dano_do_canhao(bordada, 30, item_id::NAVIO_NAU, &com_estrelas(item_id::NAVIO_NAU, [0, 0, 5]));
+        let sloop = dano_do_canhao(
+            bordada,
+            30,
+            item_id::NAVIO_CHALUPA,
+            &novo(item_id::NAVIO_CHALUPA),
+        );
+        let nau = dano_do_canhao(
+            bordada,
+            30,
+            item_id::NAVIO_NAU,
+            &com_estrelas(item_id::NAVIO_NAU, [0, 0, 5]),
+        );
         assert!(nau > sloop * 2, "{sloop} vs {nau}");
-        assert!(HABILIDADES[2].espera_s >= 45.0, "Emergency Repair has a long cooldown");
-        assert!(no_costado(glam::Vec2::ZERO, glam::Vec2::Y, glam::Vec2::X * 5.0));
-        assert!(!no_costado(glam::Vec2::ZERO, glam::Vec2::Y, glam::Vec2::Y * 5.0), "the bow is blind");
-        assert!(!no_costado(glam::Vec2::ZERO, glam::Vec2::Y, -glam::Vec2::Y * 5.0), "the stern is blind");
+        assert!(
+            HABILIDADES[2].espera_s >= 45.0,
+            "Emergency Repair has a long cooldown"
+        );
+        assert!(no_costado(
+            glam::Vec2::ZERO,
+            glam::Vec2::Y,
+            glam::Vec2::X * 5.0
+        ));
+        assert!(
+            !no_costado(glam::Vec2::ZERO, glam::Vec2::Y, glam::Vec2::Y * 5.0),
+            "the bow is blind"
+        );
+        assert!(
+            !no_costado(glam::Vec2::ZERO, glam::Vec2::Y, -glam::Vec2::Y * 5.0),
+            "the stern is blind"
+        );
         // The arc: ±58° round the beam, so the quarters count (35° off the
         // bow or the stern bears, 28° does not).
-        let a = |graus: f32| glam::Vec2::from_angle(std::f32::consts::FRAC_PI_2 - graus.to_radians()) * 6.0;
+        let a = |graus: f32| {
+            glam::Vec2::from_angle(std::f32::consts::FRAC_PI_2 - graus.to_radians()) * 6.0
+        };
         for graus in [35.0f32, 60.0, 90.0, 120.0, 145.0, -35.0, -145.0] {
-            assert!(no_costado(glam::Vec2::ZERO, glam::Vec2::Y, a(graus)), "{graus}° off the bow should bear");
+            assert!(
+                no_costado(glam::Vec2::ZERO, glam::Vec2::Y, a(graus)),
+                "{graus}° off the bow should bear"
+            );
         }
         for graus in [0.0f32, 28.0, 152.0, 180.0, -28.0, -152.0] {
-            assert!(!no_costado(glam::Vec2::ZERO, glam::Vec2::Y, a(graus)), "{graus}° off the bow should be blind");
+            assert!(
+                !no_costado(glam::Vec2::ZERO, glam::Vec2::Y, a(graus)),
+                "{graus}° off the bow should be blind"
+            );
         }
-        assert!(no_costado(glam::Vec2::ZERO, glam::Vec2::ZERO, glam::Vec2::Y * 5.0), "standing still fires all round");
+        assert!(
+            no_costado(glam::Vec2::ZERO, glam::Vec2::ZERO, glam::Vec2::Y * 5.0),
+            "standing still fires all round"
+        );
     }
 
     /// THE SEA MOBS AGAINST THE CANNONS: the Reef Shark (the wolf's
@@ -1444,16 +2085,38 @@ mod testes {
     fn os_bichos_do_mar_aguentam_alguns_tiros() {
         use crate::ladder::{damage, mob, Profile};
         let bordada = &HABILIDADES[0];
-        let tiros = |vida: i32, dano: i32, defesa: i32| (vida as f32 / damage(dano, defesa) as f32).ceil() as u32;
+        let tiros = |vida: i32, dano: i32, defesa: i32| {
+            (vida as f32 / damage(dano, defesa) as f32).ceil() as u32
+        };
         for nivel in [1u32, 5, 15, 30, 45, 60] {
-            for perfil in [Profile::relativo_ao_lobo(120, 10, 0), Profile::relativo_ao_lobo(95, 15, 2)] {
+            for perfil in [
+                Profile::relativo_ao_lobo(120, 10, 0),
+                Profile::relativo_ao_lobo(95, 15, 2),
+            ] {
                 let mut m = mob(&perfil, nivel);
                 m.health = (m.health as f32 * VIDA_DO_BICHO_DO_MAR).round() as i32;
-                let sloop = dano_do_canhao(bordada, nivel, item_id::NAVIO_CHALUPA, &novo(item_id::NAVIO_CHALUPA));
+                let sloop = dano_do_canhao(
+                    bordada,
+                    nivel,
+                    item_id::NAVIO_CHALUPA,
+                    &novo(item_id::NAVIO_CHALUPA),
+                );
                 let n = tiros(m.health, sloop, m.defense);
-                assert!((3..=5).contains(&n), "level {nivel}: {n} broadsides from a Sloop for {} life", m.health);
-                let nau = dano_do_canhao(bordada, nivel, item_id::NAVIO_NAU, &com_estrelas(item_id::NAVIO_NAU, [0, 0, 5]));
-                assert!(tiros(m.health, nau, m.defense) < n, "level {nivel}: the Man-o'-War is no better");
+                assert!(
+                    (3..=5).contains(&n),
+                    "level {nivel}: {n} broadsides from a Sloop for {} life",
+                    m.health
+                );
+                let nau = dano_do_canhao(
+                    bordada,
+                    nivel,
+                    item_id::NAVIO_NAU,
+                    &com_estrelas(item_id::NAVIO_NAU, [0, 0, 5]),
+                );
+                assert!(
+                    tiros(m.health, nau, m.defense) < n,
+                    "level {nivel}: the Man-o'-War is no better"
+                );
                 let elite = tiros(m.health * 5, sloop, m.defense);
                 assert!((8..=30).contains(&elite), "level {nivel}: elite in {elite}");
             }
@@ -1469,11 +2132,20 @@ mod testes {
         use crate::ladder::{damage, mob, Profile};
         let id = item_id::NAVIO_CHALUPA;
         for nivel in [1u32, 5, 15, 30, 45, 60] {
-            for perfil in [Profile::relativo_ao_lobo(120, 10, 0), Profile::relativo_ao_lobo(95, 15, 2)] {
+            for perfil in [
+                Profile::relativo_ao_lobo(120, 10, 0),
+                Profile::relativo_ao_lobo(95, 15, 2),
+            ] {
                 let m = mob(&perfil, nivel);
                 let mut vida = (m.health as f32 * VIDA_DO_BICHO_DO_MAR).round() as i32;
-                let b = damage(dano_do_canhao(&HABILIDADES[0], nivel, id, &novo(id)), m.defense);
-                let c = damage(dano_do_canhao(&HABILIDADES[1], nivel, id, &novo(id)), m.defense);
+                let b = damage(
+                    dano_do_canhao(&HABILIDADES[0], nivel, id, &novo(id)),
+                    m.defense,
+                );
+                let c = damage(
+                    dano_do_canhao(&HABILIDADES[1], nivel, id, &novo(id)),
+                    m.defense,
+                );
                 let (mut pronta_b, mut pronta_c, mut t) = (0.0f32, 0.0f32, 0.0f32);
                 loop {
                     if t >= pronta_b - 1e-4 {
@@ -1489,7 +2161,10 @@ mod testes {
                     }
                     t += 0.5;
                 }
-                assert!((10.0..=25.0).contains(&t), "level {nivel}: the fight took {t:.1} s");
+                assert!(
+                    (10.0..=25.0).contains(&t),
+                    "level {nivel}: the fight took {t:.1} s"
+                );
             }
         }
     }
@@ -1507,10 +2182,111 @@ mod testes {
         let mira = mira_com_avanco(de, alvo, vel);
         assert!((mira.y - 5.0 * tempo_de_voo(10.0)).abs() < 1e-4);
         assert!(acertou(mira, mira + glam::Vec2::X * 2.0, 0.0));
-        assert!(!acertou(mira, mira + glam::Vec2::X * 5.0, 0.0), "a dodge is a splash");
-        assert!(acertou(mira, mira + glam::Vec2::X * 3.5, RAIO_DO_CASCO), "a hull is a bigger target");
-        assert!(MORDIDA_PREPARO_S > crate::constants::MOB_ATTACK_IMPACT_S, "the bite telegraph is readable");
-        assert!(DISTANCIA_DE_COMBATE < HABILIDADES[0].alcance && DISTANCIA_DE_COMBATE > RAIO_DA_MORDIDA);
+        assert!(
+            !acertou(mira, mira + glam::Vec2::X * 5.0, 0.0),
+            "a dodge is a splash"
+        );
+        assert!(
+            acertou(mira, mira + glam::Vec2::X * 3.5, RAIO_DO_CASCO),
+            "a hull is a bigger target"
+        );
+        assert!(
+            MORDIDA_PREPARO_S > crate::constants::MOB_ATTACK_IMPACT_S,
+            "the bite telegraph is readable"
+        );
+        assert!(
+            DISTANCIA_DE_COMBATE < HABILIDADES[0].alcance && DISTANCIA_DE_COMBATE > RAIO_DA_MORDIDA
+        );
+    }
+
+    /// THE BROADSIDE FAN (PvP naval): five evenly spread balls round the
+    /// aim, symmetric, none wider than the blind-cone geometry makes
+    /// pointless, and each carries its share of the damage.
+    #[test]
+    fn o_leque_da_bordada_abre_em_cinco() {
+        let ab = aberturas_do_leque();
+        assert_eq!(ab.len(), LEQUE_DA_BORDADA);
+        assert!((ab[0] + ab[LEQUE_DA_BORDADA - 1]).abs() < 1e-6, "symmetric");
+        assert!(ab[1..].windows(1).count() + 1 == LEQUE_DA_BORDADA);
+        for w in ab.windows(2) {
+            assert!(w[1] > w[0], "sorted and distinct");
+            assert!((w[1] - w[0] - 0.08).abs() < 1e-6, "even spread");
+        }
+        // The outermost ball still lands within a hull's reach of the aim at
+        // the Broadside's own range: at 12 m, ±0.16 rad is ~1.9 m of spread.
+        let spread = (0.16f32).sin() * 12.0;
+        assert!(spread < RAIO_DO_ACERTO + RAIO_DO_CASCO);
+    }
+
+    /// THE LONG GUN'S FAST BALL: quicker than the arc at every distance and
+    /// never hanging past its own ceiling; the skill table picks it.
+    #[test]
+    fn a_longa_voa_plana_e_rapida() {
+        for d in [0.0f32, 5.0, 12.0, 22.0, 100.0] {
+            assert!(tempo_de_voo_rapido(d) <= tempo_de_voo(d));
+            assert!(tempo_de_voo_rapido(d) <= VOO_MAX_RAPIDO_S + 1e-6);
+        }
+        let longa = &HABILIDADES[1];
+        assert_eq!(longa.efeito, Efeito::Canhonaco);
+        assert!((tempo_de_voo_da_skill(longa, 22.0) - tempo_de_voo_rapido(22.0)).abs() < 1e-6);
+        assert!((tempo_de_voo_da_skill(&HABILIDADES[0], 22.0) - tempo_de_voo(22.0)).abs() < 1e-6);
+        // Less lead: a fast ball aims closer to where the target is.
+        let de = glam::Vec2::ZERO;
+        let alvo = glam::Vec2::new(18.0, 0.0);
+        let vel = glam::Vec2::new(0.0, 5.0);
+        let mira = mira_com_avanco_da_skill(longa, de, alvo, vel);
+        assert!((mira.y - 5.0 * tempo_de_voo_rapido(18.0)).abs() < 1e-4);
+        assert!(mira.y < mira_com_avanco(de, alvo, vel).y);
+    }
+
+    /// CHAIN SHOT: the fifth slot, an AUTO attack with low damage, a long
+    /// cooldown, and a slow of exactly half speed for five seconds.
+    #[test]
+    fn o_tiro_de_corrente_trava_o_casco() {
+        let c = &HABILIDADES[4];
+        assert_eq!(c.efeito, Efeito::Corrente);
+        assert_eq!(c.id, 4);
+        assert!(c.auto, "an attack, so AUTO");
+        assert!(
+            c.mult < HABILIDADES[1].mult,
+            "less damage than the Long Gun"
+        );
+        assert!(c.espera_s >= 15.0, "a long cooldown");
+        assert!(c.alcance > HABILIDADES[0].alcance && c.alcance <= HABILIDADES[1].alcance);
+        assert_eq!(CORRENTE_MULT, 0.5);
+        assert_eq!(CORRENTE_S, 5.0);
+        assert_eq!(habilidade_do_id(id_de_skill(4)), Some(c));
+        // Five skills, five distinct ids.
+        for (i, h) in HABILIDADES.iter().enumerate() {
+            assert_eq!(h.id as usize, i);
+        }
+    }
+
+    /// THE PvP WRECK REWARD stays inside the design band and scales a little
+    /// with the defeated sailor's level. The three rolls are gold, tokens and
+    /// fragments (tests pin them in that order).
+    #[test]
+    fn o_saque_naval_fica_na_faixa_do_design() {
+        let mut vals = [0.0f32, 1.0, 0.5].into_iter();
+        let (ouro, tokens, fragmentos) = saque_naval(1, &mut || vals.next().unwrap());
+        assert_eq!(ouro, SAQUE_OURO_MIN);
+        assert_eq!(tokens, SAQUE_TOKEN_MAX);
+        assert_eq!(
+            fragmentos,
+            (SAQUE_FRAGMENTO_MIN + SAQUE_FRAGMENTO_MAX + 1) / 2
+        );
+        let mut vals = [1.0f32, 0.0, 0.0].into_iter();
+        let (ouro, tokens, fragmentos) = saque_naval(80, &mut || vals.next().unwrap());
+        assert!(
+            ouro > SAQUE_OURO_MAX,
+            "a high-level wreck pays a little more"
+        );
+        assert_eq!(tokens, SAQUE_TOKEN_MIN);
+        assert_eq!(fragmentos, SAQUE_FRAGMENTO_MIN);
+        assert!(TIPO_COLETA_REPARO_VELA > TIPO_COLETA_TESOURO);
+        assert!(TIPO_COLETA_SAQUE > TIPO_COLETA_REPARO_VELA);
+        assert_eq!(NOME_DO_REPARO_VELA, "Sail repair");
+        assert_eq!(NOME_DO_SAQUE, "Wreck salvage");
     }
 
     // ───────────────────── phase 4 ─────────────────────
@@ -1532,10 +2308,16 @@ mod testes {
         assert!(conta_atracacao(&mut t, 2, "ilha_inicial"));
         assert!((mult_do_tesouro(&t, 0.0) - 2.2).abs() < 1e-5);
         assert!(conta_atracacao(&mut t, 3, "ilha_deserto"));
-        assert!(conta_atracacao(&mut t, 1, "ilha_planalto"), "back at the origin after a crossing counts");
+        assert!(
+            conta_atracacao(&mut t, 1, "ilha_planalto"),
+            "back at the origin after a crossing counts"
+        );
         assert_eq!(ilhas_cruzadas(&t), 4);
         assert_eq!(mult_do_tesouro(&t, 0.0), MULT_MAX, "capped");
-        assert!((mult_do_tesouro(&t, 0.2) - 3.2).abs() < 1e-5, "the Corsair adds on top");
+        assert!(
+            (mult_do_tesouro(&t, 0.2) - 3.2).abs() < 1e-5,
+            "the Corsair adds on top"
+        );
         assert!(!conta_atracacao(&mut t, 99, "x"));
     }
 
@@ -1564,9 +2346,11 @@ mod testes {
         inst.navio.as_mut().unwrap().conves = Some(tesouro_novo(12, 20, Some(1)));
         assert!(preso_ao_conves(id, Some(&inst)));
         assert!(!preso_ao_conves(item_id::COPPER, Some(&inst)));
-        let volta: ItemInstance = postcard::from_bytes(&postcard::to_allocvec(&inst).unwrap()).unwrap();
+        let volta: ItemInstance =
+            postcard::from_bytes(&postcard::to_allocvec(&inst).unwrap()).unwrap();
         assert_eq!(volta.navio.unwrap().conves, inst.navio.unwrap().conves);
-        let volta: ItemInstance = serde_json::from_str(&serde_json::to_string(&inst).unwrap()).unwrap();
+        let volta: ItemInstance =
+            serde_json::from_str(&serde_json::to_string(&inst).unwrap()).unwrap();
         assert_eq!(volta.navio.unwrap().conves.unwrap().chefe, 12);
     }
 
@@ -1584,12 +2368,23 @@ mod testes {
             };
             conteudo_do_colosso(&t, mult, &mut rng)
         };
-        let soma = |v: &[crate::dungeon::Premio], id: u16| v.iter().filter(|p| p.item_id == id).map(|p| p.qtd).sum::<u32>();
+        let soma = |v: &[crate::dungeon::Premio], id: u16| {
+            v.iter()
+                .filter(|p| p.item_id == id)
+                .map(|p| p.qtd)
+                .sum::<u32>()
+        };
         let (um, tres) = (rolar(1.0), rolar(3.0));
         assert!(soma(&um, item_id::GOLD) > 0, "{um:?}");
         assert!(soma(&tres, item_id::GOLD) >= soma(&um, item_id::GOLD) * 2);
-        assert_eq!(soma(&um, item_id::PRANCHA_DE_NAUFRAGIO), PRANCHAS_DO_COLOSSO);
-        assert_eq!(soma(&tres, item_id::PRANCHA_DE_NAUFRAGIO), PRANCHAS_DO_COLOSSO * 3);
+        assert_eq!(
+            soma(&um, item_id::PRANCHA_DE_NAUFRAGIO),
+            PRANCHAS_DO_COLOSSO
+        );
+        assert_eq!(
+            soma(&tres, item_id::PRANCHA_DE_NAUFRAGIO),
+            PRANCHAS_DO_COLOSSO * 3
+        );
         assert!(soma(&tres, item_id::DARKSTEEL) > soma(&um, item_id::DARKSTEEL));
     }
 
@@ -1601,7 +2396,12 @@ mod testes {
     fn o_navio_vira_com_peso() {
         let dt = crate::TICK_DT;
         for par in CASCOS.windows(2) {
-            assert!(par[1].giro < par[0].giro, "{} turns as fast as {}", par[1].nome, par[0].nome);
+            assert!(
+                par[1].giro < par[0].giro,
+                "{} turns as fast as {}",
+                par[1].nome,
+                par[0].nome
+            );
             assert!(par[1].arranque_s > par[0].arranque_s);
         }
         for c in CASCOS {
@@ -1611,17 +2411,29 @@ mod testes {
             let v = velocidade_do_navio(c.item, &d);
             // Sailing east at full speed, ordered north: the heading turns
             // at most `g` a tick, and the speed drops while it turns.
-            let mut l = Leme { proa: 0.0, vel: v, pronto: true };
+            let mut l = Leme {
+                proa: 0.0,
+                vel: v,
+                pronto: true,
+            };
             let mut antes = l.proa;
             let mut min_v = v;
             for _ in 0..(3.0 / dt) as usize {
                 let vel = l.governa(glam::Vec2::Y, v, v, g, c.arranque_s, dt);
-                assert!(ang_dif(l.proa, antes).abs() <= g * dt + 1e-4, "{} snapped", c.nome);
+                assert!(
+                    ang_dif(l.proa, antes).abs() <= g * dt + 1e-4,
+                    "{} snapped",
+                    c.nome
+                );
                 assert!(vel.length() <= VELOCIDADE_MAX + 1e-4);
                 antes = l.proa;
                 min_v = min_v.min(l.vel);
             }
-            assert!((l.proa - std::f32::consts::FRAC_PI_2).abs() < 1e-3, "{} never came round", c.nome);
+            assert!(
+                (l.proa - std::f32::consts::FRAC_PI_2).abs() < 1e-3,
+                "{} never came round",
+                c.nome
+            );
             assert!(min_v < v * 0.95, "{} did not slow in the turn", c.nome);
             // From a standstill: full speed in about `arranque_s`, not one tick.
             let mut l = Leme::default();
@@ -1630,7 +2442,12 @@ mod testes {
             for _ in 0..((c.arranque_s + 0.1) / dt) as usize {
                 l.governa(glam::Vec2::X, v, v, g, c.arranque_s, dt);
             }
-            assert!((l.vel - v).abs() < 0.05, "{}: {} after the ramp", c.nome, l.vel);
+            assert!(
+                (l.vel - v).abs() < 0.05,
+                "{}: {} after the ramp",
+                c.nome,
+                l.vel
+            );
             // Let go: it coasts to a stop over the same ramp, keeping its heading.
             for _ in 0..((c.arranque_s + 0.1) / dt) as usize {
                 l.governa(glam::Vec2::ZERO, 0.0, v, g, c.arranque_s, dt);
@@ -1640,11 +2457,21 @@ mod testes {
             // The pilot's orbit fits the helm, inside the Broadside's reach.
             let r = raio_do_piloto(c.item, &d);
             assert!((PILOTO_RAIO..=PILOTO_RAIO_MAX).contains(&r));
-            assert!(velocidade_do_piloto(c.item, &d) / r <= g, "{}: the orbit is tighter than the helm", c.nome);
+            assert!(
+                velocidade_do_piloto(c.item, &d) / r <= g,
+                "{}: the orbit is tighter than the helm",
+                c.nome
+            );
             assert!(PILOTO_RAIO_MAX + 1.0 < HABILIDADES[0].alcance);
         }
-        assert_eq!(rotulo_do_giro(CASCOS[0].item, &novo(CASCOS[0].item)), "Agile");
-        assert_eq!(rotulo_do_giro(CASCOS[3].item, &novo(CASCOS[3].item)), "Heavy");
+        assert_eq!(
+            rotulo_do_giro(CASCOS[0].item, &novo(CASCOS[0].item)),
+            "Agile"
+        );
+        assert_eq!(
+            rotulo_do_giro(CASCOS[3].item, &novo(CASCOS[3].item)),
+            "Heavy"
+        );
     }
 
     /// THE ROUTE with a turning circle: a point right beside the hull is not
@@ -1663,18 +2490,33 @@ mod testes {
                 glam::Vec2::new(-5.0, -10.0),
             ];
             let fim = *pontos.last().unwrap();
-            let mut seg = crate::terreno::SeguidorDeRota::nova(pontos, fim).com_folga(FOLGA_DA_ROTA);
+            let mut seg =
+                crate::terreno::SeguidorDeRota::nova(pontos, fim).com_folga(FOLGA_DA_ROTA);
             // Full speed, east, with the first point 4 m off the beam.
-            let mut l = Leme { proa: 0.0, vel: v, pronto: true };
+            let mut l = Leme {
+                proa: 0.0,
+                vel: v,
+                pronto: true,
+            };
             let mut p = glam::Vec2::ZERO;
             let mut t = 0.0;
             while !seg.vazia() && t < 60.0 {
-                let Some(m) = direcao_na_rota(&mut seg, &l, p, v, g, c.arranque_s) else { break };
-                assert!(!seg.travado(), "{}: the turn read as stuck at {p:?}", c.nome);
+                let Some(m) = direcao_na_rota(&mut seg, &l, p, v, g, c.arranque_s) else {
+                    break;
+                };
+                assert!(
+                    !seg.travado(),
+                    "{}: the turn read as stuck at {p:?}",
+                    c.nome
+                );
                 p += l.governa(m, m.length() * v, v, g, c.arranque_s, dt) * dt;
                 t += dt;
             }
-            assert!(seg.vazia(), "{}: still orbiting after {t:.0} s at {p:?}", c.nome);
+            assert!(
+                seg.vazia(),
+                "{}: still orbiting after {t:.0} s at {p:?}",
+                c.nome
+            );
             assert!(p.distance(fim) < 1.0, "{}: ended at {p:?}", c.nome);
             assert!(t < 25.0, "{}: {t:.1} s for a 60 m zig-zag", c.nome);
         }

@@ -79,7 +79,12 @@ pub fn centavos_do_tp(tp: u64) -> u64 {
 /// built gear count ZERO, so the number can only be low.
 pub fn valor_em_tp(tp: u64, ouro: u64, energia: u64, itens: &[(u16, u32)]) -> u64 {
     let custos = crate::precos::custos_em_tp();
-    let custo = |id: u16| custos.iter().find(|(i, _)| *i == id).map_or(0.0, |(_, c)| *c);
+    let custo = |id: u16| {
+        custos
+            .iter()
+            .find(|(i, _)| *i == id)
+            .map_or(0.0, |(_, c)| *c)
+    };
     let mut v = tp as f64;
     let ouro_por_tp = crate::precos::ouro_por_tp_da_loja();
     if ouro_por_tp > 0.0 {
@@ -119,7 +124,9 @@ impl Gatilho {
     }
 
     pub fn de_chave(s: &str) -> Option<Gatilho> {
-        [Gatilho::PoraoInicial, Gatilho::Morte].into_iter().find(|g| g.chave() == s)
+        [Gatilho::PoraoInicial, Gatilho::Morte]
+            .into_iter()
+            .find(|g| g.chave() == s)
     }
 }
 
@@ -189,7 +196,9 @@ pub fn pecas_azuis(pecas: Pecas, equip: &Equipment, nivel: u32) -> Vec<(EquipSlo
             (EquipSlot::Offhand, conjunto.secundaria(), ilvl),
             (
                 EquipSlot::Armor,
-                equip.armor.unwrap_or_else(|| armadura_do_conjunto(conjunto)),
+                equip
+                    .armor
+                    .unwrap_or_else(|| armadura_do_conjunto(conjunto)),
                 ilvl,
             ),
             (EquipSlot::Earring, item_id::BRINCO, ilvl),
@@ -268,7 +277,10 @@ impl PacoteBonus {
     }
 }
 
-use item_id::{DARKSTEEL, PERGAMINHO_INVOCA_CHAVE as CHAVE, PERGAMINHO_INVOCA_MONTARIA as MONTARIA, PERGAMINHO_INVOCA_PET as PET};
+use item_id::{
+    DARKSTEEL, PERGAMINHO_INVOCA_CHAVE as CHAVE, PERGAMINHO_INVOCA_MONTARIA as MONTARIA,
+    PERGAMINHO_INVOCA_PET as PET,
+};
 
 /// The starting catalogue. Prices reuse the Play products `oferta_<cents>`
 /// (`oferta_099`, `oferta_499` and `oferta_1500` already exist; `oferta_199`
@@ -421,7 +433,11 @@ mod testes {
             assert_eq!(tp_da_oferta(c, t + 77), t + 77);
         }
         assert_eq!(tp_base_da_oferta(99), 400, "0.99 gives the minimum");
-        assert_eq!(tp_base_da_oferta(19_990), 5202, "big money buys what the shop sells");
+        assert_eq!(
+            tp_base_da_oferta(19_990),
+            5202,
+            "big money buys what the shop sells"
+        );
         for p in PACOTES_BONUS {
             assert!(p.tp() >= TP_MINIMO_OFERTA, "{}", p.id);
             assert!(p.tp() >= tp_do_preco(p.preco_centavos), "{}", p.id);
@@ -441,8 +457,13 @@ mod testes {
         assert_eq!(valor_em_tp(0, 0, 0, &[(item_id::GOLD, 5)]), 0);
         let p = &PACOTES_BONUS[0];
         let v = valor_em_tp(p.tp(), p.ouro, p.energia, p.itens);
-        assert!(v > p.tp() && v < 2 * p.tp() + 1000, "starter pack worth {v} TP");
-        assert!(valor_em_centavos(p.tp(), p.ouro, p.energia, p.itens) > p.preco_centavos as u64 * 10);
+        assert!(
+            v > p.tp() && v < 2 * p.tp() + 1000,
+            "starter pack worth {v} TP"
+        );
+        assert!(
+            valor_em_centavos(p.tp(), p.ouro, p.energia, p.itens) > p.preco_centavos as u64 * 10
+        );
     }
 
     #[test]
@@ -451,7 +472,12 @@ mod testes {
         for p in PACOTES_BONUS {
             assert!(p.tp() >= tp_do_preco(p.preco_centavos), "{}", p.id);
             assert!(p.tem_bonus(), "{} sem bonus", p.id);
-            assert!(p.produto_play == format!("oferta_{:03}", p.preco_centavos), "{}: produto {} nao bate com o preco", p.id, p.produto_play);
+            assert!(
+                p.produto_play == format!("oferta_{:03}", p.preco_centavos),
+                "{}: produto {} nao bate com o preco",
+                p.id,
+                p.produto_play
+            );
             assert!(p.valor_de_centavos > p.preco_centavos, "{}", p.id);
             assert!(!ids.contains(&p.id), "id repetido {}", p.id);
             ids.push(p.id);
@@ -461,12 +487,18 @@ mod testes {
 
     #[test]
     fn o_pacote_inicial_e_o_do_dono() {
-        let p = PACOTES_BONUS.iter().find(|p| p.gatilho == Some(Gatilho::PoraoInicial)).unwrap();
+        let p = PACOTES_BONUS
+            .iter()
+            .find(|p| p.gatilho == Some(Gatilho::PoraoInicial))
+            .unwrap();
         assert_eq!(p.preco_centavos, 99);
         assert_eq!(p.tp(), 400);
         assert_eq!((p.ouro, p.energia), (10_000, 10_000));
         assert_eq!(p.itens, &[(DARKSTEEL, 10_000)]);
-        assert_eq!(crate::dungeon::conteudo(PORAO_INICIAL).map(|c| c.nome), Some("Shipwreck Cellar"));
+        assert_eq!(
+            crate::dungeon::conteudo(PORAO_INICIAL).map(|c| c.nome),
+            Some("Shipwreck Cellar")
+        );
     }
 
     #[test]
@@ -481,17 +513,30 @@ mod testes {
         assert_eq!(c.len(), 7);
         assert_eq!(c[1].1, item_id::BAINHA);
         assert_eq!(c[2].1, item_id::ARMADURA_MEDIA);
-        assert!(c.iter().all(|(_, _, l)| crate::items::tier_from_ilvl(*l) == 3));
+        assert!(c
+            .iter()
+            .all(|(_, _, l)| crate::items::tier_from_ilvl(*l) == 3));
         assert!(pecas_azuis(Pecas::Nenhuma, &e, 8).is_empty());
-        assert_eq!(pecas_azuis(Pecas::Arma, &Equipment::default(), 8)[0].1, item_id::ESPADA_E_ESCUDO);
+        assert_eq!(
+            pecas_azuis(Pecas::Arma, &Equipment::default(), 8)[0].1,
+            item_id::ESPADA_E_ESCUDO
+        );
     }
 
     #[test]
     fn niveis_exibidos_viram_internos() {
         for p in PACOTES_BONUS {
             let n = p.nivel();
-            assert!(crate::progressao::nivel_exibido_de(n) >= p.nivel_exibido, "{}", p.id);
-            assert!(n == 1 || crate::progressao::nivel_exibido_de(n - 1) < p.nivel_exibido, "{}", p.id);
+            assert!(
+                crate::progressao::nivel_exibido_de(n) >= p.nivel_exibido,
+                "{}",
+                p.id
+            );
+            assert!(
+                n == 1 || crate::progressao::nivel_exibido_de(n - 1) < p.nivel_exibido,
+                "{}",
+                p.id
+            );
         }
         assert_eq!(nivel_interno_do_exibido(100), 60);
     }

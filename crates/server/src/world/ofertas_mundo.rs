@@ -88,13 +88,31 @@ impl GameWorld {
         let conta = crate::mercado::conta_global(&crate::canais::realm(), s.account_id, &s.name);
         let nivel = shared::level_of_xp_with_mult(s.xp, crate::economy::xp_multiplier());
         let montagens = montagens_de(s, nivel);
-        let (personagem, to, gatilhos) = (s.name.clone(), s.handle.to_client.clone(), gatilhos.to_vec());
+        let (personagem, to, gatilhos) = (
+            s.name.clone(),
+            s.handle.to_client.clone(),
+            gatilhos.to_vec(),
+        );
         tokio::spawn(async move {
-            match crate::ofertas::disparar(&central, &conta, &personagem, &gatilhos, nivel, &montagens).await {
+            match crate::ofertas::disparar(
+                &central,
+                &conta,
+                &personagem,
+                &gatilhos,
+                nivel,
+                &montagens,
+            )
+            .await
+            {
                 Ok(Some(id)) => {
                     crate::telemetria::conta_de(&personagem, "oferta_aberta", &id, 1);
                     let g = gatilhos.first().map(|g| g.chave()).unwrap_or("");
-                    crate::telemetria::conta_de(&personagem, "oferta_gatilho", format!("{g}:{id}"), 1);
+                    crate::telemetria::conta_de(
+                        &personagem,
+                        "oferta_gatilho",
+                        format!("{g}:{id}"),
+                        1,
+                    );
                     if let Ok(v) = crate::ofertas::listar(&central, &conta, Some(&id)).await {
                         let _ = to.send(ServerMessage::Loja {
                             aviso: shared::loja::AvisoLoja::OfertasRelampago(v),
@@ -133,7 +151,12 @@ fn montagens_de(s: &Session, nivel: u32) -> Vec<crate::ofertas::Montagem> {
                 &s.proficiencies,
                 s.xp,
             ));
-            crate::ofertas::Montagem { pecas: tipo, itens, poder_antes: antes, poder_depois: depois }
+            crate::ofertas::Montagem {
+                pecas: tipo,
+                itens,
+                poder_antes: antes,
+                poder_depois: depois,
+            }
         })
         .collect()
 }
@@ -148,6 +171,9 @@ mod testes {
         assert!(!e_pagante(sid, "Fulano"));
         marcar_pagante(sid, "Fulano");
         assert!(e_pagante(sid, "Fulano"));
-        assert!(!e_pagante(sid, "Outro"), "another character on the same socket");
+        assert!(
+            !e_pagante(sid, "Outro"),
+            "another character on the same socket"
+        );
     }
 }

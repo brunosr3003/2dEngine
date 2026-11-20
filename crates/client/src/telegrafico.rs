@@ -13,8 +13,8 @@
 //!
 //! Quem decide quem tomou e' o servidor — isto e' so' pra dar tempo de sair.
 
-use macroquad::prelude::*;
 use crate::relogio::get_time;
+use macroquad::prelude::*;
 use shared::bosses::{preenchimento, Forma};
 use shared::EntityId;
 use std::cell::Cell;

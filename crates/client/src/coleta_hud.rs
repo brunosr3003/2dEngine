@@ -33,7 +33,13 @@ impl BarraDeColeta {
             *self = Self::default();
             return;
         }
-        if !pausado && progresso < 0.1 && tipo < shared::forte::TIPO_COLETA { crate::sons::tocar(match tipo { 0 => crate::sons::Som::Machado, 5 => crate::sons::Som::Energia, _ => crate::sons::Som::Picareta }); }
+        if !pausado && progresso < 0.1 && tipo < shared::forte::TIPO_COLETA {
+            crate::sons::tocar(match tipo {
+                0 => crate::sons::Som::Machado,
+                5 => crate::sons::Som::Energia,
+                _ => crate::sons::Som::Picareta,
+            });
+        }
         *self = Self {
             tipo: Some(tipo),
             intervalo: intervalo_s,
@@ -46,6 +52,10 @@ impl BarraDeColeta {
 
     pub fn ativa(&self) -> bool {
         self.tipo.is_some()
+    }
+
+    pub fn tipo(&self) -> Option<u8> {
+        self.tipo
     }
 
     /// 0..1 until the next cycle.
@@ -99,6 +109,10 @@ impl BarraDeColeta {
         }
         let verbo = if tipo == shared::navio::TIPO_COLETA_TESOURO {
             "Hauling"
+        } else if tipo == shared::navio::TIPO_COLETA_REPARO_VELA {
+            "Repairing"
+        } else if tipo == shared::navio::TIPO_COLETA_SAQUE {
+            "Salvaging"
         } else if tipo > shared::forte::TIPO_COLETA {
             "Opening"
         } else {
@@ -153,7 +167,9 @@ mod tests {
         use shared::components::acao;
         use shared::{EntityId, EntityMeta, EntityState, EntityTag};
         let mut w = crate::world::World::default();
-        let meta = EntityMeta { skins: 0, cla: String::new(),
+        let meta = EntityMeta {
+            skins: 0,
+            cla: String::new(),
             pk: Default::default(),
             auras: 0,
             id: EntityId(1),
@@ -165,7 +181,8 @@ mod tests {
             nivel: 1,
             desafio: None,
             aparencia: 0,
-            poder: 0, renascimentos: 0,
+            poder: 0,
+            renascimentos: 0,
         };
         let mut st = EntityState::quantize(
             EntityId(1),

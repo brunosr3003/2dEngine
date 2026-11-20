@@ -127,7 +127,11 @@ impl GameWorld {
         if s.piloto.ligado == ligado {
             return;
         }
-        s.piloto = PilotoDoMar { ligado, sentido: 1.0, ..Default::default() };
+        s.piloto = PilotoDoMar {
+            ligado,
+            sentido: 1.0,
+            ..Default::default()
+        };
     }
 
     /// The pilots of this tick (from `tick_mar`): each decides every
@@ -148,9 +152,11 @@ impl GameWorld {
     }
 
     fn skill_pronta(&self, sid: SessionId, h: u8, agora: f32) -> bool {
-        self.sessions
-            .get(&sid)
-            .is_some_and(|s| s.skill_cds.get(&nv::id_de_skill(h)).is_none_or(|&fim| fim <= agora))
+        self.sessions.get(&sid).is_some_and(|s| {
+            s.skill_cds
+                .get(&nv::id_de_skill(h))
+                .is_none_or(|&fim| fim <= agora)
+        })
     }
 
     fn decidir_piloto(&mut self, sid: SessionId, agora: f32) {
@@ -191,7 +197,9 @@ impl GameWorld {
             && self.skill_pronta(sid, 2, agora)
         {
             self.habilidade_do_navio(sid, 2);
-            casco = self.navio_equipado(sid).map_or(casco, |(_, d)| fracao(d.casco));
+            casco = self
+                .navio_equipado(sid)
+                .map_or(casco, |(_, d)| fracao(d.casco));
         }
         let recua = nv::piloto_recua(casco, self.skill_pronta(sid, 2, agora), recuando_antes);
         if recua {
@@ -229,7 +237,11 @@ impl GameWorld {
 
         // ── 2. WHO IS AROUND, AND THE TARGET ──
         let mut perto: Vec<Bicho> = Vec::new();
-        for (e, (n, pos, hp, tag)) in self.ecs.query::<(&NetId, &Position, &Health, &EnemyTag)>().iter() {
+        for (e, (n, pos, hp, tag)) in self
+            .ecs
+            .query::<(&NetId, &Position, &Health, &EnemyTag)>()
+            .iter()
+        {
             if hp.current <= 0 || tag.dead || pos.0.distance(p) > LARGA {
                 continue;
             }
@@ -237,7 +249,12 @@ impl GameWorld {
                 && tag.spawn_grace_until <= agora
                 && self.ecs.get::<&Untargetable>(e).is_err()
                 && !self.in_safe_zone(pos.0);
-            perto.push(Bicho { id: n.0, p: pos.0, alvejavel, casa: tag.spawn_anchor });
+            perto.push(Bicho {
+                id: n.0,
+                p: pos.0,
+                alvejavel,
+                casa: tag.spawn_anchor,
+            });
         }
         let do_cliente = selecionado.and_then(|id| {
             if let Some(b) = perto.iter().find(|b| b.id == id) {
@@ -261,7 +278,14 @@ impl GameWorld {
         });
         let fixo = self.sessions[&sid].piloto.alvo;
         let alvo = do_cliente
-            .or_else(|| fixo.and_then(|id| perto.iter().find(|b| b.id == id && b.alvejavel).map(|b| (b.id, b.p))))
+            .or_else(|| {
+                fixo.and_then(|id| {
+                    perto
+                        .iter()
+                        .find(|b| b.id == id && b.alvejavel)
+                        .map(|b| (b.id, b.p))
+                })
+            })
             .or_else(|| {
                 // The nearest in the AUTO area; failing that, the nearest the
                 // pilot still sees (a heavy hull's wide orbit can leave the
@@ -270,7 +294,11 @@ impl GameWorld {
                     perto
                         .iter()
                         .filter(|b| b.alvejavel && b.p.distance(p) <= raio)
-                        .min_by(|a, b| a.p.distance_squared(p).total_cmp(&b.p.distance_squared(p)).then(a.id.0.cmp(&b.id.0)))
+                        .min_by(|a, b| {
+                            a.p.distance_squared(p)
+                                .total_cmp(&b.p.distance_squared(p))
+                                .then(a.id.0.cmp(&b.id.0))
+                        })
                         .map(|b| (b.id, b.p))
                 };
                 mais_perto(BUSCA).or_else(|| mais_perto(LARGA))
@@ -284,7 +312,10 @@ impl GameWorld {
                 if let Some(s) = self.sessions.get_mut(&sid) {
                     s.piloto.alvo = None;
                 }
-                let Some(b) = perto.iter().min_by(|a, b| a.p.distance_squared(p).total_cmp(&b.p.distance_squared(p))) else {
+                let Some(b) = perto
+                    .iter()
+                    .min_by(|a, b| a.p.distance_squared(p).total_cmp(&b.p.distance_squared(p)))
+                else {
                     return;
                 };
                 (b.id, b.p, true)
@@ -306,10 +337,14 @@ impl GameWorld {
         if !self.in_safe_zone(p) && !so_seguir {
             if self.skill_pronta(sid, 0, agora) {
                 let no_alcance = |b: &&Bicho| b.alvejavel && b.p.distance(p) <= BORDADA_ALCANCE;
-                let no_costado: Vec<EntityId> =
-                    perto.iter().filter(no_alcance).filter(|b| nv::no_costado(p, rumo, b.p)).map(|b| b.id).collect();
-                let alvo_no_costado =
-                    no_costado.contains(&alvo) || (dist <= BORDADA_ALCANCE && nv::no_costado(p, rumo, t));
+                let no_costado: Vec<EntityId> = perto
+                    .iter()
+                    .filter(no_alcance)
+                    .filter(|b| nv::no_costado(p, rumo, b.p))
+                    .map(|b| b.id)
+                    .collect();
+                let alvo_no_costado = no_costado.contains(&alvo)
+                    || (dist <= BORDADA_ALCANCE && nv::no_costado(p, rumo, t));
                 if alvo_no_costado || no_costado.len() >= 2 {
                     self.habilidade_do_navio(sid, 0);
                 }
@@ -321,6 +356,18 @@ impl GameWorld {
                 && visada_de_tiro(self.ilha.as_ref(), &self.map, p, t)
             {
                 self.habilidade_do_navio(sid, 1);
+            }
+            // Chain Shot is control for naval PvP. Do not waste its long
+            // cooldown on sea mobs, which have no hull speed to slow.
+            let alvo_e_navio = self.sessions.values().any(|s| s.entity_id == alvo);
+            let corrente = &nv::HABILIDADES[4];
+            if alvo_e_navio
+                && self.skill_pronta(sid, corrente.id, agora)
+                && dist <= corrente.alcance
+                && nv::no_costado(p, rumo, t)
+                && visada_de_tiro(self.ilha.as_ref(), &self.map, p, t)
+            {
+                self.habilidade_do_navio(sid, corrente.id);
             }
         }
 
@@ -357,7 +404,11 @@ impl GameWorld {
         // out of reach before the jaws close; running STRAIGHT off it (as
         // before 17/11/2026) dragged the fight off the nest once the mobs
         // came at the sides and bit more often, and the leash healed them.
-        for g in self.pending_melee.iter().filter(|g| !g.from_player && g.target == Some(eu) && g.impact_at >= agora) {
+        for g in self
+            .pending_melee
+            .iter()
+            .filter(|g| !g.from_player && g.target == Some(eu) && g.impact_at >= agora)
+        {
             let fora = (p - g.pos).try_normalize().unwrap_or(-u);
             dir = dir.normalize_or_zero() + fora * 0.7;
             acelera = 1.0;
@@ -376,9 +427,21 @@ impl GameWorld {
         let ja_no_corredor = shared::mar::no_corredor(p);
         let livre = |q: Vec2| agua(q) && (ja_no_corredor || !shared::mar::no_corredor(q));
         if !(livre(p + dir * 4.0) && livre(p + dir * 2.0)) {
-            let achado = [0.4f32, -0.4, 0.8, -0.8, 1.2, -1.2, 1.6, -1.6, 2.2, -2.2, std::f32::consts::PI]
-                .into_iter()
-                .find(|a| livre(p + gira(dir, *a) * 4.0) && livre(p + gira(dir, *a) * 2.0));
+            let achado = [
+                0.4f32,
+                -0.4,
+                0.8,
+                -0.8,
+                1.2,
+                -1.2,
+                1.6,
+                -1.6,
+                2.2,
+                -2.2,
+                std::f32::consts::PI,
+            ]
+            .into_iter()
+            .find(|a| livre(p + gira(dir, *a) * 4.0) && livre(p + gira(dir, *a) * 2.0));
             if let Some(a) = achado {
                 dir = gira(dir, a);
                 if a.abs() >= 1.2 {
@@ -427,11 +490,18 @@ mod testes {
         let sid = SessionId(([127, 0, 0, 1], 47_480).into());
         let (tx, rx) = mpsc::unbounded_channel();
         std::mem::forget(rx);
-        w.on_connect(SessionHandle { id: sid, to_client: tx });
+        w.on_connect(SessionHandle {
+            id: sid,
+            to_client: tx,
+        });
         let centro = shared::mar::ninhos()[ninho];
         let nivel = shared::mar::nivel_em(centro);
         // Off the nest, on the side away from the nearest island.
-        let ilha = shared::mar::ilhas().iter().map(|i| i.centro).min_by(|a, b| a.distance(centro).total_cmp(&b.distance(centro))).unwrap();
+        let ilha = shared::mar::ilhas()
+            .iter()
+            .map(|i| i.centro)
+            .min_by(|a, b| a.distance(centro).total_cmp(&b.distance(centro)))
+            .unwrap();
         let fora = (centro - ilha).try_normalize().unwrap_or(Vec2::X);
         let inicio = w.agua_no_mar(centro + fora * 24.0);
         let eid = EntityId(4_800);
@@ -440,8 +510,16 @@ mod testes {
             Position(inicio),
             Velocity(Vec2::ZERO),
             EntityKind::Player,
-            Health { current: 100, max: 100 },
-            PlayerTag { name: "Piloto".into(), player_id: PlayerId(48), attack_anim_pending: None, combo_step_pending: None },
+            Health {
+                current: 100,
+                max: 100,
+            },
+            PlayerTag {
+                name: "Piloto".into(),
+                player_id: PlayerId(48),
+                attack_anim_pending: None,
+                combo_step_pending: None,
+            },
             // A body: the tick moves only what has one.
             shared::Solido,
         ));
@@ -453,7 +531,11 @@ mod testes {
         s.inventory = vec![shared::InventorySlot::default(); shared::INVENTORY_SLOTS];
         s.xp = shared::xp_for_level_with_mult(nivel, crate::economy::xp_multiplier());
         navio::dar_chalupa(s);
-        s.equipment.set(shared::EquipSlot::Navio, Some(casco), Some(nv::instancia_nova(casco)));
+        s.equipment.set(
+            shared::EquipSlot::Navio,
+            Some(casco),
+            Some(nv::instancia_nova(casco)),
+        );
         (w, sid, centro)
     }
 
@@ -498,7 +580,11 @@ mod testes {
     }
 
     fn pos_de(w: &GameWorld, id: EntityId) -> Option<Vec2> {
-        w.ecs.query::<(&NetId, &Position)>().iter().find(|(_, (n, _))| n.0 == id).map(|(_, (_, p))| p.0)
+        w.ecs
+            .query::<(&NetId, &Position)>()
+            .iter()
+            .find(|(_, (n, _))| n.0 == id)
+            .map(|(_, (_, p))| p.0)
     }
 
     fn vivo(w: &GameWorld, id: EntityId) -> bool {
@@ -550,24 +636,38 @@ mod testes {
         let mut parado_desde = t0;
         let mut marca = (w.pos_do_casco(sid).unwrap(), t0);
         // The old client's state.
-        let (mut alvo, mut varre_em, mut aprox_em, mut aproximando, mut pendente, mut tentar) =
-            (None::<EntityId>, f32::MIN, f32::MIN, false, 0.0f32, [0.0f32; 2]);
+        let (mut alvo, mut varre_em, mut aprox_em, mut aproximando, mut pendente, mut tentar) = (
+            None::<EntityId>,
+            f32::MIN,
+            f32::MIN,
+            false,
+            0.0f32,
+            [0.0f32; 2],
+        );
         let mut log_em = t0;
         while w.sim_time_s - t0 < teto_s {
             let agora = w.sim_time_s;
             let p = w.pos_do_casco(sid).unwrap();
-            let cd = w.sessions[&sid].skill_cds.get(&nv::id_de_skill(0)).copied().unwrap_or(0.0);
+            let cd = w.sessions[&sid]
+                .skill_cds
+                .get(&nv::id_de_skill(0))
+                .copied()
+                .unwrap_or(0.0);
             let tiros_antes = placar.tiros;
             if modo == Modo::Antes {
                 if agora - varre_em >= mar_varredura() {
                     varre_em = agora;
-                    let ok = |w: &GameWorld, id: EntityId| vivo(w, id) && pos_de(w, id).is_some_and(|q| q.distance(p) <= 24.0);
+                    let ok = |w: &GameWorld, id: EntityId| {
+                        vivo(w, id) && pos_de(w, id).is_some_and(|q| q.distance(p) <= 24.0)
+                    };
                     if !alvo.is_some_and(|id| ok(&w, id)) {
                         alvo = w
                             .ecs
                             .query::<(&NetId, &Position, &Health, &EnemyTag)>()
                             .iter()
-                            .filter(|(_, (_, q, h, t))| h.current > 0 && !t.dead && q.0.distance(p) <= 24.0)
+                            .filter(|(_, (_, q, h, t))| {
+                                h.current > 0 && !t.dead && q.0.distance(p) <= 24.0
+                            })
                             .min_by(|a, b| a.1 .1 .0.distance(p).total_cmp(&b.1 .1 .0.distance(p)))
                             .map(|(_, (id, _, _, _))| id.0);
                         w.sessions.get_mut(&sid).unwrap().target = alvo;
@@ -577,7 +677,9 @@ mod testes {
                                 .ecs
                                 .query::<(&Position, &Health, &EnemyTag)>()
                                 .iter()
-                                .filter(|(_, (q, h, t))| h.current > 0 && !t.dead && q.0.distance(p) <= 110.0)
+                                .filter(|(_, (q, h, t))| {
+                                    h.current > 0 && !t.dead && q.0.distance(p) <= 110.0
+                                })
                                 .map(|(_, (q, _, _))| q.0)
                                 .min_by(|a, b| a.distance(p).total_cmp(&b.distance(p)));
                             if let Some(q) = caca {
@@ -595,7 +697,10 @@ mod testes {
                         }
                     } else if agora - aprox_em >= 0.6 {
                         aprox_em = agora;
-                        w.handle_mover_para(sid, b + (p - b).normalize_or_zero() * nv::DISTANCIA_DE_COMBATE * 0.85);
+                        w.handle_mover_para(
+                            sid,
+                            b + (p - b).normalize_or_zero() * nv::DISTANCIA_DE_COMBATE * 0.85,
+                        );
                         aproximando = true;
                     }
                     let e = w.sessions[&sid].entity.unwrap();
@@ -635,7 +740,11 @@ mod testes {
                 }
             }
             // A Broadside that left no ball spent its cooldown on the water.
-            let cd_novo = w.sessions[&sid].skill_cds.get(&nv::id_de_skill(0)).copied().unwrap_or(0.0);
+            let cd_novo = w.sessions[&sid]
+                .skill_cds
+                .get(&nv::id_de_skill(0))
+                .copied()
+                .unwrap_or(0.0);
             if cd_novo > cd + 0.5 && cd_novo != bordada_cd {
                 bordada_cd = cd_novo;
                 if placar.tiros == tiros_antes {
@@ -651,12 +760,18 @@ mod testes {
                 }
                 false
             });
-            for g in w.pending_melee.iter().filter(|g| !g.from_player && g.target == Some(eu)) {
+            for g in w
+                .pending_melee
+                .iter()
+                .filter(|g| !g.from_player && g.target == Some(eu))
+            {
                 if swings.insert((g.attacker_eid.0, g.impact_at.to_bits())) {
                     placar.mordidas_anunciadas += 1;
                 }
             }
-            let Some((_, d)) = w.navio_equipado(sid) else { break };
+            let Some((_, d)) = w.navio_equipado(sid) else {
+                break;
+            };
             if d.casco < casco_antes {
                 placar.mordidas += 1;
             }
@@ -683,10 +798,32 @@ mod testes {
                     .filter(|id| vivo(&w, **id))
                     .filter_map(|id| {
                         let q = pos_de(&w, *id)?;
-                        let hp = w.ecs.query::<(&NetId, &Health)>().iter().find(|(_, (n, _))| n.0 == *id).map(|(_, (_, h))| h.current)?;
-                        let est = w.ecs.query::<(&NetId, &EnemyTag)>().iter().find(|(_, (n, _))| n.0 == *id).map(|(_, (_, t))| {
-                            format!("{}{} ag{:.1} casa{:.0} det{:.0}", if t.returning_home { "V" } else { "" }, if t.provocado_ate > w.sim_time_s { "P" } else { "" }, t.aggro_timer, q.distance(t.spawn_anchor), t.detect_range)
-                        }).unwrap_or_default();
+                        let hp = w
+                            .ecs
+                            .query::<(&NetId, &Health)>()
+                            .iter()
+                            .find(|(_, (n, _))| n.0 == *id)
+                            .map(|(_, (_, h))| h.current)?;
+                        let est = w
+                            .ecs
+                            .query::<(&NetId, &EnemyTag)>()
+                            .iter()
+                            .find(|(_, (n, _))| n.0 == *id)
+                            .map(|(_, (_, t))| {
+                                format!(
+                                    "{}{} ag{:.1} casa{:.0} det{:.0}",
+                                    if t.returning_home { "V" } else { "" },
+                                    if t.provocado_ate > w.sim_time_s {
+                                        "P"
+                                    } else {
+                                        ""
+                                    },
+                                    t.aggro_timer,
+                                    q.distance(t.spawn_anchor),
+                                    t.detect_range
+                                )
+                            })
+                            .unwrap_or_default();
                         Some(format!("{}:{:.1}m/{}hp[{}]", id.0, q.distance(p2), hp, est))
                     })
                     .collect();
@@ -711,7 +848,11 @@ mod testes {
             }
         }
         let fim = w.navio_equipado(sid).map_or(0, |(_, d)| d.casco) as f32;
-        placar.casco_perdido = if placar.afundou { 1.0 } else { (cheio - fim) / cheio };
+        placar.casco_perdido = if placar.afundou {
+            1.0
+        } else {
+            (cheio - fim) / cheio
+        };
         placar
     }
 
@@ -751,7 +892,10 @@ mod testes {
         let elite = luta(1, Modo::Antes, 240.0, false);
         eprintln!("{}", resumo("ANTES ELITE", &elite));
         assert!(depois.parado_max < antes.parado_max);
-        assert!(depois.mordidas < antes.mordidas.max(1), "the pilot took as many bites");
+        assert!(
+            depois.mordidas < antes.mordidas.max(1),
+            "the pilot took as many bites"
+        );
         assert!(depois.casco_perdido < antes.casco_perdido);
     }
 
@@ -764,18 +908,45 @@ mod testes {
     fn o_piloto_afunda_o_ninho_do_nivel_sem_perder_metade_do_casco() {
         // Every route's first nest (the common one): several levels, sharks
         // and eels.
-        let comuns: Vec<usize> = (0..shared::mar::ninhos().len()).step_by(2).take(3).collect();
+        let comuns: Vec<usize> = (0..shared::mar::ninhos().len())
+            .step_by(2)
+            .take(3)
+            .collect();
         for c in nv::CASCOS {
             for &k in &comuns {
-                let p = luta_de(k, c.item, Modo::Piloto, 120.0, std::env::var("MMO_PILOTO_LOG").is_ok());
+                let p = luta_de(
+                    k,
+                    c.item,
+                    Modo::Piloto,
+                    120.0,
+                    std::env::var("MMO_PILOTO_LOG").is_ok(),
+                );
                 let nome = format!("{} ninho {k}", c.nome);
                 eprintln!("{}", resumo(&nome, &p));
-                let t = p.tempo.unwrap_or_else(|| panic!("{nome} not sunk in 120 s: {}", resumo("", &p)));
-                assert!((20.0..=60.0).contains(&t), "{nome}: {t:.1} s ({})", resumo("", &p));
-                assert!(!p.afundou && p.casco_perdido < 0.5, "{nome}: {}", resumo("", &p));
-                assert!(p.acertos as f32 > p.tiros as f32 * 0.6, "{nome}: {}", resumo("", &p));
+                let t = p
+                    .tempo
+                    .unwrap_or_else(|| panic!("{nome} not sunk in 120 s: {}", resumo("", &p)));
+                assert!(
+                    (20.0..=60.0).contains(&t),
+                    "{nome}: {t:.1} s ({})",
+                    resumo("", &p)
+                );
+                assert!(
+                    !p.afundou && p.casco_perdido < 0.5,
+                    "{nome}: {}",
+                    resumo("", &p)
+                );
+                assert!(
+                    p.acertos as f32 > p.tiros as f32 * 0.6,
+                    "{nome}: {}",
+                    resumo("", &p)
+                );
                 assert!(p.parado_max < 3.0, "{nome} stood still: {}", resumo("", &p));
-                assert!(p.longe_max < 60.0, "{nome} wandered off: {}", resumo("", &p));
+                assert!(
+                    p.longe_max < 60.0,
+                    "{nome} wandered off: {}",
+                    resumo("", &p)
+                );
             }
         }
     }
@@ -841,9 +1012,21 @@ mod testes {
                 if log {
                     let r = rumo_agora.normalize_or_zero();
                     let q = pos.0 - p;
-                    eprintln!("t={:.1} ao_longo={:.1} de_lado={:.1} cd={:.1} V={} {}", w.sim_time_s - t0, q.dot(r), q.dot(Vec2::new(r.y, -r.x)), t.attack_cooldown, t.returning_home, nv::no_costado(p, rumo_agora, pos.0));
+                    eprintln!(
+                        "t={:.1} ao_longo={:.1} de_lado={:.1} cd={:.1} V={} {}",
+                        w.sim_time_s - t0,
+                        q.dot(r),
+                        q.dot(Vec2::new(r.y, -r.x)),
+                        t.attack_cooldown,
+                        t.returning_home,
+                        nv::no_costado(p, rumo_agora, pos.0)
+                    );
                 }
-                if t.dead || h.current <= 0 || t.returning_home || pos.0.distance(p) > BORDADA_ALCANCE {
+                if t.dead
+                    || h.current <= 0
+                    || t.returning_home
+                    || pos.0.distance(p) > BORDADA_ALCANCE
+                {
                     continue;
                 }
                 total += 1;
@@ -853,21 +1036,46 @@ mod testes {
             }
         }
         let parte = dentro as f32 / total.max(1) as f32;
-        let alcance = w.ecs.query::<&EnemyTag>().iter().map(|(_, t)| t.attack_range).fold(0.0f32, f32::max);
+        let alcance = w
+            .ecs
+            .query::<&EnemyTag>()
+            .iter()
+            .map(|(_, t)| t.attack_range)
+            .fold(0.0f32, f32::max);
         eprintln!("NO COSTADO: {:.0}% de {} amostras (navio a {:.1} u/s, bicho {:.1} u/s, mordida {alcance:.1} m)", parte * 100.0, total, forca * nv::velocidade_do_navio(navio_id, &d), rapido);
-        assert!(total > shared::TICK_RATE_HZ as u32 * 10, "the mobs hardly chased: {total} samples");
-        assert!(parte > 0.6, "only {:.0}% of the chase inside the Broadside's arc", parte * 100.0);
+        assert!(
+            total > shared::TICK_RATE_HZ as u32 * 10,
+            "the mobs hardly chased: {total} samples"
+        );
+        assert!(
+            parte > 0.6,
+            "only {:.0}% of the chase inside the Broadside's arc",
+            parte * 100.0
+        );
     }
 
     /// THE ELITE NEST (the route's second: the Dread elite and two more):
     /// longer, but the pilot repairs, does not sink and finishes it.
     #[test]
     fn o_piloto_aguenta_o_ninho_do_elite() {
-        let p = luta(1, Modo::Piloto, 240.0, std::env::var("MMO_PILOTO_LOG").is_ok());
+        let p = luta(
+            1,
+            Modo::Piloto,
+            240.0,
+            std::env::var("MMO_PILOTO_LOG").is_ok(),
+        );
         eprintln!("{}", resumo("ELITE ", &p));
-        assert!(p.tempo.is_some(), "elite nest not sunk in 240 s: {}", resumo("", &p));
+        assert!(
+            p.tempo.is_some(),
+            "elite nest not sunk in 240 s: {}",
+            resumo("", &p)
+        );
         assert!(!p.afundou, "{}", resumo("", &p));
-        assert!(p.acertos as f32 > p.tiros as f32 * 0.6, "{}", resumo("", &p));
+        assert!(
+            p.acertos as f32 > p.tiros as f32 * 0.6,
+            "{}",
+            resumo("", &p)
+        );
     }
 
     /// LOW HULL: the pilot patches under 35%, and under 20% with the repair
@@ -878,22 +1086,40 @@ mod testes {
         w.handle_navio(sid, PedidoNavio::Piloto { ligado: true });
         let (id, d) = w.navio_equipado(sid).unwrap();
         let total = nv::casco_total(id, &d);
-        w.guarda_navio(sid, shared::items::NavioData { casco: total / 4, ..d });
+        w.guarda_navio(
+            sid,
+            shared::items::NavioData {
+                casco: total / 4,
+                ..d
+            },
+        );
         w.decidir_piloto(sid, w.sim_time_s);
         let depois = w.navio_equipado(sid).unwrap().1.casco;
         assert!(depois > total / 4, "no Emergency Repair under 35%");
         assert!(!w.sessions[&sid].piloto.recuando);
         // Repair spent, hull at 15%: smoke and home.
         let (_, d) = w.navio_equipado(sid).unwrap();
-        w.guarda_navio(sid, shared::items::NavioData { casco: total * 15 / 100, ..d });
+        w.guarda_navio(
+            sid,
+            shared::items::NavioData {
+                casco: total * 15 / 100,
+                ..d
+            },
+        );
         w.decidir_piloto(sid, w.sim_time_s + 0.2);
         let s = &w.sessions[&sid];
         assert!(s.piloto.recuando, "did not retreat at 15% with no repair");
         assert!(s.fumaca_ate > w.sim_time_s, "no Smoke on the way out");
         assert!(!s.rota.vazia(), "no route home");
         let fim = s.rota.destino();
-        assert!(shared::mar::no_corredor(fim), "the route home does not end in a harbour corridor: {fim:?}");
-        assert!(s.piloto.leme().is_none(), "steering into the fight while retreating");
+        assert!(
+            shared::mar::no_corredor(fim),
+            "the route home does not end in a harbour corridor: {fim:?}"
+        );
+        assert!(
+            s.piloto.leme().is_none(),
+            "steering into the fight while retreating"
+        );
         assert!(nv::piloto_recua(0.15, false, false) && !nv::piloto_recua(0.15, true, false));
         assert!(nv::piloto_recua(0.4, false, true) && !nv::piloto_recua(0.55, false, true));
     }
@@ -909,7 +1135,10 @@ mod testes {
         let b = SessionId(([127, 0, 0, 1], 47_481).into());
         let (tx, rx) = mpsc::unbounded_channel();
         std::mem::forget(rx);
-        w.on_connect(SessionHandle { id: b, to_client: tx });
+        w.on_connect(SessionHandle {
+            id: b,
+            to_client: tx,
+        });
         let p = w.pos_do_casco(sid).unwrap();
         let eb = EntityId(4_801);
         let e = w.ecs.spawn((
@@ -917,8 +1146,16 @@ mod testes {
             Position(p + Vec2::new(8.0, 0.0)),
             Velocity(Vec2::ZERO),
             EntityKind::Player,
-            Health { current: 100, max: 100 },
-            PlayerTag { name: "Outro".into(), player_id: PlayerId(49), attack_anim_pending: None, combo_step_pending: None },
+            Health {
+                current: 100,
+                max: 100,
+            },
+            PlayerTag {
+                name: "Outro".into(),
+                player_id: PlayerId(49),
+                attack_anim_pending: None,
+                combo_step_pending: None,
+            },
         ));
         {
             let s = w.sessions.get_mut(&b).unwrap();
@@ -940,7 +1177,10 @@ mod testes {
         assert!(w.sessions[&sid].piloto.leme().is_none());
         w.handle_navio(sid, PedidoNavio::Piloto { ligado: true });
         w.decidir_piloto(sid, w.sim_time_s);
-        assert!(w.sessions[&sid].skill_cds.is_empty(), "the pilot fired at a peaceful ship");
+        assert!(
+            w.sessions[&sid].skill_cds.is_empty(),
+            "the pilot fired at a peaceful ship"
+        );
         assert_ne!(w.sessions[&sid].piloto.alvo, Some(eb));
         assert!(w.can_damage_player(eu, eb) == false);
         // In the harbour corridor with a mob right there: no shot.
@@ -952,7 +1192,10 @@ mod testes {
         }
         w.sessions.get_mut(&sid).unwrap().target = None;
         w.decidir_piloto(sid, w.sim_time_s + 1.0);
-        assert!(w.sessions[&sid].skill_cds.is_empty(), "the pilot fired in the harbour corridor");
+        assert!(
+            w.sessions[&sid].skill_cds.is_empty(),
+            "the pilot fired in the harbour corridor"
+        );
         // Off again: hands off the helm.
         w.handle_navio(sid, PedidoNavio::Piloto { ligado: false });
         assert!(w.sessions[&sid].piloto.leme().is_none());

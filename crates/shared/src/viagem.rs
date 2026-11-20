@@ -103,7 +103,9 @@ impl Meio {
 
     /// The way an NPC of role `papel` (the wire's `u8`) travels, if it does.
     pub fn do_papel(papel: u8) -> Option<Meio> {
-        [Meio::Capitao, Meio::Onibus, Meio::Submarino].into_iter().find(|m| m.papel() as u8 == papel)
+        [Meio::Capitao, Meio::Onibus, Meio::Submarino]
+            .into_iter()
+            .find(|m| m.papel() as u8 == papel)
     }
 }
 
@@ -140,7 +142,9 @@ pub fn rota_permitida(zona_atual: &str, destino: usize, meio: Meio) -> bool {
 /// Who to look for on `zona_atual` to get to `destino`: the first way that
 /// is allowed (`None` = no direct route from here).
 pub fn meio_para(zona_atual: &str, destino: usize) -> Option<Meio> {
-    [Meio::Submarino, Meio::Onibus, Meio::Capitao].into_iter().find(|m| rota_permitida(zona_atual, destino, *m))
+    [Meio::Submarino, Meio::Onibus, Meio::Capitao]
+        .into_iter()
+        .find(|m| rota_permitida(zona_atual, destino, *m))
 }
 
 /// What the trip to `destino` costs, in copper, with `meio`. Only the
@@ -181,7 +185,9 @@ pub fn destinos_do_portal(
     indice_da_historia: Option<u32>,
     no_ar: &dyn Fn(&str) -> bool,
 ) -> Vec<Destino> {
-    linhas(zona_atual, indice_da_historia, no_ar, &|_| true, &|i| preco_do_portal(zona_atual, i))
+    linhas(zona_atual, indice_da_historia, no_ar, &|_| true, &|i| {
+        preco_do_portal(zona_atual, i)
+    })
 }
 
 /// The portal's price to `destino` from `zona_atual`, in copper: the cheapest
@@ -242,7 +248,10 @@ mod testes {
     fn toda_ilha_alem_da_inicial_tem_um_passo_que_libera() {
         assert!(passo_que_libera(0).is_none());
         for i in 1..ARQUIPELAGO.len() {
-            assert!(passo_que_libera(i).is_some(), "ilha {i} sem passo de viagem");
+            assert!(
+                passo_que_libera(i).is_some(),
+                "ilha {i} sem passo de viagem"
+            );
         }
         assert_eq!(passo_que_libera(1).unwrap().1, "Bound for the Glacier");
     }
@@ -254,7 +263,10 @@ mod testes {
         assert!(!liberada(1, None));
         assert!(!liberada(1, Some(p - 1)));
         assert!(liberada(1, Some(p)), "no passo da viagem ja' embarca");
-        assert!(liberada(1, Some(p + 20)), "e depois continua indo e voltando");
+        assert!(
+            liberada(1, Some(p + 20)),
+            "e depois continua indo e voltando"
+        );
         assert!(!liberada(2, Some(p + 1)), "o Ermo ainda nao");
     }
 
@@ -263,48 +275,96 @@ mod testes {
         let (p, _) = passo_que_libera(1).unwrap();
         let so_bosque_e_gelo = |z: &str| z == "ilha_inicial" || z == "ilha_gelo";
         let m = destinos("ilha_gelo", Some(p + 3), &so_bosque_e_gelo, Meio::Capitao);
-        assert_eq!(m.len(), ARQUIPELAGO.len() - 2, "a captain never lists Kōgen-tō or Abyssia");
+        assert_eq!(
+            m.len(),
+            ARQUIPELAGO.len() - 2,
+            "a captain never lists Kōgen-tō or Abyssia"
+        );
         assert_eq!(m[0].estado, estado::LIBERADA, "da' pra voltar ao Bosque");
         assert_eq!(m[1].estado, estado::AQUI);
         assert_eq!(m[2].estado, estado::BLOQUEADA);
         let sem_bosque = |z: &str| z == "ilha_gelo";
-        assert_eq!(destinos("ilha_gelo", Some(p), &sem_bosque, Meio::Capitao)[0].estado, estado::FORA_DO_AR);
+        assert_eq!(
+            destinos("ilha_gelo", Some(p), &sem_bosque, Meio::Capitao)[0].estado,
+            estado::FORA_DO_AR
+        );
     }
 
     /// Kōgen-tō only by the bus from Skyreach; captains never list it.
     #[test]
     fn kogen_so_pelo_onibus_de_skyreach() {
-        let kogen = ARQUIPELAGO.iter().position(|d| crate::kogen::e_kogen(d.zona)).unwrap();
-        let celeste = ARQUIPELAGO.iter().position(|d| crate::celeste::e_celeste(d.zona)).unwrap();
+        let kogen = ARQUIPELAGO
+            .iter()
+            .position(|d| crate::kogen::e_kogen(d.zona))
+            .unwrap();
+        let celeste = ARQUIPELAGO
+            .iter()
+            .position(|d| crate::celeste::e_celeste(d.zona))
+            .unwrap();
         let no_ar = |_: &str| true;
         for d in ARQUIPELAGO.iter() {
-            assert!(!destinos(d.zona, Some(10_000), &no_ar, Meio::Capitao).iter().any(|x| x.ilha as usize == kogen && d.zona != crate::kogen::ZONA),
-                "a captain in {} lists Kōgen-tō", d.zona);
+            assert!(
+                !destinos(d.zona, Some(10_000), &no_ar, Meio::Capitao)
+                    .iter()
+                    .any(|x| x.ilha as usize == kogen && d.zona != crate::kogen::ZONA),
+                "a captain in {} lists Kōgen-tō",
+                d.zona
+            );
         }
         let do_onibus = destinos(crate::celeste::ZONA, Some(10_000), &no_ar, Meio::Onibus);
         assert!(do_onibus.iter().any(|x| x.ilha as usize == kogen));
-        assert!(do_onibus.iter().all(|x| x.ilha as usize == kogen || x.ilha as usize == celeste));
-        assert!(rota_permitida(crate::kogen::ZONA, 0, Meio::Onibus), "Kōgen-tō's bus flies anywhere");
-        assert!(!rota_permitida("ilha_inicial", kogen, Meio::Onibus), "no bus from the Bosque");
+        assert!(do_onibus
+            .iter()
+            .all(|x| x.ilha as usize == kogen || x.ilha as usize == celeste));
+        assert!(
+            rota_permitida(crate::kogen::ZONA, 0, Meio::Onibus),
+            "Kōgen-tō's bus flies anywhere"
+        );
+        assert!(
+            !rota_permitida("ilha_inicial", kogen, Meio::Onibus),
+            "no bus from the Bosque"
+        );
     }
 
     /// Abyssia only by the submarine from Kōgen-tō; its submarine sails
     /// anywhere; no captain, no bus goes down.
     #[test]
     fn abissal_so_pelo_submarino_de_kogen() {
-        let abissal = ARQUIPELAGO.iter().position(|d| crate::abissal::e_abissal(d.zona)).unwrap();
-        let kogen = ARQUIPELAGO.iter().position(|d| crate::kogen::e_kogen(d.zona)).unwrap();
+        let abissal = ARQUIPELAGO
+            .iter()
+            .position(|d| crate::abissal::e_abissal(d.zona))
+            .unwrap();
+        let kogen = ARQUIPELAGO
+            .iter()
+            .position(|d| crate::kogen::e_kogen(d.zona))
+            .unwrap();
         assert!(rota_permitida(crate::kogen::ZONA, abissal, Meio::Submarino));
-        assert!(!rota_permitida(crate::kogen::ZONA, abissal, Meio::Onibus), "the bus does not dive");
-        assert!(!rota_permitida(crate::kogen::ZONA, 0, Meio::Submarino), "Kōgen-tō's submarine only dives");
+        assert!(
+            !rota_permitida(crate::kogen::ZONA, abissal, Meio::Onibus),
+            "the bus does not dive"
+        );
+        assert!(
+            !rota_permitida(crate::kogen::ZONA, 0, Meio::Submarino),
+            "Kōgen-tō's submarine only dives"
+        );
         for (i, d) in ARQUIPELAGO.iter().enumerate() {
             if i != abissal {
                 assert!(!rota_permitida(d.zona, abissal, Meio::Capitao));
-                assert!(rota_permitida(crate::abissal::ZONA, i, Meio::Submarino), "Abyssia's submarine to {}", d.zona);
+                assert!(
+                    rota_permitida(crate::abissal::ZONA, i, Meio::Submarino),
+                    "Abyssia's submarine to {}",
+                    d.zona
+                );
             }
         }
-        assert_eq!(meio_para(crate::kogen::ZONA, abissal), Some(Meio::Submarino));
-        assert_eq!(meio_para(crate::abissal::ZONA, kogen), Some(Meio::Submarino));
+        assert_eq!(
+            meio_para(crate::kogen::ZONA, abissal),
+            Some(Meio::Submarino)
+        );
+        assert_eq!(
+            meio_para(crate::abissal::ZONA, kogen),
+            Some(Meio::Submarino)
+        );
         assert_eq!(meio_para("ilha_inicial", abissal), None);
     }
 
@@ -314,16 +374,38 @@ mod testes {
     fn o_portal_lista_tudo_que_os_npcs_levavam_com_o_mesmo_preco() {
         let no_ar = |_: &str| true;
         for d in ARQUIPELAGO.iter() {
-            for indice in [None, Some(0), Some(passo_que_libera(3).unwrap().0), Some(10_000)] {
+            for indice in [
+                None,
+                Some(0),
+                Some(passo_que_libera(3).unwrap().0),
+                Some(10_000),
+            ] {
                 let portal = destinos_do_portal(d.zona, indice, &no_ar);
-                assert_eq!(portal.len(), ARQUIPELAGO.len(), "{}: the portal lists every island", d.zona);
+                assert_eq!(
+                    portal.len(),
+                    ARQUIPELAGO.len(),
+                    "{}: the portal lists every island",
+                    d.zona
+                );
                 for meio in [Meio::Capitao, Meio::Onibus, Meio::Submarino] {
                     for velho in destinos(d.zona, indice, &no_ar, meio) {
-                        let novo = portal.iter().find(|x| x.ilha == velho.ilha).expect("listed");
-                        assert_eq!(novo.estado, velho.estado, "{} -> {}: lock", d.zona, velho.nome);
+                        let novo = portal
+                            .iter()
+                            .find(|x| x.ilha == velho.ilha)
+                            .expect("listed");
+                        assert_eq!(
+                            novo.estado, velho.estado,
+                            "{} -> {}: lock",
+                            d.zona, velho.nome
+                        );
                         assert_eq!(novo.requisito, velho.requisito);
                         // (The "you are here" row has no trip to price.)
-                        assert!(velho.estado == estado::AQUI || novo.preco <= velho.preco, "{} -> {}: dearer than {meio:?}", d.zona, velho.nome);
+                        assert!(
+                            velho.estado == estado::AQUI || novo.preco <= velho.preco,
+                            "{} -> {}: dearer than {meio:?}",
+                            d.zona,
+                            velho.nome
+                        );
                     }
                 }
                 for x in &portal {
@@ -333,18 +415,38 @@ mod testes {
                         .filter(|m| rota_permitida(d.zona, i, *m))
                         .map(|m| preco(i, m))
                         .min();
-                    assert_eq!(x.preco, velho.unwrap_or(crate::navio::preco_da_viagem(i)), "{} -> {}", d.zona, x.nome);
+                    assert_eq!(
+                        x.preco,
+                        velho.unwrap_or(crate::navio::preco_da_viagem(i)),
+                        "{} -> {}",
+                        d.zona,
+                        x.nome
+                    );
                 }
             }
         }
         // The Captain's copper rule where he sailed; the bus and the
         // submarine stay free where they went.
-        let kogen = ARQUIPELAGO.iter().position(|d| crate::kogen::e_kogen(d.zona)).unwrap();
-        let abissal = ARQUIPELAGO.iter().position(|d| crate::abissal::e_abissal(d.zona)).unwrap();
+        let kogen = ARQUIPELAGO
+            .iter()
+            .position(|d| crate::kogen::e_kogen(d.zona))
+            .unwrap();
+        let abissal = ARQUIPELAGO
+            .iter()
+            .position(|d| crate::abissal::e_abissal(d.zona))
+            .unwrap();
         assert_eq!(preco_do_portal("ilha_gelo", 0), 50);
         assert_eq!(preco_do_portal(crate::celeste::ZONA, kogen), 0);
         assert_eq!(preco_do_portal(crate::kogen::ZONA, abissal), 0);
-        assert_eq!(preco_do_portal("ilha_inicial", kogen), crate::navio::preco_da_viagem(kogen));
-        assert!(!ARQUIPELAGO.iter().any(|d| crate::magica::NIVEIS.iter().any(|n| n.zona == d.zona)), "the Magic Island stays off the portal");
+        assert_eq!(
+            preco_do_portal("ilha_inicial", kogen),
+            crate::navio::preco_da_viagem(kogen)
+        );
+        assert!(
+            !ARQUIPELAGO
+                .iter()
+                .any(|d| crate::magica::NIVEIS.iter().any(|n| n.zona == d.zona)),
+            "the Magic Island stays off the portal"
+        );
     }
 }

@@ -970,7 +970,9 @@ mod tests {
         let kind = ((yaw / std::f32::consts::TAU * 256.0).round() as u16 % 256) + 1;
         let esperado = shared::npc_yaw_de_kind(kind).unwrap();
         let mut w = crate::world::World::default();
-        let meta = EntityMeta { skins: 0, cla: String::new(),
+        let meta = EntityMeta {
+            skins: 0,
+            cla: String::new(),
             pk: Default::default(),
             auras: 0,
             id: EntityId(7),
@@ -982,7 +984,8 @@ mod tests {
             nivel: 1,
             desafio: None,
             aparencia: 0,
-            poder: 0, renascimentos: 0,
+            poder: 0,
+            renascimentos: 0,
         };
         let estado =
             EntityState::quantize(EntityId(7), ::glam::Vec2::ZERO, ::glam::Vec2::ZERO, 1, 0);

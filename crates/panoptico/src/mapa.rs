@@ -14,10 +14,10 @@
 //! * **contour lines** every eight blocks, discreet. It is what lets the eye
 //!   measure "how high" with no legend.
 
+use serde::Serialize;
 use shared::terreno::{
     material_variado, tom_da_mancha, Bioma, DefIlha, Gerador, Material, BLOCO, NIVEL_DO_MAR,
 };
-use serde::Serialize;
 
 /// A slice of the same terrain generator the client uses. The 3D camera asks
 /// only for the player's neighbourhood; the whole island would be too large per frame.
@@ -64,7 +64,14 @@ pub fn recorte_3d(def: &'static DefIlha, cx: i32, cz: i32) -> Recorte3d {
             cores.push([r, g, b]);
         }
     }
-    Recorte3d { x, z, passo: 1.0, lado: LADO, alturas, cores }
+    Recorte3d {
+        x,
+        z,
+        passo: 1.0,
+        lado: LADO,
+        alturas,
+        cores,
+    }
 }
 
 #[cfg(test)]
@@ -77,7 +84,10 @@ mod testes_3d {
         assert_eq!(r.alturas.len(), r.cores.len());
         let meio = (r.lado / 2) * r.lado + r.lado / 2;
         let ger = shared::terreno::Gerador::da_ilha(def);
-        assert_eq!(r.alturas[meio], ger.altura(10.0, -8.0).max(shared::terreno::NIVEL_DO_MAR));
+        assert_eq!(
+            r.alturas[meio],
+            ger.altura(10.0, -8.0).max(shared::terreno::NIVEL_DO_MAR)
+        );
     }
 }
 

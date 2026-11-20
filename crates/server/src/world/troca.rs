@@ -21,7 +21,14 @@ pub(crate) struct Mesa {
 
 impl Mesa {
     fn nova(parceiro: SessionId) -> Self {
-        Mesa { parceiro, itens: Vec::new(), ouro: 0, energia: 0, travado: false, confirmado: false }
+        Mesa {
+            parceiro,
+            itens: Vec::new(),
+            ouro: 0,
+            energia: 0,
+            travado: false,
+            confirmado: false,
+        }
     }
 }
 
@@ -39,7 +46,9 @@ fn retira(
     tipo_vinculado: &impl Fn(u16) -> bool,
 ) -> bool {
     for it in itens {
-        let Some(s) = inv.get_mut(it.slot as usize) else { return false };
+        let Some(s) = inv.get_mut(it.slot as usize) else {
+            return false;
+        };
         if it.qtd == 0
             || s.item_id != it.item_id
             || s.qty < it.qtd
@@ -99,7 +108,9 @@ fn calcula_troca(
     }
     let mut inv_a = a.inv.clone();
     let mut inv_b = b.inv.clone();
-    if !retira(&mut inv_a, &ma.itens, tipo_vinculado) || !retira(&mut inv_b, &mb.itens, tipo_vinculado) {
+    if !retira(&mut inv_a, &ma.itens, tipo_vinculado)
+        || !retira(&mut inv_b, &mb.itens, tipo_vinculado)
+    {
         return Err(Falha::Itens);
     }
     if !entrega(&mut inv_a, &mb.itens) {
@@ -124,7 +135,13 @@ fn calcula_troca(
 
 /// Puts `qtd` of the bag slot `slot` on `m` (replacing what was there; 0
 /// takes it off). `Err` = refused, with the text for the player.
-fn por_na_mesa(m: &mut Mesa, slot: u16, item: &shared::InventorySlot, qtd: u32, livre: bool) -> Result<bool, &'static str> {
+fn por_na_mesa(
+    m: &mut Mesa,
+    slot: u16,
+    item: &shared::InventorySlot,
+    qtd: u32,
+    livre: bool,
+) -> Result<bool, &'static str> {
     if !livre {
         return Err("This item can't be traded.");
     }
@@ -139,7 +156,12 @@ fn por_na_mesa(m: &mut Mesa, slot: u16, item: &shared::InventorySlot, qtd: u32, 
         (Some(k), q) => {
             let e = &mut m.itens[k];
             // Same slot but a different item now: put the new one instead.
-            let novo = ItemNaMesa { slot, item_id: item.item_id, qtd: q, instance: item.instance.clone() };
+            let novo = ItemNaMesa {
+                slot,
+                item_id: item.item_id,
+                qtd: q,
+                instance: item.instance.clone(),
+            };
             if *e == novo {
                 return Ok(false);
             }
@@ -150,7 +172,12 @@ fn por_na_mesa(m: &mut Mesa, slot: u16, item: &shared::InventorySlot, qtd: u32, 
             if m.itens.len() >= tr::MAX_ITENS {
                 return Err("The table is full.");
             }
-            m.itens.push(ItemNaMesa { slot, item_id: item.item_id, qtd: q, instance: item.instance.clone() });
+            m.itens.push(ItemNaMesa {
+                slot,
+                item_id: item.item_id,
+                qtd: q,
+                instance: item.instance.clone(),
+            });
             Ok(true)
         }
     }
@@ -160,7 +187,10 @@ impl GameWorld {
     fn troca_fim(&self, sid: SessionId, ok: bool, texto: &str) {
         if let Some(s) = self.sessions.get(&sid) {
             let _ = s.handle.to_client.send(ServerMessage::Troca {
-                aviso: AvisoTroca::Fim { ok, texto: texto.into() },
+                aviso: AvisoTroca::Fim {
+                    ok,
+                    texto: texto.into(),
+                },
             });
         }
     }
@@ -181,7 +211,11 @@ impl GameWorld {
     }
 
     fn lado(&self, sid: SessionId) -> Lado {
-        let nome = self.sessions.get(&sid).map(|s| s.name.clone()).unwrap_or_default();
+        let nome = self
+            .sessions
+            .get(&sid)
+            .map(|s| s.name.clone())
+            .unwrap_or_default();
         match self.trocas.get(&sid) {
             Some(m) => Lado {
                 nome,
@@ -191,17 +225,25 @@ impl GameWorld {
                 confirmado: m.confirmado,
                 energia: m.energia,
             },
-            None => Lado { nome, ..Default::default() },
+            None => Lado {
+                nome,
+                ..Default::default()
+            },
         }
     }
 
     fn troca_envia_estado(&self, sid: SessionId) {
-        let Some(m) = self.trocas.get(&sid) else { return };
+        let Some(m) = self.trocas.get(&sid) else {
+            return;
+        };
         let outro = m.parceiro;
         for (eu, ele) in [(sid, outro), (outro, sid)] {
             if let Some(s) = self.sessions.get(&eu) {
                 let _ = s.handle.to_client.send(ServerMessage::Troca {
-                    aviso: AvisoTroca::Estado { eu: self.lado(eu), outro: self.lado(ele) },
+                    aviso: AvisoTroca::Estado {
+                        eu: self.lado(eu),
+                        outro: self.lado(ele),
+                    },
                 });
             }
         }
@@ -209,7 +251,9 @@ impl GameWorld {
 
     /// Closes the trade of `sid` (and its partner's), telling both why.
     pub(super) fn troca_encerra(&mut self, sid: SessionId, ok: bool, texto: &str) {
-        let Some(m) = self.trocas.remove(&sid) else { return };
+        let Some(m) = self.trocas.remove(&sid) else {
+            return;
+        };
         self.trocas.remove(&m.parceiro);
         self.troca_fim(sid, ok, texto);
         self.troca_fim(m.parceiro, ok, texto);
@@ -218,7 +262,9 @@ impl GameWorld {
     /// Any change to the table un-locks and un-confirms BOTH sides: nobody
     /// confirms a deal that changed after they looked at it.
     fn troca_mexeu(&mut self, sid: SessionId) {
-        let Some(parceiro) = self.trocas.get(&sid).map(|m| m.parceiro) else { return };
+        let Some(parceiro) = self.trocas.get(&sid).map(|m| m.parceiro) else {
+            return;
+        };
         for k in [sid, parceiro] {
             if let Some(m) = self.trocas.get_mut(&k) {
                 m.travado = false;
@@ -243,7 +289,12 @@ impl GameWorld {
                 if !self.trocas.contains_key(&sid) {
                     return;
                 }
-                let Some(item) = self.sessions.get(&sid).and_then(|s| s.inventory.get(slot as usize)).copied() else {
+                let Some(item) = self
+                    .sessions
+                    .get(&sid)
+                    .and_then(|s| s.inventory.get(slot as usize))
+                    .copied()
+                else {
                     return;
                 };
                 let livre = negociavel(&item);
@@ -255,7 +306,9 @@ impl GameWorld {
                 }
             }
             PedidoTroca::Tirar { indice } => {
-                let Some(m) = self.trocas.get_mut(&sid) else { return };
+                let Some(m) = self.trocas.get_mut(&sid) else {
+                    return;
+                };
                 if (indice as usize) < m.itens.len() {
                     m.itens.remove(indice as usize);
                     self.troca_mexeu(sid);
@@ -263,7 +316,9 @@ impl GameWorld {
             }
             PedidoTroca::Ouro { qtd } => {
                 let tem = self.sessions.get(&sid).map_or(0, |s| s.gold);
-                let Some(m) = self.trocas.get_mut(&sid) else { return };
+                let Some(m) = self.trocas.get_mut(&sid) else {
+                    return;
+                };
                 let novo = tr::saldo_na_mesa(tem, qtd);
                 if m.ouro != novo {
                     m.ouro = novo;
@@ -273,8 +328,13 @@ impl GameWorld {
                 }
             }
             PedidoTroca::Energia { qtd } => {
-                let tem = self.sessions.get(&sid).map_or(0, |s| s.skill_progress.energia);
-                let Some(m) = self.trocas.get_mut(&sid) else { return };
+                let tem = self
+                    .sessions
+                    .get(&sid)
+                    .map_or(0, |s| s.skill_progress.energia);
+                let Some(m) = self.trocas.get_mut(&sid) else {
+                    return;
+                };
                 let novo = tr::saldo_na_mesa(tem, qtd);
                 if m.energia != novo {
                     m.energia = novo;
@@ -297,7 +357,9 @@ impl GameWorld {
                 self.troca_envia_estado(sid);
             }
             PedidoTroca::Confirmar => {
-                let Some(parceiro) = self.trocas.get(&sid).map(|m| m.parceiro) else { return };
+                let Some(parceiro) = self.trocas.get(&sid).map(|m| m.parceiro) else {
+                    return;
+                };
                 let ambos_travados = self.trocas.get(&sid).is_some_and(|m| m.travado)
                     && self.trocas.get(&parceiro).is_some_and(|m| m.travado);
                 if !ambos_travados {
@@ -343,7 +405,10 @@ impl GameWorld {
     fn troca_aviso(&self, sid: SessionId, ok: bool, texto: &str) {
         if let Some(s) = self.sessions.get(&sid) {
             let _ = s.handle.to_client.send(ServerMessage::Troca {
-                aviso: AvisoTroca::Aviso { ok, texto: texto.into() },
+                aviso: AvisoTroca::Aviso {
+                    ok,
+                    texto: texto.into(),
+                },
             });
         }
     }
@@ -371,16 +436,24 @@ impl GameWorld {
             return;
         }
         let de = self.sessions[&sid].name.clone();
-        self.troca_convites.insert(alvo, (sid, self.sim_time_s + tr::CONVITE_S));
+        self.troca_convites
+            .insert(alvo, (sid, self.sim_time_s + tr::CONVITE_S));
         if let Some(s) = self.sessions.get(&alvo) {
-            let _ = s.handle.to_client.send(ServerMessage::Troca { aviso: AvisoTroca::Convite { de } });
+            let _ = s.handle.to_client.send(ServerMessage::Troca {
+                aviso: AvisoTroca::Convite { de },
+            });
         }
         self.troca_aviso(sid, true, "Trade invite sent.");
     }
 
     fn troca_responder(&mut self, sid: SessionId, de: &str, aceita: bool) {
-        let Some((quem, ate)) = self.troca_convites.remove(&sid) else { return };
-        let nome_ok = self.sessions.get(&quem).is_some_and(|s| s.name.eq_ignore_ascii_case(de));
+        let Some((quem, ate)) = self.troca_convites.remove(&sid) else {
+            return;
+        };
+        let nome_ok = self
+            .sessions
+            .get(&quem)
+            .is_some_and(|s| s.name.eq_ignore_ascii_case(de));
         if !nome_ok || ate < self.sim_time_s {
             return;
         }
@@ -405,9 +478,13 @@ impl GameWorld {
     /// Both confirmed: re-check everything on COPIES, then commit both bags
     /// and both purses at once.
     fn troca_executa(&mut self, a: SessionId) {
-        let Some(ma) = self.trocas.get(&a).cloned() else { return };
+        let Some(ma) = self.trocas.get(&a).cloned() else {
+            return;
+        };
         let b = ma.parceiro;
-        let Some(mb) = self.trocas.get(&b).cloned() else { return };
+        let Some(mb) = self.trocas.get(&b).cloned() else {
+            return;
+        };
         if !self.perto_pra_trocar(a, b) {
             self.troca_encerra(a, false, "Trade cancelled: too far apart.");
             return;
@@ -416,8 +493,16 @@ impl GameWorld {
             self.troca_encerra(a, false, "Trade cancelled.");
             return;
         };
-        let pa = Posses { inv: sa.inventory.clone(), ouro: sa.gold, energia: sa.skill_progress.energia };
-        let pb = Posses { inv: sb.inventory.clone(), ouro: sb.gold, energia: sb.skill_progress.energia };
+        let pa = Posses {
+            inv: sa.inventory.clone(),
+            ouro: sa.gold,
+            energia: sa.skill_progress.energia,
+        };
+        let pb = Posses {
+            inv: sb.inventory.clone(),
+            ouro: sb.gold,
+            energia: sb.skill_progress.energia,
+        };
         let (na, nb) = (sa.name.clone(), sb.name.clone());
         let (fa, fb) = match calcula_troca(&pa, &ma, &pb, &mb, &crate::economy::item_vinculado) {
             Ok(v) => v,
@@ -487,7 +572,11 @@ mod testes {
     use super::*;
 
     fn slot(item_id: u16, qty: u32) -> shared::InventorySlot {
-        shared::InventorySlot { item_id, qty, instance: None }
+        shared::InventorySlot {
+            item_id,
+            qty,
+            instance: None,
+        }
     }
 
     fn livre(_: u16) -> bool {
@@ -499,18 +588,34 @@ mod testes {
     }
 
     fn mesa(itens: Vec<ItemNaMesa>, ouro: u64, energia: u64) -> Mesa {
-        Mesa { parceiro: ninguem(), itens, ouro, energia, travado: true, confirmado: true }
+        Mesa {
+            parceiro: ninguem(),
+            itens,
+            ouro,
+            energia,
+            travado: true,
+            confirmado: true,
+        }
     }
 
     fn na_mesa(slot: u16, item_id: u16, qtd: u32) -> ItemNaMesa {
-        ItemNaMesa { slot, item_id, qtd, instance: None }
+        ItemNaMesa {
+            slot,
+            item_id,
+            qtd,
+            instance: None,
+        }
     }
 
     /// A bag of `n` grid slots plus the wallet (copper, darksteel).
     fn bolsa(n: usize, darksteel: u32) -> Vec<shared::InventorySlot> {
         let mut inv = vec![shared::InventorySlot::default(); n];
         inv.push(shared::InventorySlot::default());
-        inv.push(if darksteel > 0 { slot(shared::item_id::DARKSTEEL, darksteel) } else { Default::default() });
+        inv.push(if darksteel > 0 {
+            slot(shared::item_id::DARKSTEEL, darksteel)
+        } else {
+            Default::default()
+        });
         inv
     }
 
@@ -535,11 +640,18 @@ mod testes {
     fn item_vinculado_nao_negocia() {
         let mut inst = shared::items::ItemInstance::vazia_de_grau(0);
         inst.vinculado = true;
-        let s = shared::InventorySlot { item_id: 1, qty: 1, instance: Some(inst) };
+        let s = shared::InventorySlot {
+            item_id: 1,
+            qty: 1,
+            instance: Some(inst),
+        };
         assert!(!tr::negociavel(&s, false));
         assert!(tr::negociavel(&slot(10, 1), false));
         assert!(!tr::negociavel(&slot(10, 0), false));
-        assert!(!tr::negociavel(&slot(shared::item_id::PASSE_MAGICO, 1), false));
+        assert!(!tr::negociavel(
+            &slot(shared::item_id::PASSE_MAGICO, 1),
+            false
+        ));
     }
 
     #[test]
@@ -582,10 +694,25 @@ mod testes {
     fn troca_completa_com_darksteel_energia_e_ouro() {
         let mut inv_a = bolsa(4, 500);
         inv_a[0] = slot(10, 3);
-        let a = Posses { inv: inv_a, ouro: 1_000, energia: 7_000 };
-        let b = Posses { inv: bolsa(4, 0), ouro: 50_000, energia: 0 };
+        let a = Posses {
+            inv: inv_a,
+            ouro: 1_000,
+            energia: 7_000,
+        };
+        let b = Posses {
+            inv: bolsa(4, 0),
+            ouro: 50_000,
+            energia: 0,
+        };
         let n = a.inv.len() as u16;
-        let ma = mesa(vec![na_mesa(0, 10, 2), na_mesa(n - 1, shared::item_id::DARKSTEEL, 200)], 0, 5_000);
+        let ma = mesa(
+            vec![
+                na_mesa(0, 10, 2),
+                na_mesa(n - 1, shared::item_id::DARKSTEEL, 200),
+            ],
+            0,
+            5_000,
+        );
         let mb = mesa(vec![], 30_000, 0);
         let (fa, fb) = calcula_troca(&a, &ma, &b, &mb, &livre).expect("trade fits");
         assert_eq!(fa.inv[0].qty, 1);
@@ -593,18 +720,42 @@ mod testes {
         assert_eq!((fa.ouro, fa.energia), (31_000, 2_000));
         assert_eq!((fb.ouro, fb.energia), (20_000, 5_000));
         // B got 2 of item 10 in the grid and 200 Darksteel in the wallet.
-        assert_eq!(fb.inv.iter().filter(|s| s.item_id == 10).map(|s| s.qty).sum::<u32>(), 2);
+        assert_eq!(
+            fb.inv
+                .iter()
+                .filter(|s| s.item_id == 10)
+                .map(|s| s.qty)
+                .sum::<u32>(),
+            2
+        );
         let w = fb.inv.len() - 1;
-        assert_eq!((fb.inv[w].item_id, fb.inv[w].qty), (shared::item_id::DARKSTEEL, 200));
+        assert_eq!(
+            (fb.inv[w].item_id, fb.inv[w].qty),
+            (shared::item_id::DARKSTEEL, 200)
+        );
     }
 
     #[test]
     fn energia_ou_ouro_que_faltam_recusam_tudo() {
-        let a = Posses { inv: bolsa(2, 0), ouro: 100, energia: 10 };
-        let b = Posses { inv: bolsa(2, 0), ouro: 0, energia: 0 };
+        let a = Posses {
+            inv: bolsa(2, 0),
+            ouro: 100,
+            energia: 10,
+        };
+        let b = Posses {
+            inv: bolsa(2, 0),
+            ouro: 0,
+            energia: 0,
+        };
         let nada = mesa(vec![], 0, 0);
-        assert_eq!(calcula_troca(&a, &mesa(vec![], 0, 11), &b, &nada, &livre), Err(Falha::Energia));
-        assert_eq!(calcula_troca(&a, &mesa(vec![], 101, 0), &b, &nada, &livre), Err(Falha::Ouro));
+        assert_eq!(
+            calcula_troca(&a, &mesa(vec![], 0, 11), &b, &nada, &livre),
+            Err(Falha::Energia)
+        );
+        assert_eq!(
+            calcula_troca(&a, &mesa(vec![], 101, 0), &b, &nada, &livre),
+            Err(Falha::Ouro)
+        );
         assert!(calcula_troca(&a, &mesa(vec![], 100, 10), &b, &nada, &livre).is_ok());
     }
 
@@ -612,33 +763,74 @@ mod testes {
     fn item_vinculado_ou_pilha_que_mudou_recusa_na_hora_de_trocar() {
         let mut inv = bolsa(2, 0);
         inv[0] = slot(10, 5);
-        let a = Posses { inv, ouro: 0, energia: 0 };
-        let b = Posses { inv: bolsa(2, 0), ouro: 0, energia: 0 };
+        let a = Posses {
+            inv,
+            ouro: 0,
+            energia: 0,
+        };
+        let b = Posses {
+            inv: bolsa(2, 0),
+            ouro: 0,
+            energia: 0,
+        };
         let nada = mesa(vec![], 0, 0);
         // More than the stack holds now.
-        assert_eq!(calcula_troca(&a, &mesa(vec![na_mesa(0, 10, 6)], 0, 0), &b, &nada, &livre), Err(Falha::Itens));
+        assert_eq!(
+            calcula_troca(&a, &mesa(vec![na_mesa(0, 10, 6)], 0, 0), &b, &nada, &livre),
+            Err(Falha::Itens)
+        );
         // The kind became bound.
         assert_eq!(
-            calcula_troca(&a, &mesa(vec![na_mesa(0, 10, 5)], 0, 0), &b, &nada, &|id| id == 10),
+            calcula_troca(
+                &a,
+                &mesa(vec![na_mesa(0, 10, 5)], 0, 0),
+                &b,
+                &nada,
+                &|id| id == 10
+            ),
             Err(Falha::Itens)
         );
         // The Magic Island pass never goes.
         let mut inv_p = bolsa(2, 0);
         inv_p[0] = slot(shared::item_id::PASSE_MAGICO, 1);
-        let ap = Posses { inv: inv_p, ouro: 0, energia: 0 };
+        let ap = Posses {
+            inv: inv_p,
+            ouro: 0,
+            energia: 0,
+        };
         assert_eq!(
-            calcula_troca(&ap, &mesa(vec![na_mesa(0, shared::item_id::PASSE_MAGICO, 1)], 0, 0), &b, &nada, &livre),
+            calcula_troca(
+                &ap,
+                &mesa(vec![na_mesa(0, shared::item_id::PASSE_MAGICO, 1)], 0, 0),
+                &b,
+                &nada,
+                &livre
+            ),
             Err(Falha::Itens)
         );
     }
 
     #[test]
     fn bolsa_cheia_do_outro_lado_recusa_sem_mexer_em_nada() {
-        let a = Posses { inv: vec![slot(10, 1)], ouro: 0, energia: 0 };
+        let a = Posses {
+            inv: vec![slot(10, 1)],
+            ouro: 0,
+            energia: 0,
+        };
         let inv_b = vec![slot(20, 1)];
-        let b = Posses { inv: inv_b, ouro: 0, energia: 0 };
+        let b = Posses {
+            inv: inv_b,
+            ouro: 0,
+            energia: 0,
+        };
         // B gives nothing back, so the full grid has no room for item 10.
-        let r = calcula_troca(&a, &mesa(vec![na_mesa(0, 10, 1)], 0, 0), &b, &mesa(vec![], 0, 0), &livre);
+        let r = calcula_troca(
+            &a,
+            &mesa(vec![na_mesa(0, 10, 1)], 0, 0),
+            &b,
+            &mesa(vec![], 0, 0),
+            &livre,
+        );
         assert_eq!(r, Err(Falha::SemEspaco(1)));
     }
 }

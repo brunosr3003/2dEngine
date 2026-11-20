@@ -180,19 +180,28 @@ impl PoraoUi {
         // Walking away mid-swirl calls it off.
         if let Some((conteudo, desde)) = self.entrando {
             let progresso = ((get_time() - desde) / ENTRADA_S) as f32;
-            let ainda_perto = self.aviso.as_ref().is_some_and(|a| a.conteudo == conteudo && a.na_porta);
+            let ainda_perto = self
+                .aviso
+                .as_ref()
+                .is_some_and(|a| a.conteudo == conteudo && a.na_porta);
             if !ainda_perto {
                 self.entrando = None;
             } else {
                 let cor = crate::render3d::cor_do_portal(conteudo);
                 let a = (progresso * progresso).clamp(0.0, 1.0) * 0.85;
                 let tela = crate::hud_layout::tela_segura();
-                draw_rectangle(0.0, 0.0, screen_width().max(tela.w), screen_height().max(tela.h), Color::new(
-                    cor.r + (1.0 - cor.r) * progresso.min(1.0) * 0.6,
-                    cor.g + (1.0 - cor.g) * progresso.min(1.0) * 0.6,
-                    cor.b + (1.0 - cor.b) * progresso.min(1.0) * 0.6,
-                    a,
-                ));
+                draw_rectangle(
+                    0.0,
+                    0.0,
+                    screen_width().max(tela.w),
+                    screen_height().max(tela.h),
+                    Color::new(
+                        cor.r + (1.0 - cor.r) * progresso.min(1.0) * 0.6,
+                        cor.g + (1.0 - cor.g) * progresso.min(1.0) * 0.6,
+                        cor.b + (1.0 - cor.b) * progresso.min(1.0) * 0.6,
+                        a,
+                    ),
+                );
                 if progresso >= 1.0 {
                     self.entrando = None;
                     return Some(ClientMessage::Dungeon {
@@ -220,7 +229,8 @@ impl PoraoUi {
             })
             .unwrap_or_default();
         let w = 340.0 * f;
-        let h = (74.0 + 20.0 * desafios.len() as f32 + if desafios.is_empty() { 0.0 } else { 8.0 }) * f;
+        let h =
+            (74.0 + 20.0 * desafios.len() as f32 + if desafios.is_empty() { 0.0 } else { 8.0 }) * f;
         // Em cima do rodapé e no meio: é onde o olho já procura o que fazer
         // agora, e não disputa com a barra de vida nem com o rastreador.
         let r = Rect::new(
@@ -236,7 +246,11 @@ impl PoraoUi {
             r.y + 26.0 * f,
             a.nome,
             17,
-            if a.pode_abrir() { estilo::OURO } else { estilo::TEXTO },
+            if a.pode_abrir() {
+                estilo::OURO
+            } else {
+                estilo::TEXTO
+            },
         );
         for (i, t) in desafios.iter().enumerate() {
             estilo::texto(
@@ -255,7 +269,11 @@ impl PoraoUi {
         // key (owner, 08/11/2026: "on the portal with need X key, clicking
         // there could open the key's craft menu").
         let craftavel = !a.tem_chave;
-        estilo::cartao(botao, (pode || craftavel) && botao.toca(m), pode || craftavel);
+        estilo::cartao(
+            botao,
+            (pode || craftavel) && botao.toca(m),
+            pode || craftavel,
+        );
         estilo::texto_centro(
             botao.center().x,
             botao.center().y + 5.0 * f,
@@ -276,7 +294,6 @@ impl PoraoUi {
     pub fn pede_craft(&mut self) -> Option<u16> {
         self.craftar.take()
     }
-
 }
 
 /// Prévia da tarja da porta (`MMO_PREVIA_PORAO=1`; PNGs em `MMO_PREVIA_SAIDA`):
@@ -299,7 +316,9 @@ pub async fn previa() {
             clear_background(Color::new(0.08, 0.12, 0.16, 1.0));
             ui.desenha(zona, Some(porta), &move |_| tem);
             unsafe { get_internal_gl().flush() };
-            rt.texture.get_texture_data().export_png(&format!("{saida}/{nome}.png"));
+            rt.texture
+                .get_texture_data()
+                .export_png(&format!("{saida}/{nome}.png"));
             next_frame().await;
         }
     }

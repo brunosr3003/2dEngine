@@ -413,8 +413,6 @@ mod testes {
     use super::*;
     use crate::items::tier_from_ilvl;
 
-
-
     #[test]
     fn uma_receita_por_peca_e_por_cor_com_ids_unicos_e_seis_ingredientes() {
         let r = receitas_de_equipamento();
@@ -458,7 +456,11 @@ mod testes {
             // (owner, 12/11/2026); grey stays at item level 5 (no requirement).
             assert_eq!(r.tier, f.cor, "{}", r.name);
             if f.cor > 1 {
-                assert_eq!(r.output_item_level, r.nivel_min, "{}: item level != recipe level", r.name);
+                assert_eq!(
+                    r.output_item_level, r.nivel_min,
+                    "{}: item level != recipe level",
+                    r.name
+                );
             }
             // O nivel de cada cor sai da faixa da CHAVE, nao de um 60 escrito
             // aqui: quando a ladder desceu, este assert reprovava por estar
@@ -540,8 +542,16 @@ mod testes {
     #[test]
     fn toda_receita_de_equipamento_se_desmantela() {
         for r in receitas_de_equipamento() {
-            assert!(r.id >= PRIMEIRO_ID && r.id < FIM_DOS_IDS, "{} ({}) out of salvage", r.name, r.id);
+            assert!(
+                r.id >= PRIMEIRO_ID && r.id < FIM_DOS_IDS,
+                "{} ({}) out of salvage",
+                r.name,
+                r.id
+            );
         }
-        assert!(receitas_de_equipamento().iter().any(|r| r.tier == 5), "no legendary recipe");
+        assert!(
+            receitas_de_equipamento().iter().any(|r| r.tier == 5),
+            "no legendary recipe"
+        );
     }
 }

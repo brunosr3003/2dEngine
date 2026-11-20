@@ -134,12 +134,23 @@ impl GameWorld {
                     enviar_meus(&central, &quem).await;
                 });
             }
-            ClientMessage::MercadoAjustarPreco { anuncio, preco_total } => {
+            ClientMessage::MercadoAjustarPreco {
+                anuncio,
+                preco_total,
+            } => {
                 if anuncio.len() > ID_MAX {
                     return;
                 }
                 tokio::spawn(async move {
-                    match mercado::ajustar_preco(&central, &quem.realm, &quem.nome, &anuncio, preco_total).await {
+                    match mercado::ajustar_preco(
+                        &central,
+                        &quem.realm,
+                        &quem.nome,
+                        &anuncio,
+                        preco_total,
+                    )
+                    .await
+                    {
                         Ok((ok, texto)) => {
                             if ok {
                                 crate::chat_global::mercado_mudou(vec![quem.nome.clone()]);
@@ -157,9 +168,20 @@ impl GameWorld {
             ClientMessage::MercadoAnunciarEnergia { lotes, preco_total } => {
                 self.mercado_anunciar_energia(sid, quem, lotes, preco_total);
             }
-            ClientMessage::MercadoComprarVagas { compra, com_tp: true } => {
+            ClientMessage::MercadoComprarVagas {
+                compra,
+                com_tp: true,
+            } => {
                 tokio::spawn(async move {
-                    match mercado::comprar_vagas_tp(&central, &quem.realm, &quem.conta, &quem.nome, compra).await {
+                    match mercado::comprar_vagas_tp(
+                        &central,
+                        &quem.realm,
+                        &quem.conta,
+                        &quem.nome,
+                        compra,
+                    )
+                    .await
+                    {
                         Ok((ok, texto)) => responde(&quem.to_client, ok, texto),
                         Err(e) => {
                             tracing::warn!("mercado: compra de vagas com TP falhou: {e:#}");
@@ -169,7 +191,10 @@ impl GameWorld {
                     enviar_meus(&central, &quem).await;
                 });
             }
-            ClientMessage::MercadoComprarVagas { compra, com_tp: false } => {
+            ClientMessage::MercadoComprarVagas {
+                compra,
+                com_tp: false,
+            } => {
                 self.mercado_comprar_vagas(sid, quem, compra);
             }
             ClientMessage::MercadoAnunciarTp { qtd, preco_total } => {
@@ -215,7 +240,11 @@ impl GameWorld {
                 qtd,
                 preco_total,
             } => self.mercado_pedir_compra(sid, quem, item_id, qtd, preco_total),
-            ClientMessage::MercadoVenderAoPedido { pedido, item_id, qtd } => {
+            ClientMessage::MercadoVenderAoPedido {
+                pedido,
+                item_id,
+                qtd,
+            } => {
                 if pedido.is_empty() || pedido.len() > ID_MAX {
                     return;
                 }
@@ -226,7 +255,8 @@ impl GameWorld {
                     return;
                 }
                 tokio::spawn(async move {
-                    match mercado::cancelar_pedido(&central, &quem.realm, &quem.nome, &pedido).await {
+                    match mercado::cancelar_pedido(&central, &quem.realm, &quem.nome, &pedido).await
+                    {
                         Ok((ok, texto)) => {
                             if ok {
                                 crate::chat_global::mercado_mudou(vec![quem.nome.clone()]);
@@ -243,9 +273,19 @@ impl GameWorld {
             }
             ClientMessage::MercadoBuscarPedidos { item_id, texto } => {
                 tokio::spawn(async move {
-                    match mercado::buscar_pedidos(&central, item_id, &texto, &quem.realm, &quem.nome).await {
+                    match mercado::buscar_pedidos(
+                        &central,
+                        item_id,
+                        &texto,
+                        &quem.realm,
+                        &quem.nome,
+                    )
+                    .await
+                    {
                         Ok(lista) => {
-                            let _ = quem.to_client.send(ServerMessage::MercadoPedidos { lista, meus: false });
+                            let _ = quem
+                                .to_client
+                                .send(ServerMessage::MercadoPedidos { lista, meus: false });
                         }
                         Err(e) => {
                             tracing::warn!("mercado: busca de pedidos falhou: {e:#}");
@@ -276,7 +316,14 @@ impl GameWorld {
     /// BUY ORDER: the whole `preco_total` leaves the buyer NOW (escrow)
     /// and the order joins the save queue, in the same transaction; the
     /// central one opens it or gives the gold back by letter.
-    fn mercado_pedir_compra(&mut self, sid: SessionId, quem: Quem, item_id: u16, qtd: u64, preco_total: u64) {
+    fn mercado_pedir_compra(
+        &mut self,
+        sid: SessionId,
+        quem: Quem,
+        item_id: u16,
+        qtd: u64,
+        preco_total: u64,
+    ) {
         if !Self::item_pedivel(item_id) {
             responde(&quem.to_client, false, Recusa::NaoPedivel.texto());
             return;
@@ -301,25 +348,33 @@ impl GameWorld {
             format!("Buy order sent: {nome} ×{qtd}, {total} gold held. It shows up in instants."),
         );
         let categoria = regras::categoria_do_item(item_id, false);
-        self.mercado_registros.push(Registro::Saida(OpCentral::PedirCompra {
-            id: mercado::novo_id(),
-            realm: quem.realm,
-            conta: quem.conta,
-            personagem: quem.nome,
-            item_id,
-            nome,
-            categoria: categoria as u8,
-            qtd,
-            preco_unit: 0,
-            pago: total,
-        }));
+        self.mercado_registros
+            .push(Registro::Saida(OpCentral::PedirCompra {
+                id: mercado::novo_id(),
+                realm: quem.realm,
+                conta: quem.conta,
+                personagem: quem.nome,
+                item_id,
+                nome,
+                categoria: categoria as u8,
+                qtd,
+                preco_unit: 0,
+                pago: total,
+            }));
         self.save_pending = true;
     }
 
     /// SELLING TO A BUY ORDER: the items leave the bag NOW (Energy lots leave
     /// the Energy) and the sale joins the save queue; the central one fills
     /// what the order still wants and returns the rest by letter.
-    fn mercado_vender_ao_pedido(&mut self, sid: SessionId, quem: Quem, pedido: String, item_id: u16, qtd: u64) {
+    fn mercado_vender_ao_pedido(
+        &mut self,
+        sid: SessionId,
+        quem: Quem,
+        pedido: String,
+        item_id: u16,
+        qtd: u64,
+    ) {
         let energia = item_id == shared::item_id::ENERGIA_MIL;
         if !Self::item_pedivel(item_id) {
             responde(&quem.to_client, false, Recusa::NaoPedivel.texto());
@@ -354,15 +409,16 @@ impl GameWorld {
             true,
             format!("Sale sent: {nome} ×{qtd} to a buy order. The gold arrives in Deliveries."),
         );
-        self.mercado_registros.push(Registro::Saida(OpCentral::VenderAoPedido {
-            id: mercado::novo_id(),
-            realm: quem.realm,
-            conta: quem.conta,
-            personagem: quem.nome,
-            pedido,
-            item_id,
-            qtd,
-        }));
+        self.mercado_registros
+            .push(Registro::Saida(OpCentral::VenderAoPedido {
+                id: mercado::novo_id(),
+                realm: quem.realm,
+                conta: quem.conta,
+                personagem: quem.nome,
+                pedido,
+                item_id,
+                qtd,
+            }));
         self.save_pending = true;
     }
 
@@ -432,11 +488,19 @@ impl GameWorld {
     /// (`item_id::ENERGIA_MIL`), and goes out through the same queue as an
     /// item. Whoever receives a delivery of it gets Energy back, not a bag item
     /// (`mercado_aplicar_cartas`), so a cancelled listing returns it too.
-    fn mercado_anunciar_energia(&mut self, sid: SessionId, quem: Quem, lotes: u64, preco_total: u64) {
+    fn mercado_anunciar_energia(
+        &mut self,
+        sid: SessionId,
+        quem: Quem,
+        lotes: u64,
+        preco_total: u64,
+    ) {
         let Some(s) = self.sessions.get_mut(&sid) else {
             return;
         };
-        if let Err(r) = regras::pode_anunciar_energia(quem.nivel, s.skill_progress.energia, lotes, preco_total) {
+        if let Err(r) =
+            regras::pode_anunciar_energia(quem.nivel, s.skill_progress.energia, lotes, preco_total)
+        {
             responde(&quem.to_client, false, r.texto());
             return;
         }
@@ -449,21 +513,25 @@ impl GameWorld {
         responde(
             &quem.to_client,
             true,
-            format!("Anúncio enviado: {} de Energia. Aparece no mercado em instantes.", lotes * regras::ENERGIA_POR_LOTE),
+            format!(
+                "Anúncio enviado: {} de Energia. Aparece no mercado em instantes.",
+                lotes * regras::ENERGIA_POR_LOTE
+            ),
         );
-        self.mercado_registros.push(Registro::Saida(OpCentral::Anunciar {
-            id: mercado::novo_id(),
-            realm: quem.realm,
-            conta: quem.conta,
-            personagem: quem.nome,
-            item_id: shared::item_id::ENERGIA_MIL,
-            nome: "Energy ×1,000".into(),
-            categoria: regras::Categoria::Consumivel as u8,
-            instancia: None,
-            qtd: lotes,
-            preco_total,
-            preco_unit: 0,
-        }));
+        self.mercado_registros
+            .push(Registro::Saida(OpCentral::Anunciar {
+                id: mercado::novo_id(),
+                realm: quem.realm,
+                conta: quem.conta,
+                personagem: quem.nome,
+                item_id: shared::item_id::ENERGIA_MIL,
+                nome: "Energy ×1,000".into(),
+                categoria: regras::Categoria::Consumivel as u8,
+                instancia: None,
+                qtd: lotes,
+                preco_total,
+                preco_unit: 0,
+            }));
         self.save_pending = true;
     }
 
@@ -487,15 +555,19 @@ impl GameWorld {
         responde(
             &quem.to_client,
             true,
-            format!("Buying {} listing slots for {ouro} gold…", regras::VAGAS_POR_COMPRA),
+            format!(
+                "Buying {} listing slots for {ouro} gold…",
+                regras::VAGAS_POR_COMPRA
+            ),
         );
-        self.mercado_registros.push(Registro::Saida(OpCentral::ComprarVagas {
-            id: mercado::novo_id(),
-            realm: quem.realm,
-            personagem: quem.nome,
-            compra,
-            pago: ouro,
-        }));
+        self.mercado_registros
+            .push(Registro::Saida(OpCentral::ComprarVagas {
+                id: mercado::novo_id(),
+                realm: quem.realm,
+                personagem: quem.nome,
+                compra,
+                pago: ouro,
+            }));
         self.save_pending = true;
     }
 
@@ -687,7 +759,9 @@ async fn enviar_meus(central: &sqlx::PgPool, quem: &Quem) {
 async fn enviar_meus_pedidos(central: &sqlx::PgPool, quem: &Quem) {
     match mercado::meus_pedidos(central, &quem.realm, &quem.nome).await {
         Ok(lista) => {
-            let _ = quem.to_client.send(ServerMessage::MercadoPedidos { lista, meus: true });
+            let _ = quem
+                .to_client
+                .send(ServerMessage::MercadoPedidos { lista, meus: true });
         }
         Err(e) => {
             tracing::warn!("mercado: meus pedidos falhou: {e:#}");
@@ -762,7 +836,10 @@ mod testes_energia {
         let mut w = GameWorld::new(HashMap::new());
         let sid = SessionId(([127, 0, 0, 1], 19851).into());
         let (tx, _) = mpsc::unbounded_channel();
-        w.on_connect(SessionHandle { id: sid, to_client: tx });
+        w.on_connect(SessionHandle {
+            id: sid,
+            to_client: tx,
+        });
         let s = w.sessions.get_mut(&sid).unwrap();
         s.logged_in = true;
         s.name = nome.into();
@@ -792,17 +869,27 @@ mod testes_energia {
         crate::economy::por_item_para_testes(id, 1, shared::items::item_template(id));
         let mut inst = shared::navio::instancia_nova(id);
         inst.navio.as_mut().unwrap().conves = Some(shared::navio::tesouro_novo(10, 12, Some(0)));
-        w.sessions.get_mut(&sid).unwrap().inventory[0] = shared::InventorySlot { item_id: id, qty: 1, instance: Some(inst) };
+        w.sessions.get_mut(&sid).unwrap().inventory[0] = shared::InventorySlot {
+            item_id: id,
+            qty: 1,
+            instance: Some(inst),
+        };
         let n = w.mercado_registros.len();
         let q = quem(&w, sid, 30);
         w.mercado_anunciar(sid, q, 0, 1, 1_000);
-        assert_eq!(w.sessions[&sid].inventory[0].qty, 1, "the market took the treasure");
+        assert_eq!(
+            w.sessions[&sid].inventory[0].qty, 1,
+            "the market took the treasure"
+        );
         assert_eq!(w.mercado_registros.len(), n);
         inst.navio.as_mut().unwrap().conves = None;
         w.sessions.get_mut(&sid).unwrap().inventory[0].instance = Some(inst);
         let q = quem(&w, sid, 30);
         w.mercado_anunciar(sid, q, 0, 1, 1_000);
-        assert_eq!(w.sessions[&sid].inventory[0].qty, 0, "an empty-deck ship lists as before");
+        assert_eq!(
+            w.sessions[&sid].inventory[0].qty, 0,
+            "an empty-deck ship lists as before"
+        );
     }
 
     /// Listing takes the Energy now and queues a lot listing; too little
@@ -820,7 +907,10 @@ mod testes_energia {
         let n = w.mercado_registros.len();
         let q = quem(&w, sid, 30);
         w.mercado_anunciar_energia(sid, q, 1, 40);
-        assert_eq!(w.sessions[&sid].skill_progress.energia, 500, "500 is not a lot");
+        assert_eq!(
+            w.sessions[&sid].skill_progress.energia, 500,
+            "500 is not a lot"
+        );
         let q = quem(&w, sid, 10);
         w.sessions.get_mut(&sid).unwrap().skill_progress.energia = 9_000;
         w.mercado_anunciar_energia(sid, q, 1, 40);
@@ -862,8 +952,16 @@ mod testes_energia {
         crate::economy::por_item_para_testes(it, 999, shared::items::item_template(it));
         {
             let s = w.sessions.get_mut(&sid).unwrap();
-            s.inventory[0] = shared::InventorySlot { item_id: it, qty: 5, instance: None };
-            s.inventory[3] = shared::InventorySlot { item_id: it, qty: 7, instance: None };
+            s.inventory[0] = shared::InventorySlot {
+                item_id: it,
+                qty: 5,
+                instance: None,
+            };
+            s.inventory[3] = shared::InventorySlot {
+                item_id: it,
+                qty: 7,
+                instance: None,
+            };
         }
         let q = quem(&w, sid, 30);
         w.mercado_vender_ao_pedido(sid, q, "p1".into(), it, 13);
@@ -883,7 +981,10 @@ mod testes_energia {
         assert_eq!(w.sessions[&sid].skill_progress.energia, 200);
         let q = quem(&w, sid, 30);
         w.mercado_vender_ao_pedido(sid, q, "p2".into(), shared::item_id::ENERGIA_MIL, 1);
-        assert_eq!(w.sessions[&sid].skill_progress.energia, 200, "200 is not a lot");
+        assert_eq!(
+            w.sessions[&sid].skill_progress.energia, 200,
+            "200 is not a lot"
+        );
         assert_eq!(w.mercado_registros.len(), 2);
     }
 
@@ -902,6 +1003,9 @@ mod testes_energia {
         w.mercado_aplicar_cartas(sid, "Bia", vec![carta]);
         let s = &w.sessions[&sid];
         assert_eq!(s.skill_progress.energia, 3_100);
-        assert!(s.inventory.iter().all(|x| x.item_id != shared::item_id::ENERGIA_MIL));
+        assert!(s
+            .inventory
+            .iter()
+            .all(|x| x.item_id != shared::item_id::ENERGIA_MIL));
     }
 }

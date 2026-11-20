@@ -194,10 +194,20 @@ pub fn fmt_unitario(u: f64) -> String {
     if u.fract() == 0.0 && u < 1e15 {
         return crate::idioma::milhar(u as u64);
     }
-    let casas = if u >= 100.0 { 1 } else if u >= 1.0 { 2 } else { 3 };
+    let casas = if u >= 100.0 {
+        1
+    } else if u >= 1.0 {
+        2
+    } else {
+        3
+    };
     let s = format!("{u:.casas$}");
     let s = s.trim_end_matches('0').trim_end_matches('.');
-    if s == "0" { "<0.001".into() } else { s.into() }
+    if s == "0" {
+        "<0.001".into()
+    } else {
+        s.into()
+    }
 }
 
 /// Buying `k` units out of a listing with `restante` units left for `gold`
@@ -212,7 +222,9 @@ pub fn compra_parcial(restante: u64, gold: u64, k: u64) -> Option<(u64, u64)> {
     if k == restante {
         return Some((restante, gold));
     }
-    let c = u64::try_from((k as u128 * gold as u128).div_ceil(restante as u128)).ok()?.max(1);
+    let c = u64::try_from((k as u128 * gold as u128).div_ceil(restante as u128))
+        .ok()?
+        .max(1);
     if c >= gold {
         Some((restante, gold))
     } else {
@@ -413,11 +425,19 @@ pub fn pode_anunciar_tp(nivel: u32, qtd: u64, preco_total: u64) -> Result<u64, R
 }
 
 /// Selling Energy: the level gate, enough Energy for the lots, a valid price.
-pub fn pode_anunciar_energia(nivel: u32, energia: u64, lotes: u64, preco_total: u64) -> Result<u64, Recusa> {
+pub fn pode_anunciar_energia(
+    nivel: u32,
+    energia: u64,
+    lotes: u64,
+    preco_total: u64,
+) -> Result<u64, Recusa> {
     if nivel < NIVEL_PARA_VENDER {
         return Err(Recusa::NivelBaixo);
     }
-    if lotes == 0 || lotes > LOTES_MAX_POR_ANUNCIO || lotes.saturating_mul(ENERGIA_POR_LOTE) > energia {
+    if lotes == 0
+        || lotes > LOTES_MAX_POR_ANUNCIO
+        || lotes.saturating_mul(ENERGIA_POR_LOTE) > energia
+    {
         return Err(Recusa::Quantidade);
     }
     if !preco_total_valido(lotes, preco_total) {
@@ -722,20 +742,39 @@ mod tests {
     #[test]
     fn longe_do_mercado_e_ajuste_de_preco() {
         assert_eq!(desvio(150.0, Some(100)), Some(0.5));
-        assert!(!longe_do_mercado(150.0, Some(100)), "exactly 50% is not past it");
+        assert!(
+            !longe_do_mercado(150.0, Some(100)),
+            "exactly 50% is not past it"
+        );
         assert!(longe_do_mercado(151.0, Some(100)));
         assert!(longe_do_mercado(49.0, Some(100)));
         assert!(!longe_do_mercado(50.0, Some(100)));
         assert!(!longe_do_mercado(1_000_000.0, None), "nothing to compare");
         assert!(!longe_do_mercado(10.0, Some(0)));
         // (dono, estado, units left, current total, new total)
-        assert_eq!(validar_ajuste(false, ESTADO_ATIVO, 1, 10, 20), Err("Listing not found."));
-        assert_eq!(validar_ajuste(true, ESTADO_ATIVO + 1, 1, 10, 20), Err("The listing is no longer active."));
-        assert_eq!(validar_ajuste(true, ESTADO_ATIVO, 1, 10, 0), Err("Invalid price."));
-        assert_eq!(validar_ajuste(true, ESTADO_ATIVO, 1, 10, PRECO_MAX_UNIT + 1), Err("Invalid price."));
+        assert_eq!(
+            validar_ajuste(false, ESTADO_ATIVO, 1, 10, 20),
+            Err("Listing not found.")
+        );
+        assert_eq!(
+            validar_ajuste(true, ESTADO_ATIVO + 1, 1, 10, 20),
+            Err("The listing is no longer active.")
+        );
+        assert_eq!(
+            validar_ajuste(true, ESTADO_ATIVO, 1, 10, 0),
+            Err("Invalid price.")
+        );
+        assert_eq!(
+            validar_ajuste(true, ESTADO_ATIVO, 1, 10, PRECO_MAX_UNIT + 1),
+            Err("Invalid price.")
+        );
         assert!(validar_ajuste(true, ESTADO_ATIVO, 1, 10, 10).is_err());
         assert_eq!(validar_ajuste(true, ESTADO_ATIVO, 1, 10, 20), Ok(()));
-        assert_eq!(validar_ajuste(true, ESTADO_ATIVO, 1_000, 10, 3), Ok(()), "under 1 gold each is fine");
+        assert_eq!(
+            validar_ajuste(true, ESTADO_ATIVO, 1_000, 10, 3),
+            Ok(()),
+            "under 1 gold each is fine"
+        );
     }
 
     /// The owner's case: 1,000 Copper for 3 gold. Any part costs whole gold
@@ -748,10 +787,22 @@ mod tests {
         assert_eq!(fmt_unitario(preco_unitario(1_000, 3)), "0.003");
         assert_eq!(fmt_unitario(preco_unitario(4, 6)), "1.5");
         assert_eq!(fmt_unitario(preco_unitario(10, 1_200_000)), "120,000");
-        assert_eq!(compra_parcial(1_000, 3, 1_000), Some((1_000, 3)), "the whole lot");
-        assert_eq!(compra_parcial(1_000, 3, 1), Some((1, 1)), "one unit: rounded up to 1 gold");
+        assert_eq!(
+            compra_parcial(1_000, 3, 1_000),
+            Some((1_000, 3)),
+            "the whole lot"
+        );
+        assert_eq!(
+            compra_parcial(1_000, 3, 1),
+            Some((1, 1)),
+            "one unit: rounded up to 1 gold"
+        );
         assert_eq!(compra_parcial(1_000, 3, 334), Some((334, 2)));
-        assert_eq!(compra_parcial(1_000, 3, 700), Some((1_000, 3)), "3 gold anyway: the whole rest");
+        assert_eq!(
+            compra_parcial(1_000, 3, 700),
+            Some((1_000, 3)),
+            "3 gold anyway: the whole rest"
+        );
         assert_eq!(compra_parcial(1_000, 3, 0), None);
         assert_eq!(compra_parcial(1_000, 3, 1_001), None);
         assert_eq!(maximo_por(1_000, 3, 1), 333, "1 gold buys up to 333");
@@ -761,7 +812,13 @@ mod tests {
         assert_eq!(compra_parcial(10, 70, 1), Some((1, 7)));
         assert_eq!(maximo_por(10, 70, 7), 1);
         // Bought in pieces, the seller still ends with exactly the total.
-        for partes in [vec![1_000u64], vec![300, 300, 400], vec![1, 999], vec![333, 333, 333, 1], vec![1; 1_000]] {
+        for partes in [
+            vec![1_000u64],
+            vec![300, 300, 400],
+            vec![1, 999],
+            vec![333, 333, 333, 1],
+            vec![1; 1_000],
+        ] {
             let (mut qtd, mut gold, mut pago) = (1_000u64, 3u64, 0u64);
             for k in partes {
                 if qtd == 0 {
@@ -769,7 +826,10 @@ mod tests {
                 }
                 let f = fechar_compra(qtd, ESTADO_ATIVO, gold, k.min(qtd), u64::MAX).unwrap();
                 assert!(f.bruto >= 1, "nothing leaves for free");
-                assert!(f.sobra == 0 || f.gold_sobra >= 1, "what is left still has gold on it");
+                assert!(
+                    f.sobra == 0 || f.gold_sobra >= 1,
+                    "what is left still has gold on it"
+                );
                 pago += f.bruto;
                 qtd = f.sobra;
                 gold = f.gold_sobra;
@@ -783,15 +843,21 @@ mod tests {
     /// fill that completes it takes all that is left: escrow adds up exactly.
     #[test]
     fn pedido_com_preco_unitario_fracionado() {
-        assert_eq!(preencher_pedido(1_000, PEDIDO_ABERTO, 3, 100), Err(Recusa::MuitoPouco), "0.3 gold");
+        assert_eq!(
+            preencher_pedido(1_000, PEDIDO_ABERTO, 3, 100),
+            Err(Recusa::MuitoPouco),
+            "0.3 gold"
+        );
         let a = preencher_pedido(1_000, PEDIDO_ABERTO, 3, 400).unwrap();
         assert_eq!((a.bruto, a.restante, a.gold_restante), (1, 600, 2));
         let b = preencher_pedido(a.restante, PEDIDO_ABERTO, a.gold_restante, 700).unwrap();
-        assert_eq!((b.vendida, b.devolve, b.bruto, b.gold_restante), (600, 100, 2, 0));
+        assert_eq!(
+            (b.vendida, b.devolve, b.bruto, b.gold_restante),
+            (600, 100, 2, 0)
+        );
         assert_eq!(a.bruto + b.bruto, 3);
         assert_eq!(pagamento_parcial(1_000, 3, 1_000), Some(3));
     }
-
 
     #[test]
     fn vagas_compradas_sobem_de_cinco_ate_50() {
@@ -840,9 +906,17 @@ mod tests {
         assert_eq!(categoria_do_item(pet, true), Categoria::Pet);
         assert_eq!(categoria_do_item(it::SKILL_PET_FARO, false), Categoria::Pet);
         assert_eq!(categoria_do_item(it::RACAO_DE_PET, false), Categoria::Pet);
-        assert_eq!(categoria_do_item(520, true), Categoria::Pet, "pet accessory");
+        assert_eq!(
+            categoria_do_item(520, true),
+            Categoria::Pet,
+            "pet accessory"
+        );
         assert_eq!(categoria_do_item(montaria, true), Categoria::Montaria);
-        assert_eq!(categoria_do_item(528, true), Categoria::Montaria, "mount accessory");
+        assert_eq!(
+            categoria_do_item(528, true),
+            Categoria::Montaria,
+            "mount accessory"
+        );
         assert_eq!(categoria_do_item(it::KATANA, true), Categoria::Equipamento);
         assert_eq!(categoria_do_item(it::STEEL, false), Categoria::Material);
         for c in Categoria::FILTROS {
@@ -893,7 +967,11 @@ mod tests {
             }
         );
         let f2 = fechar_compra(f.sobra, ESTADO_ATIVO, f.gold_sobra, 6, 50).unwrap();
-        assert_eq!((f2.sobra, f2.bruto, f2.troco), (0, 42, 8), "the listing got cheaper: change");
+        assert_eq!(
+            (f2.sobra, f2.bruto, f2.troco),
+            (0, 42, 8),
+            "the listing got cheaper: change"
+        );
         assert_eq!(
             f.vendida + f2.vendida,
             10,
@@ -936,12 +1014,24 @@ mod tests {
         use crate::constants::item_id as it;
         assert!(pode_pedir_item(it::DARKSTEEL, false, false, 999));
         assert!(pode_pedir_item(it::HEALTH_POTION, false, false, 99));
-        assert!(pode_pedir_item(it::ENERGIA_MIL, false, false, 0), "Energy lots always");
+        assert!(
+            pode_pedir_item(it::ENERGIA_MIL, false, false, 0),
+            "Energy lots always"
+        );
         assert!(!pode_pedir_item(it::KATANA, true, false, 1), "gear");
-        assert!(!pode_pedir_item(it::KATANA, false, false, 99), "gear by its slot");
-        assert!(!pode_pedir_item(it::pet_no_grau(it::PETS[0], 2), false, false, 99), "pets are gear");
+        assert!(
+            !pode_pedir_item(it::KATANA, false, false, 99),
+            "gear by its slot"
+        );
+        assert!(
+            !pode_pedir_item(it::pet_no_grau(it::PETS[0], 2), false, false, 99),
+            "pets are gear"
+        );
         assert!(!pode_pedir_item(it::DARKSTEEL, false, true, 999), "bound");
-        assert!(!pode_pedir_item(it::DARKSTEEL, false, false, 1), "does not stack");
+        assert!(
+            !pode_pedir_item(it::DARKSTEEL, false, false, 1),
+            "does not stack"
+        );
         assert!(!pode_pedir_item(it::PERGAMINHO_TELEPORTE, false, false, 99));
         assert!(!pode_pedir_item(0, false, false, 99));
     }
@@ -951,10 +1041,16 @@ mod tests {
         assert_eq!(pode_pedir(1_000, 10, 1_000), Ok(1_000));
         assert_eq!(pode_pedir(999, 10, 1_000), Err(Recusa::SemGold));
         assert_eq!(pode_pedir(1_000, 0, 100), Err(Recusa::Quantidade));
-        assert_eq!(pode_pedir(u64::MAX, QTD_MAX_POR_PEDIDO + 1, 1), Err(Recusa::Quantidade));
+        assert_eq!(
+            pode_pedir(u64::MAX, QTD_MAX_POR_PEDIDO + 1, 1),
+            Err(Recusa::Quantidade)
+        );
         assert_eq!(pode_pedir(1_000, 1, 0), Err(Recusa::Preco));
         assert_eq!(pode_pedir(1_000, 1_000, 3), Ok(3), "under 1 gold each");
-        assert_eq!(pode_pedir(u64::MAX, 1, PRECO_MAX_UNIT + 1), Err(Recusa::Preco));
+        assert_eq!(
+            pode_pedir(u64::MAX, 1, PRECO_MAX_UNIT + 1),
+            Err(Recusa::Preco)
+        );
         assert_eq!(pode_vender_ao_pedido(19, 10, 1), Err(Recusa::NivelBaixo));
         assert_eq!(pode_vender_ao_pedido(20, 10, 11), Err(Recusa::Quantidade));
         assert_eq!(pode_vender_ao_pedido(20, 10, 0), Err(Recusa::Quantidade));
@@ -967,7 +1063,15 @@ mod tests {
         let a = preencher_pedido(10, PEDIDO_ABERTO, 70, 4).unwrap();
         assert_eq!(
             a,
-            Preenchimento { vendida: 4, restante: 6, gold_restante: 42, devolve: 0, bruto: 28, taxa: 2, liquido: 26 }
+            Preenchimento {
+                vendida: 4,
+                restante: 6,
+                gold_restante: 42,
+                devolve: 0,
+                bruto: 28,
+                taxa: 2,
+                liquido: 26
+            }
         );
         // Another offers 9: 6 sell, 3 go back.
         let b = preencher_pedido(a.restante, PEDIDO_ABERTO, a.gold_restante, 9).unwrap();
@@ -977,10 +1081,22 @@ mod tests {
         assert_eq!(a.vendida + b.vendida, 10, "never more than asked");
         // Escrow adds up: what sellers got + fees burned = what the buyer paid.
         assert_eq!(a.liquido + a.taxa + b.liquido + b.taxa, 10 * 7);
-        assert_eq!(preencher_pedido(0, PEDIDO_ABERTO, 0, 1), Err(Recusa::PedidoFechado));
-        assert_eq!(preencher_pedido(5, PEDIDO_CANCELADO, 35, 1), Err(Recusa::PedidoFechado));
-        assert_eq!(preencher_pedido(5, PEDIDO_CONCLUIDO, 35, 1), Err(Recusa::PedidoFechado));
-        assert_eq!(preencher_pedido(5, PEDIDO_ABERTO, 35, 0), Err(Recusa::Quantidade));
+        assert_eq!(
+            preencher_pedido(0, PEDIDO_ABERTO, 0, 1),
+            Err(Recusa::PedidoFechado)
+        );
+        assert_eq!(
+            preencher_pedido(5, PEDIDO_CANCELADO, 35, 1),
+            Err(Recusa::PedidoFechado)
+        );
+        assert_eq!(
+            preencher_pedido(5, PEDIDO_CONCLUIDO, 35, 1),
+            Err(Recusa::PedidoFechado)
+        );
+        assert_eq!(
+            preencher_pedido(5, PEDIDO_ABERTO, 35, 0),
+            Err(Recusa::Quantidade)
+        );
     }
 
     #[test]

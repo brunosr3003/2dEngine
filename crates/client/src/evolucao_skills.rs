@@ -90,13 +90,7 @@ impl EvolucaoSkills {
         estilo::painel(p);
         let m = Vec2::from(mouse_position());
         let clique = crate::foco::clique();
-        estilo::texto_forte(
-            p.x + 20.0 * f,
-            p.y + 36.0 * f,
-            "SKILLS",
-            23,
-            estilo::OURO,
-        );
+        estilo::texto_forte(p.x + 20.0 * f, p.y + 36.0 * f, "SKILLS", 23, estilo::OURO);
         let fechar = Rect::new(p.x + p.w - 49.0 * f, p.y + 8.0 * f, 40.0 * f, 40.0 * f);
         estilo::botao(fechar, "X", estilo::estado_de(fechar, false, false), false);
         if clique && fechar.toca(m) {
@@ -174,7 +168,10 @@ impl EvolucaoSkills {
                 estilo::TEXTO,
             );
             let estado = if nivel < skill.nivel_necessario() {
-                format!("Unlocks at level {}", shared::progressao::texto_de_nivel(skill.nivel_necessario()))
+                format!(
+                    "Unlocks at level {}",
+                    shared::progressao::texto_de_nivel(skill.nivel_necessario())
+                )
             } else {
                 format!(
                     "Tier {}  ·  +{:.0}%",
@@ -289,7 +286,11 @@ impl EvolucaoSkills {
                     .map_or(0, |g| self.progresso.tomos(skill.id, g) as u64);
                 let linhas: [(String, bool); 4] = [
                     (
-                        format!("Level {} · you: {}", shared::progressao::texto_de_nivel(c.nivel as u32), shared::progressao::texto_de_nivel(nivel)),
+                        format!(
+                            "Level {} · you: {}",
+                            shared::progressao::texto_de_nivel(c.nivel as u32),
+                            shared::progressao::texto_de_nivel(nivel)
+                        ),
                         nivel >= c.nivel,
                     ),
                     (

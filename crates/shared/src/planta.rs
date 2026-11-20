@@ -148,13 +148,13 @@ pub const PLANTAS: [Planta; 8] = [
         ancora: Vec2::new(0.0, 222.0),
         tema: Tema::Caverna,
         salas: &[
-            sala(0.0, -40.0, 6.0, Entrada),  // 0
-            sala(0.0, -20.0, 9.0, Luta(0)),  // 1
+            sala(0.0, -40.0, 6.0, Entrada),   // 0
+            sala(0.0, -20.0, 9.0, Luta(0)),   // 1
             sala(-26.0, -20.0, 8.0, Luta(1)), // 2
-            sala(-26.0, 6.0, 9.0, Luta(2)),  // 3
-            sala(-26.0, 28.0, 4.0, Recanto), // 4: the bend before the boss
-            sala(4.0, 28.0, 11.0, Chefe),    // 5
-            sala(24.0, -20.0, 6.0, Recanto), // 6: the hold
+            sala(-26.0, 6.0, 9.0, Luta(2)),   // 3
+            sala(-26.0, 28.0, 4.0, Recanto),  // 4: the bend before the boss
+            sala(4.0, 28.0, 11.0, Chefe),     // 5
+            sala(24.0, -20.0, 6.0, Recanto),  // 6: the hold
         ],
         corredores: &[
             cor(0, 1, 0),
@@ -297,12 +297,12 @@ pub const PLANTAS: [Planta; 8] = [
         ancora: Vec2::new(190.0, 329.1),
         tema: Tema::Tijolo,
         salas: &[
-            sala(-36.0, 0.0, 6.0, Entrada),  // 0: the loading dock
-            sala(-16.0, 0.0, 8.0, Luta(0)),  // 1: the first bay
+            sala(-36.0, 0.0, 6.0, Entrada),   // 0: the loading dock
+            sala(-16.0, 0.0, 8.0, Luta(0)),   // 1: the first bay
             sala(-16.0, -22.0, 7.0, Recanto), // 2: the parts store
-            sala(6.0, 0.0, 8.0, Luta(1)),    // 3: the second bay
-            sala(28.0, 0.0, 9.0, Luta(2)),   // 4: the third bay
-            sala(28.0, 26.0, 12.0, Chefe),   // 5: the mainframe's hall
+            sala(6.0, 0.0, 8.0, Luta(1)),     // 3: the second bay
+            sala(28.0, 0.0, 9.0, Luta(2)),    // 4: the third bay
+            sala(28.0, 26.0, 12.0, Chefe),    // 5: the mainframe's hall
         ],
         corredores: &[
             cor(0, 1, 0),
@@ -613,16 +613,18 @@ impl Planta {
                     let folga = (self.raio_em(s, para) - r - SALIENCIA_MAX - 1e-3).max(0.0);
                     (s, c + (para - c).clamp_length_max(folga))
                 })
-                .min_by(|a, b| a.1.distance_squared(para).total_cmp(&b.1.distance_squared(para)))?;
+                .min_by(|a, b| {
+                    a.1.distance_squared(para)
+                        .total_cmp(&b.1.distance_squared(para))
+                })?;
             (q, alvo)
         };
         // Straight there when it's the same room and nothing is in the way;
         // otherwise room centre to room centre. A straight line from a
         // corridor into a room, or across a cave room's dents, can clip the
         // wall; a leg to a room's centre never does.
-        let reto = |a: Vec2, b: Vec2| {
-            (0..=24).all(|k| self.livre(a.lerp(b, k as f32 / 24.0), 0.0, andar))
-        };
+        let reto =
+            |a: Vec2, b: Vec2| (0..=24).all(|k| self.livre(a.lerp(b, k as f32 / 24.0), 0.0, andar));
         let dentro: Vec<usize> = (0..n)
             .filter(|&i| self.centro(i).distance(de) <= self.raio_em(i, de))
             .collect();
@@ -824,7 +826,11 @@ impl Planta {
             // The shore: from the foot of the wall down into the water, over
             // broken rock.
             let t = crate::terreno::suave((fora - espessura) / praia);
-            let topo = if self.construido() { chao - 1 } else { chao + 1 };
+            let topo = if self.construido() {
+                chao - 1
+            } else {
+                chao + 1
+            };
             let fundo_do_mar = -4;
             let degrau = ((onda(p.x * 1.7, p.y * 1.7, 1.0) - 0.5) * 3.0) as i32;
             return Some((topo as f32 + (fundo_do_mar - topo) as f32 * t).round() as i32 + degrau);
@@ -862,7 +868,9 @@ impl Planta {
             // often standing a little taller.
             Tema::Tijolo => {
                 alto += (fino * 1.5) as i32;
-                if (bx.div_euclid(3) + bz.div_euclid(3)).rem_euclid(5) == 0 && fora > espessura - 1.0 {
+                if (bx.div_euclid(3) + bz.div_euclid(3)).rem_euclid(5) == 0
+                    && fora > espessura - 1.0
+                {
                     alto += 1;
                 }
             }
@@ -898,35 +906,121 @@ impl Planta {
             1 | 19 => return Some(if xadrez { M::Tronco } else { M::Terra }),
             2 => return Some(if xadrez { M::CalcadaEscura } else { M::Tronco }),
             6 => return Some(if xadrez { M::Marmore } else { M::MarmoreSombra }),
-            7 => return Some(if xadrez { M::ConcretoEscuro } else { M::Concreto }),
+            7 => {
+                return Some(if xadrez {
+                    M::ConcretoEscuro
+                } else {
+                    M::Concreto
+                })
+            }
             _ => {}
         }
         if fundo >= self.saliencia(p) - FOLGA_DO_CHAO {
             return Some(match self.tema {
                 // Dark wet stone, lighter where the rock shows through.
-                Tema::Caverna => if n > 0.64 { M::Rocha } else { M::RochaEscura },
-                Tema::Tijolo => if xadrez { M::Calcada } else { M::CalcadaEscura },
-                Tema::Gelo => if n > 0.6 { M::Gelo } else { M::Neve },
-                Tema::Arenito => if xadrez { M::Arenito } else { M::Areia },
-                Tema::Castelo => if xadrez { M::CalcadaEscura } else { M::Calcada },
+                Tema::Caverna => {
+                    if n > 0.64 {
+                        M::Rocha
+                    } else {
+                        M::RochaEscura
+                    }
+                }
+                Tema::Tijolo => {
+                    if xadrez {
+                        M::Calcada
+                    } else {
+                        M::CalcadaEscura
+                    }
+                }
+                Tema::Gelo => {
+                    if n > 0.6 {
+                        M::Gelo
+                    } else {
+                        M::Neve
+                    }
+                }
+                Tema::Arenito => {
+                    if xadrez {
+                        M::Arenito
+                    } else {
+                        M::Areia
+                    }
+                }
+                Tema::Castelo => {
+                    if xadrez {
+                        M::CalcadaEscura
+                    } else {
+                        M::Calcada
+                    }
+                }
             });
         }
         if -fundo > self.espessura(p) {
             // The shore.
             return Some(match self.tema {
-                Tema::Gelo => if n > 0.55 { M::Gelo } else { M::Neve },
-                Tema::Arenito => if n > 0.6 { M::Arenito } else { M::Areia },
-                _ => if n > 0.58 { M::RochaEscura } else if n > 0.4 { M::Rocha } else { M::AreiaMolhada },
+                Tema::Gelo => {
+                    if n > 0.55 {
+                        M::Gelo
+                    } else {
+                        M::Neve
+                    }
+                }
+                Tema::Arenito => {
+                    if n > 0.6 {
+                        M::Arenito
+                    } else {
+                        M::Areia
+                    }
+                }
+                _ => {
+                    if n > 0.58 {
+                        M::RochaEscura
+                    } else if n > 0.4 {
+                        M::Rocha
+                    } else {
+                        M::AreiaMolhada
+                    }
+                }
             });
         }
         Some(match self.tema {
             // Moss on the rock's top: from above, the halls (grey stone) have
             // to read apart from the walls around them.
-            Tema::Caverna => if n > 0.66 { M::Rocha } else { M::GramaEscura },
-            Tema::Tijolo => if n > 0.7 { M::GramaEscura } else { M::CalcadaEscura },
-            Tema::Gelo => if n > 0.7 { M::Gelo } else { M::Neve },
-            Tema::Arenito => if n > 0.62 { M::Arenito } else { M::Areia },
-            Tema::Castelo => if n > 0.75 { M::GramaEscura } else { M::Calcada },
+            Tema::Caverna => {
+                if n > 0.66 {
+                    M::Rocha
+                } else {
+                    M::GramaEscura
+                }
+            }
+            Tema::Tijolo => {
+                if n > 0.7 {
+                    M::GramaEscura
+                } else {
+                    M::CalcadaEscura
+                }
+            }
+            Tema::Gelo => {
+                if n > 0.7 {
+                    M::Gelo
+                } else {
+                    M::Neve
+                }
+            }
+            Tema::Arenito => {
+                if n > 0.62 {
+                    M::Arenito
+                } else {
+                    M::Areia
+                }
+            }
+            Tema::Castelo => {
+                if n > 0.75 {
+                    M::GramaEscura
+                } else {
+                    M::Calcada
+                }
+            }
         })
     }
 
@@ -944,14 +1038,25 @@ impl Planta {
         use crate::terreno::Material as M;
         match self.conteudo {
             1 | 2 | 19 => return if prof % 4 == 0 { M::Terra } else { M::Tronco },
-            6 => return if prof % 3 == 0 { M::MarmoreSombra } else { M::Marmore },
-            7 => return if prof % 4 == 0 { M::Concreto } else { M::ConcretoEscuro },
+            6 => {
+                return if prof % 3 == 0 {
+                    M::MarmoreSombra
+                } else {
+                    M::Marmore
+                }
+            }
+            7 => {
+                return if prof % 4 == 0 {
+                    M::Concreto
+                } else {
+                    M::ConcretoEscuro
+                }
+            }
             _ => {}
         }
         // A stable per-block roll: moss, cracks and stained stones scattered
         // over the face instead of clean stripes.
-        let h = (bx as u32)
-            .wrapping_mul(73_856_093)
+        let h = (bx as u32).wrapping_mul(73_856_093)
             ^ (bz as u32).wrapping_mul(19_349_663)
             ^ (prof as u32).wrapping_mul(83_492_791);
         let sorte = (h >> 7) % 100;
@@ -976,8 +1081,22 @@ impl Planta {
                     M::Terra
                 }
             }
-            Tema::Gelo => if sorte < 25 || prof % 3 == 2 { M::Neve } else { M::Gelo },
-            Tema::Arenito => if sorte < 15 { M::Rocha } else if prof % 3 == 1 { M::Areia } else { M::Arenito },
+            Tema::Gelo => {
+                if sorte < 25 || prof % 3 == 2 {
+                    M::Neve
+                } else {
+                    M::Gelo
+                }
+            }
+            Tema::Arenito => {
+                if sorte < 15 {
+                    M::Rocha
+                } else if prof % 3 == 1 {
+                    M::Areia
+                } else {
+                    M::Arenito
+                }
+            }
             Tema::Castelo => {
                 if sorte < 10 {
                     M::GramaEscura
@@ -1015,7 +1134,11 @@ mod testes {
                 c.andares
             );
             for n in 0..c.andares {
-                assert!(p.sala_da_etapa(n).is_some(), "{}: no room for step {n}", c.nome);
+                assert!(
+                    p.sala_da_etapa(n).is_some(),
+                    "{}: no room for step {n}",
+                    c.nome
+                );
             }
             assert!(
                 p.salas.iter().filter(|s| s.papel == Chefe).count() == 1,
@@ -1052,7 +1175,6 @@ mod testes {
     fn os_poroes_nao_se_encostam_e_cabem_na_ilhota() {
         let massa = |p: &Planta| p.alcance() + MASSA;
         for (i, a) in PLANTAS.iter().enumerate() {
-
             // Clear of the Gruta islet, with open sea between.
             assert!(
                 a.ancora.length() - massa(a) - PRAIA_MAX >= crate::arena::RAIO_TERRA + 15.0,
@@ -1091,9 +1213,14 @@ mod testes {
             while k < 1.0 {
                 let mut j = 0.0f32;
                 while j < 1.0 {
-                    let q = p.ancora + Vec2::new((k - 0.5) * 2.0 * alcance, (j - 0.5) * 2.0 * alcance);
+                    let q =
+                        p.ancora + Vec2::new((k - 0.5) * 2.0 * alcance, (j - 0.5) * 2.0 * alcance);
                     let Some(b) = p.bloco(q, chao) else {
-                        assert!(!p.livre(q, 0.0, u8::MAX), "plan {}: walkable {q:?} outside the mass", p.conteudo);
+                        assert!(
+                            !p.livre(q, 0.0, u8::MAX),
+                            "plan {}: walkable {q:?} outside the mass",
+                            p.conteudo
+                        );
                         j += 0.01;
                         continue;
                     };
@@ -1226,9 +1353,8 @@ mod testes {
                         continue;
                     }
                     let (x, y) = (p.salas[c.a].centro, p.salas[c.b].centro);
-                    let folga = no_segmento(a.centro, x, y).distance(a.centro)
-                        - a.raio
-                        - LARGURA * 0.5;
+                    let folga =
+                        no_segmento(a.centro, x, y).distance(a.centro) - a.raio - LARGURA * 0.5;
                     assert!(
                         folga >= 3.0,
                         "plan {}: room {i} is {folga:.1} u from corridor {k}",
@@ -1257,19 +1383,28 @@ mod testes {
         assert!(q.distance(c) <= borda, "went through the wall: {q:?}");
         // It stops at the rock's FACE, which a cave's bumps push in by up to
         // `SALIENCIA_MAX` from the room's edge.
-        assert!(q.distance(c) > borda - 1.0 - SALIENCIA_MAX, "didn't reach the wall: {q:?}");
+        assert!(
+            q.distance(c) > borda - 1.0 - SALIENCIA_MAX,
+            "didn't reach the wall: {q:?}"
+        );
         // A shut gate: walking west from room 1 into the gate to room 2 stops.
         let mut q = c;
         for _ in 0..400 {
             q = p.mover(q, q - Vec2::new(0.15, 0.0), R, 0);
         }
-        assert!(q.x > c.x - raio - RUIDO_DA_SALA, "walked through the shut gate: {q:?}");
+        assert!(
+            q.x > c.x - raio - RUIDO_DA_SALA,
+            "walked through the shut gate: {q:?}"
+        );
         // The same walk at step 1 (gate open) gets through.
         let mut q = c;
         for _ in 0..400 {
             q = p.mover(q, q - Vec2::new(0.15, 0.0), R, 1);
         }
-        assert!(q.x < c.x - raio - RUIDO_DA_SALA - 5.0, "the open gate didn't let through: {q:?}");
+        assert!(
+            q.x < c.x - raio - RUIDO_DA_SALA - 5.0,
+            "the open gate didn't let through: {q:?}"
+        );
         // Thrown outside (teleport): comes back in.
         let fora = p.ancora + Vec2::new(60.0, 60.0);
         assert!(p.livre(p.mover(fora, fora, R, 0), R, 0));
@@ -1299,17 +1434,22 @@ mod testes_da_rota {
                 let entrada = p.centro(p.entrada());
                 let mut origens = Vec::new();
                 while origens.len() < 60 {
-                    let q = p.ancora + Vec2::new((sorteio() - 0.5) * 2.0 * a, (sorteio() - 0.5) * 2.0 * a);
+                    let q = p.ancora
+                        + Vec2::new((sorteio() - 0.5) * 2.0 * a, (sorteio() - 0.5) * 2.0 * a);
                     if p.livre(q, R, andar) && p.alcanca(entrada, q, andar) {
                         origens.push(q);
                     }
                 }
                 for (k, de) in origens.iter().enumerate() {
                     // Anywhere at all, walkable or not.
-                    let para = p.ancora + Vec2::new((sorteio() - 0.5) * 2.0 * a, (sorteio() - 0.5) * 2.0 * a);
-                    let rota = p
-                        .caminho(*de, para, andar)
-                        .unwrap_or_else(|| panic!("plan {} step {andar}: no route from {de:?} ({k})", p.conteudo));
+                    let para = p.ancora
+                        + Vec2::new((sorteio() - 0.5) * 2.0 * a, (sorteio() - 0.5) * 2.0 * a);
+                    let rota = p.caminho(*de, para, andar).unwrap_or_else(|| {
+                        panic!(
+                            "plan {} step {andar}: no route from {de:?} ({k})",
+                            p.conteudo
+                        )
+                    });
                     let mut antes = *de;
                     for ponto in rota {
                         for t in 0..=20 {

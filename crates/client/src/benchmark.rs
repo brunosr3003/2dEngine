@@ -92,12 +92,24 @@ pub struct Medida {
 
 impl Medida {
     pub fn de(quadros_ms: &[f32], cpu_ms: &[f32]) -> Self {
-        let media = if quadros_ms.is_empty() { 0.0 } else { quadros_ms.iter().sum::<f32>() / quadros_ms.len() as f32 };
-        Self { media_ms: media, p95_ms: percentil(quadros_ms, 0.95), cpu_p95_ms: percentil(cpu_ms, 0.95) }
+        let media = if quadros_ms.is_empty() {
+            0.0
+        } else {
+            quadros_ms.iter().sum::<f32>() / quadros_ms.len() as f32
+        };
+        Self {
+            media_ms: media,
+            p95_ms: percentil(quadros_ms, 0.95),
+            cpu_p95_ms: percentil(cpu_ms, 0.95),
+        }
     }
 
     pub fn fps(&self) -> f32 {
-        if self.media_ms > 0.0 { 1000.0 / self.media_ms } else { 0.0 }
+        if self.media_ms > 0.0 {
+            1000.0 / self.media_ms
+        } else {
+            0.0
+        }
     }
 }
 
@@ -123,7 +135,10 @@ fn orcamento_ms(alvo_fps: u16) -> f32 {
 pub fn passa(m: &Medida, alvo_fps: u16, objetivo: Objetivo) -> bool {
     let t = orcamento_ms(alvo_fps);
     let (tolerancia, folga) = objetivo.limites();
-    m.media_ms > 0.0 && m.media_ms <= t * 1.05 && m.p95_ms <= t * tolerancia && m.cpu_p95_ms <= t * folga
+    m.media_ms > 0.0
+        && m.media_ms <= t * 1.05
+        && m.p95_ms <= t * tolerancia
+        && m.cpu_p95_ms <= t * folga
 }
 
 /// The strictest bar: 60 fps on Performance. A preset that clears it clears
@@ -163,24 +178,32 @@ pub struct Varredura {
 
 impl Varredura {
     pub fn nova() -> Self {
-        Self { niveis: vec![None; cg::PRESETS.len()] }
+        Self {
+            niveis: vec![None; cg::PRESETS.len()],
+        }
     }
 
     fn passa_nivel(&self, nivel: usize, alvo: u16, objetivo: Objetivo) -> bool {
-        self.niveis.get(nivel).and_then(|n| n.as_ref()).is_some_and(|ms| {
-            ms.len() == CENAS && ms.iter().all(|m| passa(m, alvo, objetivo))
-        })
+        self.niveis
+            .get(nivel)
+            .and_then(|n| n.as_ref())
+            .is_some_and(|ms| ms.len() == CENAS && ms.iter().all(|m| passa(m, alvo, objetivo)))
     }
 
     /// The measurement to quote for `nivel`: its own, or (when it was not
     /// measured) the nearest heavier one, which it can only beat. The worst
     /// scene of the set.
     pub fn medida_para(&self, nivel: usize) -> Option<(usize, Medida)> {
-        (nivel..self.niveis.len()).chain((0..nivel).rev()).find_map(|i| {
-            let ms = self.niveis[i].as_ref()?;
-            let pior = ms.iter().copied().max_by(|a, b| a.media_ms.total_cmp(&b.media_ms))?;
-            Some((i, pior))
-        })
+        (nivel..self.niveis.len())
+            .chain((0..nivel).rev())
+            .find_map(|i| {
+                let ms = self.niveis[i].as_ref()?;
+                let pior = ms
+                    .iter()
+                    .copied()
+                    .max_by(|a, b| a.media_ms.total_cmp(&b.media_ms))?;
+                Some((i, pior))
+            })
     }
 }
 
@@ -197,7 +220,16 @@ pub fn decide(v: &Varredura, alvo: u16, objetivo: Objetivo) -> Decisao {
     (0..v.niveis.len())
         .rev()
         .find(|&i| v.passa_nivel(i, alvo, objetivo))
-        .map_or(Decisao { nivel: 0, alcanca: false }, |nivel| Decisao { nivel, alcanca: true })
+        .map_or(
+            Decisao {
+                nivel: 0,
+                alcanca: false,
+            },
+            |nivel| Decisao {
+                nivel,
+                alcanca: true,
+            },
+        )
 }
 
 /// The target the choice screen starts on: 60 on desktop; on a phone 60 only
@@ -207,14 +239,22 @@ pub fn alvo_sugerido(v: &Varredura, mobile: bool) -> u16 {
         return 60;
     }
     let d = decide(v, 60, Objetivo::Equilibrado);
-    if d.alcanca && d.nivel >= 1 { 60 } else { 30 }
+    if d.alcanca && d.nivel >= 1 {
+        60
+    } else {
+        30
+    }
 }
 
 /// The goal highlighted as recommended: Balanced, unless even it ends on the
 /// lightest preset without holding the target — then Performance.
 pub fn recomendado(v: &Varredura, alvo: u16) -> Objetivo {
     let d = decide(v, alvo, Objetivo::Equilibrado);
-    if d.nivel == 0 && !d.alcanca { Objetivo::Desempenho } else { Objetivo::Equilibrado }
+    if d.nivel == 0 && !d.alcanca {
+        Objetivo::Desempenho
+    } else {
+        Objetivo::Equilibrado
+    }
 }
 
 // ── the saved result ─────────────────────────────────────────────────────
@@ -236,9 +276,21 @@ pub struct Resultado {
 /// High at 60.
 pub fn padrao_ao_pular(mobile: bool) -> Resultado {
     if mobile {
-        Resultado { nivel: 1, alvo: 30, objetivo: Objetivo::Equilibrado, pulado: true, fps: 0 }
+        Resultado {
+            nivel: 1,
+            alvo: 30,
+            objetivo: Objetivo::Equilibrado,
+            pulado: true,
+            fps: 0,
+        }
     } else {
-        Resultado { nivel: 2, alvo: 60, objetivo: Objetivo::Equilibrado, pulado: true, fps: 0 }
+        Resultado {
+            nivel: 2,
+            alvo: 60,
+            objetivo: Objetivo::Equilibrado,
+            pulado: true,
+            fps: 0,
+        }
     }
 }
 
@@ -263,7 +315,9 @@ pub fn le(texto: &str) -> Option<Resultado> {
     let mut fps = 0;
     let mut versao = false;
     for linha in texto.lines() {
-        let Some((k, v)) = linha.split_once('=') else { continue };
+        let Some((k, v)) = linha.split_once('=') else {
+            continue;
+        };
         let v = v.trim();
         match k.trim() {
             "versao" => versao = v == "1",
@@ -278,7 +332,13 @@ pub fn le(texto: &str) -> Option<Resultado> {
     if !versao {
         return None;
     }
-    Some(Resultado { nivel: nivel?, alvo: alvo?, objetivo: objetivo?, pulado, fps })
+    Some(Resultado {
+        nivel: nivel?,
+        alvo: alvo?,
+        objetivo: objetivo?,
+        pulado,
+        fps,
+    })
 }
 
 /// Whether the test has to run, given the saved file's text.
@@ -337,7 +397,11 @@ pub struct Guarda {
 
 /// The fps the guard holds the game to: the frame-rate cap, or 60 with none.
 pub fn alvo_da_guarda(limite_fps: u16) -> f32 {
-    if limite_fps == 0 { 60.0 } else { limite_fps as f32 }
+    if limite_fps == 0 {
+        60.0
+    } else {
+        limite_fps as f32
+    }
 }
 
 impl Guarda {
@@ -551,16 +615,29 @@ impl Teste {
         };
         // Me: the black-hole rebirth aura (the heaviest).
         metas.push(meta(1, EntityTag::Player, 0, 0, 15));
-        let mut eu = EntityState::quantize(EntityId(1), ::glam::Vec2::new(self.centro.x, self.centro.y), ::glam::Vec2::ZERO, 1000, shared::ent_flags::SELF);
+        let mut eu = EntityState::quantize(
+            EntityId(1),
+            ::glam::Vec2::new(self.centro.x, self.centro.y),
+            ::glam::Vec2::ZERO,
+            1000,
+            shared::ent_flags::SELF,
+        );
         eu.acao = combate;
         estados.push(eu);
         for k in 0..OUTROS_JOGADORES {
             let tier = (k % 4) as u64;
-            let bits = (0..shared::auras::SLOTS).fold(0u64, |b, s| b | ((3 | (tier << 3)) << (s * 8)));
+            let bits =
+                (0..shared::auras::SLOTS).fold(0u64, |b, s| b | ((3 | (tier << 3)) << (s * 8)));
             metas.push(meta(10 + k, EntityTag::Player, 0, bits, 0));
         }
         for k in 0..INIMIGOS {
-            metas.push(meta(100 + k, EntityTag::Enemy, KINDS_DO_PLANALTO[k as usize % KINDS_DO_PLANALTO.len()], 0, 0));
+            metas.push(meta(
+                100 + k,
+                EntityTag::Enemy,
+                KINDS_DO_PLANALTO[k as usize % KINDS_DO_PLANALTO.len()],
+                0,
+                0,
+            ));
         }
         estados.extend(self.posicoes(0.0).into_iter().skip(1));
         self.mundo.apply(metas, estados, &[]);
@@ -571,7 +648,13 @@ impl Teste {
         use shared::{EntityId, EntityState};
         let combate = shared::components::acao::monta(0, true, 0, 0);
         let c = self.centro;
-        let mut v = vec![EntityState::quantize(EntityId(1), ::glam::Vec2::new(c.x, c.y), ::glam::Vec2::ZERO, 1000, shared::ent_flags::SELF)];
+        let mut v = vec![EntityState::quantize(
+            EntityId(1),
+            ::glam::Vec2::new(c.x, c.y),
+            ::glam::Vec2::ZERO,
+            1000,
+            shared::ent_flags::SELF,
+        )];
         let em = |id: u32, raio: f32, a: f32, vel: f32, flags: u8| {
             let p = ::glam::Vec2::new(c.x + a.cos() * raio, c.y + a.sin() * raio);
             let d = ::glam::Vec2::new(-a.sin(), a.cos()) * vel;
@@ -612,10 +695,19 @@ impl Teste {
                 let no_mar = self.cena == 2;
                 let (alvo, t) = if no_mar {
                     self.ilha = None;
-                    (self.mar_alvo, self.mar.get_or_insert_with(|| crate::terreno::Terreno::novo(&shared::mar::DEF)))
+                    (
+                        self.mar_alvo,
+                        self.mar.get_or_insert_with(|| {
+                            crate::terreno::Terreno::novo(&shared::mar::DEF)
+                        }),
+                    )
                 } else {
                     self.mar = None;
-                    (self.centro, self.ilha.get_or_insert_with(|| crate::terreno::Terreno::novo(ilha_pesada())))
+                    (
+                        self.centro,
+                        self.ilha
+                            .get_or_insert_with(|| crate::terreno::Terreno::novo(ilha_pesada())),
+                    )
                 };
                 // At sea the game loads one ring more (`mar_cena::raio_no_mar`).
                 let raio = e.raio + no_mar as i32;
@@ -628,7 +720,11 @@ impl Teste {
             }
             Etapa::Aquecendo(k) => {
                 self.desenha_cena(vox, solido, &e);
-                self.etapa = if k + 1 >= AQUECE { Etapa::Gravando } else { Etapa::Aquecendo(k + 1) };
+                self.etapa = if k + 1 >= AQUECE {
+                    Etapa::Gravando
+                } else {
+                    Etapa::Aquecendo(k + 1)
+                };
                 self.quadros.clear();
                 self.cpu.clear();
                 self.anterior_gravado = false;
@@ -661,7 +757,11 @@ impl Teste {
         if !reprova_cedo(&m) && !completo {
             self.cena += 1;
             // The sea is another terrain; fight and town share the island.
-            self.etapa = if self.cena == 2 { Etapa::Construindo } else { Etapa::Aquecendo(0) };
+            self.etapa = if self.cena == 2 {
+                Etapa::Construindo
+            } else {
+                Etapa::Aquecendo(0)
+            };
             return false;
         }
         if tudo || self.i + 1 >= self.plano.len() {
@@ -693,7 +793,13 @@ impl Teste {
     /// Scene (a), the fight (`longe = false`), and (b), the town at the
     /// farthest zoom this view distance allows (`longe = true`). Same island,
     /// same crowd; the fight adds skill effects and damage numbers.
-    fn desenha_ilha(&mut self, vox: &crate::vox::VoxCache, solido: &Material, e: &Escolha, longe: bool) {
+    fn desenha_ilha(
+        &mut self,
+        vox: &crate::vox::VoxCache,
+        solido: &Material,
+        e: &Escolha,
+        longe: bool,
+    ) {
         let Some(t) = &self.ilha else { return };
         let dt = get_frame_time().min(0.1);
         let mut perfil = Perfil::novo();
@@ -706,7 +812,8 @@ impl Teste {
         self.mundo.tick(dt, &|x, z, _| t.altura(x, z));
         for (id, ent) in self.mundo.ents.iter_mut() {
             ent.sacada = 1.0;
-            if ent.meta.tag == shared::EntityTag::Enemy && ent.golpe > 0.9 + (id.0 % 5) as f32 * 0.2 {
+            if ent.meta.tag == shared::EntityTag::Enemy && ent.golpe > 0.9 + (id.0 % 5) as f32 * 0.2
+            {
                 ent.golpe = 0.0;
             }
         }
@@ -730,7 +837,14 @@ impl Teste {
         } else {
             (1.0, crate::render3d::pitch_do_zoom(1.0))
         };
-        let vista = crate::render3d::Vista::nova(self.centro, 0.6 + self.relogio * 0.05, zoom, pitch, apoio, &chao);
+        let vista = crate::render3d::Vista::nova(
+            self.centro,
+            0.6 + self.relogio * 0.05,
+            zoom,
+            pitch,
+            apoio,
+            &chao,
+        );
         perfil.marca("tick");
         crate::render3d::clear();
         set_camera(&vista.cam);
@@ -752,13 +866,33 @@ impl Teste {
         apaga_luz_e_neblina(solido);
         gl_use_default_material();
         if !longe {
-            let luz = self.luz.get_or_insert_with(crate::habilidades_vfx::material);
+            let luz = self
+                .luz
+                .get_or_insert_with(crate::habilidades_vfx::material);
             // Mine always; the other players' only with their effects on.
-            let lancadores = if e.efeitos_dos_outros { 1 + OUTROS_JOGADORES } else { 1 };
+            let lancadores = if e.efeitos_dos_outros {
+                1 + OUTROS_JOGADORES
+            } else {
+                1
+            };
             for k in 0..lancadores {
                 let id = if k == 0 { 1 } else { 10 + k - 1 };
-                let Some(de) = self.mundo.ents.get(&shared::EntityId(id)).map(|x| x.render_pos) else { continue };
-                let Some(alvo) = self.mundo.ents.get(&shared::EntityId(100 + (k * 5) % INIMIGOS)).map(|x| x.render_pos) else { continue };
+                let Some(de) = self
+                    .mundo
+                    .ents
+                    .get(&shared::EntityId(id))
+                    .map(|x| x.render_pos)
+                else {
+                    continue;
+                };
+                let Some(alvo) = self
+                    .mundo
+                    .ents
+                    .get(&shared::EntityId(100 + (k * 5) % INIMIGOS))
+                    .map(|x| x.render_pos)
+                else {
+                    continue;
+                };
                 let de3 = vec3(de.x, t.altura(de.x, de.y), de.y);
                 let alvo3 = vec3(alvo.x, t.altura(alvo.x, alvo.y), alvo.y);
                 let skill = 1 + (k % 12);
@@ -820,7 +954,8 @@ impl Perfil {
         #[cfg(debug_assertions)]
         if self.ligado {
             unsafe { get_internal_gl().flush() };
-            self.partes.push((nome, self.t.elapsed().as_secs_f32() * 1000.0));
+            self.partes
+                .push((nome, self.t.elapsed().as_secs_f32() * 1000.0));
             self.t = std::time::Instant::now();
             if nome == "numeros" {
                 let total: f32 = self.partes.iter().map(|p| p.1).sum();
@@ -833,7 +968,11 @@ impl Perfil {
 }
 
 fn luz_e_neblina(solido: &Material, e: &Escolha, centro: Vec2) {
-    let luz = crate::render3d::luz_dia(if e.sombras == Sombras::Bonitas { 1.0 } else { 0.0 });
+    let luz = crate::render3d::luz_dia(if e.sombras == Sombras::Bonitas {
+        1.0
+    } else {
+        0.0
+    });
     solido.set_uniform("LuzDia", luz);
     crate::gpu_estatica::define_luz_dia(luz);
     let (inicio, fim) = cg::neblina();
@@ -856,26 +995,52 @@ fn apaga_luz_e_neblina(solido: &Material) {
 /// shader, the sky, wreckage, and the hulls with sails, rigging and wake), so
 /// the test measures exactly what sailing costs. The sea sets its own fog
 /// and light (`mar_cena::neblina`); `e` is the same for every scene.
-pub fn cena_mar(t: &crate::terreno::Terreno, solido: &Material, alvo: Vec2, rumo: Vec2, e: &Escolha) {
+pub fn cena_mar(
+    t: &crate::terreno::Terreno,
+    solido: &Material,
+    alvo: Vec2,
+    rumo: Vec2,
+    e: &Escolha,
+) {
     let _ = e;
     let costas = -rumo;
     let (recuo, alto) = (40.0, 22.0);
     let cam = Camera3D {
-        position: vec3(alvo.x + costas.x * recuo * 0.6 + 6.0, alto, alvo.y + costas.y * recuo * 0.6 + recuo * 0.4),
+        position: vec3(
+            alvo.x + costas.x * recuo * 0.6 + 6.0,
+            alto,
+            alvo.y + costas.y * recuo * 0.6 + recuo * 0.4,
+        ),
         target: vec3(alvo.x, 0.0, alvo.y),
         up: Vec3::Y,
         fovy: 0.9,
         ..Default::default()
     };
     clear_background(crate::mar_cena::cor_de_fundo());
-    let frota: Vec<(Vec2, f32, shared::navio::Visual, u64)> = [(0.0f32, 0.0f32, 0u8), (8.0, 5.0, 1), (-6.0, 9.0, 3), (14.0, -4.0, 2), (-12.0, -2.0, 1), (3.0, 16.0, 0)]
-        .into_iter()
-        .enumerate()
-        .map(|(k, (dx, dz, classe))| {
-            let v = shared::navio::Visual { classe, vela: classe + 1, ..Default::default() };
-            (vec2(alvo.x + dx, alvo.y + dz), rumo.x.atan2(rumo.y) + k as f32 * 0.6, v, k as u64)
-        })
-        .collect();
+    let frota: Vec<(Vec2, f32, shared::navio::Visual, u64)> = [
+        (0.0f32, 0.0f32, 0u8),
+        (8.0, 5.0, 1),
+        (-6.0, 9.0, 3),
+        (14.0, -4.0, 2),
+        (-12.0, -2.0, 1),
+        (3.0, 16.0, 0),
+    ]
+    .into_iter()
+    .enumerate()
+    .map(|(k, (dx, dz, classe))| {
+        let v = shared::navio::Visual {
+            classe,
+            vela: classe + 1,
+            ..Default::default()
+        };
+        (
+            vec2(alvo.x + dx, alvo.y + dz),
+            rumo.x.atan2(rumo.y) + k as f32 * 0.6,
+            v,
+            k as u64,
+        )
+    })
+    .collect();
     crate::mar_cena::desenha_mundo(t, solido, &cam, &frota, Some(alvo));
     apaga_luz_e_neblina(solido);
     set_default_camera();
@@ -903,7 +1068,11 @@ impl Default for Benchmark {
             .iter()
             .any(|v| std::env::var(v).is_ok_and(|s| !s.is_empty()));
         let texto = arquivo().and_then(|p| std::fs::read_to_string(p).ok());
-        Self { fase: Fase::Parado, precisa: !desligado && precisa_rodar(texto.as_deref()), guarda: Guarda::default() }
+        Self {
+            fase: Fase::Parado,
+            precisa: !desligado && precisa_rodar(texto.as_deref()),
+            guarda: Guarda::default(),
+        }
     }
 }
 
@@ -936,7 +1105,12 @@ impl Benchmark {
 
     /// Draws one frame of the test or of the choice screen, in place of the
     /// screen under it.
-    pub fn quadro(&mut self, vox: &crate::vox::VoxCache, solido: &Material, cfg: &mut ConfigGraficos) {
+    pub fn quadro(
+        &mut self,
+        vox: &crate::vox::VoxCache,
+        solido: &Material,
+        cfg: &mut ConfigGraficos,
+    ) {
         match &mut self.fase {
             Fase::Parado => {}
             Fase::Medindo(t) => {
@@ -966,7 +1140,12 @@ impl Benchmark {
     pub fn guarda_quadro(&mut self, cfg: &mut ConfigGraficos, observar: bool) {
         let agora = get_time();
         if observar {
-            self.guarda.observa(agora, get_frame_time(), alvo_da_guarda(cg::limite_fps()), cfg.pode_baixar());
+            self.guarda.observa(
+                agora,
+                get_frame_time(),
+                alvo_da_guarda(cg::limite_fps()),
+                cfg.pode_baixar(),
+            );
         } else {
             self.guarda.pausa();
         }
@@ -990,17 +1169,39 @@ mod testes {
     use super::*;
 
     fn m(media: f32, p95: f32, cpu: f32) -> Medida {
-        Medida { media_ms: media, p95_ms: p95, cpu_p95_ms: cpu }
+        Medida {
+            media_ms: media,
+            p95_ms: p95,
+            cpu_p95_ms: cpu,
+        }
     }
 
     fn varredura(niveis: &[Option<[Medida; 3]>]) -> Varredura {
-        Varredura { niveis: niveis.iter().map(|n| n.map(|a| a.to_vec())).collect() }
+        Varredura {
+            niveis: niveis.iter().map(|n| n.map(|a| a.to_vec())).collect(),
+        }
     }
 
-    const RAPIDO: Medida = Medida { media_ms: 16.7, p95_ms: 17.0, cpu_p95_ms: 6.0 };
-    const JUSTO_60: Medida = Medida { media_ms: 16.8, p95_ms: 18.0, cpu_p95_ms: 12.0 };
-    const A_30: Medida = Medida { media_ms: 31.0, p95_ms: 34.0, cpu_p95_ms: 12.0 };
-    const LENTO: Medida = Medida { media_ms: 70.0, p95_ms: 90.0, cpu_p95_ms: 50.0 };
+    const RAPIDO: Medida = Medida {
+        media_ms: 16.7,
+        p95_ms: 17.0,
+        cpu_p95_ms: 6.0,
+    };
+    const JUSTO_60: Medida = Medida {
+        media_ms: 16.8,
+        p95_ms: 18.0,
+        cpu_p95_ms: 12.0,
+    };
+    const A_30: Medida = Medida {
+        media_ms: 31.0,
+        p95_ms: 34.0,
+        cpu_p95_ms: 12.0,
+    };
+    const LENTO: Medida = Medida {
+        media_ms: 70.0,
+        p95_ms: 90.0,
+        cpu_p95_ms: 50.0,
+    };
 
     #[test]
     fn os_presets_vao_do_mais_leve_ao_mais_pesado() {
@@ -1008,7 +1209,10 @@ mod testes {
         for i in 1..cg::PRESETS.len() {
             let p = cg::preset(i);
             assert!(p.raio >= ant.raio && p.forracao >= ant.forracao, "{i}");
-            assert!(p.sombras as u8 >= ant.sombras as u8 && p.ondas >= ant.ondas, "{i}");
+            assert!(
+                p.sombras as u8 >= ant.sombras as u8 && p.ondas >= ant.ondas,
+                "{i}"
+            );
             assert!(p != ant, "{i} igual ao anterior");
             ant = p;
         }
@@ -1047,11 +1251,40 @@ mod testes {
     #[test]
     fn escolhe_o_mais_pesado_que_passa() {
         // Ultra at 30, High just at 60, Medium fast.
-        let v = varredura(&[None, Some([RAPIDO; 3]), Some([JUSTO_60, RAPIDO, JUSTO_60]), Some([A_30; 3])]);
-        assert_eq!(decide(&v, 60, Objetivo::Qualidade), Decisao { nivel: 2, alcanca: true });
-        assert_eq!(decide(&v, 60, Objetivo::Equilibrado), Decisao { nivel: 2, alcanca: true });
-        assert_eq!(decide(&v, 60, Objetivo::Desempenho), Decisao { nivel: 1, alcanca: true });
-        assert_eq!(decide(&v, 30, Objetivo::Desempenho), Decisao { nivel: 3, alcanca: true });
+        let v = varredura(&[
+            None,
+            Some([RAPIDO; 3]),
+            Some([JUSTO_60, RAPIDO, JUSTO_60]),
+            Some([A_30; 3]),
+        ]);
+        assert_eq!(
+            decide(&v, 60, Objetivo::Qualidade),
+            Decisao {
+                nivel: 2,
+                alcanca: true
+            }
+        );
+        assert_eq!(
+            decide(&v, 60, Objetivo::Equilibrado),
+            Decisao {
+                nivel: 2,
+                alcanca: true
+            }
+        );
+        assert_eq!(
+            decide(&v, 60, Objetivo::Desempenho),
+            Decisao {
+                nivel: 1,
+                alcanca: true
+            }
+        );
+        assert_eq!(
+            decide(&v, 30, Objetivo::Desempenho),
+            Decisao {
+                nivel: 3,
+                alcanca: true
+            }
+        );
         // A preset cut short (one scene) never wins.
         let mut v2 = v.clone();
         v2.niveis[3] = Some(vec![RAPIDO]);
@@ -1066,11 +1299,23 @@ mod testes {
     fn nada_passa_cai_no_mais_leve() {
         let v = varredura(&[Some([LENTO; 3]), Some([LENTO; 3]), Some([LENTO; 3]), None]);
         for o in Objetivo::TODOS {
-            assert_eq!(decide(&v, 30, o), Decisao { nivel: 0, alcanca: false });
+            assert_eq!(
+                decide(&v, 30, o),
+                Decisao {
+                    nivel: 0,
+                    alcanca: false
+                }
+            );
         }
         assert_eq!(recomendado(&v, 30), Objetivo::Desempenho);
         assert_eq!(alvo_sugerido(&v, true), 30);
-        assert_eq!(decide(&Varredura::nova(), 60, Objetivo::Equilibrado), Decisao { nivel: 0, alcanca: false });
+        assert_eq!(
+            decide(&Varredura::nova(), 60, Objetivo::Equilibrado),
+            Decisao {
+                nivel: 0,
+                alcanca: false
+            }
+        );
     }
 
     #[test]
@@ -1081,7 +1326,11 @@ mod testes {
         let fraco = varredura(&[Some([A_30; 3]), Some([A_30; 3]), Some([A_30; 3]), None]);
         assert_eq!(alvo_sugerido(&fraco, true), 30);
         assert_eq!(alvo_sugerido(&fraco, false), 60);
-        assert!(passa_em_tudo(&[RAPIDO; 3]) && !passa_em_tudo(&[RAPIDO; 2]) && !passa_em_tudo(&[JUSTO_60; 3]));
+        assert!(
+            passa_em_tudo(&[RAPIDO; 3])
+                && !passa_em_tudo(&[RAPIDO; 2])
+                && !passa_em_tudo(&[JUSTO_60; 3])
+        );
     }
 
     #[test]
@@ -1097,7 +1346,13 @@ mod testes {
 
     #[test]
     fn o_resultado_fica_salvo_e_nao_roda_de_novo() {
-        let r = Resultado { nivel: 2, alvo: 60, objetivo: Objetivo::Qualidade, pulado: false, fps: 57 };
+        let r = Resultado {
+            nivel: 2,
+            alvo: 60,
+            objetivo: Objetivo::Qualidade,
+            pulado: false,
+            fps: 57,
+        };
         assert_eq!(le(&escreve(&r)), Some(r));
         assert!(precisa_rodar(None));
         assert!(precisa_rodar(Some("")));
@@ -1118,7 +1373,10 @@ mod testes {
     #[test]
     fn pular_aplica_o_padrao_da_plataforma() {
         let celular = padrao_ao_pular(true);
-        assert_eq!((celular.nivel, celular.alvo, celular.objetivo), (1, 30, Objetivo::Equilibrado));
+        assert_eq!(
+            (celular.nivel, celular.alvo, celular.objetivo),
+            (1, 30, Objetivo::Equilibrado)
+        );
         assert_eq!(cg::PRESETS[celular.nivel], "Medium");
         assert!(celular.pulado);
         let pc = padrao_ao_pular(false);
@@ -1128,7 +1386,14 @@ mod testes {
     }
 
     /// Simulates `segundos` of play at `fps`.
-    fn joga(g: &mut Guarda, desde: f64, segundos: f64, fps: f64, alvo: f32, pode_baixar: bool) -> f64 {
+    fn joga(
+        g: &mut Guarda,
+        desde: f64,
+        segundos: f64,
+        fps: f64,
+        alvo: f32,
+        pode_baixar: bool,
+    ) -> f64 {
         let dt = 1.0 / fps;
         let mut t = desde;
         while t < desde + segundos {

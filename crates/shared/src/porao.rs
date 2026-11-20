@@ -282,7 +282,8 @@ fn marco_de(c: &Conteudo, ger: &crate::terreno::Gerador) -> Option<Vec2> {
                 let a = k as f32 * std::f32::consts::TAU / 24.0;
                 (0..6).find_map(|n| {
                     let p = o.centro
-                        + Vec2::new(a.cos(), a.sin()) * (crate::oasis::RAIO_VERDE + 4.0 + n as f32 * 3.0);
+                        + Vec2::new(a.cos(), a.sin())
+                            * (crate::oasis::RAIO_VERDE + 4.0 + n as f32 * 3.0);
                     (firme(ger, p) && plano(ger, p)).then_some(p)
                 })
             })
@@ -351,9 +352,14 @@ fn candidatos(cidade: Vec2) -> impl Iterator<Item = Vec2> {
 /// across it.
 fn plano(ger: &crate::terreno::Gerador, p: Vec2) -> bool {
     let h = ger.altura(p.x, p.y);
-    [Vec2::new(2.0, 0.0), Vec2::new(-2.0, 0.0), Vec2::new(0.0, 2.0), Vec2::new(0.0, -2.0)]
-        .iter()
-        .all(|d| (ger.altura(p.x + d.x, p.y + d.y) - h).abs() <= crate::terreno::BLOCO + 0.01)
+    [
+        Vec2::new(2.0, 0.0),
+        Vec2::new(-2.0, 0.0),
+        Vec2::new(0.0, 2.0),
+        Vec2::new(0.0, -2.0),
+    ]
+    .iter()
+    .all(|d| (ger.altura(p.x + d.x, p.y + d.y) - h).abs() <= crate::terreno::BLOCO + 0.01)
 }
 
 /// The old placement, near town: the fallback when an island has no landmark
@@ -370,8 +376,8 @@ fn perto_da_cidade(c: &Conteudo, ger: &crate::terreno::Gerador) -> Option<Vec2> 
         let d = 56.0 + passo_d as f32 * 9.0;
         for passo_a in 0..24 {
             // Abre em leque a partir do ângulo preferido: +0, +15°, -15°, …
-            let giro = (passo_a as f32 / 2.0).ceil() * 0.262
-                * if passo_a % 2 == 0 { 1.0 } else { -1.0 };
+            let giro =
+                (passo_a as f32 / 2.0).ceil() * 0.262 * if passo_a % 2 == 0 { 1.0 } else { -1.0 };
             let a = preferido + giro;
             let p = cidade + Vec2::new(a.cos(), a.sin()) * d;
             if firme(ger, p) {
@@ -527,15 +533,22 @@ mod testes {
     /// Darksteel.
     #[test]
     fn toda_chave_pede_material_que_cai() {
-        for c in crate::dungeon::CONTEUDOS.iter().filter(|c| c.tipo == Tipo::Porao) {
+        for c in crate::dungeon::CONTEUDOS
+            .iter()
+            .filter(|c| c.tipo == Tipo::Porao)
+        {
             let r = receita_de(c).unwrap();
             assert!(
-                (item_id::na_cor(item_id::STEEL, 1)..=item_id::na_cor(item_id::STEEL, 3)).contains(&r.material),
+                (item_id::na_cor(item_id::STEEL, 1)..=item_id::na_cor(item_id::STEEL, 3))
+                    .contains(&r.material),
                 "{} asks for steel {} — purple never drops",
                 c.nome,
                 r.material
             );
-            println!("{} ({}): {}x wood {}, {}x steel {}", c.nome, c.nivel_min, r.madeira_qtd, r.madeira, r.material_qtd, r.material);
+            println!(
+                "{} ({}): {}x wood {}, {}x steel {}",
+                c.nome, c.nivel_min, r.madeira_qtd, r.madeira, r.material_qtd, r.material
+            );
         }
     }
     use super::*;
@@ -620,10 +633,15 @@ mod testes {
     #[test]
     fn portas_da_mesma_ilha_ficam_separadas() {
         for zona in ["ilha_inicial", "ilha_gelo"] {
-            let Some(def) = crate::terreno::def_da_zona(zona) else { continue };
+            let Some(def) = crate::terreno::def_da_zona(zona) else {
+                continue;
+            };
             let ger = crate::terreno::Gerador::da_ilha(def);
             let cidade = ger.cidade().map(|c| c.centro()).unwrap_or_default();
-            let portas: Vec<Vec2> = portas_da_zona(zona, &ger).into_iter().map(|(_, p)| p).collect();
+            let portas: Vec<Vec2> = portas_da_zona(zona, &ger)
+                .into_iter()
+                .map(|(_, p)| p)
+                .collect();
             for (i, a) in portas.iter().enumerate() {
                 assert!(
                     a.distance(cidade) > crate::terreno::Cidade::RAIO,
@@ -643,12 +661,20 @@ mod testes {
     /// A tabela que o dono vai ler: o que cada chave custa de verdade.
     #[test]
     fn mostra_o_custo_de_cada_chave() {
-        for c in crate::dungeon::CONTEUDOS.iter().filter(|c| c.tipo == Tipo::Porao) {
+        for c in crate::dungeon::CONTEUDOS
+            .iter()
+            .filter(|c| c.tipo == Tipo::Porao)
+        {
             let r = receita_de(c).unwrap();
             println!(
                 "{:<20} lv{:<3} chave={} | madeira id={} x{:<4} material id={} x{}",
-                c.nome, c.nivel_min, chave_de(c).unwrap(),
-                r.madeira, r.madeira_qtd, r.material, r.material_qtd
+                c.nome,
+                c.nivel_min,
+                chave_de(c).unwrap(),
+                r.madeira,
+                r.madeira_qtd,
+                r.material,
+                r.material_qtd
             );
         }
     }
@@ -664,7 +690,10 @@ mod testes {
     #[test]
     fn o_material_da_chave_e_aco_de_verdade() {
         let faixa = item_id::STEEL..item_id::STEEL + 4;
-        for c in crate::dungeon::CONTEUDOS.iter().filter(|c| c.tipo == Tipo::Porao) {
+        for c in crate::dungeon::CONTEUDOS
+            .iter()
+            .filter(|c| c.tipo == Tipo::Porao)
+        {
             let m = receita_de(c).unwrap().material;
             assert!(
                 faixa.contains(&m),
@@ -676,7 +705,10 @@ mod testes {
             assert_ne!(m, item_id::DARKSTEEL, "{}", c.nome);
         }
         // E a madeira tem que ser madeira.
-        for c in crate::dungeon::CONTEUDOS.iter().filter(|c| c.tipo == Tipo::Porao) {
+        for c in crate::dungeon::CONTEUDOS
+            .iter()
+            .filter(|c| c.tipo == Tipo::Porao)
+        {
             let w = receita_de(c).unwrap().madeira;
             assert!(
                 (item_id::WOOD_T1..=item_id::WOOD_T4).contains(&w),
@@ -803,13 +835,19 @@ mod testes {
     /// acima) segura o jogador comum; este segura quem joga tudo perfeito.
     #[test]
     fn a_torneira_com_os_dois_desafios_tambem_tem_teto() {
-        for c in crate::dungeon::CONTEUDOS.iter().filter(|c| c.tipo == Tipo::Porao) {
+        for c in crate::dungeon::CONTEUDOS
+            .iter()
+            .filter(|c| c.tipo == Tipo::Porao)
+        {
             let ouro = crate::dungeon::ouro_do_bau(c.tipo, c.nivel_min, false) as f32
                 * crate::desafio::multiplicador(crate::desafio::POR_CORRIDA);
             let ciclo = segundos_de_coleta(c.nivel_min)
                 + c.limite_s as f32 * crate::desafio::FRACAO_DO_RAPIDO;
             let por_hora = ouro * 3600.0 / ciclo;
-            println!("{:<20} pior caso com desafios: {por_hora:.0} ouro/h", c.nome);
+            println!(
+                "{:<20} pior caso com desafios: {por_hora:.0} ouro/h",
+                c.nome
+            );
             assert!(
                 por_hora <= 7_500.0,
                 "{}: {por_hora:.0} ouro/h com os dois desafios",
@@ -821,7 +859,10 @@ mod testes {
     /// A tabela que o dono lê pra decidir se o custo está certo.
     #[test]
     fn mostra_a_torneira() {
-        for c in crate::dungeon::CONTEUDOS.iter().filter(|c| c.tipo == Tipo::Porao) {
+        for c in crate::dungeon::CONTEUDOS
+            .iter()
+            .filter(|c| c.tipo == Tipo::Porao)
+        {
             let r = receita_de(c).unwrap();
             println!(
                 "{:<20} lv{:<3} chave={:>3}s corrida={:>3}s  ouro/baú={:<5} ouro/h={:>6.0}  ({}x madeira + {}x aço)",
@@ -878,12 +919,18 @@ mod testes {
     /// do Frozen Hull teria trocado de id sozinha — e chave é item de bolsa.
     #[test]
     fn a_chave_segue_o_id_do_conteudo_e_nao_a_ordem() {
-        for c in crate::dungeon::CONTEUDOS.iter().filter(|c| c.tipo == Tipo::Porao) {
+        for c in crate::dungeon::CONTEUDOS
+            .iter()
+            .filter(|c| c.tipo == Tipo::Porao)
+        {
             assert_eq!(chave_de(c), Some(CHAVE_BASE + c.id));
         }
         // Ida e volta pra todas, e nenhuma chave serve pra duas portas.
         let mut vistas = std::collections::HashSet::new();
-        for c in crate::dungeon::CONTEUDOS.iter().filter(|c| c.tipo == Tipo::Porao) {
+        for c in crate::dungeon::CONTEUDOS
+            .iter()
+            .filter(|c| c.tipo == Tipo::Porao)
+        {
             let k = chave_de(c).unwrap();
             assert!(vistas.insert(k), "a chave {k} abre mais de um Porão");
             assert_eq!(porao_da_chave(k).map(|o| o.id), Some(c.id));
@@ -901,7 +948,10 @@ mod testes {
     #[test]
     fn a_chave_nao_toma_a_bolsa_inteira() {
         const PILHA: u32 = 999;
-        for c in crate::dungeon::CONTEUDOS.iter().filter(|c| c.tipo == Tipo::Porao) {
+        for c in crate::dungeon::CONTEUDOS
+            .iter()
+            .filter(|c| c.tipo == Tipo::Porao)
+        {
             let r = receita_de(c).unwrap();
             let vagas = r.madeira_qtd.div_ceil(PILHA) + r.material_qtd.div_ceil(PILHA);
             assert!(
@@ -923,7 +973,9 @@ mod testes {
         for def in crate::terreno::ARQUIPELAGO {
             let ilha = crate::terreno::Ilha::da_ilha(&def);
             let ger = crate::terreno::Gerador::da_ilha(&def);
-            let Some(cidade) = ger.cidade().map(|c| c.centro()) else { continue };
+            let Some(cidade) = ger.cidade().map(|c| c.centro()) else {
+                continue;
+            };
             let portas = portas_da_zona(def.zona, &ger);
             for (id, p) in &portas {
                 let nome = crate::dungeon::conteudo(*id).map_or("?", |c| c.nome);
@@ -937,14 +989,20 @@ mod testes {
                 // And a walk that EXISTS: the server's own route from town.
                 let rota = ilha.caminho(cidade, *p, 40_000);
                 assert!(
-                    rota.as_ref().and_then(|r| r.last()).is_some_and(|f| f.distance(*p) < 6.0),
+                    rota.as_ref()
+                        .and_then(|r| r.last())
+                        .is_some_and(|f| f.distance(*p) < 6.0),
                     "{}: no walking route from town to {nome} at {p:?}",
                     def.zona
                 );
             }
             for (i, a) in portas.iter().enumerate() {
                 for b in portas.iter().skip(i + 1) {
-                    assert!(a.1.distance(b.1) >= 100.0, "{}: two portals side by side", def.zona);
+                    assert!(
+                        a.1.distance(b.1) >= 100.0,
+                        "{}: two portals side by side",
+                        def.zona
+                    );
                 }
             }
         }
@@ -1019,22 +1077,38 @@ mod testes {
         let def = def_da_zona("ilha_planalto").unwrap();
         let ger = Gerador::da_ilha(def);
         let pl = ger.planalto().expect("o Planalto tem trilha");
-        let tiers: Vec<u8> = pl.regioes.iter().map(|r| tier_da_arvore(def, Some(pl), r.centro)).collect();
+        let tiers: Vec<u8> = pl
+            .regioes
+            .iter()
+            .map(|r| tier_da_arvore(def, Some(pl), r.centro))
+            .collect();
         assert_eq!(tiers.first(), Some(&3), "começo da trilha: {tiers:?}");
         assert_eq!(tiers.last(), Some(&4), "fundo da trilha: {tiers:?}");
         assert_eq!(tier(crate::celeste::ZONA), 4, "Skyreach");
 
         // E toda chave pede uma madeira que alguma árvore do jogo dá.
         let mut da: std::collections::HashSet<u16> = std::collections::HashSet::new();
-        for z in ["ilha_inicial", "ilha_gelo", "ilha_deserto", crate::celeste::ZONA] {
+        for z in [
+            "ilha_inicial",
+            "ilha_gelo",
+            "ilha_deserto",
+            crate::celeste::ZONA,
+        ] {
             da.insert(item_id::WOOD_T1 + (tier(z) - 1) as u16);
         }
         for t in &tiers {
             da.insert(item_id::WOOD_T1 + (*t - 1) as u16);
         }
-        for c in crate::dungeon::CONTEUDOS.iter().filter(|c| c.tipo == Tipo::Porao) {
+        for c in crate::dungeon::CONTEUDOS
+            .iter()
+            .filter(|c| c.tipo == Tipo::Porao)
+        {
             let m = receita_de(c).unwrap().madeira;
-            assert!(da.contains(&m), "{}: pede madeira {m} que nenhuma árvore dá", c.nome);
+            assert!(
+                da.contains(&m),
+                "{}: pede madeira {m} que nenhuma árvore dá",
+                c.nome
+            );
         }
     }
 }

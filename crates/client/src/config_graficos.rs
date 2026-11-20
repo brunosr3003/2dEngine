@@ -60,7 +60,13 @@ pub const RAIO_PADRAO: i32 = 5;
 const DISTANCIAS: &[(i32, &str)] = if MOBILE {
     &[(3, "Near"), (5, "Normal"), (7, "Far"), (9, "Very far")]
 } else {
-    &[(3, "Near"), (5, "Normal"), (7, "Far"), (9, "Very far"), (12, "Extreme")]
+    &[
+        (3, "Near"),
+        (5, "Normal"),
+        (7, "Far"),
+        (9, "Very far"),
+        (12, "Extreme"),
+    ]
 };
 /// Ground cover kept, in percent: (value, name). Trees are not here: a tree
 /// blocks the path and is gathered, so it is gameplay, not decoration.
@@ -168,7 +174,13 @@ pub(crate) fn publica_para_teste(e: &Escolha) {
 /// How heavy a choice is, per setting the benchmark varies (frame-rate cap
 /// and anti-aliasing left out).
 fn peso(e: &Escolha) -> [i32; 5] {
-    [e.raio, e.forracao as i32, e.sombras as i32, e.ondas as i32, e.efeitos_dos_outros as i32]
+    [
+        e.raio,
+        e.forracao as i32,
+        e.sombras as i32,
+        e.ondas as i32,
+        e.efeitos_dos_outros as i32,
+    ]
 }
 
 /// The highest preset `e` is at least as heavy as, in every setting.
@@ -240,21 +252,35 @@ fn arquivo() -> Option<std::path::PathBuf> {
 /// default, so an old or hand-edited file never breaks the game.
 fn le(texto: &str, e: &mut Escolha) {
     for linha in texto.lines() {
-        let Some((k, v)) = linha.split_once('=') else { continue };
+        let Some((k, v)) = linha.split_once('=') else {
+            continue;
+        };
         let v = v.trim();
         match k.trim() {
             "distancia" => {
-                if let Some(&(r, _)) = v.parse().ok().and_then(|n: i32| DISTANCIAS.iter().find(|d| d.0 == n)) {
+                if let Some(&(r, _)) = v
+                    .parse()
+                    .ok()
+                    .and_then(|n: i32| DISTANCIAS.iter().find(|d| d.0 == n))
+                {
                     e.raio = r;
                 }
             }
             "forracao" => {
-                if let Some(&(p, _)) = v.parse().ok().and_then(|n: u8| FORRACOES.iter().find(|d| d.0 == n)) {
+                if let Some(&(p, _)) = v
+                    .parse()
+                    .ok()
+                    .and_then(|n: u8| FORRACOES.iter().find(|d| d.0 == n))
+                {
                     e.forracao = p;
                 }
             }
             "fps" => {
-                if let Some(&(f, _)) = v.parse().ok().and_then(|n: u16| LIMITES_FPS.iter().find(|d| d.0 == n)) {
+                if let Some(&(f, _)) = v
+                    .parse()
+                    .ok()
+                    .and_then(|n: u16| LIMITES_FPS.iter().find(|d| d.0 == n))
+                {
                     e.fps = f;
                 }
             }
@@ -334,7 +360,11 @@ struct Linha {
 
 impl Linha {
     fn altura(&self) -> f32 {
-        if self.dica.is_some() { 100.0 } else { 80.0 }
+        if self.dica.is_some() {
+            100.0
+        } else {
+            80.0
+        }
     }
 }
 
@@ -370,7 +400,9 @@ impl ConfigGraficos {
         self.ondas = e.ondas;
         self.efeitos_dos_outros = e.efeitos_dos_outros;
         self.publica();
-        let Some(p) = crate::lembranca::caminho() else { return };
+        let Some(p) = crate::lembranca::caminho() else {
+            return;
+        };
         if antes.sombras != e.sombras {
             let _ = std::fs::write(p.with_file_name("sombras.prefs"), e.sombras.valor());
         }
@@ -539,11 +571,22 @@ impl ConfigGraficos {
         let largura_coluna = 420.0 * f;
         let w = (largura_coluna * colunas as f32).min(seguro.w - 16.0);
         let h = conteudo_h.min(seguro.h - 16.0);
-        let r = Rect::new(seguro.center().x - w * 0.5, seguro.center().y - h * 0.5, w, h);
+        let r = Rect::new(
+            seguro.center().x - w * 0.5,
+            seguro.center().y - h * 0.5,
+            w,
+            h,
+        );
         estilo::painel(r);
         estilo::texto(r.x + 18.0 * f, r.y + 34.0 * f, "Graphics", 20, estilo::OURO);
         let fechar = Rect::new(r.x + r.w - 44.0 * f, r.y + 8.0 * f, 36.0 * f, 36.0 * f);
-        estilo::texto_centro(fechar.center().x, fechar.center().y + 7.0 * f, "X", 18, estilo::TEXTO);
+        estilo::texto_centro(
+            fechar.center().x,
+            fechar.center().y + 7.0 * f,
+            "X",
+            18,
+            estilo::TEXTO,
+        );
         let m = Vec2::from(mouse_position());
         if crate::foco::clique() && fechar.toca(m) {
             self.fechar();
@@ -596,7 +639,13 @@ impl ConfigGraficos {
             44.0 * f,
         );
         estilo::cartao(teste, teste.toca(m), false);
-        estilo::texto_centro(teste.center().x, teste.center().y + 6.0 * f, "Run performance test again", 14, estilo::TEXTO);
+        estilo::texto_centro(
+            teste.center().x,
+            teste.center().y + 6.0 * f,
+            "Run performance test again",
+            14,
+            estilo::TEXTO,
+        );
         let pediu_teste = em(teste);
         crate::rolagem::recortar(None);
         self.rolagem.desenha(area, total);
@@ -629,7 +678,11 @@ mod tests {
     fn todo_preset_cabe_nas_opcoes() {
         for i in 0..PRESETS.len() {
             let e = preset(i);
-            assert!(DISTANCIAS.iter().any(|d| d.0 == e.raio), "{i}: raio {}", e.raio);
+            assert!(
+                DISTANCIAS.iter().any(|d| d.0 == e.raio),
+                "{i}: raio {}",
+                e.raio
+            );
             assert!(FORRACOES.iter().any(|d| d.0 == e.forracao), "{i}");
             assert!(LIMITES_FPS.iter().any(|d| d.0 == e.fps), "{i}");
             assert!(OPCOES_AA.contains(&e.antialias), "{i}");
@@ -642,8 +695,16 @@ mod tests {
         e.efeitos_dos_outros = true;
         let mut lido = preset(2);
         le(&escreve(&e), &mut lido);
-        assert_eq!((lido.raio, lido.forracao, lido.fps, lido.ondas, lido.efeitos_dos_outros),
-                   (e.raio, e.forracao, e.fps, e.ondas, e.efeitos_dos_outros));
+        assert_eq!(
+            (
+                lido.raio,
+                lido.forracao,
+                lido.fps,
+                lido.ondas,
+                lido.efeitos_dos_outros
+            ),
+            (e.raio, e.forracao, e.fps, e.ondas, e.efeitos_dos_outros)
+        );
     }
 
     /// The benchmark's level of a choice: each preset is its own level, a

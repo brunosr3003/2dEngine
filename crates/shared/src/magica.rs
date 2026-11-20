@@ -986,7 +986,10 @@ mod testes {
     #[test]
     fn cada_degrau_tem_os_bichos_do_seu_nivel() {
         use crate::terreno::Bioma::*;
-        let b: Vec<_> = NIVEIS.iter().map(|n| bioma_dos_mobs(n.zona).unwrap()).collect();
+        let b: Vec<_> = NIVEIS
+            .iter()
+            .map(|n| bioma_dos_mobs(n.zona).unwrap())
+            .collect();
         assert_eq!(b, vec![Gelo, Deserto, Montanha, Celeste, Celeste, Celeste]);
         assert_eq!(bioma_dos_mobs("ilha_inicial"), None);
     }

@@ -74,7 +74,11 @@ impl MontariasUi {
 
     /// What the shop announces that matters here: the start of mounting.
     pub fn receber(&mut self, aviso: &shared::loja::AvisoLoja, agora: f64) {
-        if let shared::loja::AvisoLoja::MontariaCombate { firmeza, bloqueio_segundos } = aviso {
+        if let shared::loja::AvisoLoja::MontariaCombate {
+            firmeza,
+            bloqueio_segundos,
+        } = aviso
+        {
             self.firmeza = *firmeza;
             self.bloqueada_ate = agora + *bloqueio_segundos as f64;
         }

@@ -230,7 +230,13 @@ impl AutoCombate {
     /// No creature in the area: where to go and hunt. Moves the area to the
     /// character and returns the nearest live creature within `BUSCA` — walking
     /// there is `main`'s job. `None` when there is nothing to hunt (or it is too soon).
-    pub fn caca(&mut self, world: &World, eu: Vec2, agora: f64, missao: Option<u16>) -> Option<Vec2> {
+    pub fn caca(
+        &mut self,
+        world: &World,
+        eu: Vec2,
+        agora: f64,
+        missao: Option<u16>,
+    ) -> Option<Vec2> {
         if !self.ativo() || self.manual {
             return None;
         }
@@ -242,15 +248,23 @@ impl AutoCombate {
         let alvo = world
             .ents
             .iter()
-            .filter(|(id, e)| e.meta.tag == EntityTag::Enemy && e.state.hp > 0 && e.morte.is_none()
-                && !self.ignorados.get(id).is_some_and(|ate| *ate > agora))
+            .filter(|(id, e)| {
+                e.meta.tag == EntityTag::Enemy
+                    && e.state.hp > 0
+                    && e.morte.is_none()
+                    && !self.ignorados.get(id).is_some_and(|ate| *ate > agora)
+            })
             .map(|(_, e)| e)
             .filter(|e| e.render_pos.distance(eu) <= BUSCA)
             .min_by(|a, b| {
                 let fora = |kind: u16| missao.is_some_and(|k| !alvo_da_missao(k, kind));
-                fora(a.meta.kind).cmp(&fora(b.meta.kind)).then_with(||
-                    a.render_pos.distance_squared(eu).total_cmp(&b.render_pos.distance_squared(eu)))
-            })?.render_pos;
+                fora(a.meta.kind).cmp(&fora(b.meta.kind)).then_with(|| {
+                    a.render_pos
+                        .distance_squared(eu)
+                        .total_cmp(&b.render_pos.distance_squared(eu))
+                })
+            })?
+            .render_pos;
         self.caca_em = agora;
         Some(alvo)
     }
@@ -265,9 +279,7 @@ impl AutoCombate {
     ) -> Option<EntityId> {
         let mut centro = self.centro?;
         let eu = world.self_id.and_then(|id| world.ents.get(&id))?;
-        if eu.state.hp == 0
-            || eu.state.flags & shared::ent_flags::DOWNED != 0
-        {
+        if eu.state.hp == 0 || eu.state.flags & shared::ent_flags::DOWNED != 0 {
             self.parar();
             return None;
         }
@@ -398,13 +410,32 @@ mod tests {
     use super::*;
     #[test]
     fn caca_reconhece_especie_variante_e_chefe_nomeado() {
-        for q in shared::quests::QUESTS.iter().chain(shared::historia::PASSOS.iter()) {
-            if q.obj_kind != shared::quests::objective_kind::KILL || q.obj_target == 0
-                || q.obj_target == shared::quests::ALVO_QUALQUER_CHEFE { continue; }
+        for q in shared::quests::QUESTS
+            .iter()
+            .chain(shared::historia::PASSOS.iter())
+        {
+            if q.obj_kind != shared::quests::objective_kind::KILL
+                || q.obj_target == 0
+                || q.obj_target == shared::quests::ALVO_QUALQUER_CHEFE
+            {
+                continue;
+            }
             let alvo = q.obj_target - 1;
-            assert!(alvo_da_missao(alvo, alvo), "quest {} ignores its exact target", q.id);
-            for v in shared::bestiary::VARIANTS.iter().filter(|v| v.species == alvo) {
-                assert!(alvo_da_missao(alvo, v.kind), "quest {} ignores variant {}", q.id, v.kind);
+            assert!(
+                alvo_da_missao(alvo, alvo),
+                "quest {} ignores its exact target",
+                q.id
+            );
+            for v in shared::bestiary::VARIANTS
+                .iter()
+                .filter(|v| v.species == alvo)
+            {
+                assert!(
+                    alvo_da_missao(alvo, v.kind),
+                    "quest {} ignores variant {}",
+                    q.id,
+                    v.kind
+                );
             }
         }
         assert!(!alvo_da_missao(70, 71));
@@ -421,7 +452,9 @@ mod tests {
             (5, EntityTag::Enemy, 30.0, 100),
             (6, EntityTag::Enemy, 2.0, 0),
         ] {
-            metas.push(shared::EntityMeta { skins: 0, cla: String::new(),
+            metas.push(shared::EntityMeta {
+                skins: 0,
+                cla: String::new(),
                 pk: Default::default(),
                 auras: 0,
                 id: EntityId(id),
@@ -432,8 +465,9 @@ mod tests {
                 kind: 0,
                 nivel: 1,
                 desafio: None,
-            aparencia: 0,
-            poder: 0, renascimentos: 0,
+                aparencia: 0,
+                poder: 0,
+                renascimentos: 0,
             });
             estados.push(shared::EntityState::quantize(
                 EntityId(id),
@@ -453,11 +487,17 @@ mod tests {
         a.pvp = shared::protocol::auto_pvp::QUALQUER;
         a.ordem = vec![shared::protocol::auto_alvo::JOGADOR];
         a.ligar(Vec2::ZERO);
-        assert_eq!(a.escolher(&w, Some(EntityId(2)), 0.0, None), Some(EntityId(3)));
+        assert_eq!(
+            a.escolher(&w, Some(EntityId(2)), 0.0, None),
+            Some(EntityId(3))
+        );
         w.ents.get_mut(&EntityId(1)).unwrap().meta.pk.hostil = true;
         assert_eq!(a.escolher(&w, None, 1.0, None), Some(EntityId(2)));
         w.ents.get_mut(&EntityId(1)).unwrap().meta.pk.hostil = false;
-        assert_eq!(a.escolher(&w, Some(EntityId(2)), 2.0, None), Some(EntityId(3)));
+        assert_eq!(
+            a.escolher(&w, Some(EntityId(2)), 2.0, None),
+            Some(EntityId(3))
+        );
     }
 
     #[test]
@@ -540,7 +580,10 @@ mod tests {
         a.ligar(Vec2::ZERO);
         w.ents.get_mut(&EntityId(1)).unwrap().render_pos = vec2(40.0, 0.0);
         w.ents.get_mut(&EntityId(5)).unwrap().render_pos = vec2(42.0, 0.0);
-        assert_eq!(a.escolher(&w, Some(EntityId(5)), 10.0, None), Some(EntityId(5)));
+        assert_eq!(
+            a.escolher(&w, Some(EntityId(5)), 10.0, None),
+            Some(EntityId(5))
+        );
         assert!(a.ativo());
     }
 

@@ -81,11 +81,9 @@ pub async fn open_pool(database_url: &str) -> Result<PgPool> {
     )
     .execute(&pool)
     .await?;
-    sqlx::query(
-        "CREATE INDEX IF NOT EXISTS email_tokens_conta ON email_tokens (account_id, tipo)",
-    )
-    .execute(&pool)
-    .await?;
+    sqlx::query("CREATE INDEX IF NOT EXISTS email_tokens_conta ON email_tokens (account_id, tipo)")
+        .execute(&pool)
+        .await?;
 
     Ok(pool)
 }

@@ -25,7 +25,11 @@ use crate::Estado;
 /// docs/OFERTAS_RELAMPAGO.md): id and the price it is set to in the Play
 /// Console (same number in R$ and US$). A new price needs a new product in the
 /// Play Console first, then a line here.
-pub const PRODUTOS: &[(&str, u32)] = &[("oferta_099", 99), ("oferta_499", 499), ("oferta_1500", 1500)];
+pub const PRODUTOS: &[(&str, u32)] = &[
+    ("oferta_099", 99),
+    ("oferta_499", 499),
+    ("oferta_1500", 1500),
+];
 
 const FUSO: &str = "America/Sao_Paulo";
 pub const HORAS_MAX: i64 = 168;
@@ -36,7 +40,11 @@ const ENERGIA_MAX: i64 = 10_000_000;
 const QTD_MAX: i64 = 1_000_000;
 
 fn resposta(ok: bool, extra: serde_json::Value) -> axum::response::Response {
-    let status = if ok { axum::http::StatusCode::OK } else { axum::http::StatusCode::BAD_REQUEST };
+    let status = if ok {
+        axum::http::StatusCode::OK
+    } else {
+        axum::http::StatusCode::BAD_REQUEST
+    };
     let mut v = extra;
     v["ok"] = ok.into();
     v["produtos"] = produtos_json();
@@ -63,7 +71,12 @@ struct ItemJson {
 /// The game server's own reading (`server::ofertas::itens_de`): bad JSON = none.
 fn itens_de(json: &str) -> Vec<(u16, u32)> {
     serde_json::from_str::<Vec<ItemJson>>(json)
-        .map(|v| v.into_iter().filter(|i| i.qtd > 0).map(|i| (i.item_id, i.qtd)).collect())
+        .map(|v| {
+            v.into_iter()
+                .filter(|i| i.qtd > 0)
+                .map(|i| (i.item_id, i.qtd))
+                .collect()
+        })
         .unwrap_or_default()
 }
 
@@ -88,7 +101,10 @@ async fn central_pronto(st: &Estado) -> Result<std::sync::Arc<sqlx::PgPool>, Str
 
 /// Item names from the realm's `items` (EN as stored, PT from the game's dictionary).
 /// Value: (EN name, PT name, is equipment, active).
-async fn nomes_dos_itens(pool: &sqlx::PgPool, ids: &[i32]) -> HashMap<i32, (String, String, bool, bool)> {
+async fn nomes_dos_itens(
+    pool: &sqlx::PgPool,
+    ids: &[i32],
+) -> HashMap<i32, (String, String, bool, bool)> {
     use shared::idioma::{tr_em, Idioma};
     if ids.is_empty() {
         return HashMap::new();
@@ -140,7 +156,10 @@ pub async fn lista(State(st): State<Estado>) -> impl IntoResponse {
         Ok(v) => v,
         Err(e) => return erro(format!("banco central: {e}")),
     };
-    let itens_por: Vec<Vec<(u16, u32)>> = linhas.iter().map(|r| itens_de(&r.get::<String, _>(8))).collect();
+    let itens_por: Vec<Vec<(u16, u32)>> = linhas
+        .iter()
+        .map(|r| itens_de(&r.get::<String, _>(8)))
+        .collect();
     let mut ids: Vec<i32> = itens_por.iter().flatten().map(|(i, _)| *i as i32).collect();
     ids.sort_unstable();
     ids.dedup();
@@ -222,40 +241,62 @@ impl Campanha {
     /// `itens` exactly as `server::ofertas::itens_de` reads it.
     fn itens_json(&self) -> String {
         serde_json::to_string(
-            &self.itens.iter().map(|&(item_id, qtd)| ItemJson { item_id, qtd }).collect::<Vec<_>>(),
+            &self
+                .itens
+                .iter()
+                .map(|&(item_id, qtd)| ItemJson { item_id, qtd })
+                .collect::<Vec<_>>(),
         )
         .unwrap_or_else(|_| "[]".into())
     }
 }
 
 fn titulo_limpo(t: &str) -> String {
-    t.replace(['\n', '\r', '\t'], " ").split_whitespace().collect::<Vec<_>>().join(" ")
+    t.replace(['\n', '\r', '\t'], " ")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// Everything that can be checked without a database.
 pub fn validar(p: &Pedido) -> Result<Campanha, String> {
     let titulo = titulo_limpo(&p.titulo);
     if titulo.is_empty() || titulo.chars().count() > TITULO_MAX {
-        return Err(format!("título (inglês) vazio ou com mais de {TITULO_MAX} caracteres"));
+        return Err(format!(
+            "título (inglês) vazio ou com mais de {TITULO_MAX} caracteres"
+        ));
     }
     let titulo_pt = titulo_limpo(&p.titulo_pt);
     if titulo_pt.chars().count() > TITULO_MAX {
-        return Err(format!("título (português) com mais de {TITULO_MAX} caracteres"));
+        return Err(format!(
+            "título (português) com mais de {TITULO_MAX} caracteres"
+        ));
     }
     let produto = p.produto.trim();
     let Some(&(_, preco)) = PRODUTOS.iter().find(|(id, _)| *id == produto) else {
         return Err(format!(
             "produto '{produto}' desconhecido; use um destes: {}",
-            PRODUTOS.iter().map(|(id, _)| *id).collect::<Vec<_>>().join(", ")
+            PRODUTOS
+                .iter()
+                .map(|(id, _)| *id)
+                .collect::<Vec<_>>()
+                .join(", ")
         ));
     };
     if p.preco_centavos != preco as i64 {
-        return Err(format!("o produto {produto} custa {preco} centavos na Play, não {}", p.preco_centavos));
+        return Err(format!(
+            "o produto {produto} custa {preco} centavos na Play, não {}",
+            p.preco_centavos
+        ));
     }
     let valor_de = match p.valor_de_centavos {
         None | Some(0) => None,
         Some(v) if v > preco as i64 && v <= 1_000_000 => Some(v as i32),
-        Some(_) => return Err("preço \"de\" (riscado) precisa ser maior que o preço e até R$ 10.000".into()),
+        Some(_) => {
+            return Err(
+                "preço \"de\" (riscado) precisa ser maior que o preço e até R$ 10.000".into(),
+            )
+        }
     };
     if !(0..=TP_MAX).contains(&p.tp) {
         return Err(format!("TP entre 0 e {TP_MAX}"));
@@ -273,7 +314,10 @@ pub fn validar(p: &Pedido) -> Result<Campanha, String> {
             return Err(format!("item inválido: {}", i.item_id));
         }
         if !(1..=QTD_MAX).contains(&i.qtd) {
-            return Err(format!("item {}: quantidade entre 1 e {QTD_MAX}", i.item_id));
+            return Err(format!(
+                "item {}: quantidade entre 1 e {QTD_MAX}",
+                i.item_id
+            ));
         }
         let id = i.item_id as u16;
         match itens.iter_mut().find(|(x, _)| *x == id) {
@@ -309,7 +353,10 @@ pub fn validar(p: &Pedido) -> Result<Campanha, String> {
     })
 }
 
-pub async fn criar(State(st): State<Estado>, axum::Json(p): axum::Json<Pedido>) -> impl IntoResponse {
+pub async fn criar(
+    State(st): State<Estado>,
+    axum::Json(p): axum::Json<Pedido>,
+) -> impl IntoResponse {
     let c = match validar(&p) {
         Ok(c) => c,
         Err(e) => return erro(e),
@@ -320,9 +367,13 @@ pub async fn criar(State(st): State<Estado>, axum::Json(p): axum::Json<Pedido>) 
     let nomes = nomes_dos_itens(&st.pool, &ids).await;
     for (id, qtd) in &c.itens {
         match nomes.get(&(*id as i32)) {
-            None | Some((_, _, _, false)) => return erro(format!("item {id} não existe (ou está inativo) no jogo")),
+            None | Some((_, _, _, false)) => {
+                return erro(format!("item {id} não existe (ou está inativo) no jogo"))
+            }
             Some((nome, _, true, _)) if *qtd != 1 => {
-                return erro(format!("{nome} (#{id}) é equipamento: vai 1 por oferta (pediu {qtd})"))
+                return erro(format!(
+                    "{nome} (#{id}) é equipamento: vai 1 por oferta (pediu {qtd})"
+                ))
             }
             _ => {}
         }
@@ -360,12 +411,21 @@ pub async fn criar(State(st): State<Estado>, axum::Json(p): axum::Json<Pedido>) 
         Ok(None) => return erro("outra campanha foi criada neste mesmo segundo; tente de novo"),
         Err(e) => return erro(format!("banco central: {e}")),
     };
-    tracing::info!("ofertas: campanha {id} criada ({} {}c, ate {ate})", c.produto, c.preco_centavos);
+    tracing::info!(
+        "ofertas: campanha {id} criada ({} {}c, ate {ate})",
+        c.produto,
+        c.preco_centavos
+    );
     let avisou = crate::chat_notificar(&st.pool, &shared::chat::Notificacao::OfertasMudaram).await;
     if let Err(e) = &avisou {
-        tracing::warn!("ofertas: NOTIFY falhou ({e}); quem esta' online ve' no proximo pedido de ofertas");
+        tracing::warn!(
+            "ofertas: NOTIFY falhou ({e}); quem esta' online ve' no proximo pedido de ofertas"
+        );
     }
-    resposta(true, serde_json::json!({ "id": id, "ate": ate, "avisou": avisou.is_ok() }))
+    resposta(
+        true,
+        serde_json::json!({ "id": id, "ate": ate, "avisou": avisou.is_ok() }),
+    )
 }
 
 #[derive(serde::Deserialize)]
@@ -373,7 +433,10 @@ pub struct Encerrar {
     id: String,
 }
 
-pub async fn encerrar(State(st): State<Estado>, axum::Json(e): axum::Json<Encerrar>) -> impl IntoResponse {
+pub async fn encerrar(
+    State(st): State<Estado>,
+    axum::Json(e): axum::Json<Encerrar>,
+) -> impl IntoResponse {
     let central = match central_pronto(&st).await {
         Ok(c) => c,
         Err(e) => return erro(e),
@@ -409,9 +472,16 @@ pub async fn encerrar(State(st): State<Estado>, axum::Json(e): axum::Json<Encerr
     match r {
         Ok((0, _)) => erro("campanha não encontrada ou já encerrada"),
         Ok((_, fechadas)) => {
-            tracing::info!("ofertas: campanha {} encerrada ({fechadas} abertas fechadas)", e.id);
-            let avisou = crate::chat_notificar(&st.pool, &shared::chat::Notificacao::OfertasMudaram).await;
-            resposta(true, serde_json::json!({ "fechadas": fechadas, "avisou": avisou.is_ok() }))
+            tracing::info!(
+                "ofertas: campanha {} encerrada ({fechadas} abertas fechadas)",
+                e.id
+            );
+            let avisou =
+                crate::chat_notificar(&st.pool, &shared::chat::Notificacao::OfertasMudaram).await;
+            resposta(
+                true,
+                serde_json::json!({ "fechadas": fechadas, "avisou": avisou.is_ok() }),
+            )
         }
         Err(e) => erro(format!("banco central: {e}")),
     }
@@ -431,9 +501,18 @@ mod testes {
             tp: 0,
             energia: 6000,
             itens: vec![
-                PedidoItem { item_id: 363, qtd: 1 },
-                PedidoItem { item_id: 345, qtd: 2000 },
-                PedidoItem { item_id: 363, qtd: 1 },
+                PedidoItem {
+                    item_id: 363,
+                    qtd: 1,
+                },
+                PedidoItem {
+                    item_id: 345,
+                    qtd: 2000,
+                },
+                PedidoItem {
+                    item_id: 363,
+                    qtd: 1,
+                },
             ],
             horas: 24,
         }
@@ -446,7 +525,11 @@ mod testes {
         assert_eq!(c.titulo_pt.as_deref(), Some("Oferta de Fim de Semana"));
         assert_eq!(c.preco_centavos, 499);
         assert_eq!(c.valor_de_centavos, Some(2990));
-        assert_eq!(c.itens, vec![(363, 2), (345, 2000)], "repetido soma numa linha");
+        assert_eq!(
+            c.itens,
+            vec![(363, 2), (345, 2000)],
+            "repetido soma numa linha"
+        );
         assert_eq!(c.horas, 24);
         assert_eq!(c.tp, 400, "0 TP typed: the rule's 400");
     }
@@ -470,21 +553,66 @@ mod testes {
         assert!(com(&|p| p.titulo = "   ".into()).is_err());
         assert!(com(&|p| p.titulo = "x".repeat(61)).is_err());
         assert!(com(&|p| p.titulo_pt = "x".repeat(61)).is_err());
-        assert!(com(&|p| p.produto = "oferta_999".into()).is_err(), "produto fora da lista");
-        assert!(com(&|p| p.preco_centavos = 99).is_err(), "preço que não é o do produto");
-        assert!(com(&|p| p.valor_de_centavos = Some(100)).is_err(), "riscado menor que o preço");
+        assert!(
+            com(&|p| p.produto = "oferta_999".into()).is_err(),
+            "produto fora da lista"
+        );
+        assert!(
+            com(&|p| p.preco_centavos = 99).is_err(),
+            "preço que não é o do produto"
+        );
+        assert!(
+            com(&|p| p.valor_de_centavos = Some(100)).is_err(),
+            "riscado menor que o preço"
+        );
         assert!(com(&|p| p.tp = -1).is_err());
         assert!(com(&|p| p.energia = -5).is_err());
         assert!(com(&|p| p.horas = 0).is_err());
         assert!(com(&|p| p.horas = 169).is_err());
-        assert!(com(&|p| p.itens = vec![PedidoItem { item_id: 345, qtd: 0 }]).is_err());
+        assert!(com(&|p| p.itens = vec![PedidoItem {
+            item_id: 345,
+            qtd: 0
+        }])
+        .is_err());
         assert!(com(&|p| p.itens = vec![PedidoItem { item_id: 0, qtd: 1 }]).is_err());
-        assert!(com(&|p| p.itens = vec![PedidoItem { item_id: 70000, qtd: 1 }]).is_err());
-        assert!(com(&|p| p.itens = vec![PedidoItem { item_id: 345, qtd: 1 }; 9]).is_err());
-        assert!(com(&|p| { p.tp = 0; p.energia = 0; p.itens.clear(); }).is_err(), "sem recompensa");
+        assert!(com(&|p| p.itens = vec![PedidoItem {
+            item_id: 70000,
+            qtd: 1
+        }])
+        .is_err());
+        assert!(com(&|p| p.itens = vec![
+            PedidoItem {
+                item_id: 345,
+                qtd: 1
+            };
+            9
+        ])
+        .is_err());
+        assert!(
+            com(&|p| {
+                p.tp = 0;
+                p.energia = 0;
+                p.itens.clear();
+            })
+            .is_err(),
+            "sem recompensa"
+        );
         assert!(com(&|p| p.horas = 168).is_ok());
-        assert!(com(&|p| { p.energia = 0; p.itens.clear(); p.tp = 400; }).is_ok(), "só TP vale");
-        assert_eq!(com(&|p| p.valor_de_centavos = Some(0)).unwrap().valor_de_centavos, None);
+        assert!(
+            com(&|p| {
+                p.energia = 0;
+                p.itens.clear();
+                p.tp = 400;
+            })
+            .is_ok(),
+            "só TP vale"
+        );
+        assert_eq!(
+            com(&|p| p.valor_de_centavos = Some(0))
+                .unwrap()
+                .valor_de_centavos,
+            None
+        );
         assert_eq!(com(&|p| p.titulo_pt = " ".into()).unwrap().titulo_pt, None);
     }
 }

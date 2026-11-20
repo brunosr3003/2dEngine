@@ -101,7 +101,9 @@ pub fn marcos_ate(r: u32) -> impl Iterator<Item = u32> {
 
 /// The next milestone after `r` rebirths (the bag one included).
 pub fn proximo_marco(r: u32) -> u32 {
-    (r + 1..).find(|&n| e_marco(n) || n == MARCO_BOLSA).unwrap_or(r + 1)
+    (r + 1..)
+        .find(|&n| e_marco(n) || n == MARCO_BOLSA)
+        .unwrap_or(r + 1)
 }
 
 /// What the `n`-th rebirth unlocks in THIS phase, in English (the client
@@ -261,7 +263,10 @@ mod testes {
 
     #[test]
     fn aura_por_faixa() {
-        let t: Vec<u8> = [0, 1, 2, 3, 4, 5, 9, 10, 14, 15, 30].iter().map(|&r| tier_da_aura(r)).collect();
+        let t: Vec<u8> = [0, 1, 2, 3, 4, 5, 9, 10, 14, 15, 30]
+            .iter()
+            .map(|&r| tier_da_aura(r))
+            .collect();
         assert_eq!(t, [0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5]);
         assert_eq!(intensidade_da_aura(19), 1.0);
         assert_eq!(intensidade_da_aura(20), 1.25);
@@ -274,11 +279,23 @@ mod testes {
         let b1 = bau_do_renascimento(1);
         assert_eq!(b1[0].0, item_id::DARKSTEEL);
         assert!(b1[0].1 > 0);
-        assert_eq!(b1[1], (item_id::chave_na_cor(item_id::SCALE, 2), 2), "r1 is a milestone: two keys");
+        assert_eq!(
+            b1[1],
+            (item_id::chave_na_cor(item_id::SCALE, 2), 2),
+            "r1 is a milestone: two keys"
+        );
         assert_eq!(item_id::cor_de_id(b1[2].0), Some(2));
         let b10 = bau_do_renascimento(10);
-        assert_eq!(item_id::cor_de_id(b10[1].0), Some(5), "legendary key from 10");
-        assert_eq!(item_id::cor_de_id(b10[2].0), Some(4), "materials stop at purple");
+        assert_eq!(
+            item_id::cor_de_id(b10[1].0),
+            Some(5),
+            "legendary key from 10"
+        );
+        assert_eq!(
+            item_id::cor_de_id(b10[2].0),
+            Some(4),
+            "materials stop at purple"
+        );
         assert!(b10[0].1 > b1[0].1, "more Darksteel on higher rebirths");
         assert_eq!(bau_do_renascimento(4)[1].1, 1);
     }

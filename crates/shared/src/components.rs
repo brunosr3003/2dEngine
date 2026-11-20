@@ -276,7 +276,10 @@ impl Equipment {
             Pet3 => (&mut self.pet3, &mut self.pet3_inst),
             Montaria => (&mut self.montaria, &mut self.montaria_inst),
             AcessorioPet => (&mut self.acessorio_pet, &mut self.acessorio_pet_inst),
-            AcessorioMontaria => (&mut self.acessorio_montaria, &mut self.acessorio_montaria_inst),
+            AcessorioMontaria => (
+                &mut self.acessorio_montaria,
+                &mut self.acessorio_montaria_inst,
+            ),
             Navio => (&mut self.navio, &mut self.navio_inst),
         }
     }
@@ -316,9 +319,16 @@ impl Equipment {
             .collect()
     }
 
-    pub fn pets(&self) -> [(crate::constants::EquipSlot, Option<u16>, Option<crate::items::ItemInstance>); 3] {
+    pub fn pets(
+        &self,
+    ) -> [(
+        crate::constants::EquipSlot,
+        Option<u16>,
+        Option<crate::items::ItemInstance>,
+    ); 3] {
         use crate::constants::EquipSlot;
-        [EquipSlot::Pet, EquipSlot::Pet2, EquipSlot::Pet3].map(|slot| (slot, self.get(slot), self.get_inst(slot)))
+        [EquipSlot::Pet, EquipSlot::Pet2, EquipSlot::Pet3]
+            .map(|slot| (slot, self.get(slot), self.get_inst(slot)))
     }
 }
 
@@ -335,7 +345,8 @@ pub enum EntityTag {
     Other,
     /// Pet coletor. O `EntityMeta::kind` carrega o item_id do pet, de onde o
     /// cliente tira o modelo e a cor do grau.
-    Pet,    /// A SHIP at sea (docs/NAVEGACAO.md, "Convés andável"): its own entity,
+    Pet,
+    /// A SHIP at sea (docs/NAVEGACAO.md, "Convés andável"): its own entity,
     /// with the players walking on its deck. `kind` = the hull's item,
     /// `skins` = its `navio::Visual`, `name` = the captain, `hp` = the hull.
     Navio,
@@ -593,9 +604,13 @@ pub fn desafio_do_mob(s: &PlayerStats, nivel: u32, chefe: bool) -> DesafioMob {
     use crate::ladder;
     let defesa = s.defense.max(0);
     let ataque = s.attack_damage.max(0);
-    let golpes = if chefe { ladder::BOSS_STRIKES } else { ladder::strikes_per_mob(nivel) };
-    let recomendado_ataque = ((s.hp_max.max(1) as f32 / golpes).ceil() as i32 + defesa)
-        .max(ladder::attack(nivel));
+    let golpes = if chefe {
+        ladder::BOSS_STRIKES
+    } else {
+        ladder::strikes_per_mob(nivel)
+    };
+    let recomendado_ataque =
+        ((s.hp_max.max(1) as f32 / golpes).ceil() as i32 + defesa).max(ladder::attack(nivel));
     let liquido = ladder::mob_net_damage(nivel).round() as i32;
     let recomendado_defesa = (ataque - liquido).max(ladder::defense(nivel)).max(0);
     let poder_recomendado = crate::dungeon::poder_de_stats(&PlayerStats {
@@ -615,16 +630,32 @@ pub fn desafio_do_mob(s: &PlayerStats, nivel: u32, chefe: bool) -> DesafioMob {
     } else if nivel >= 40 {
         (3, 4, 35, 4, 60, 6_500 + 150 * (nivel - 40))
     } else if nivel >= 30 {
-        (3, 3, 26, 2, 45 + (nivel - 30) as u16, 4_500 + 140 * (nivel - 30))
+        (
+            3,
+            3,
+            26,
+            2,
+            45 + (nivel - 30) as u16,
+            4_500 + 140 * (nivel - 30),
+        )
     } else if nivel >= 20 {
-        (2, 2, 18, 0, 30 + (nivel - 20) as u16, 2_400 + 110 * (nivel - 20))
+        (
+            2,
+            2,
+            18,
+            0,
+            30 + (nivel - 20) as u16,
+            2_400 + 110 * (nivel - 20),
+        )
     } else {
         (1, 1, 5, 0, nivel.min(20) as u16, 500 + 70 * nivel)
     };
     let _ = piso_poder;
     let poder_recomendado = if chefe {
         poder_recomendado * 115 / 100
-    } else { poder_recomendado };
+    } else {
+        poder_recomendado
+    };
     DesafioMob {
         ataque: ataque.min(u16::MAX as i32) as u16,
         defesa: defesa.min(u16::MAX as i32) as u16,
@@ -926,7 +957,6 @@ impl Faction {
         }
     }
 }
-
 
 /// Marca de corpo solido: empurra e e' empurrado no passe de separacao.
 ///

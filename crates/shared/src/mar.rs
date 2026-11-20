@@ -115,9 +115,30 @@ pub enum Feitio {
 /// (zone, name, centre, radius, level band, profile.)
 /// (The Magic Island was here until 17/11/2026: menu only now.)
 const NOVAS: [(&str, &str, [f32; 2], f32, (u32, u32), Feitio); 3] = [
-    (crate::celeste::ZONA, "Skyreach", [-1300.0, -880.0], 120.0, (60, 80), Feitio::Celeste),
-    (crate::kogen::ZONA, "Kōgen-tō", [-1500.0, -1500.0], 130.0, (80, 100), Feitio::Neon),
-    (crate::abissal::ZONA, "Abyssia", [-200.0, -1450.0], 110.0, (100, 120), Feitio::Abissal),
+    (
+        crate::celeste::ZONA,
+        "Skyreach",
+        [-1300.0, -880.0],
+        120.0,
+        (60, 80),
+        Feitio::Celeste,
+    ),
+    (
+        crate::kogen::ZONA,
+        "Kōgen-tō",
+        [-1500.0, -1500.0],
+        130.0,
+        (80, 100),
+        Feitio::Neon,
+    ),
+    (
+        crate::abissal::ZONA,
+        "Abyssia",
+        [-200.0, -1450.0],
+        110.0,
+        (100, 120),
+        Feitio::Abissal,
+    ),
 ];
 
 /// THE ROUTES of the new docks: who sails to whom. The four port islands
@@ -230,18 +251,48 @@ pub fn ilhas() -> &'static [IlhaVista] {
         let raio_de = |d: &DefIlha| (d.raio_m() * 0.2).clamp(105.0, 160.0);
         // (index, zone, name, centre before centring, radius, levels,
         // profile, which way the dock faces).
-        type Bruta = (usize, &'static str, &'static str, Vec2, f32, (u32, u32), Feitio, Vec2);
+        type Bruta = (
+            usize,
+            &'static str,
+            &'static str,
+            Vec2,
+            f32,
+            (u32, u32),
+            Feitio,
+            Vec2,
+        );
         let mut brutas: Vec<Bruta> = defs
             .iter()
             .map(|(i, d)| {
                 // The same way the real port faces: towards the others.
                 let rumo = d.rumo_do_porto().unwrap_or(Vec2::X);
-                (*i, d.zona, d.nome, Vec2::from(d.centro) * ESCALA, raio_de(d), d.nivel, feitio_de(d.bioma), rumo)
+                (
+                    *i,
+                    d.zona,
+                    d.nome,
+                    Vec2::from(d.centro) * ESCALA,
+                    raio_de(d),
+                    d.nivel,
+                    feitio_de(d.bioma),
+                    rumo,
+                )
             })
             .collect();
         for (zona, nome, c, raio, nivel, feitio) in NOVAS {
-            let ilha = ARQUIPELAGO.iter().position(|d| d.zona == zona).expect("a sea dock is an ARQUIPELAGO island");
-            brutas.push((ilha, zona, nome, Vec2::from(c), raio, nivel, feitio, Vec2::X));
+            let ilha = ARQUIPELAGO
+                .iter()
+                .position(|d| d.zona == zona)
+                .expect("a sea dock is an ARQUIPELAGO island");
+            brutas.push((
+                ilha,
+                zona,
+                nome,
+                Vec2::from(c),
+                raio,
+                nivel,
+                feitio,
+                Vec2::X,
+            ));
         }
         // A new dock faces the centroid of the islands it has routes to.
         let centro_de = |z: &str, b: &[Bruta]| b.iter().find(|x| x.1 == z).map(|x| x.3);
@@ -252,7 +303,15 @@ pub fn ilhas() -> &'static [IlhaVista] {
             let z = brutas[k].1;
             let vizinhos: Vec<Vec2> = ROTAS_NOVAS
                 .iter()
-                .filter_map(|(a, b)| if *a == z { Some(*b) } else if *b == z { Some(*a) } else { None })
+                .filter_map(|(a, b)| {
+                    if *a == z {
+                        Some(*b)
+                    } else if *b == z {
+                        Some(*a)
+                    } else {
+                        None
+                    }
+                })
                 .filter_map(|o| centro_de(o, &brutas))
                 .collect();
             if !vizinhos.is_empty() {
@@ -293,7 +352,9 @@ pub fn ilhas() -> &'static [IlhaVista] {
                 if feitio == Feitio::Ermo {
                     // Three mesas, away from the quay (never behind the dock).
                     for k in 0..3 {
-                        let a = ang + std::f32::consts::PI * (0.55 + 0.45 * k as f32) + 0.2 * (v.fase + k as f32).sin();
+                        let a = ang
+                            + std::f32::consts::PI * (0.55 + 0.45 * k as f32)
+                            + 0.2 * (v.fase + k as f32).sin();
                         let dist = raio * [0.42, 0.22, 0.5][k];
                         v.mesas[k] = (
                             centro + Vec2::from_angle(a) * dist,
@@ -508,13 +569,26 @@ fn terra_da(i: &'static IlhaVista, p: Vec2, d: f32, costa: f32) -> Option<Terra>
     let de_lado = lado.abs();
     // THE PIER: a tongue of planks, and the T of its head.
     let cais = ((-3.0..=CAIS_COMP).contains(&ao_longo) && de_lado <= CAIS_LARG * 0.5)
-        || ((CAIS_COMP - CABECA_COMP..=CAIS_COMP).contains(&ao_longo) && de_lado <= CABECA_LARG * 0.5);
+        || ((CAIS_COMP - CABECA_COMP..=CAIS_COMP).contains(&ao_longo)
+            && de_lado <= CABECA_LARG * 0.5);
     if cais && e <= 0.0 {
-        return Some(Terra { ilha: i, h: CAIS_ALTURA, dentro: e, cais: true, molhe: 0.0 });
+        return Some(Terra {
+            ilha: i,
+            h: CAIS_ALTURA,
+            dentro: e,
+            cais: true,
+            molhe: 0.0,
+        });
     }
     if e < 0.0 {
         let h = feicao_no_mar(i, p, -e, d, s)?;
-        return Some(Terra { ilha: i, h, dentro: e, cais: false, molhe: 0.0 });
+        return Some(Terra {
+            ilha: i,
+            h,
+            dentro: e,
+            cais: false,
+            molhe: 0.0,
+        });
     }
     let n = fbm(p * 0.035, s);
     let mut h = match i.feitio {
@@ -579,10 +653,17 @@ fn terra_da(i: &'static IlhaVista, p: Vec2, d: f32, costa: f32) -> Option<Terra>
     // THE QUAY: carved flat out of whatever the island is, at the pier's root.
     let mut molhe = 0.0;
     if ao_longo > -MOLHE_FUNDO - 4.0 && ao_longo < 6.0 && de_lado < MOLHE_LARG + 4.0 {
-        molhe = (1.0 - suave((de_lado - MOLHE_LARG) / 4.0)) * (1.0 - suave((-ao_longo - MOLHE_FUNDO) / 4.0));
+        molhe = (1.0 - suave((de_lado - MOLHE_LARG) / 4.0))
+            * (1.0 - suave((-ao_longo - MOLHE_FUNDO) / 4.0));
         h += (ALTURA_DO_MOLHE - h) * molhe;
     }
-    Some(Terra { ilha: i, h, dentro: e, cais: false, molhe })
+    Some(Terra {
+        ilha: i,
+        h,
+        dentro: e,
+        cais: false,
+        molhe,
+    })
 }
 
 /// Top block of the column, in sea coordinates (blocks from the centre).
@@ -836,21 +917,23 @@ pub fn navegavel(x: f32, z: f32) -> bool {
 
 /// The dock whose anchorage is near `p`.
 pub fn cais_perto(p: Vec2) -> Option<&'static IlhaVista> {
-    ilhas().iter().find(|i| i.fundeadouro().distance(p) <= PERTO_DO_CAIS)
+    ilhas()
+        .iter()
+        .find(|i| i.fundeadouro().distance(p) <= PERTO_DO_CAIS)
 }
 
 /// In the harbour corridor (no damage, no mobs)?
 pub fn no_corredor(p: Vec2) -> bool {
-    ilhas().iter().any(|i| i.fundeadouro().distance(p) <= RAIO_DO_CORREDOR)
+    ilhas()
+        .iter()
+        .any(|i| i.fundeadouro().distance(p) <= RAIO_DO_CORREDOR)
 }
 
 /// The nearest island (by its coast).
 pub fn ilha_mais_perto(p: Vec2) -> &'static IlhaVista {
     ilhas()
         .iter()
-        .min_by(|a, b| {
-            (p.distance(a.centro) - a.raio).total_cmp(&(p.distance(b.centro) - b.raio))
-        })
+        .min_by(|a, b| (p.distance(a.centro) - a.raio).total_cmp(&(p.distance(b.centro) - b.raio)))
         .expect("the sea has islands")
 }
 
@@ -868,7 +951,10 @@ pub fn nivel_em(p: Vec2) -> u32 {
 /// neighbours (`pares_das_rotas`).
 pub fn rotas() -> Vec<(Vec2, Vec2)> {
     let v = ilhas();
-    pares_das_rotas().iter().map(|&(a, b)| (v[a].fundeadouro(), v[b].fundeadouro())).collect()
+    pares_das_rotas()
+        .iter()
+        .map(|&(a, b)| (v[a].fundeadouro(), v[b].fundeadouro()))
+        .collect()
 }
 
 /// Open water fit for something to float or swim in: navigable, off the
@@ -876,7 +962,9 @@ pub fn rotas() -> Vec<(Vec2, Vec2)> {
 pub fn agua_livre(p: Vec2) -> bool {
     navegavel(p.x, p.y)
         && !no_corredor(p)
-        && ilhas().iter().all(|i| p.distance(i.centro) > i.raio + PLATAFORMA * 0.5)
+        && ilhas()
+            .iter()
+            .all(|i| p.distance(i.centro) > i.raio + PLATAFORMA * 0.5)
 }
 
 /// Where the sea mobs live: along every route, at a third and two thirds.
@@ -987,7 +1075,10 @@ pub fn zonas_sem_lei() -> &'static [Vec2] {
         let mut z = Vec::new();
         for &(a, b) in pares_das_rotas() {
             let (za, zb) = (v[a].zona, v[b].zona);
-            let entre_portos = !e_doca_nova(za) && !e_doca_nova(zb) && za != "ilha_inicial" && zb != "ilha_inicial";
+            let entre_portos = !e_doca_nova(za)
+                && !e_doca_nova(zb)
+                && za != "ilha_inicial"
+                && zb != "ilha_inicial";
             let nova = (za, zb) == SEM_LEI_NOVA || (zb, za) == SEM_LEI_NOVA;
             if !entre_portos && !nova {
                 continue;
@@ -998,17 +1089,26 @@ pub fn zonas_sem_lei() -> &'static [Vec2] {
             let inteira = |c: Vec2| {
                 agua_livre(c)
                     && (0..16).all(|k| {
-                        let q = c + Vec2::from_angle(k as f32 / 16.0 * std::f32::consts::TAU) * RAIO_SEM_LEI;
+                        let q = c + Vec2::from_angle(k as f32 / 16.0 * std::f32::consts::TAU)
+                            * RAIO_SEM_LEI;
                         !aguas_pacificas(q)
                     })
                     && !aguas_pacificas(c)
             };
-            let (pa, pb) = if aguas_pacificas(pb) && !aguas_pacificas(pa) { (pb, pa) } else { (pa, pb) };
+            let (pa, pb) = if aguas_pacificas(pb) && !aguas_pacificas(pa) {
+                (pb, pa)
+            } else {
+                (pa, pb)
+            };
             let achado = [0.67f32, 0.5]
                 .into_iter()
                 .chain((0..14).map(|k| 0.7 + k as f32 * 0.02))
                 .map(|t| pa.lerp(pb, t))
-                .find(|c| inteira(*c) && pb.distance(*c) > RAIO_SEM_LEI + RAIO_DO_CORREDOR && pa.distance(*c) > RAIO_SEM_LEI + RAIO_DO_CORREDOR);
+                .find(|c| {
+                    inteira(*c)
+                        && pb.distance(*c) > RAIO_SEM_LEI + RAIO_DO_CORREDOR
+                        && pa.distance(*c) > RAIO_SEM_LEI + RAIO_DO_CORREDOR
+                });
             if let Some(p) = achado {
                 z.push(p);
             }
@@ -1019,7 +1119,11 @@ pub fn zonas_sem_lei() -> &'static [Vec2] {
 
 /// In lawless waters (and never inside a harbour corridor)?
 pub fn sem_lei(p: Vec2) -> bool {
-    !no_corredor(p) && !aguas_pacificas(p) && zonas_sem_lei().iter().any(|c| c.distance(p) <= RAIO_SEM_LEI)
+    !no_corredor(p)
+        && !aguas_pacificas(p)
+        && zonas_sem_lei()
+            .iter()
+            .any(|c| c.distance(p) <= RAIO_SEM_LEI)
 }
 
 /// A piece of FLOATING WRECKAGE to gather. `tier`: 0 timber (wood), 1..4
@@ -1036,7 +1140,9 @@ pub struct Destroco {
 const CELULA_DESTROCO: i32 = 40;
 
 fn mistura(a: i32, b: i32) -> u32 {
-    let mut h = (a as u32).wrapping_mul(0x9E37_79B1) ^ (b as u32).wrapping_mul(0x85EB_CA77) ^ SEMENTE as u32;
+    let mut h = (a as u32).wrapping_mul(0x9E37_79B1)
+        ^ (b as u32).wrapping_mul(0x85EB_CA77)
+        ^ SEMENTE as u32;
     h ^= h >> 15;
     h = h.wrapping_mul(0x2C1B_3C6D);
     h ^= h >> 12;
@@ -1046,7 +1152,10 @@ fn mistura(a: i32, b: i32) -> u32 {
 /// The wreckage in column `(bx, bz)`, if any. Pure function of the column:
 /// the server plants the same nodes the client draws.
 pub fn destroco_da_coluna(bx: i32, bz: i32) -> Option<Destroco> {
-    let (cx, cz) = (bx.div_euclid(CELULA_DESTROCO), bz.div_euclid(CELULA_DESTROCO));
+    let (cx, cz) = (
+        bx.div_euclid(CELULA_DESTROCO),
+        bz.div_euclid(CELULA_DESTROCO),
+    );
     let h = mistura(cx, cz);
     // One cell in five has a piece.
     if h % 5 != 0 {
@@ -1068,7 +1177,11 @@ pub fn destroco_da_coluna(bx: i32, bz: i32) -> Option<Destroco> {
         3..=7 => cor,
         _ => 5,
     };
-    Some(Destroco { centro, tier, variante: h >> 22 })
+    Some(Destroco {
+        centro,
+        tier,
+        variante: h >> 22,
+    })
 }
 
 /// The sea as the rest of the game reads a zone (`terreno::def_da_zona`).
@@ -1094,7 +1207,10 @@ mod testes {
     fn o_mar_inteiro_cabe_no_orcamento_do_fio() {
         let teto = i16::MAX as f32 / crate::components::POS_SCALE;
         let meia = RAIO_BLOCOS as f32 * BLOCO;
-        assert!(meia < teto, "the sea is ±{meia} u and the wire carries ±{teto:.0} u");
+        assert!(
+            meia < teto,
+            "the sea is ±{meia} u and the wire carries ±{teto:.0} u"
+        );
         assert!(BORDA < meia, "ships would leave the height field");
         for i in ilhas() {
             let longe = i.centro.abs().max_element() + i.raio + PLATAFORMA;
@@ -1121,7 +1237,9 @@ mod testes {
         }
         // One index per island.
         for (k, a) in ilhas().iter().enumerate() {
-            assert!(ilhas()[k + 1..].iter().all(|b| b.ilha != a.ilha && b.zona != a.zona));
+            assert!(ilhas()[k + 1..]
+                .iter()
+                .all(|b| b.ilha != a.ilha && b.zona != a.zona));
         }
     }
 
@@ -1136,11 +1254,18 @@ mod testes {
         for (zona, feitio) in casos {
             let v = vista_da_zona(zona).unwrap_or_else(|| panic!("{zona} has no sea dock"));
             assert_eq!(v.feitio, feitio, "{zona}");
-            assert_eq!(zona_do_indice(v.ilha), Some(zona), "{zona}: docks into the wrong zone");
+            assert_eq!(
+                zona_do_indice(v.ilha),
+                Some(zona),
+                "{zona}: docks into the wrong zone"
+            );
             assert!(e_doca_nova(zona));
             let (lo, hi) = v.nivel;
             let n = nivel_em(v.fundeadouro());
-            assert!(n >= lo && n <= hi, "{zona}: the sea at its dock is level {n}, not {lo}-{hi}");
+            assert!(
+                n >= lo && n <= hi,
+                "{zona}: the sea at its dock is level {n}, not {lo}-{hi}"
+            );
         }
         for z in ["ilha_inicial", "ilha_gelo", "ilha_deserto", "ilha_planalto"] {
             let v = vista_da_zona(z).unwrap();
@@ -1165,7 +1290,10 @@ mod testes {
             if i.feitio == Feitio::Abissal {
                 // The atoll: the centre is the lagoon, but the coral ring is
                 // CLOSED — no hull gets in.
-                assert!(navegavel(i.centro.x, i.centro.y), "the whirlpool's lagoon is dry");
+                assert!(
+                    navegavel(i.centro.x, i.centro.y),
+                    "the whirlpool's lagoon is dry"
+                );
                 for k in 0..720 {
                     let a = k as f32 / 720.0 * std::f32::consts::TAU;
                     let c = i.costa(a);
@@ -1177,7 +1305,11 @@ mod testes {
                 }
                 assert!(!agua_livre(i.centro), "the lagoon is not open water");
             } else {
-                assert!(!navegavel(i.centro.x, i.centro.y), "{}: centre is water", i.nome);
+                assert!(
+                    !navegavel(i.centro.x, i.centro.y),
+                    "{}: centre is water",
+                    i.nome
+                );
             }
             let meio = (i.raiz + i.ponta) * 0.5;
             assert!(!navegavel(meio.x, meio.y), "{}: dock not solid", i.nome);
@@ -1207,14 +1339,26 @@ mod testes {
         assert!(navegavel(ao_lado.x, ao_lado.y));
         let mut p = ao_lado;
         for _ in 0..200 {
-            p = mover_casco(&agua, p, (i.centro - p).normalize_or_zero() * 10.0, 1.0 / 30.0, crate::navio::RAIO_DO_CASCO);
+            p = mover_casco(
+                &agua,
+                p,
+                (i.centro - p).normalize_or_zero() * 10.0,
+                1.0 / 30.0,
+                crate::navio::RAIO_DO_CASCO,
+            );
         }
         assert!(navegavel(p.x, p.y), "climbed onto {}: {p:?}", i.nome);
         assert!(p.distance(i.centro) > i.costa_em(p) - 1.0);
         let _ = lado;
         // The chart's edge is a wall too.
         let borda = Vec2::new(BORDA - 3.0, 0.0);
-        let p = mover_casco(&agua, borda, Vec2::new(10.0, 0.0), 2.0, crate::navio::RAIO_DO_CASCO);
+        let p = mover_casco(
+            &agua,
+            borda,
+            Vec2::new(10.0, 0.0),
+            2.0,
+            crate::navio::RAIO_DO_CASCO,
+        );
         assert!(dentro(p));
     }
 
@@ -1250,10 +1394,17 @@ mod testes {
         for c in z {
             assert!(navegavel(c.x, c.y), "lawless zone on land at {c:?}");
             assert!(sem_lei(*c));
-            assert!(ilha_das_aguas(*c) >= ILHAS_PACIFICAS, "lawless zone {c:?} in peaceful waters");
+            assert!(
+                ilha_das_aguas(*c) >= ILHAS_PACIFICAS,
+                "lawless zone {c:?} in peaceful waters"
+            );
             for k in 0..32 {
-                let q = *c + Vec2::from_angle(k as f32 / 32.0 * std::f32::consts::TAU) * RAIO_SEM_LEI;
-                assert!(!aguas_pacificas(q), "lawless zone {c:?} reaches peaceful waters at {q:?}");
+                let q =
+                    *c + Vec2::from_angle(k as f32 / 32.0 * std::f32::consts::TAU) * RAIO_SEM_LEI;
+                assert!(
+                    !aguas_pacificas(q),
+                    "lawless zone {c:?} reaches peaceful waters at {q:?}"
+                );
             }
             for i in ilhas() {
                 assert!(
@@ -1264,12 +1415,24 @@ mod testes {
             }
         }
         for i in ilhas() {
-            assert!(!sem_lei(i.fundeadouro()), "{}: the anchorage is lawless", i.nome);
+            assert!(
+                !sem_lei(i.fundeadouro()),
+                "{}: the anchorage is lawless",
+                i.nome
+            );
         }
         let v = ilhas();
-        for &(a, b) in pares_das_rotas().iter().filter(|(a, b)| v[*a].zona == "ilha_inicial" || v[*b].zona == "ilha_inicial") {
+        for &(a, b) in pares_das_rotas()
+            .iter()
+            .filter(|(a, b)| v[*a].zona == "ilha_inicial" || v[*b].zona == "ilha_inicial")
+        {
             let meio = v[a].fundeadouro().lerp(v[b].fundeadouro(), 0.67);
-            assert!(!sem_lei(meio), "the Bosque route {}–{} is lawless", v[a].nome, v[b].nome);
+            assert!(
+                !sem_lei(meio),
+                "the Bosque route {}–{} is lawless",
+                v[a].nome,
+                v[b].nome
+            );
         }
     }
 
@@ -1283,20 +1446,37 @@ mod testes {
             let pacifica = i.ilha < ILHAS_PACIFICAS;
             for k in 0..24 {
                 for d in [5.0f32, 25.0, 50.0] {
-                    let q = i.centro + Vec2::from_angle(k as f32 / 24.0 * std::f32::consts::TAU) * (i.raio + d);
+                    let q = i.centro
+                        + Vec2::from_angle(k as f32 / 24.0 * std::f32::consts::TAU) * (i.raio + d);
                     if !dentro(q) {
                         continue;
                     }
-                    assert_eq!(ilha_das_aguas(q), i.ilha, "{}: {q:?} belongs to another island", i.nome);
+                    assert_eq!(
+                        ilha_das_aguas(q),
+                        i.ilha,
+                        "{}: {q:?} belongs to another island",
+                        i.nome
+                    );
                     assert_eq!(aguas_pacificas(q), pacifica, "{} at {q:?}", i.nome);
                     if pacifica {
-                        assert!(!sem_lei(q), "{}: lawless in peaceful waters at {q:?}", i.nome);
+                        assert!(
+                            !sem_lei(q),
+                            "{}: lawless in peaceful waters at {q:?}",
+                            i.nome
+                        );
                     }
                 }
             }
-            assert_eq!(aguas_pacificas(i.fundeadouro()), pacifica, "{}'s dock", i.nome);
+            assert_eq!(
+                aguas_pacificas(i.fundeadouro()),
+                pacifica,
+                "{}'s dock",
+                i.nome
+            );
         }
-        assert!(["ilha_inicial", "ilha_gelo", "ilha_deserto"].iter().all(|z| vista_da_zona(z).unwrap().ilha < ILHAS_PACIFICAS));
+        assert!(["ilha_inicial", "ilha_gelo", "ilha_deserto"]
+            .iter()
+            .all(|z| vista_da_zona(z).unwrap().ilha < ILHAS_PACIFICAS));
         assert!(vista_da_zona("ilha_planalto").unwrap().ilha >= ILHAS_PACIFICAS);
         let f = fronteira_pacifica();
         assert!(f.len() > 20, "{} boundary segments", f.len());
@@ -1330,10 +1510,19 @@ mod testes {
             m
         };
         let v = |z: &str| vista_da_zona(z).unwrap();
-        let (bosque, gelo, ermo, planalto) = (v("ilha_inicial"), v("ilha_gelo"), v("ilha_deserto"), v("ilha_planalto"));
+        let (bosque, gelo, ermo, planalto) = (
+            v("ilha_inicial"),
+            v("ilha_gelo"),
+            v("ilha_deserto"),
+            v("ilha_planalto"),
+        );
         assert_eq!(bosque.feitio, Feitio::Bosque);
         assert_eq!(planalto.feitio, Feitio::Planalto);
-        assert!(pico(planalto) > 35.0, "the Plateau peaks at {}", pico(planalto));
+        assert!(
+            pico(planalto) > 35.0,
+            "the Plateau peaks at {}",
+            pico(planalto)
+        );
         assert!(pico(gelo) > 20.0, "the Glacier peaks at {}", pico(gelo));
         for (c, r, alto) in ermo.mesas {
             assert!(r > 0.0);
@@ -1347,15 +1536,33 @@ mod testes {
             let r = i.costa(a) - dentro;
             altura(i.centro.x + a.cos() * r, i.centro.y + a.sin() * r)
         };
-        assert!(costa_adentro(gelo, 9.0) > 12.0, "no Glacier cliff: {}", costa_adentro(gelo, 9.0));
-        assert!(costa_adentro(planalto, 6.0) > 15.0, "no Plateau cliff: {}", costa_adentro(planalto, 6.0));
-        assert!(costa_adentro(bosque, 5.0) < 2.0, "no Bosque beach: {}", costa_adentro(bosque, 5.0));
+        assert!(
+            costa_adentro(gelo, 9.0) > 12.0,
+            "no Glacier cliff: {}",
+            costa_adentro(gelo, 9.0)
+        );
+        assert!(
+            costa_adentro(planalto, 6.0) > 15.0,
+            "no Plateau cliff: {}",
+            costa_adentro(planalto, 6.0)
+        );
+        assert!(
+            costa_adentro(bosque, 5.0) < 2.0,
+            "no Bosque beach: {}",
+            costa_adentro(bosque, 5.0)
+        );
         let b = |p: Vec2| ((p.x / BLOCO).round() as i32, (p.y / BLOCO).round() as i32);
         let atras = (bosque.raiz - bosque.centro).to_angle() + std::f32::consts::PI;
         let (bx, bz) = b(bosque.centro + Vec2::from_angle(atras) * (bosque.costa(atras) - 3.0));
-        assert!(matches!(material_do_topo(bx, bz), Some(Material::Areia | Material::AreiaMolhada)));
+        assert!(matches!(
+            material_do_topo(bx, bz),
+            Some(Material::Areia | Material::AreiaMolhada)
+        ));
         let (bx, bz) = b(gelo.centro + Vec2::new(0.0, 1.0).rotate(Vec2::from_angle(0.3)) * 30.0);
-        assert!(matches!(material_do_topo(bx, bz), Some(Material::Neve | Material::Gelo)));
+        assert!(matches!(
+            material_do_topo(bx, bz),
+            Some(Material::Neve | Material::Gelo)
+        ));
     }
 
     /// THE DOCK READS AS A DOCK: planks on the pier, a flat stone quay at its
@@ -1367,17 +1574,34 @@ mod testes {
         for i in ilhas() {
             let meio = i.raiz + i.eixo() * (CAIS_COMP * 0.6);
             let (bx, bz) = b(meio);
-            assert_eq!(material_do_topo(bx, bz), Some(Material::Tronco), "{}: the pier is not wood", i.nome);
+            assert_eq!(
+                material_do_topo(bx, bz),
+                Some(Material::Tronco),
+                "{}: the pier is not wood",
+                i.nome
+            );
             let cabeca = i.ponta - i.eixo() * 2.0 + i.lado() * (CABECA_LARG * 0.4);
-            assert!(!navegavel(cabeca.x, cabeca.y), "{}: no T at the pier's head", i.nome);
+            assert!(
+                !navegavel(cabeca.x, cabeca.y),
+                "{}: no T at the pier's head",
+                i.nome
+            );
             let f = i.farol();
             let h = altura(f.x, f.y);
-            assert!((h - ALTURA_DO_MOLHE).abs() < 0.3, "{}: the lighthouse stands at {h}", i.nome);
+            assert!(
+                (h - ALTURA_DO_MOLHE).abs() < 0.3,
+                "{}: the lighthouse stands at {h}",
+                i.nome
+            );
             let a = i.fundeadouro();
             for k in 0..60 {
                 for lado in [-4.0f32, 0.0, 4.0] {
                     let q = a + i.eixo() * k as f32 + i.lado() * lado;
-                    assert!(navegavel(q.x, q.y), "{}: the way in is blocked at {q:?}", i.nome);
+                    assert!(
+                        navegavel(q.x, q.y),
+                        "{}: the way in is blocked at {q:?}",
+                        i.nome
+                    );
                 }
             }
         }
@@ -1392,7 +1616,11 @@ mod testes {
         for &(a, b) in pares_das_rotas() {
             let t = v[a].fundeadouro().distance(v[b].fundeadouro()) / 10.0;
             println!("{}–{}: {:.0} u, {t:.0} s", v[a].nome, v[b].nome, t * 10.0);
-            let faixa = if e_doca_nova(v[a].zona) || e_doca_nova(v[b].zona) { 45.0..=120.0 } else { 30.0..=100.0 };
+            let faixa = if e_doca_nova(v[a].zona) || e_doca_nova(v[b].zona) {
+                45.0..=120.0
+            } else {
+                30.0..=100.0
+            };
             assert!(faixa.contains(&t), "{}–{}: {t:.0} s", v[a].nome, v[b].nome);
         }
         assert_eq!(pares_das_rotas().len(), 9);
@@ -1411,13 +1639,23 @@ mod testes {
         };
         let kogen = v(crate::kogen::ZONA);
         let p = atras(kogen, 20.0);
-        assert!((altura(p.x, p.y) - 2.5).abs() < 0.6, "Kōgen-tō's harbour is not flat: {}", altura(p.x, p.y));
+        assert!(
+            (altura(p.x, p.y) - 2.5).abs() < 0.6,
+            "Kōgen-tō's harbour is not flat: {}",
+            altura(p.x, p.y)
+        );
         let (bx, bz) = b(atras(kogen, 1.0));
         assert_eq!(material_do_topo(bx, bz), Some(Material::Concreto));
         let atol = v(crate::abissal::ZONA);
-        assert!(altura(atol.centro.x, atol.centro.y) < -4.0, "the whirlpool's eye is shallow");
+        assert!(
+            altura(atol.centro.x, atol.centro.y) < -4.0,
+            "the whirlpool's eye is shallow"
+        );
         let (bx, bz) = b(atras(atol, 15.0));
-        assert!(matches!(material_do_topo(bx, bz), Some(Material::Coral | Material::Alga | Material::RochaAbissal | Material::AreiaFunda)));
+        assert!(matches!(
+            material_do_topo(bx, bz),
+            Some(Material::Coral | Material::Alga | Material::RochaAbissal | Material::AreiaFunda)
+        ));
         let ceu = v(crate::celeste::ZONA);
         let (bx, bz) = b(atras(ceu, 2.0));
         assert_eq!(material_do_topo(bx, bz), Some(Material::Marmore));

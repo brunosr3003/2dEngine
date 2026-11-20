@@ -16,7 +16,6 @@ pub fn parcela_xp_grupo(xp: u64, participantes: usize) -> u64 {
     (u128::from(xp) * u128::from(100 + bonus_xp_grupo(participantes)) / (100 * n)) as u64
 }
 
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Pedido {
     Estado,
@@ -137,11 +136,32 @@ pub struct Inimigo {
 
 impl Inimigo {
     /// The row as the server sends it: the place only with PK, online.
-    pub fn visivel(nome: String, online: bool, pk: bool, zona: String, canal: String, x: f32, y: f32) -> Self {
+    pub fn visivel(
+        nome: String,
+        online: bool,
+        pk: bool,
+        zona: String,
+        canal: String,
+        x: f32,
+        y: f32,
+    ) -> Self {
         if online && pk {
-            Inimigo { nome, online, pk, zona, canal, x, y }
+            Inimigo {
+                nome,
+                online,
+                pk,
+                zona,
+                canal,
+                x,
+                y,
+            }
         } else {
-            Inimigo { nome, online, pk: false, ..Default::default() }
+            Inimigo {
+                nome,
+                online,
+                pk: false,
+                ..Default::default()
+            }
         }
     }
     /// Has a place to show on the map.
@@ -290,7 +310,10 @@ pub fn tag_valida(tag: &str) -> Result<String, &'static str> {
     if !(TAG_MIN..=TAG_MAX).contains(&n) {
         return Err("Clan tag: 2 to 5 characters.");
     }
-    if !t.chars().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit()) {
+    if !t
+        .chars()
+        .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit())
+    {
         return Err("Clan tag: letters A-Z and digits 0-9 only.");
     }
     Ok(t)
@@ -387,14 +410,23 @@ mod tests {
     use super::*;
     #[test]
     fn xp_progressiva_tem_teto_e_divisao_inteira() {
-        for (n, bonus, xp) in [(1,0,100),(2,10,55),(3,20,40),(4,30,32),(5,30,26)] {
+        for (n, bonus, xp) in [
+            (1, 0, 100),
+            (2, 10, 55),
+            (3, 20, 40),
+            (4, 30, 32),
+            (5, 30, 26),
+        ] {
             assert_eq!(bonus_xp_grupo(n), bonus);
-            assert_eq!(parcela_xp_grupo(100,n), xp);
+            assert_eq!(parcela_xp_grupo(100, n), xp);
         }
-        assert_eq!(parcela_xp_grupo(1,2),0);
-        assert_eq!(parcela_xp_grupo(0,4),0);
-        assert_eq!(parcela_xp_grupo(u64::MAX,1),u64::MAX);
-        assert_eq!(parcela_xp_grupo(u64::MAX,2), (u128::from(u64::MAX)*110/200) as u64);
+        assert_eq!(parcela_xp_grupo(1, 2), 0);
+        assert_eq!(parcela_xp_grupo(0, 4), 0);
+        assert_eq!(parcela_xp_grupo(u64::MAX, 1), u64::MAX);
+        assert_eq!(
+            parcela_xp_grupo(u64::MAX, 2),
+            (u128::from(u64::MAX) * 110 / 200) as u64
+        );
     }
 
     #[test]
@@ -402,7 +434,10 @@ mod tests {
         assert!(texto_valido("Clã dos Mares", 3, 24));
         assert!(!texto_valido("   ", 1, 24));
         assert!(!texto_valido("a\nspoof", 1, 24));
-        assert!(corpo_de_carta_valido("Hi!\n\nSee you.", 1, 1000), "a letter has paragraphs");
+        assert!(
+            corpo_de_carta_valido("Hi!\n\nSee you.", 1, 1000),
+            "a letter has paragraphs"
+        );
         assert!(!corpo_de_carta_valido("bell\u{7}", 1, 1000));
         assert!(!texto_valido(&"á".repeat(25), 1, 24));
     }
@@ -417,12 +452,18 @@ mod tests {
         assert!(tag_valida("ÁB").is_err());
         assert!(tag_valida("AB-1").is_err());
         assert!(tag_valida("").is_err());
-        let lista = vec![("fuck".to_string(), crate::chat::Acao::Censurar), ("ass".to_string(), crate::chat::Acao::Censurar)];
+        let lista = vec![
+            ("fuck".to_string(), crate::chat::Acao::Censurar),
+            ("ass".to_string(), crate::chat::Acao::Censurar),
+        ];
         assert!(tag_limpa("MARES", &lista));
         assert!(!tag_limpa("FUCK", &lista));
         assert!(!tag_limpa("XFUCK", &lista), "a listed word inside the tag");
         assert!(!tag_limpa("ASS", &lista));
-        assert!(tag_limpa("BASS1", &lista), "a 2-3 letter word only matches the whole tag");
+        assert!(
+            tag_limpa("BASS1", &lista),
+            "a 2-3 letter word only matches the whole tag"
+        );
         assert_eq!(com_tag("MAR", "Ana"), "[MAR] Ana");
         assert_eq!(com_tag("", "Ana"), "Ana");
     }
@@ -450,11 +491,28 @@ mod tests {
     fn presenca_entre_canais() {
         assert!(esta_online(true, 1000, 1000));
         assert!(esta_online(true, 1000, 1000 + PRESENCA_TTL_S));
-        assert!(!esta_online(true, 1000, 1001 + PRESENCA_TTL_S), "the channel died: stale row");
+        assert!(
+            !esta_online(true, 1000, 1001 + PRESENCA_TTL_S),
+            "the channel died: stale row"
+        );
         assert!(!esta_online(false, 1000, 1000), "logged out");
-        assert!(PRESENCA_BATIDA_S * 2 < PRESENCA_TTL_S, "one missed beat is not offline");
-        let c = |n: &str, online: bool, cargo: u8| Contato { nome: n.into(), online, cargo, ..Default::default() };
-        let mut v = vec![c("zed", false, 2), c("bia", true, 0), c("Ana", true, 1), c("caio", false, 0), c("dan", true, 2)];
+        assert!(
+            PRESENCA_BATIDA_S * 2 < PRESENCA_TTL_S,
+            "one missed beat is not offline"
+        );
+        let c = |n: &str, online: bool, cargo: u8| Contato {
+            nome: n.into(),
+            online,
+            cargo,
+            ..Default::default()
+        };
+        let mut v = vec![
+            c("zed", false, 2),
+            c("bia", true, 0),
+            c("Ana", true, 1),
+            c("caio", false, 0),
+            c("dan", true, 2),
+        ];
         ordenar_membros(&mut v);
         let nomes: Vec<_> = v.iter().map(|c| c.nome.as_str()).collect();
         assert_eq!(nomes, ["dan", "Ana", "bia", "zed", "caio"]);
@@ -467,32 +525,80 @@ mod tests {
 
     #[test]
     fn lista_negra_so_mostra_o_lugar_com_pk_online() {
-        let com = Inimigo::visivel("A".into(), true, true, "ilha_gelo".into(), "2".into(), 1.0, 2.0);
+        let com = Inimigo::visivel(
+            "A".into(),
+            true,
+            true,
+            "ilha_gelo".into(),
+            "2".into(),
+            1.0,
+            2.0,
+        );
         assert!(com.localizado() && com.zona == "ilha_gelo" && com.x == 1.0);
-        let sem_pk = Inimigo::visivel("B".into(), true, false, "ilha_gelo".into(), "2".into(), 1.0, 2.0);
+        let sem_pk = Inimigo::visivel(
+            "B".into(),
+            true,
+            false,
+            "ilha_gelo".into(),
+            "2".into(),
+            1.0,
+            2.0,
+        );
         assert!(!sem_pk.localizado() && sem_pk.online && sem_pk.zona.is_empty() && sem_pk.x == 0.0);
-        let off = Inimigo::visivel("C".into(), false, true, "ilha_gelo".into(), "2".into(), 1.0, 2.0);
+        let off = Inimigo::visivel(
+            "C".into(),
+            false,
+            true,
+            "ilha_gelo".into(),
+            "2".into(),
+            1.0,
+            2.0,
+        );
         assert!(!off.localizado() && !off.pk && off.zona.is_empty());
     }
 
     #[test]
     fn limites_de_anexos() {
         assert!(anexos_validos(&[]));
-        assert!(anexos_validos(&[Anexo { item_id: 1, qtd: 1, instance: None }]));
-        assert!(!anexos_validos(&[Anexo { item_id: 0, qtd: 1, instance: None }]));
-        assert!(!anexos_validos(&[Anexo { item_id: 1, qtd: 0, instance: None }]));
+        assert!(anexos_validos(&[Anexo {
+            item_id: 1,
+            qtd: 1,
+            instance: None
+        }]));
+        assert!(!anexos_validos(&[Anexo {
+            item_id: 0,
+            qtd: 1,
+            instance: None
+        }]));
+        assert!(!anexos_validos(&[Anexo {
+            item_id: 1,
+            qtd: 0,
+            instance: None
+        }]));
         assert!(!anexos_validos(&[Anexo {
             item_id: 1,
             qtd: 100_001,
             instance: None
         }]));
         assert!(!anexos_validos(&[
-            Anexo { item_id: 1, qtd: 1, instance: None },
-            Anexo { item_id: 1, qtd: 2, instance: None }
+            Anexo {
+                item_id: 1,
+                qtd: 1,
+                instance: None
+            },
+            Anexo {
+                item_id: 1,
+                qtd: 2,
+                instance: None
+            }
         ]));
         assert!(!anexos_validos(
             &(1..=9)
-                .map(|i| Anexo { item_id: i, qtd: 1, instance: None })
+                .map(|i| Anexo {
+                    item_id: i,
+                    qtd: 1,
+                    instance: None
+                })
                 .collect::<Vec<_>>()
         ));
     }

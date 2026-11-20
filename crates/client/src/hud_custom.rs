@@ -34,7 +34,10 @@ pub struct Ajuste {
 
 impl Default for Ajuste {
     fn default() -> Self {
-        Self { centro: None, tamanho: 1.0 }
+        Self {
+            centro: None,
+            tamanho: 1.0,
+        }
     }
 }
 
@@ -47,7 +50,10 @@ pub struct Layout {
 
 impl Default for Layout {
     fn default() -> Self {
-        Self { botoes: 1.0, itens: BTreeMap::new() }
+        Self {
+            botoes: 1.0,
+            itens: BTreeMap::new(),
+        }
     }
 }
 
@@ -87,7 +93,10 @@ pub const ITENS: &[(&str, &str, bool)] = &[
 
 /// Ids that the "all buttons" size touches (the minimap is not a button).
 fn e_botao(id: &str) -> bool {
-    !matches!(id, "minimapa" | "area" | "chat" | "ficha" | "alvo" | "joystick" | "rastreador")
+    !matches!(
+        id,
+        "minimapa" | "area" | "chat" | "ficha" | "alvo" | "joystick" | "rastreador"
+    )
 }
 
 /// The player's size for one element (1 = the game's). For panels that scale
@@ -205,7 +214,13 @@ pub fn decodifica(t: &str) -> Layout {
                     }
                     _ => None,
                 };
-                l.itens.insert(id.to_string(), Ajuste { centro, tamanho: limita(k) });
+                l.itens.insert(
+                    id.to_string(),
+                    Ajuste {
+                        centro,
+                        tamanho: limita(k),
+                    },
+                );
             }
             _ => {}
         }
@@ -311,7 +326,11 @@ fn transforma(r: Rect, de: Vec2, para: Vec2, k: f32) -> Rect {
 /// How much to slide `r` so it sits inside `t` (top/left win if it is bigger).
 fn dentro(r: Rect, t: Rect) -> Vec2 {
     let eixo = |p: f32, w: f32, tp: f32, tw: f32| {
-        if w >= tw { tp - p } else { (tp - p).max(0.0).min(tp + tw - p - w) }
+        if w >= tw {
+            tp - p
+        } else {
+            (tp - p).max(0.0).min(tp + tw - p - w)
+        }
     };
     vec2(eixo(r.x, r.w, t.x, t.w), eixo(r.y, r.h, t.y, t.h))
 }
@@ -322,7 +341,9 @@ pub fn aplica(mut z: Zonas, seguro: Rect, l: &Layout) -> Zonas {
         return z;
     }
     for &(id, _, _) in ITENS {
-        let Some(r) = campo(&mut z, id).map(|r| *r) else { continue };
+        let Some(r) = campo(&mut z, id).map(|r| *r) else {
+            continue;
+        };
         let a = l.itens.get(id).copied().unwrap_or_default();
         let c = r.center();
         // 1. "All buttons": each GROUP grows from one anchor, so a row or a
@@ -356,12 +377,33 @@ mod testes {
 
     #[test]
     fn ida_e_volta_do_arquivo() {
-        let mut l = Layout { botoes: 1.3, ..Default::default() };
-        l.itens.insert("atacar".into(), Ajuste { centro: Some(vec2(0.5, 0.25)), tamanho: 1.5 });
-        l.itens.insert("pulo".into(), Ajuste { centro: None, tamanho: 0.8 });
+        let mut l = Layout {
+            botoes: 1.3,
+            ..Default::default()
+        };
+        l.itens.insert(
+            "atacar".into(),
+            Ajuste {
+                centro: Some(vec2(0.5, 0.25)),
+                tamanho: 1.5,
+            },
+        );
+        l.itens.insert(
+            "pulo".into(),
+            Ajuste {
+                centro: None,
+                tamanho: 0.8,
+            },
+        );
         let d = decodifica(&codifica(&l));
         assert!((d.botoes - 1.3).abs() < 1e-4);
-        assert_eq!(d.itens["pulo"], Ajuste { centro: None, tamanho: 0.8 });
+        assert_eq!(
+            d.itens["pulo"],
+            Ajuste {
+                centro: None,
+                tamanho: 0.8
+            }
+        );
         assert!(d.itens["atacar"].centro.unwrap().distance(vec2(0.5, 0.25)) < 1e-3);
         // Garbage and unknown ids are skipped.
         assert_eq!(decodifica("lixo\nfoo 1 2 3\nbotoes x"), Layout::default());
@@ -373,9 +415,24 @@ mod testes {
         let z = crate::hud_layout::zonas_com(1280.0, 720.0, [0.0; 4], 1.6, false, false, false);
         let igual = aplica(z, seguro, &Layout::default());
         assert_eq!(format!("{:?}", igual), format!("{:?}", z));
-        let mut l = Layout { botoes: 2.5, ..Default::default() };
-        l.itens.insert("atacar".into(), Ajuste { centro: Some(vec2(1.0, 1.0)), tamanho: 2.5 });
-        l.itens.insert("minimapa".into(), Ajuste { centro: Some(vec2(0.0, 0.5)), tamanho: 1.0 });
+        let mut l = Layout {
+            botoes: 2.5,
+            ..Default::default()
+        };
+        l.itens.insert(
+            "atacar".into(),
+            Ajuste {
+                centro: Some(vec2(1.0, 1.0)),
+                tamanho: 2.5,
+            },
+        );
+        l.itens.insert(
+            "minimapa".into(),
+            Ajuste {
+                centro: Some(vec2(0.0, 0.5)),
+                tamanho: 1.0,
+            },
+        );
         let mut g = aplica(z, seguro, &l);
         for &(id, _, _) in ITENS {
             let r = *campo(&mut g, id).unwrap();

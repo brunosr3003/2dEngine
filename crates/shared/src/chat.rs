@@ -98,14 +98,61 @@ impl Acao {
 /// Seed list (censor only). The staff edits it in the Panopticon.
 pub const PADRAO: &[&str] = &[
     // English
-    "fuck", "fucker", "fucking", "motherfucker", "shit", "bullshit", "bitch", "bastard", "asshole",
-    "dick", "cock", "pussy", "cunt", "whore", "slut", "fag", "faggot", "nigger", "nigga", "retard",
-    "wanker", "twat",
+    "fuck",
+    "fucker",
+    "fucking",
+    "motherfucker",
+    "shit",
+    "bullshit",
+    "bitch",
+    "bastard",
+    "asshole",
+    "dick",
+    "cock",
+    "pussy",
+    "cunt",
+    "whore",
+    "slut",
+    "fag",
+    "faggot",
+    "nigger",
+    "nigga",
+    "retard",
+    "wanker",
+    "twat",
     // Português
-    "porra", "caralho", "merda", "puta", "puto", "putaria", "viado", "veado", "buceta", "boceta",
-    "cacete", "foda", "foder", "fodase", "foda-se", "arrombado", "arrombada", "cuzao", "cuzão",
-    "corno", "piranha", "vagabunda", "babaca", "otario", "otário", "desgraçado", "fdp", "vsf",
-    "pqp", "krl", "crl", "macaco",
+    "porra",
+    "caralho",
+    "merda",
+    "puta",
+    "puto",
+    "putaria",
+    "viado",
+    "veado",
+    "buceta",
+    "boceta",
+    "cacete",
+    "foda",
+    "foder",
+    "fodase",
+    "foda-se",
+    "arrombado",
+    "arrombada",
+    "cuzao",
+    "cuzão",
+    "corno",
+    "piranha",
+    "vagabunda",
+    "babaca",
+    "otario",
+    "otário",
+    "desgraçado",
+    "fdp",
+    "vsf",
+    "pqp",
+    "krl",
+    "crl",
+    "macaco",
 ];
 
 /// Lower case, accents off, leetspeak undone, letters only, repeats squeezed.
@@ -162,7 +209,11 @@ fn pedacos(texto: &str) -> Vec<Pedaco> {
         }
     }
     for &(a, b) in &toks {
-        v.push(Pedaco { ini: a, fim: b, norm: normalizar(&texto[a..b]) });
+        v.push(Pedaco {
+            ini: a,
+            fim: b,
+            norm: normalizar(&texto[a..b]),
+        });
     }
     // Spaced-out letters.
     let mut k = 0;
@@ -175,7 +226,11 @@ fn pedacos(texto: &str) -> Vec<Pedaco> {
             }
             if j - k >= 3 {
                 let (a, b) = (toks[k].0, toks[j - 1].1);
-                v.push(Pedaco { ini: a, fim: b, norm: normalizar(&texto[a..b]) });
+                v.push(Pedaco {
+                    ini: a,
+                    fim: b,
+                    norm: normalizar(&texto[a..b]),
+                });
             }
             k = j;
         } else {
@@ -216,7 +271,9 @@ pub fn filtrar(texto: &str, lista: &[(String, Acao)]) -> Resultado {
         for (n, original, acao) in &normas {
             // Whole word, or the word with a short tail ("fucking", "porras").
             let bate = p.norm == *n
-                || (n.chars().count() >= 4 && p.norm.starts_with(n.as_str()) && p.norm.len() <= n.len() + 3);
+                || (n.chars().count() >= 4
+                    && p.norm.starts_with(n.as_str())
+                    && p.norm.len() <= n.len() + 3);
             if bate {
                 trechos.push((p.ini, p.fim));
                 if !achadas.iter().any(|(w, _)| w == original) {
@@ -360,7 +417,12 @@ pub enum Notificacao {
     },
     /// The receiver's process: 0 delivered, 1 refused (their setting).
     #[serde(rename = "sussurro_ok")]
-    SussurroResposta { id: i64, origem: u64, resultado: u8, para: String },
+    SussurroResposta {
+        id: i64,
+        origem: u64,
+        resultado: u8,
+        para: String,
+    },
     /// A staff warning for one account.
     #[serde(rename = "aviso")]
     Aviso { conta: i64, texto: String },
@@ -372,7 +434,11 @@ pub enum Notificacao {
     /// A market operation closed: its answer, for whichever process has the
     /// character (the relay that processed it may be another channel's).
     #[serde(rename = "mercado_aviso")]
-    MercadoAviso { personagem: String, ok: bool, texto: String },
+    MercadoAviso {
+        personagem: String,
+        ok: bool,
+        texto: String,
+    },
     /// A flash-offer campaign started or ended (Panopticon › ofertas): every
     /// client asks for its offers again, right now.
     #[serde(rename = "ofertas")]
@@ -402,24 +468,48 @@ mod testes {
         let r = filtrar("what the FUUUCK man", &lista());
         assert_eq!(r.mostrado, "what the ****** man");
         assert_eq!(r.pior(), Some(Acao::Censurar));
-        for t in ["f.u.c.k", "f u c k you", "fucking noob", "M3rd@ de jogo", "Mérda"] {
+        for t in [
+            "f.u.c.k",
+            "f u c k you",
+            "fucking noob",
+            "M3rd@ de jogo",
+            "Mérda",
+        ] {
             assert!(filtrar(t, &lista()).pior().is_some(), "{t} escaped");
         }
         assert_eq!(filtrar("merda", &lista()).pior(), Some(Acao::Alertar));
-        assert_eq!(filtrar("seu macaco", &lista()).pior(), Some(Acao::Banir), "the most severe wins");
+        assert_eq!(
+            filtrar("seu macaco", &lista()).pior(),
+            Some(Acao::Banir),
+            "the most severe wins"
+        );
     }
 
     #[test]
     fn nao_pega_palavra_inocente() {
-        for t in ["class assignment", "Scunthorpe", "good luck have fun", "merdinha não"] {
-            let r = filtrar(t, &[("ass".into(), Acao::Censurar), ("cunt".into(), Acao::Censurar)]);
+        for t in [
+            "class assignment",
+            "Scunthorpe",
+            "good luck have fun",
+            "merdinha não",
+        ] {
+            let r = filtrar(
+                t,
+                &[
+                    ("ass".into(), Acao::Censurar),
+                    ("cunt".into(), Acao::Censurar),
+                ],
+            );
             assert_eq!(r.pior(), None, "{t} flagged");
         }
     }
 
     #[test]
     fn arroba_vira_sussurro() {
-        assert_eq!(sussurro_no_texto("@Lyra oi tudo bem"), Some(("Lyra".into(), "oi tudo bem".into())));
+        assert_eq!(
+            sussurro_no_texto("@Lyra oi tudo bem"),
+            Some(("Lyra".into(), "oi tudo bem".into()))
+        );
         assert_eq!(sussurro_no_texto("@Lyra"), None);
         assert_eq!(sussurro_no_texto("oi @Lyra"), None);
     }
@@ -432,7 +522,15 @@ mod testes {
 
     #[test]
     fn notificacao_vai_e_volta() {
-        let n = Notificacao::Mensagem { id: 3, de: "Ana".into(), texto: "hi".into(), staff: false, canal: 1, zona: "ilha_gelo".into(), tag: "MAR".into() };
+        let n = Notificacao::Mensagem {
+            id: 3,
+            de: "Ana".into(),
+            texto: "hi".into(),
+            staff: false,
+            canal: 1,
+            zona: "ilha_gelo".into(),
+            tag: "MAR".into(),
+        };
         let j = serde_json::to_string(&n).unwrap();
         assert!(j.contains("\"t\":\"msg\""));
         assert_eq!(serde_json::from_str::<Notificacao>(&j).unwrap(), n);

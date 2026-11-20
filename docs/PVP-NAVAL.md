@@ -1,6 +1,9 @@
 # PvP Naval e Sistema de Abordagem
 
-**Status:** Proposta de design (18/11/2026)
+**Status:** projéteis, destroço/reparo, abordagem, respawn, saque, economia de
+tokens, autonomia e alianças via grupo estão implementados na versão de teste
+(20/11/2026). Restam polimento audiovisual e balanceamento. Ver
+`BARCOS-IMPLEMENTACAO.md`.
 
 ---
 
@@ -420,51 +423,52 @@ Quando barco afunda:
 ## Fases de Implementação
 
 ### Fase 1: Projéteis
-- [ ] Sistema de projéteis físicos (arco, velocidade)
-- [ ] Lead targeting (calcular onde alvo vai estar)
-- [ ] Hitbox de barco para projéteis
-- [ ] VFX de impacto e splash
-- [ ] Adaptar skills existentes (Broadside, Long Gun)
+- [x] Sistema de projéteis com tempo de voo e resolução no pouso
+- [x] Lead targeting (calcular onde alvo vai estar)
+- [x] Hitbox de barco para projéteis
+- [x] VFX de disparo, trajetória, impacto e splash
+- [x] Broadside em leque e Long Gun rápida
+- [x] Chain Shot: quinto slot, 50% de velocidade por 5 s ao acertar casco
 
 ### Fase 2: Barco Derrotado
-- [ ] Estado "afundando" (HP 0)
-- [ ] Visual: velas quebradas, fogo, fumaça
-- [ ] Física: deriva lenta, lista pro lado
-- [ ] Timer de afundamento (10-15min)
-- [ ] Opções: Afundar vs Reparar
+- [x] Estado "afundando" (HP 0)
+- [x] Visual de fogo e fumaça
+- [x] Física de deriva lenta
+- [x] Timer de afundamento (12 min)
+- [x] Opções: Afundar vs Reparar
 
 ### Fase 3: Reparo
-- [ ] Interação com mastro
-- [ ] Channel 30-60s (interruptível)
+- [x] Interação com mastro
+- [x] Channel de 45 s (interruptível)
 - [ ] VFX de reparo (ferramentas, partículas)
-- [ ] Restaurar vela + HP 10%
+- [x] Restaurar vela + HP 10%
 - [ ] Som ambiente (marteladas, cordas)
 
 ### Fase 4: Boarding
-- [ ] Mecânica de aproximar barcos
-- [ ] Botão/input para abordar
+- [x] Mecânica de aproximar barcos
+- [x] Botão/input para abordar
 - [ ] Animação de pular/gangplank
-- [ ] Entrar em outro convés
-- [ ] Múltiplos players simultâneos
+- [x] Entrar em outro convés
+- [x] Múltiplos players simultâneos
 
 ### Fase 5: PvP no Convés
-- [ ] Sistema de respawn com delay crescente
-- [ ] Tracking de "mesmo combate" (reset)
-- [ ] Respawn condicional (barco vivo vs afundado)
-- [ ] Morte real quando barco afunda
+- [x] Sistema de respawn com delay crescente
+- [x] Tracking de "mesmo combate" (reset)
+- [x] Respawn condicional (barco vivo vs afundado)
+- [x] Morte real quando barco afunda
 
 ### Fase 6: Saque
-- [ ] Baú/inventário no barco inimigo
-- [ ] Channel 10s (interruptível)
-- [ ] Sistema de loot (a definir)
+- [x] Espólio gerado no destroço, sem remover itens pessoais da vítima
+- [x] Channel 10s (interruptível)
+- [x] Ouro, tokens e fragmentos; barril flutuante se não for recolhido
 - [ ] VFX de saque
-- [ ] Loot flutuante quando afunda
+- [x] Tesouro flutuante e coleta canalizada
 
 ### Fase 7: Alianças
-- [ ] Menu de convite entre tripulações
-- [ ] Friendly fire desabilitado
-- [ ] Visual de aliados (cor/marker)
-- [ ] Divisão de loot (a definir)
+- [x] Convite/aceite pelo menu de grupo
+- [x] Friendly fire desabilitado
+- [x] Visual de aliados pelo HUD do grupo
+- [x] Divisão automática do loot entre aliados próximos
 
 ### Fase 8: Balanço
 - [ ] Testar projéteis (velocidade, arco)
@@ -666,4 +670,5 @@ Progressão PvE Alternativa:
 **Documento criado:** 18/11/2026  
 **Atualizado:** 18/11/2026 (decisões finalizadas)  
 **Autor:** Bruno + Claude  
-**Status:** Especificação finalizada — pronto para implementação
+**Status:** Fases 1–6 implementadas no fluxo principal; fase 7 e os complementos
+de economia/IA descritos em `BARCOS-IMPLEMENTACAO.md` continuam pendentes.

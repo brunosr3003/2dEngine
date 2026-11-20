@@ -34,7 +34,12 @@ pub fn espera(n: u32) -> f64 {
 
 impl Reconexao {
     pub fn nova(agora: f64, motivo: String) -> Self {
-        Self { desde: agora, proxima: agora + espera(0), tentativas: 0, motivo }
+        Self {
+            desde: agora,
+            proxima: agora + espera(0),
+            tentativas: 0,
+            motivo,
+        }
     }
 
     /// It is time for the next attempt.
@@ -96,14 +101,26 @@ mod testes {
             }
             t += 0.5;
         }
-        assert!((25..=35).contains(&r.tentativas), "{} attempts", r.tentativas);
+        assert!(
+            (25..=35).contains(&r.tentativas),
+            "{} attempts",
+            r.tentativas
+        );
     }
 
     #[test]
     fn so_reconecta_queda_durante_o_jogo() {
-        assert!(deve_reconectar(true, false, "the server closed the connection"));
+        assert!(deve_reconectar(
+            true,
+            false,
+            "the server closed the connection"
+        ));
         assert!(deve_reconectar(false, true, "connect ws://x: refused"));
         // A kick or refused login already left play (error screen first).
-        assert!(!deve_reconectar(false, false, "the server closed the connection"));
+        assert!(!deve_reconectar(
+            false,
+            false,
+            "the server closed the connection"
+        ));
     }
 }

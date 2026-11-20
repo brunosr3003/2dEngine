@@ -20,7 +20,9 @@ use shared::social::{Anexo, Pedido};
 #[tokio::main]
 async fn main() -> Result<()> {
     let a: Vec<String> = std::env::args().skip(1).collect();
-    let para = a.first().context("uso: enviar_chaves <personagem> [quantidade]")?;
+    let para = a
+        .first()
+        .context("uso: enviar_chaves <personagem> [quantidade]")?;
     let qtd: u32 = a.get(1).map_or(Ok(5), |x| x.parse())?;
     let so: Option<u16> = a.get(2).map(|x| x.parse()).transpose()?;
 
@@ -61,9 +63,11 @@ async fn main() -> Result<()> {
         .collect();
 
     // Idempotent: the same recipient and amount on the same day sends once.
-    let dia = shared::dungeon::dia((std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)?
-        .as_secs()) as i64);
+    let dia = shared::dungeon::dia(
+        (std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)?
+            .as_secs()) as i64,
+    );
     let envio = match so {
         Some(id) => format!("chaves-{nome}-{qtd}-{dia}-p{id}"),
         None => format!("chaves-{nome}-{qtd}-{dia}"),
@@ -74,7 +78,10 @@ async fn main() -> Result<()> {
         para: Some(nome.clone()),
         assunto: "Porão keys for testing".into(),
         texto: match so {
-            Some(_) => format!("{qtd}x {}, for testing. Claim it into your bag.", nomes.join(", ")),
+            Some(_) => format!(
+                "{qtd}x {}, for testing. Claim it into your bag.",
+                nomes.join(", ")
+            ),
             None => format!(
                 "{qtd} keys of every Porão, for testing the new cellars. Claim them into your bag."
             ),

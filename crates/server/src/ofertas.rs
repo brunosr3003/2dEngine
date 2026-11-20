@@ -25,7 +25,6 @@ use sqlx::{PgPool, Row};
 use crate::mercado_razao as razao;
 use shared::loja::OfertaRelampago;
 
-
 pub async fn criar_tabelas(central: &PgPool) -> Result<()> {
     for sql in [
         "CREATE TABLE IF NOT EXISTS ofertas_relampago (
@@ -127,7 +126,9 @@ pub async fn criar_tabelas(central: &PgPool) -> Result<()> {
     }
     // Starting catalogue. ON CONFLICT DO NOTHING: once the row exists the
     // database is the truth — a deploy never overwrites what the owner edited.
-    for &(id, titulo, titulo_pt, nivel, produto, preco, valor_de, energia, itens) in OFERTAS_DE_NIVEL {
+    for &(id, titulo, titulo_pt, nivel, produto, preco, valor_de, energia, itens) in
+        OFERTAS_DE_NIVEL
+    {
         let tp = shared::pacotes_bonus::tp_base_da_oferta(preco as u32) as i32;
         sqlx::query(
             "INSERT INTO ofertas_relampago
@@ -152,18 +153,22 @@ pub async fn criar_tabelas(central: &PgPool) -> Result<()> {
     // (`pacotes_bonus::tp_base_da_oferta`, owner 15/11/2026). Rows seeded
     // before the rule (or edited by hand) are lifted to it; a row above it
     // keeps its own number. Listing and crediting apply the same floor.
-    let linhas: Vec<(String, i32, i32)> = sqlx::query_as("SELECT id, preco_centavos, tp FROM ofertas_relampago")
-        .fetch_all(central)
-        .await?;
+    let linhas: Vec<(String, i32, i32)> =
+        sqlx::query_as("SELECT id, preco_centavos, tp FROM ofertas_relampago")
+            .fetch_all(central)
+            .await?;
     for (id, preco, tp) in linhas {
-        let piso = shared::pacotes_bonus::tp_base_da_oferta(preco.max(0) as u32).min(i32::MAX as u64) as i32;
+        let piso = shared::pacotes_bonus::tp_base_da_oferta(preco.max(0) as u32)
+            .min(i32::MAX as u64) as i32;
         if tp < piso {
             sqlx::query("UPDATE ofertas_relampago SET tp = $2 WHERE id = $1 AND tp < $2")
                 .bind(&id)
                 .bind(piso)
                 .execute(central)
                 .await?;
-            tracing::info!("ofertas: {id} sobe de {tp} pra {piso} TP (regra: TP do preco, minimo 400)");
+            tracing::info!(
+                "ofertas: {id} sobe de {tp} pra {piso} TP (regra: TP do preco, minimo 400)"
+            );
         }
     }
     Ok(())
@@ -227,7 +232,11 @@ struct ItemJson {
 /// (and logs) instead of breaking the whole offer list.
 fn itens_de(json: &str, oferta: &str) -> Vec<(u16, u32)> {
     match serde_json::from_str::<Vec<ItemJson>>(json) {
-        Ok(v) => v.into_iter().filter(|i| i.qtd > 0).map(|i| (i.item_id, i.qtd)).collect(),
+        Ok(v) => v
+            .into_iter()
+            .filter(|i| i.qtd > 0)
+            .map(|i| (i.item_id, i.qtd))
+            .collect(),
         Err(e) => {
             tracing::warn!("ofertas: itens invalidos na oferta {oferta}: {e} ({json})");
             Vec::new()
@@ -242,7 +251,12 @@ fn itens_de(json: &str, oferta: &str) -> Vec<(u16, u32)> {
 /// `abrir` false (staff, test bots): only lists, never opens anything new.
 /// A triggered bonus pack open right now does not hold the level offer back
 /// (only another level offer does).
-pub async fn abrir_e_listar(central: &PgPool, conta: &str, nivel: u32, abrir: bool) -> Result<Vec<OfertaRelampago>> {
+pub async fn abrir_e_listar(
+    central: &PgPool,
+    conta: &str,
+    nivel: u32,
+    abrir: bool,
+) -> Result<Vec<OfertaRelampago>> {
     let mut nova: Option<String> = None;
     let abertas: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM ofertas_relampago_contas c
@@ -296,7 +310,11 @@ pub async fn abrir_e_listar(central: &PgPool, conta: &str, nivel: u32, abrir: bo
 }
 
 /// Every offer still open for the account; `nova` is flagged to pop.
-pub async fn listar(central: &PgPool, conta: &str, nova: Option<&str>) -> Result<Vec<OfertaRelampago>> {
+pub async fn listar(
+    central: &PgPool,
+    conta: &str,
+    nova: Option<&str>,
+) -> Result<Vec<OfertaRelampago>> {
     let linhas = sqlx::query(
         "SELECT o.id, o.titulo, o.titulo_pt, o.produto_play, o.preco_centavos,
                 o.valor_de_centavos, o.tp, o.energia, o.itens,
@@ -429,10 +447,17 @@ pub async fn disparar(
             ("[]".to_string(), None, None)
         } else {
             // A gear pack that would not raise the power is not an offer.
-            let Some(m) = montagens.iter().find(|m| m.pecas == tipo && m.poder_depois > m.poder_antes) else {
+            let Some(m) = montagens
+                .iter()
+                .find(|m| m.pecas == tipo && m.poder_depois > m.poder_antes)
+            else {
                 continue;
             };
-            (serde_json::to_string(&m.itens)?, Some(m.poder_antes), Some(m.poder_depois))
+            (
+                serde_json::to_string(&m.itens)?,
+                Some(m.poder_antes),
+                Some(m.poder_depois),
+            )
         };
         let aberta: Option<String> = sqlx::query_scalar(
             "INSERT INTO ofertas_relampago_contas (conta, oferta, expira_em, pecas, poder_antes, poder_depois, personagem)
@@ -494,7 +519,10 @@ pub async fn comprar(
     pedido: &str,
     purchase_token: &str,
 ) -> Result<Compra> {
-    if !shared::loja::pedido_valido(pedido) || purchase_token.is_empty() || purchase_token.len() > 4096 {
+    if !shared::loja::pedido_valido(pedido)
+        || purchase_token.is_empty()
+        || purchase_token.len() > 4096
+    {
         return Ok(Compra::Recusada("Invalid order.".into()));
     }
     let achada: Option<String> = if oferta.is_empty() {
@@ -540,7 +568,9 @@ pub async fn comprar(
         // Re-sent by the client after a lost reply: same order → already done
         // (and it still needs consuming on Google).
         if pedido_feito.as_deref() == Some(pedido) {
-            crate::loja_google_play::consumir_best_effort(&produto, purchase_token).await.ok();
+            crate::loja_google_play::consumir_best_effort(&produto, purchase_token)
+                .await
+                .ok();
             return Ok(Compra::JaFeita(razao::saldo(central, conta).await?));
         }
         return Ok(Compra::Recusada("You already bought this offer.".into()));
@@ -554,7 +584,9 @@ pub async fn comprar(
     };
     let r = creditar(central, conta, oferta, pedido, &externo, "google_play").await?;
     if let Compra::Feita(..) = &r {
-        if let Err(e) = crate::loja_google_play::consumir_best_effort(&produto, purchase_token).await {
+        if let Err(e) =
+            crate::loja_google_play::consumir_best_effort(&produto, purchase_token).await
+        {
             tracing::warn!("ofertas: consume no Google falhou (ja' entregue): {e}");
         }
     }
@@ -563,7 +595,12 @@ pub async fn comprar(
 
 /// Buys an OPEN offer on a server with simulated payments (test server):
 /// approved at once, nobody charged. The caller checks the provider.
-pub async fn comprar_simulado(central: &PgPool, conta: &str, oferta: &str, pedido: &str) -> Result<Compra> {
+pub async fn comprar_simulado(
+    central: &PgPool,
+    conta: &str,
+    oferta: &str,
+    pedido: &str,
+) -> Result<Compra> {
     if !shared::loja::pedido_valido(pedido) {
         return Ok(Compra::Recusada("Invalid order.".into()));
     }
@@ -587,7 +624,15 @@ pub async fn comprar_simulado(central: &PgPool, conta: &str, oferta: &str, pedid
     if !aberta {
         return Ok(Compra::Recusada("This offer has expired.".into()));
     }
-    creditar(central, conta, oferta, pedido, &format!("sim-{pedido}"), "simulado").await
+    creditar(
+        central,
+        conta,
+        oferta,
+        pedido,
+        &format!("sim-{pedido}"),
+        "simulado",
+    )
+    .await
 }
 
 /// Records a paid offer and everything it owes, in ONE transaction: the
@@ -631,7 +676,9 @@ async fn creditar(
     .fetch_optional(&mut *tx)
     .await?;
     if repetido.is_some() {
-        return Ok(Compra::Recusada("This purchase has already been used.".into()));
+        return Ok(Compra::Recusada(
+            "This purchase has already been used.".into(),
+        ));
     }
     let marcou = sqlx::query(
         "UPDATE ofertas_relampago_contas SET comprada_em = NOW(), pedido = $3
@@ -661,13 +708,15 @@ async fn creditar(
     // What it owes, in the same transaction: delivered to the mail by the
     // world (`world/loja_mundo.rs`, `Evento::Entregas`).
     for (item_id, qtd) in &itens {
-        sqlx::query("INSERT INTO loja_entregas (conta, pedido, item_id, qtd) VALUES ($1, $2, $3, $4)")
-            .bind(conta)
-            .bind(pedido)
-            .bind(*item_id as i32)
-            .bind(*qtd as i64)
-            .execute(&mut *tx)
-            .await?;
+        sqlx::query(
+            "INSERT INTO loja_entregas (conta, pedido, item_id, qtd) VALUES ($1, $2, $3, $4)",
+        )
+        .bind(conta)
+        .bind(pedido)
+        .bind(*item_id as i32)
+        .bind(*qtd as i64)
+        .execute(&mut *tx)
+        .await?;
     }
     if energia > 0 {
         sqlx::query("INSERT INTO loja_entregas (conta, pedido, energia) VALUES ($1, $2, $3)")
@@ -698,7 +747,15 @@ async fn creditar(
     // `razao::mover` with the order's key `loja:<pedido>`, so a re-sent
     // order can never credit twice. Same path for Google Play and simulated.
     let saldo = if tp > 0 {
-        match razao::mover(&mut tx, conta, tp as i64, "loja:oferta", Some(&format!("loja:{pedido}"))).await? {
+        match razao::mover(
+            &mut tx,
+            conta,
+            tp as i64,
+            "loja:oferta",
+            Some(&format!("loja:{pedido}")),
+        )
+        .await?
+        {
             razao::Movimento::Feito { saldo }
             | razao::Movimento::JaFeito { saldo }
             | razao::Movimento::SemSaldo { saldo } => saldo,
@@ -709,7 +766,16 @@ async fn creditar(
     tx.commit().await?;
     let teste = provedor != "google_play" || crate::loja_google_play::e_teste(externo);
     Ok(Compra::Feita(
-        Entrega { preco_centavos: preco.max(0) as u64, teste, tp, energia, itens, titulo, ouro, pecas: pecas.len() as u32 },
+        Entrega {
+            preco_centavos: preco.max(0) as u64,
+            teste,
+            tp,
+            energia,
+            itens,
+            titulo,
+            ouro,
+            pecas: pecas.len() as u32,
+        },
         saldo,
     ))
 }
@@ -730,7 +796,11 @@ pub struct EntregaPendente {
 /// CLAIMS everything the account is still owed for `personagem` (marks it
 /// delivered) and returns it. The world posts it to the mail right away; if
 /// the character is gone by then, `devolver` un-claims it for the next login.
-pub async fn reivindicar(central: &PgPool, conta: &str, personagem: &str) -> Result<Vec<EntregaPendente>> {
+pub async fn reivindicar(
+    central: &PgPool,
+    conta: &str,
+    personagem: &str,
+) -> Result<Vec<EntregaPendente>> {
     let linhas = sqlx::query(
         "UPDATE loja_entregas SET entregue_em = NOW(), personagem = $2
           WHERE conta = $1 AND entregue_em IS NULL
@@ -758,10 +828,12 @@ pub async fn devolver(central: &PgPool, ids: &[i64]) -> Result<()> {
     if ids.is_empty() {
         return Ok(());
     }
-    sqlx::query("UPDATE loja_entregas SET entregue_em = NULL, personagem = NULL WHERE id = ANY($1)")
-        .bind(ids)
-        .execute(central)
-        .await?;
+    sqlx::query(
+        "UPDATE loja_entregas SET entregue_em = NULL, personagem = NULL WHERE id = ANY($1)",
+    )
+    .bind(ids)
+    .execute(central)
+    .await?;
     Ok(())
 }
 
@@ -772,7 +844,10 @@ mod testes {
     #[test]
     fn itens_do_banco_aceitam_lista_e_ignoram_erro() {
         assert_eq!(
-            itens_de(r#"[{"item_id":345,"qtd":2000},{"item_id":363,"qtd":0}]"#, "x"),
+            itens_de(
+                r#"[{"item_id":345,"qtd":2000},{"item_id":363,"qtd":0}]"#,
+                "x"
+            ),
             vec![(345, 2000)]
         );
         assert!(itens_de("not json", "x").is_empty());
@@ -789,20 +864,35 @@ mod testes {
             assert!(tp >= pb::TP_MINIMO_OFERTA, "{id}");
             assert!(tp >= pb::tp_do_preco(preco as u32), "{id}");
             assert_eq!(produto, format!("oferta_{preco:03}"), "{id}");
-            assert!(!itens_de(itens, id).is_empty(), "{id}: bonus on top of the TP");
+            assert!(
+                !itens_de(itens, id).is_empty(),
+                "{id}: bonus on top of the TP"
+            );
         }
         for p in pb::PACOTES_BONUS {
-            assert!(p.tp() >= pb::TP_MINIMO_OFERTA && p.tp() >= pb::tp_do_preco(p.preco_centavos), "{}", p.id);
+            assert!(
+                p.tp() >= pb::TP_MINIMO_OFERTA && p.tp() >= pb::tp_do_preco(p.preco_centavos),
+                "{}",
+                p.id
+            );
         }
         assert_eq!(tp_da_linha(499, 0), 400, "a 0 TP row is lifted");
         assert_eq!(tp_da_linha(99, 101), 400);
-        assert_eq!(tp_da_linha(99, 900), 900, "a row above the rule keeps its TP");
+        assert_eq!(
+            tp_da_linha(99, 900),
+            900,
+            "a row above the rule keeps its TP"
+        );
         assert_eq!(tp_da_linha(-5, -5), 400);
     }
 
     #[test]
     fn pecas_do_pacote_ida_e_volta_e_azuis() {
-        let v: Vec<(u16, u16)> = vec![(shared::item_id::KATANA, 26), (0, 30), (shared::item_id::CINTO, 0)];
+        let v: Vec<(u16, u16)> = vec![
+            (shared::item_id::KATANA, 26),
+            (0, 30),
+            (shared::item_id::CINTO, 0),
+        ];
         let json = serde_json::to_string(&v).unwrap();
         assert_eq!(pecas_de(&json, "x"), vec![(shared::item_id::KATANA, 26)]);
         assert!(pecas_de("", "x").is_empty());

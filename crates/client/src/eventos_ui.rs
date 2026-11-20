@@ -6,9 +6,9 @@
 use macroquad::prelude::*;
 use shared::eventos::{Evento, Tipo};
 
+use crate::hud_estilo as estilo;
 #[allow(unused_imports)]
 use crate::ui::Toque as _;
-use crate::hud_estilo as estilo;
 
 #[derive(Default)]
 pub struct EventosUi {
@@ -53,7 +53,11 @@ impl EventosUi {
     fn selo_na_escala(&self, buffs: Rect, s: f32, ativos: &[&Evento]) -> bool {
         let primeiro = ativos[0];
         let texto = if ativos.len() == 1 {
-            format!("{} {}", shared::eventos::mult_texto(primeiro.mult), primeiro.tipo.nome())
+            format!(
+                "{} {}",
+                shared::eventos::mult_texto(primeiro.mult),
+                primeiro.tipo.nome()
+            )
         } else {
             format!("{} bonus events", ativos.len())
         };
@@ -62,10 +66,23 @@ impl EventosUi {
         let r = Rect::new(r.x, r.y, w.max(110.0 * s), r.h);
         let pulso = 0.75 + 0.25 * (get_time() as f32 * 2.5).sin();
         draw_rectangle(r.x, r.y, r.w, r.h, Color::new(0.12, 0.08, 0.03, 0.88));
-        draw_rectangle_lines(r.x, r.y, r.w, r.h, 2.0 * s, estilo::alfa(estilo::OURO, pulso));
+        draw_rectangle_lines(
+            r.x,
+            r.y,
+            r.w,
+            r.h,
+            2.0 * s,
+            estilo::alfa(estilo::OURO, pulso),
+        );
         let c = vec2(r.x + 20.0 * s, r.center().y);
         estrela(c, 10.0 * s, estilo::alfa(estilo::OURO, pulso));
-        estilo::texto_forte(r.x + 36.0 * s, r.center().y + 6.0 * s, &texto, 16, estilo::OURO);
+        estilo::texto_forte(
+            r.x + 36.0 * s,
+            r.center().y + 6.0 * s,
+            &texto,
+            16,
+            estilo::OURO,
+        );
         r.toca(Vec2::from(mouse_position())) && crate::foco::clique()
     }
 
@@ -82,13 +99,27 @@ impl EventosUi {
             .min((seguro0.h - 16.0) / 400.0);
         estilo::no_painel(k, || {
             let seguro = crate::hud_layout::tela_segura();
-            let (w, h) = ((620.0 * k).min(seguro.w - 16.0), (400.0 * k).min(seguro.h - 16.0));
-            let p = Rect::new(seguro.center().x - w * 0.5, seguro.center().y - h * 0.5, w, h);
+            let (w, h) = (
+                (620.0 * k).min(seguro.w - 16.0),
+                (400.0 * k).min(seguro.h - 16.0),
+            );
+            let p = Rect::new(
+                seguro.center().x - w * 0.5,
+                seguro.center().y - h * 0.5,
+                w,
+                h,
+            );
             crate::hud_layout::escurece(0.5);
             estilo::painel_destaque(p, estilo::OURO);
             let m = Vec2::from(mouse_position());
             let clicou = crate::foco::clique();
-            estilo::texto_forte(p.x + 22.0 * k, p.y + 38.0 * k, "Bonus events", 22, estilo::OURO);
+            estilo::texto_forte(
+                p.x + 22.0 * k,
+                p.y + 38.0 * k,
+                "Bonus events",
+                22,
+                estilo::OURO,
+            );
             estilo::texto(
                 p.x + 22.0 * k,
                 p.y + 62.0 * k,
@@ -122,7 +153,12 @@ impl EventosUi {
             }
             let t = agora_unix();
             for (i, e) in ativos.iter().take(4).enumerate() {
-                let r = Rect::new(p.x + 18.0 * k, p.y + (80.0 + i as f32 * 78.0) * k, p.w - 36.0 * k, 70.0 * k);
+                let r = Rect::new(
+                    p.x + 18.0 * k,
+                    p.y + (80.0 + i as f32 * 78.0) * k,
+                    p.w - 36.0 * k,
+                    70.0 * k,
+                );
                 let cor = cor_do_tipo(e.tipo);
                 estilo::cartao(r, false, false);
                 draw_rectangle(r.x, r.y, 6.0 * k, r.h, cor);
@@ -137,7 +173,14 @@ impl EventosUi {
                 let titulo = e.titulo();
                 let titulo = titulo.split_once(' ').map_or(titulo.as_str(), |(_, r)| r);
                 let titulo = format!("{}{}", titulo[..1].to_uppercase(), &titulo[1..]);
-                estilo::texto_ajustado(&titulo, r.x + 116.0 * k, r.y + 30.0 * k, r.w - 250.0 * k, 17, estilo::TEXTO);
+                estilo::texto_ajustado(
+                    &titulo,
+                    r.x + 116.0 * k,
+                    r.y + 30.0 * k,
+                    r.w - 250.0 * k,
+                    17,
+                    estilo::TEXTO,
+                );
                 let quem = match e.tipo {
                     Tipo::Xp => "XP from kills",
                     Tipo::Drop => "chance of every drop",
@@ -146,8 +189,12 @@ impl EventosUi {
                 estilo::texto(r.x + 116.0 * k, r.y + 54.0 * k, quem, 13, estilo::SUAVE);
                 // FIND: one mob or one boss → show where it lives on the map.
                 let alvo_kind = match e.escopo {
-                    shared::eventos::Escopo::Mob => e.alvo.trim().parse::<u16>().ok().map(|k| (k, false)),
-                    shared::eventos::Escopo::Chefe => e.alvo.trim().parse::<u16>().ok().map(|k| (k, true)),
+                    shared::eventos::Escopo::Mob => {
+                        e.alvo.trim().parse::<u16>().ok().map(|k| (k, false))
+                    }
+                    shared::eventos::Escopo::Chefe => {
+                        e.alvo.trim().parse::<u16>().ok().map(|k| (k, true))
+                    }
                     _ => None,
                 };
                 let mut direita = r.x + r.w - 16.0 * k;
@@ -161,7 +208,13 @@ impl EventosUi {
                 }
                 let resta = format!("{} left", shared::eventos::resta_texto(e.fim_unix - t));
                 let rw = estilo::medir_forte(&resta, 15);
-                estilo::texto_forte(direita - rw, r.center().y + 6.0 * k, &resta, 15, estilo::OURO);
+                estilo::texto_forte(
+                    direita - rw,
+                    r.center().y + 6.0 * k,
+                    &resta,
+                    15,
+                    estilo::OURO,
+                );
             }
             if ativos.len() > 4 {
                 estilo::texto_centro(
@@ -195,7 +248,8 @@ fn estrela(c: Vec2, r: f32, cor: Color) {
 #[cfg(debug_assertions)]
 pub async fn previa() {
     use shared::eventos::Escopo;
-    let saida = std::env::var("MMO_PREVIA_SAIDA").unwrap_or_else(|_| "/tmp/tempest-eventos-preview".into());
+    let saida =
+        std::env::var("MMO_PREVIA_SAIDA").unwrap_or_else(|_| "/tmp/tempest-eventos-preview".into());
     std::fs::create_dir_all(&saida).unwrap();
     next_frame().await;
     let rt = render_target(screen_width() as u32, screen_height() as u32);
@@ -213,7 +267,14 @@ pub async fn previa() {
     let mut ui = EventosUi::default();
     ui.receber(vec![
         ev(1, Tipo::Xp, Escopo::Todos, "", 1.5, 125),
-        ev(2, Tipo::Drop, Escopo::Chefe, "Alpha Wolf of the Glade", 2.0, 40),
+        ev(
+            2,
+            Tipo::Drop,
+            Escopo::Chefe,
+            "Alpha Wolf of the Glade",
+            2.0,
+            40,
+        ),
         ev(3, Tipo::Ouro, Escopo::Dungeon, "Frozen Hull", 3.0, 1440),
     ]);
     for (arquivo, aberto) in [("selo.png", false), ("painel.png", true)] {
@@ -225,11 +286,19 @@ pub async fn previa() {
             });
             clear_background(Color::new(0.10, 0.14, 0.12, 1.0));
             let z = crate::hud_layout::atual();
-            draw_rectangle(z.buffs.x, z.buffs.y, z.buffs.w, z.buffs.h, Color::new(1.0, 1.0, 1.0, 0.06));
+            draw_rectangle(
+                z.buffs.x,
+                z.buffs.y,
+                z.buffs.w,
+                z.buffs.h,
+                Color::new(1.0, 1.0, 1.0, 0.06),
+            );
             let _ = ui.selo(z.buffs);
             let _ = ui.desenha();
             unsafe { get_internal_gl().flush() };
-            rt.texture.get_texture_data().export_png(&format!("{saida}/{arquivo}"));
+            rt.texture
+                .get_texture_data()
+                .export_png(&format!("{saida}/{arquivo}"));
             set_default_camera();
             next_frame().await;
         }

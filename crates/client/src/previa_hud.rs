@@ -29,7 +29,11 @@ pub async fn abrir(vox: &mut crate::vox::VoxCache) {
     }
     .empacota();
     // The katana in the Stormcaller skin (index 4, stored + 1).
-    bolsa.skins = shared::aparencia::Aparencia { armas: [0, 5, 0, 0], ..Default::default() }.empacota_skins();
+    bolsa.skins = shared::aparencia::Aparencia {
+        armas: [0, 5, 0, 0],
+        ..Default::default()
+    }
+    .empacota_skins();
     let peca = |grau: u8, tier: u8| {
         let mut i = shared::ItemInstance::vazia_de_grau(grau);
         i.tier = tier;
@@ -82,7 +86,20 @@ pub async fn abrir(vox: &mut crate::vox::VoxCache) {
         );
         crate::render3d::define_alvo(Some(rt.clone()));
         crate::hud_layout::define_escala_ui(1.6);
-        for cena in ["exploracao", "combate", "bolsa", "ajuda", "menu", "interface", "interface-fim", "graficos", "graficos-fim", "dialogo", "oferta", "livro"] {
+        for cena in [
+            "exploracao",
+            "combate",
+            "bolsa",
+            "ajuda",
+            "menu",
+            "interface",
+            "interface-fim",
+            "graficos",
+            "graficos-fim",
+            "dialogo",
+            "oferta",
+            "livro",
+        ] {
             skills.estado(
                 if cena == "combate" {
                     vec![(4, 8.0)]
@@ -93,7 +110,11 @@ pub async fn abrir(vox: &mut crate::vox::VoxCache) {
             );
             // The bag waits longer: skin models (outfit, weapon, coat) load
             // one per frame.
-            for _ in 0..if cena == "bolsa" || cena == "ajuda" { 10 } else { 3 } {
+            for _ in 0..if cena == "bolsa" || cena == "ajuda" {
+                10
+            } else {
+                3
+            } {
                 crate::render3d::camera_padrao();
                 clear_background(Color::new(0.24, 0.31, 0.28, 1.0));
                 if let Some(t) = &fundo {
@@ -187,8 +208,14 @@ pub async fn abrir(vox: &mut crate::vox::VoxCache) {
                 if cena == "menu" {
                     let mut menu = crate::menu::Menu::default();
                     menu.abrir();
-                    menu.desenha(&crate::menu::Contexto { nome: "Navegante", nivel:70,
-                        poder:Some(24850), arma:"Katana", saldos:&[("Gold",148250)], selos:&[] });
+                    menu.desenha(&crate::menu::Contexto {
+                        nome: "Navegante",
+                        nivel: 70,
+                        poder: Some(24850),
+                        arma: "Katana",
+                        saldos: &[("Gold", 148250)],
+                        selos: &[],
+                    });
                 }
                 if cena == "dialogo" {
                     let mut d = crate::dialogo::Dialogo::default();
@@ -203,15 +230,27 @@ pub async fn abrir(vox: &mut crate::vox::VoxCache) {
                 }
                 if cena == "oferta" || cena == "livro" {
                     use shared::quests::{quest_by_id, quest_status, QuestNet};
-                    let q = |id: u16, st: u8, pr: u32| QuestNet::from_def(quest_by_id(id).unwrap(), st, pr);
+                    let q = |id: u16, st: u8, pr: u32| {
+                        QuestNet::from_def(quest_by_id(id).unwrap(), st, pr)
+                    };
                     let nomes = std::collections::HashMap::new();
                     let tem = |_: u16| 0u32;
                     if cena == "oferta" {
                         let mut m = crate::missoes::Missoes::default();
-                        m.abre_oferta(None, "Mestre de Missões".into(), vec![q(501, quest_status::ACTIVE, 0), q(502, quest_status::ACTIVE, 0)]);
+                        m.abre_oferta(
+                            None,
+                            "Mestre de Missões".into(),
+                            vec![
+                                q(501, quest_status::ACTIVE, 0),
+                                q(502, quest_status::ACTIVE, 0),
+                            ],
+                        );
                         let _ = m.desenha(&nomes, &tem);
                     } else {
-                        let log = vec![q(501, quest_status::ACTIVE, 3), q(502, quest_status::READY, 1)];
+                        let log = vec![
+                            q(501, quest_status::ACTIVE, 3),
+                            q(502, quest_status::READY, 1),
+                        ];
                         let entregues = std::collections::HashMap::new();
                         let mut livro = crate::menu_missoes::MenuMissoes::default();
                         livro.abrir();

@@ -141,7 +141,9 @@ fn pump(
                     forward(tx_in, t.as_bytes())
                 }
                 Ok(Message::Close(_)) => {
-                    let _ = tx_in.send(NetEvent::Disconnected("the server closed the connection".into()));
+                    let _ = tx_in.send(NetEvent::Disconnected(
+                        "the server closed the connection".into(),
+                    ));
                     return;
                 }
                 Ok(_) => {}
@@ -164,7 +166,10 @@ fn pump(
 /// (owner, 11/11/2026: "I'm in Minas and my ping sits at 70-90 ms").
 pub fn relogio_ms() -> u64 {
     static INICIO: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
-    INICIO.get_or_init(std::time::Instant::now).elapsed().as_millis() as u64
+    INICIO
+        .get_or_init(std::time::Instant::now)
+        .elapsed()
+        .as_millis() as u64
 }
 
 /// The last round trip, timed when the `Pong` arrived (0 = none yet).
@@ -174,7 +179,9 @@ fn forward(tx_in: &Sender<NetEvent>, bytes: &[u8]) {
     match shared::protocol::decode::<ServerMessage>(bytes) {
         Ok(sm) => {
             if let ServerMessage::Pong { client_time_ms, .. } = &sm {
-                let rtt = relogio_ms().saturating_sub(*client_time_ms).min(u32::MAX as u64) as u32;
+                let rtt = relogio_ms()
+                    .saturating_sub(*client_time_ms)
+                    .min(u32::MAX as u64) as u32;
                 ULTIMO_RTT_MS.store(rtt.max(1), Ordering::Relaxed);
             }
             let _ = tx_in.send(NetEvent::Message(Box::new(sm)));

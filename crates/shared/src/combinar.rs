@@ -392,7 +392,11 @@ mod testes {
             assert_eq!(r.qtd, MATERIAL_POR_SINTESE);
             assert_eq!(r.chance, 100, "síntese é garantida, não aposta");
             assert!(r.po > 0, "a síntese pede Pó");
-            assert_eq!(saidas_possiveis(&r), vec![r.saida], "sai a madeira de cima, sem sorteio");
+            assert_eq!(
+                saidas_possiveis(&r),
+                vec![r.saida],
+                "sai a madeira de cima, sem sorteio"
+            );
         }
         assert!(receita(item_id::WOOD_T4).is_none(), "T4 é o topo");
     }

@@ -5,11 +5,11 @@
 //! quadro so' com os tiles visiveis — algumas centenas de quads, mais barato
 //! que manter chunk em cache e invalidar.
 
+use crate::relogio::{get_frame_time, get_time};
 use macroquad::material::{load_material, Material, MaterialParams};
 use macroquad::miniquad::graphics::{PipelineParams, UniformDesc, UniformType};
 use macroquad::models::{Mesh, Vertex};
 use macroquad::prelude::*;
-use crate::relogio::{get_frame_time, get_time};
 use shared::constants::tile_id;
 
 use crate::map::Map;
@@ -198,7 +198,11 @@ pub fn camera_no_mar(target: Vec2, chao: f32, yaw: f32, fator: f32, pitch: f32) 
     let d = cam_dist() * fator.max(0.2);
     let (recuo, altura) = (d * pitch.cos(), d * pitch.sin());
     Camera3D {
-        position: vec3(target.x - yaw.sin() * recuo, chao + altura, target.y + yaw.cos() * recuo),
+        position: vec3(
+            target.x - yaw.sin() * recuo,
+            chao + altura,
+            target.y + yaw.cos() * recuo,
+        ),
         target: vec3(target.x, chao, target.y),
         up: vec3(0.0, 1.0, 0.0),
         ..Default::default()
@@ -390,7 +394,10 @@ mod testes_camera {
             (1.5, 42.0, 49.0),
         ] {
             let a = alcance_do_topo(zoom, graus.to_radians());
-            assert!((a - medido).abs() < 2.0, "zoom {zoom} a {graus}°: {a} vs {medido}");
+            assert!(
+                (a - medido).abs() < 2.0,
+                "zoom {zoom} a {graus}°: {a} vs {medido}"
+            );
         }
     }
 
@@ -399,12 +406,18 @@ mod testes_camera {
     fn mais_distancia_deita_mais() {
         for k in 0..=10 {
             let z = ZOOM_MIN + (ZOOM_MAX - ZOOM_MIN) * k as f32 / 10.0;
-            let pisos: Vec<f32> = [3, 5, 7, 9, 12].iter().map(|&r| pitch_min_com_raio(z, r)).collect();
+            let pisos: Vec<f32> = [3, 5, 7, 9, 12]
+                .iter()
+                .map(|&r| pitch_min_com_raio(z, r))
+                .collect();
             assert!(pisos.windows(2).all(|w| w[0] > w[1]), "zoom {z}: {pisos:?}");
             assert!((pisos[1] - piso_medido(z)).abs() < 1e-6, "o padrao mudou");
             for (r, p) in [3, 5, 7, 9, 12].iter().zip(&pisos) {
                 let mundo = (*r as f32 + 0.5) * 16.0;
-                assert!(alcance_do_topo(z, *p) < mundo, "raio {r}, zoom {z}: ve' a borda");
+                assert!(
+                    alcance_do_topo(z, *p) < mundo,
+                    "raio {r}, zoom {z}: ve' a borda"
+                );
                 assert!(*p < PITCH_MAX - 0.25, "raio {r}, zoom {z}: sem banda");
             }
         }
@@ -812,7 +825,12 @@ impl<'a> Vista<'a> {
     /// Onde se MIRA na entidade: meio corpo acima dos pes. Clicar nos pes
     /// obriga o jogador a acertar a sombra, nao o bicho.
     pub fn mira_de(&self, e: &crate::world::Ent) -> Vec3 {
-        self.pos_de(e) + vec3(0.0, crate::marinhos::altura_ent(e).map_or(0.5,|h|h*0.5), 0.0)
+        self.pos_de(e)
+            + vec3(
+                0.0,
+                crate::marinhos::altura_ent(e).map_or(0.5, |h| h * 0.5),
+                0.0,
+            )
     }
 
     pub fn na_tela(&self, p: Vec3) -> Option<Vec2> {
@@ -1251,8 +1269,10 @@ pub fn material_solido() -> Material {
                 UniformDesc::new("Neblina", UniformType::Float4),
                 UniformDesc::new("Some", UniformType::Float1),
                 UniformDesc::new("Oco", UniformType::Float3),
-                UniformDesc::new("LuzPos", UniformType::Float4).array(crate::gpu_estatica::MAX_LUZES),
-                UniformDesc::new("LuzCor", UniformType::Float4).array(crate::gpu_estatica::MAX_LUZES),
+                UniformDesc::new("LuzPos", UniformType::Float4)
+                    .array(crate::gpu_estatica::MAX_LUZES),
+                UniformDesc::new("LuzCor", UniformType::Float4)
+                    .array(crate::gpu_estatica::MAX_LUZES),
                 UniformDesc::new("VelaA", UniformType::Float4),
                 UniformDesc::new("VelaB", UniformType::Float4),
             ],
@@ -1631,11 +1651,19 @@ pub fn desenha_portal(p: Vec3, cor: Color, perto: bool, t: f32) {
     for k in 0..14 {
         let a = k as f32 / 14.0 * TAU;
         let q = p + vec3(a.cos() * 1.9, 0.14, a.sin() * 0.95);
-        cubo_dos_lados(q, vec3(0.62, 0.28, 0.5), if k % 2 == 0 { pedra } else { pedra_escura });
+        cubo_dos_lados(
+            q,
+            vec3(0.62, 0.28, 0.5),
+            if k % 2 == 0 { pedra } else { pedra_escura },
+        );
     }
     // The glow pooled on the platform.
     let pulso = 0.5 + 0.5 * (t * 2.0 * vel).sin();
-    cubo_dos_lados(p + vec3(0.0, 0.25, 0.0), vec3(2.6, 0.03, 1.0), com(0.25 + 0.2 * pulso * brilho));
+    cubo_dos_lados(
+        p + vec3(0.0, 0.25, 0.0),
+        vec3(2.6, 0.03, 1.0),
+        com(0.25 + 0.2 * pulso * brilho),
+    );
     // The standing ring, facing the camera (in the XY plane): stone blocks,
     // every third a rune that lights up as the light runs round.
     let centro = p + vec3(0.0, 1.85, 0.0);
@@ -1658,7 +1686,11 @@ pub fn desenha_portal(p: Vec3, cor: Color, perto: bool, t: f32) {
     for k in 0..4 {
         let r = 1.15 - k as f32 * 0.26;
         let a = (0.10 + 0.07 * k as f32) * brilho * (0.8 + 0.2 * pulso);
-        cubo_dos_lados(centro, vec3(r * 2.0, r * 2.0, 0.04 + k as f32 * 0.02), com(a));
+        cubo_dos_lados(
+            centro,
+            vec3(r * 2.0, r * 2.0, 0.04 + k as f32 * 0.02),
+            com(a),
+        );
     }
     let motes = if perto { 36 } else { 24 };
     for k in 0..motes {
@@ -1720,7 +1752,12 @@ pub fn desenha_entrada_no_portal(p: Vec3, cor: Color, progresso: f32, t: f32) {
     // A column of light closing in on the body.
     let a = 0.15 + 0.5 * progresso;
     let lado = 1.6 * (1.0 - progresso * 0.7);
-    draw_cube(p + vec3(0.0, 1.3, 0.0), vec3(lado, 2.6, lado), None, Color::new(cor.r, cor.g, cor.b, a));
+    draw_cube(
+        p + vec3(0.0, 1.3, 0.0),
+        vec3(lado, 2.6, lado),
+        None,
+        Color::new(cor.r, cor.g, cor.b, a),
+    );
 }
 
 /// O bau da dungeon: madeira, faixas de ouro e um anel que pulsa no chao.
@@ -1755,20 +1792,59 @@ fn desenha_bau_de_cor(p: Vec3, cor: Option<u8>) {
     const E: f32 = 0.03; // how far a band stands out
     draw_cube(p + vec3(0.0, A * 0.5, 0.0), vec3(L, A, P), None, madeira);
     // The lid: a wider slab on top, then a narrower crown.
-    draw_cube(p + vec3(0.0, A + 0.08, 0.0), vec3(L + 0.08, 0.16, P + 0.08), None, escura);
-    draw_cube(p + vec3(0.0, A + 0.22, 0.0), vec3(L - 0.1, 0.12, P - 0.16), None, escura);
+    draw_cube(
+        p + vec3(0.0, A + 0.08, 0.0),
+        vec3(L + 0.08, 0.16, P + 0.08),
+        None,
+        escura,
+    );
+    draw_cube(
+        p + vec3(0.0, A + 0.22, 0.0),
+        vec3(L - 0.1, 0.12, P - 0.16),
+        None,
+        escura,
+    );
     // Two bands over the whole chest, standing out of every face.
     for dx in [-0.38f32, 0.38] {
-        draw_cube(p + vec3(dx, A * 0.5, 0.0), vec3(0.12, A + E, P + 2.0 * E), None, metal);
-        draw_cube(p + vec3(dx, A + 0.08, 0.0), vec3(0.12, 0.16 + 2.0 * E, P + 0.08 + 2.0 * E), None, metal);
-        draw_cube(p + vec3(dx, A + 0.22, 0.0), vec3(0.12, 0.12 + 2.0 * E, P - 0.16 + 2.0 * E), None, metal);
+        draw_cube(
+            p + vec3(dx, A * 0.5, 0.0),
+            vec3(0.12, A + E, P + 2.0 * E),
+            None,
+            metal,
+        );
+        draw_cube(
+            p + vec3(dx, A + 0.08, 0.0),
+            vec3(0.12, 0.16 + 2.0 * E, P + 0.08 + 2.0 * E),
+            None,
+            metal,
+        );
+        draw_cube(
+            p + vec3(dx, A + 0.22, 0.0),
+            vec3(0.12, 0.12 + 2.0 * E, P - 0.16 + 2.0 * E),
+            None,
+            metal,
+        );
     }
     // The lock plate, on the front face.
-    draw_cube(p + vec3(0.0, A - 0.1, P * 0.5 + E), vec3(0.22, 0.26, 0.04), None, metal);
-    draw_cube(p + vec3(0.0, A - 0.16, P * 0.5 + 2.0 * E), vec3(0.08, 0.1, 0.03), None, escura);
+    draw_cube(
+        p + vec3(0.0, A - 0.1, P * 0.5 + E),
+        vec3(0.22, 0.26, 0.04),
+        None,
+        metal,
+    );
+    draw_cube(
+        p + vec3(0.0, A - 0.16, P * 0.5 + 2.0 * E),
+        vec3(0.08, 0.1, 0.03),
+        None,
+        escura,
+    );
     // The ring on the ground and a faint beam: seen from across the arena.
     let a = 0.55 + 0.35 * (t * 3.0).sin();
-    draw_ring(p, 1.0 + 0.08 * (t * 3.0).sin(), Color::new(metal.r, metal.g, metal.b, a));
+    draw_ring(
+        p,
+        1.0 + 0.08 * (t * 3.0).sin(),
+        Color::new(metal.r, metal.g, metal.b, a),
+    );
     if cor.is_some() {
         draw_cube(
             p + vec3(0.0, 2.6, 0.0),
@@ -1800,7 +1876,9 @@ pub(crate) fn escala_de_chefe(e: &crate::world::Ent) -> f32 {
 
 /// Altura do corpo na tela (u), pra sombra, aura, placa e poeira.
 pub(crate) fn altura_de_chefe(e: &crate::world::Ent) -> f32 {
-    if let Some(height)=crate::marinhos::altura_ent(e) {return height;}
+    if let Some(height) = crate::marinhos::altura_ent(e) {
+        return height;
+    }
     crate::bicho::do_mob(e.meta.tag, e.meta.kind, true)
         .or_else(|| crate::bicho::do_pet(e.meta.tag, e.meta.kind))
         .map_or(1.95, |(_, a)| a)
@@ -1861,7 +1939,10 @@ pub const RIGS_DE_GENTE: [(u16, &str); 18] = [
 ];
 
 pub fn rig_de_gente(kind: u16) -> Option<&'static str> {
-    RIGS_DE_GENTE.iter().find(|(k, _)| *k == kind).map(|(_, n)| *n)
+    RIGS_DE_GENTE
+        .iter()
+        .find(|(k, _)| *k == kind)
+        .map(|(_, n)| *n)
 }
 
 pub fn draw_entities(
@@ -1934,10 +2015,31 @@ pub fn draw_entities_com_sombras(
             // Its class, sail and figurehead ride on `skins` (phase 2).
             // The sails follow its speed on the wire.
             let vel = e.state.vel_f32().length();
-            crate::mar_ui::desenha_casco(p, e.yaw, e.meta.id.0 as u64, shared::navio::Visual::do_fio(e.meta.skins), vel);
+            if e.state.hp <= 0 {
+                crate::mar_ui::desenha_casco_derrotado(
+                    p,
+                    e.yaw,
+                    e.meta.id.0 as u64,
+                    shared::navio::Visual::do_fio(e.meta.skins),
+                    vel,
+                );
+            } else {
+                crate::mar_ui::desenha_casco(
+                    p,
+                    e.yaw,
+                    e.meta.id.0 as u64,
+                    shared::navio::Visual::do_fio(e.meta.skins),
+                    vel,
+                );
+            }
             // Phase 4: a marked ship (treasure on deck) flies the skull.
             if e.meta.pk.marcado {
-                crate::mar_ui::desenha_marca(p, e.yaw, e.meta.id.0 as u64, shared::navio::Visual::do_fio(e.meta.skins));
+                crate::mar_ui::desenha_marca(
+                    p,
+                    e.yaw,
+                    e.meta.id.0 as u64,
+                    shared::navio::Visual::do_fio(e.meta.skins),
+                );
             }
             continue;
         }
@@ -1954,10 +2056,20 @@ pub fn draw_entities_com_sombras(
                 get_frame_time(),
             );
         }
-        if crate::marinhos::desenha_ent(e, p) { continue; }
-        if abismo() && e.meta.tag == shared::EntityTag::Npc
-            && shared::npc_papel_de_kind(e.meta.kind) == shared::construcao::Papel::Casa as u8 {
-            crate::marinhos::desenha(if e.meta.id.0 % 2 == 0 {91} else {71}, p, e.yaw, e.meta.id.0 as u64, 1.0);
+        if crate::marinhos::desenha_ent(e, p) {
+            continue;
+        }
+        if abismo()
+            && e.meta.tag == shared::EntityTag::Npc
+            && shared::npc_papel_de_kind(e.meta.kind) == shared::construcao::Papel::Casa as u8
+        {
+            crate::marinhos::desenha(
+                if e.meta.id.0 % 2 == 0 { 91 } else { 71 },
+                p,
+                e.yaw,
+                e.meta.id.0 as u64,
+                1.0,
+            );
             continue;
         }
         if let Some(corpo) = rig_do_humanoide(e).and_then(|nome| vox.rig(nome)) {
@@ -1968,6 +2080,10 @@ pub fn draw_entities_com_sombras(
         // NPC da vila: o rig do OFICIO dele. Sem o arquivo, cai no corpo de
         // gente abaixo, como antes.
         if e.meta.tag == shared::EntityTag::Npc {
+            if shared::npc_papel_de_kind(e.meta.kind) == shared::navio::PAPEL_BARRIL_NAVAL {
+                crate::mar_cena::barril_de_saque(p, e.meta.id.0 as u64, get_time() as f32);
+                continue;
+            }
             // Bau de conclusao da dungeon: caixa com tampa e fecho, pulsando.
             if shared::npc_papel_de_kind(e.meta.kind) == shared::dungeon::PAPEL_BAU {
                 // At sea the chest DRIFTS: on a raft riding the swell.
@@ -2124,12 +2240,12 @@ fn desenha_sombras(
         } else {
             0.55
         } * escala;
-        let lobos: &[(f32, f32, f32, f32, u8)] =
-            if modo == crate::config_graficos::Sombras::Bonitas {
-                &[(0.0, 0.0, 1.0, 0.72, 80), (0.8, -0.46, 1.55, 0.92, 65)]
-            } else {
-                &[(0.12, 0.08, 1.0, 0.72, 72)]
-            };
+        let lobos: &[(f32, f32, f32, f32, u8)] = if modo == crate::config_graficos::Sombras::Bonitas
+        {
+            &[(0.0, 0.0, 1.0, 0.72, 80), (0.8, -0.46, 1.55, 0.92, 65)]
+        } else {
+            &[(0.12, 0.08, 1.0, 0.72, 72)]
+        };
         for &(dx, dz, rx, rz, alfa) in lobos {
             let x = e.render_pos.x + dx * escala;
             let z = e.render_pos.y + dz * escala;
@@ -2373,8 +2489,9 @@ fn desenha_personagem(
         && e.state.flags & shared::ent_flags::MONTADO != 0
         && e.morte.is_none()
     {
-        shared::montarias::de_item(e.meta.kind)
-            .and_then(|(esp, grau)| bicho_da_montaria(vox, esp, e.meta.skins).map(|b| (esp, grau, b)))
+        shared::montarias::de_item(e.meta.kind).and_then(|(esp, grau)| {
+            bicho_da_montaria(vox, esp, e.meta.skins).map(|b| (esp, grau, b))
+        })
     } else {
         None
     };
@@ -2387,11 +2504,12 @@ fn desenha_personagem(
     }
     let humanoide = rig_do_humanoide(e).is_some();
     if humanoide {
-        entrada.combate.conjunto = if shared::bestiary::species_of(shared::bosses::kind_do_corpo(e.meta.kind)) == 4 {
-            3
-        } else {
-            2
-        };
+        entrada.combate.conjunto =
+            if shared::bestiary::species_of(shared::bosses::kind_do_corpo(e.meta.kind)) == 4 {
+                3
+            } else {
+                2
+            };
         entrada.combate.sacada = 1.0;
         entrada.combate.golpe = e.ataque_mob.map(|(_, t, impacto)| {
             let relogio = if t <= impacto {
@@ -2435,8 +2553,11 @@ fn desenha_personagem(
     }
     let mut pose = crate::rig::pose(&entrada);
     if montaria.is_some() {
-        crate::rig::aplica_montado(&mut pose, entrada.tempo,
-            entrada.combate.sacada > 0.0 || entrada.combate.golpe.is_some());
+        crate::rig::aplica_montado(
+            &mut pose,
+            entrada.tempo,
+            entrada.combate.sacada > 0.0 || entrada.combate.golpe.is_some(),
+        );
     }
     if e.skill.is_some_and(|(id, _, _)| id == 9) {
         pose.na_mao = false;
@@ -2491,8 +2612,19 @@ fn desenha_personagem(
     let sela = match montaria {
         Some((m, s, b)) => {
             let matriz = desenha_montaria(e, m, s, b, p);
-            crate::auras::animal(e.meta.auras, shared::auras::MONTARIA, matriz, b, m.bicho,
-                if eu { 0.0 } else { p.distance(vista.cam.target) }, e.meta.id.0);
+            crate::auras::animal(
+                e.meta.auras,
+                shared::auras::MONTARIA,
+                matriz,
+                b,
+                m.bicho,
+                if eu {
+                    0.0
+                } else {
+                    p.distance(vista.cam.target)
+                },
+                e.meta.id.0,
+            );
             let frente = vec3(e.yaw.sin(), 0.0, e.yaw.cos());
             // A sela e' o LOMBO DO MODELO vezes a escala da especie, e nao um
             // numero escrito na tabela: numero a mao nao acompanha a escala, e
@@ -2510,16 +2642,29 @@ fn desenha_personagem(
         * Mat4::from_scale(vec3(1.0 + 0.5 * s, 1.0 - s, 1.0 + 0.5 * s));
     let (mats, armas) = desenha_rig(base, &pose, veste, vox, clarao(e, eu));
     if abismo() && e.meta.tag == shared::EntityTag::Player {
-        crate::capacete_abissal::registra(mats[1],
+        crate::capacete_abissal::registra(
+            mats[1],
             veste.peca("cabeca").map_or(&[], Vec::as_slice),
-            veste.peca("cabelo").map_or(&[], Vec::as_slice));
+            veste.peca("cabelo").map_or(&[], Vec::as_slice),
+        );
     }
 
     if e.meta.tag == shared::EntityTag::Player && e.morte.is_none() {
-        crate::auras::personagem(e.meta.auras, &mats, &armas, vox,
-            if eu { 0.0 } else { p.distance(vista.cam.target) }, e.meta.id.0 as u32,
-            pose.ferramenta.is_some(), e.combo.is_some() || e.skill.is_some(),
-            e.meta.renascimentos > 0);
+        crate::auras::personagem(
+            e.meta.auras,
+            &mats,
+            &armas,
+            vox,
+            if eu {
+                0.0
+            } else {
+                p.distance(vista.cam.target)
+            },
+            e.meta.id.0 as u32,
+            pose.ferramenta.is_some(),
+            e.combo.is_some() || e.skill.is_some(),
+            e.meta.renascimentos > 0,
+        );
         // The rebirth aura: ground to just over the head.
         if e.meta.renascimentos > 0 {
             let cabeca = mats[1].transform_point3(Vec3::ZERO);
@@ -2527,7 +2672,11 @@ fn desenha_personagem(
                 e.meta.renascimentos,
                 p,
                 cabeca.y - p.y + 0.35,
-                if eu { 0.0 } else { p.distance(vista.cam.target) },
+                if eu {
+                    0.0
+                } else {
+                    p.distance(vista.cam.target)
+                },
                 e.meta.id.0 as u32,
             );
         }
@@ -2650,7 +2799,12 @@ fn desenha_personagem(
         });
         let forca = 0.55 + 0.45 * e.sacada.clamp(0.0, 1.0) + 0.8 * pico;
         for (i, p) in crate::rig::palmas(&mats, VOXEL).iter().enumerate() {
-            brilhos.push(Brilho::Mao(*p, forca, agora + i as f32 * 1.7, tema_do_anel(veste.skins)));
+            brilhos.push(Brilho::Mao(
+                *p,
+                forca,
+                agora + i as f32 * 1.7,
+                tema_do_anel(veste.skins),
+            ));
         }
     }
     brilhos
@@ -2664,7 +2818,11 @@ fn desenha_mao(p: Vec3, forca: f32, t: f32, tema: &TemaDoAnel) {
     let pulso = 1.0 + 0.15 * (t * 6.0).sin();
     let alfa = |x: f32| (x * forca.min(1.0)).clamp(0.0, 255.0) as u8;
     let c = |rgb: [u8; 3], a: u8| [rgb[0], rgb[1], rgb[2], a];
-    octaedro(p, 0.045 * pulso * forca.max(0.6), c(tema.nucleo, alfa(255.0)));
+    octaedro(
+        p,
+        0.045 * pulso * forca.max(0.6),
+        c(tema.nucleo, alfa(255.0)),
+    );
     octaedro(p, 0.10 * pulso * forca, c(tema.halo, alfa(120.0)));
     octaedro(p, 0.19 * pulso * forca, c(tema.halo_fora, alfa(45.0)));
     for k in 0..3 {
@@ -2713,21 +2871,76 @@ pub struct TemaDoAnel {
 pub fn tema_do_anel(skins: u64) -> TemaDoAnel {
     let a = shared::aparencia::Aparencia::default().com_skins(skins);
     let t = |nucleo, halo, halo_fora, faisca, circulo, onda, raios, interno| TemaDoAnel {
-        nucleo, halo, halo_fora, faisca, circulo, onda, raios, interno,
+        nucleo,
+        halo,
+        halo_fora,
+        faisca,
+        circulo,
+        onda,
+        raios,
+        interno,
     };
     match shared::aparencia::sufixo_da_arma(&a, 3) {
-        Some("brasa") => t([255, 246, 220], [255, 150, 60], [230, 70, 30], [255, 210, 120],
-            [255, 120, 40], [255, 180, 80], 0, false),
-        Some("gelo") => t([240, 252, 255], [140, 220, 255], [80, 170, 240], [220, 246, 255],
-            [120, 210, 255], [190, 240, 255], 6, false),
-        Some("verdejante") => t([240, 255, 230], [140, 230, 110], [60, 170, 80], [210, 255, 170],
-            [110, 220, 100], [180, 250, 150], 0, true),
-        Some("solar") => t([255, 255, 235], [255, 220, 90], [240, 170, 40], [255, 240, 170],
-            [255, 200, 60], [255, 230, 140], 12, false),
-        Some("vazio") => t([70, 24, 100], [200, 60, 255], [90, 20, 160], [255, 120, 255],
-            [150, 40, 230], [230, 100, 255], 4, true),
-        _ => t([255, 240, 255], [205, 150, 255], [170, 110, 255], [235, 210, 255],
-            [190, 130, 255], [215, 170, 255], 0, false),
+        Some("brasa") => t(
+            [255, 246, 220],
+            [255, 150, 60],
+            [230, 70, 30],
+            [255, 210, 120],
+            [255, 120, 40],
+            [255, 180, 80],
+            0,
+            false,
+        ),
+        Some("gelo") => t(
+            [240, 252, 255],
+            [140, 220, 255],
+            [80, 170, 240],
+            [220, 246, 255],
+            [120, 210, 255],
+            [190, 240, 255],
+            6,
+            false,
+        ),
+        Some("verdejante") => t(
+            [240, 255, 230],
+            [140, 230, 110],
+            [60, 170, 80],
+            [210, 255, 170],
+            [110, 220, 100],
+            [180, 250, 150],
+            0,
+            true,
+        ),
+        Some("solar") => t(
+            [255, 255, 235],
+            [255, 220, 90],
+            [240, 170, 40],
+            [255, 240, 170],
+            [255, 200, 60],
+            [255, 230, 140],
+            12,
+            false,
+        ),
+        Some("vazio") => t(
+            [70, 24, 100],
+            [200, 60, 255],
+            [90, 20, 160],
+            [255, 120, 255],
+            [150, 40, 230],
+            [230, 100, 255],
+            4,
+            true,
+        ),
+        _ => t(
+            [255, 240, 255],
+            [205, 150, 255],
+            [170, 110, 255],
+            [235, 210, 255],
+            [190, 130, 255],
+            [215, 170, 255],
+            0,
+            false,
+        ),
     }
 }
 
@@ -2810,18 +3023,43 @@ fn desenha_circulo(pulso: Mat4, t: f32, tema: &TemaDoAnel) {
         (1.0 - (t - imp) / 0.25).max(0.0)
     };
     let c = |rgb: [u8; 3], a: f32| [rgb[0], rgb[1], rgb[2], a.clamp(0.0, 255.0) as u8];
-    faixa_circular(pulso, 0.0, 7.0 * VOXEL, 2.0 * VOXEL, c(tema.circulo, aceso * 230.0));
+    faixa_circular(
+        pulso,
+        0.0,
+        7.0 * VOXEL,
+        2.0 * VOXEL,
+        c(tema.circulo, aceso * 230.0),
+    );
     if tema.interno {
-        faixa_circular(pulso, 0.0, 3.6 * VOXEL, 1.0 * VOXEL, c(tema.onda, aceso * 210.0));
+        faixa_circular(
+            pulso,
+            0.0,
+            3.6 * VOXEL,
+            1.0 * VOXEL,
+            c(tema.onda, aceso * 210.0),
+        );
     }
     // Spokes: thin quads from the inner edge out past the ring, turning.
     for k in 0..tema.raios {
         let ang = k as f32 / tema.raios as f32 * std::f32::consts::TAU + t * 1.5;
-        let (dir, lado) = (vec3(ang.cos(), 0.0, ang.sin()), vec3(-ang.sin(), 0.0, ang.cos()));
+        let (dir, lado) = (
+            vec3(ang.cos(), 0.0, ang.sin()),
+            vec3(-ang.sin(), 0.0, ang.cos()),
+        );
         let (r0, r1, w) = (2.5 * VOXEL, 9.5 * VOXEL, 0.35 * VOXEL);
-        let q = [dir * r0 - lado * w, dir * r1 - lado * w * 0.3, dir * r1 + lado * w * 0.3, dir * r0 + lado * w];
+        let q = [
+            dir * r0 - lado * w,
+            dir * r1 - lado * w * 0.3,
+            dir * r1 + lado * w * 0.3,
+            dir * r0 + lado * w,
+        ];
         let cor = c(tema.onda, aceso * 200.0);
-        dupla(q.iter().map(|p| vtx(pulso.transform_point3(*p), cor)).collect(), vec![[0, 1, 2], [0, 2, 3]]);
+        dupla(
+            q.iter()
+                .map(|p| vtx(pulso.transform_point3(*p), cor))
+                .collect(),
+            vec![[0, 1, 2], [0, 2, 3]],
+        );
     }
     if t > imp {
         let u = ((t - imp) / 0.22).min(1.0);
@@ -2880,7 +3118,11 @@ fn desenha_projetil(e: &crate::world::Ent, p: Vec3) {
         // A player's orb carries the caster's skins: the ring skin colours it.
         let t = tema_do_anel(e.meta.skins);
         octaedro(alto, 0.15, [t.halo[0], t.halo[1], t.halo[2], 255]);
-        octaedro(alto, 0.27, [t.halo_fora[0], t.halo_fora[1], t.halo_fora[2], 90]);
+        octaedro(
+            alto,
+            0.27,
+            [t.halo_fora[0], t.halo_fora[1], t.halo_fora[2], 90],
+        );
     } else {
         octaedro(alto, 0.06, [255, 244, 200, 255]);
         let lado = dir.cross(Vec3::Y).normalize_or_zero() * 0.035;
@@ -3008,7 +3250,10 @@ pub fn bicho_da_montaria<'v>(
     let a = shared::aparencia::Aparencia::default().com_skins(skins);
     shared::aparencia::sufixo_da_montaria(&a)
         .and_then(|s| {
-            let altura = crate::bicho::BICHOS.iter().find(|(n, _)| *n == especie.bicho)?.1;
+            let altura = crate::bicho::BICHOS
+                .iter()
+                .find(|(n, _)| *n == especie.bicho)?
+                .1;
             vox.bicho_ou_pede(&format!("{}_{s}", especie.bicho), altura)
         })
         .or_else(|| vox.bicho(especie.bicho))
@@ -3152,8 +3397,16 @@ fn desenha_bicho(
         }
     }
     if !morto {
-        if let Some((modelo,_)) = crate::bicho::do_pet(e.meta.tag,e.meta.kind) {
-            crate::auras::animal(e.meta.auras,shared::auras::PET,tronco,b,modelo,p.distance(vista.cam.target),e.meta.id.0);
+        if let Some((modelo, _)) = crate::bicho::do_pet(e.meta.tag, e.meta.kind) {
+            crate::auras::animal(
+                e.meta.auras,
+                shared::auras::PET,
+                tronco,
+                b,
+                modelo,
+                p.distance(vista.cam.target),
+                e.meta.id.0,
+            );
         }
     }
     crate::bicho::rastro(&entrada, &b.anat).map(|r| (patas, r))
@@ -3201,9 +3454,13 @@ pub fn vitrine_aparencia_icone(
     yaw: f32,
     solido: &Material,
 ) -> bool {
-    let Some(mut veste) = vestimenta_de(vox, aparencia.empacota()) else { return false; };
+    let Some(mut veste) = vestimenta_de(vox, aparencia.empacota()) else {
+        return false;
+    };
     veste.skins = aparencia.empacota_skins();
-    let Some(vp) = viewport_na_tela(r) else { return false; };
+    let Some(vp) = viewport_na_tela(r) else {
+        return false;
+    };
     let cam = Camera3D {
         position: vec3(0.0, 1.1, 3.3),
         target: vec3(0.0, 0.9, 0.0),
@@ -3219,8 +3476,12 @@ pub fn vitrine_aparencia_icone(
     gl_use_material(solido);
     solido.set_uniform("Crop", Vec3::ZERO);
     let mut pose = crate::rig::pose(&crate::rig::Entrada {
-        fase: 0.0, andar: 0.0, correr: 0.0, tempo: get_time() as f32,
-        ar: 0.0, degrau: [0.0, 0.0],
+        fase: 0.0,
+        andar: 0.0,
+        correr: 0.0,
+        tempo: get_time() as f32,
+        ar: 0.0,
+        degrau: [0.0, 0.0],
         combate: crate::rig::Combate::default(),
     });
     pose.armado = false;
@@ -3239,9 +3500,13 @@ pub fn vitrine_aparencia(
     yaw: f32,
     solido: &Material,
 ) -> bool {
-    let Some(mut veste) = vestimenta_de(vox, aparencia.empacota()) else { return false; };
+    let Some(mut veste) = vestimenta_de(vox, aparencia.empacota()) else {
+        return false;
+    };
     veste.skins = aparencia.empacota_skins();
-    let Some(vp) = viewport_na_tela(r) else { return false; };
+    let Some(vp) = viewport_na_tela(r) else {
+        return false;
+    };
     let aspecto = vp.2 as f32 / vp.3 as f32;
     let cam = Camera3D {
         position: vec3(0.0, 1.35, 4.7 * (0.62 / aspecto).max(1.0)),
@@ -3255,13 +3520,23 @@ pub fn vitrine_aparencia(
     };
     set_camera(&cam);
     limpa_so_profundidade();
-    draw_cylinder(vec3(0.0, -0.07, 0.0), 0.9, 0.93, 0.06, None,
-        Color::new(0.12, 0.16, 0.21, 1.0));
+    draw_cylinder(
+        vec3(0.0, -0.07, 0.0),
+        0.9,
+        0.93,
+        0.06,
+        None,
+        Color::new(0.12, 0.16, 0.21, 1.0),
+    );
     gl_use_material(solido);
     solido.set_uniform("Crop", Vec3::ZERO);
     let mut pose = crate::rig::pose(&crate::rig::Entrada {
-        fase: 0.0, andar: 0.0, correr: 0.0, tempo: get_time() as f32,
-        ar: 0.0, degrau: [0.0, 0.0],
+        fase: 0.0,
+        andar: 0.0,
+        correr: 0.0,
+        tempo: get_time() as f32,
+        ar: 0.0,
+        degrau: [0.0, 0.0],
         combate: crate::rig::Combate {
             conjunto: shared::skills::Conjunto::da_arma(arma) as u8,
             ..Default::default()
@@ -3279,12 +3554,16 @@ pub fn vitrine_aparencia(
 /// middle. The ring has no model, so this is what it looks like.
 pub fn vitrine_anel(skin: u16, r: Rect, yaw: f32) -> bool {
     use shared::aparencia as ap;
-    let Some(s) = ap::skin_de_arma(skin).filter(|s| s.conjunto == 3) else { return false; };
+    let Some(s) = ap::skin_de_arma(skin).filter(|s| s.conjunto == 3) else {
+        return false;
+    };
     let mut a = ap::Aparencia::default();
     a.armas[3] = (skin - ap::ARMA_SKIN_BASE + 1) as u8;
     let _ = s;
     let tema = tema_do_anel(a.empacota_skins());
-    let Some(vp) = viewport_na_tela(r) else { return false; };
+    let Some(vp) = viewport_na_tela(r) else {
+        return false;
+    };
     let aspecto = vp.2 as f32 / vp.3 as f32;
     let meia = 12.0 * VOXEL * (1.0 / aspecto).max(1.0);
     let fovy = 30f32.to_radians();
@@ -3333,7 +3612,10 @@ pub fn vitrine_de_skin(
         return vitrine_arma(vox, skin, r, yaw, solido);
     }
     if ap::skin_de_montaria(skin).is_some() {
-        let a = ap::Aparencia { montaria: (skin - ap::MONTARIA_SKIN_BASE + 1) as u8, ..Default::default() };
+        let a = ap::Aparencia {
+            montaria: (skin - ap::MONTARIA_SKIN_BASE + 1) as u8,
+            ..Default::default()
+        };
         return vitrine_montaria_com_skins(vox, montaria, a.empacota_skins(), r, yaw, solido);
     }
     let mut a = base;
@@ -3349,7 +3631,9 @@ pub fn vitrine_de_skin(
 /// axis. On the character the weapon is a few pixels; this is what the shop
 /// card, the bag icon and the wardrobe show. `false` = not loaded yet.
 pub fn vitrine_arma(vox: &VoxCache, skin: u16, r: Rect, yaw: f32, solido: &Material) -> bool {
-    let Some(s) = shared::aparencia::skin_de_arma(skin) else { return false; };
+    let Some(s) = shared::aparencia::skin_de_arma(skin) else {
+        return false;
+    };
     if s.conjunto == 3 {
         return vitrine_anel(skin, r, yaw);
     }
@@ -3366,19 +3650,29 @@ pub fn vitrine_arma(vox: &VoxCache, skin: u16, r: Rect, yaw: f32, solido: &Mater
     // show the wrong weapon on a card that sells this one.
     let malhas: Vec<(&str, &Vec<Mesh>)> = pecas
         .iter()
-        .filter_map(|p| arma_vestida(vox, p, skins).filter(|_| vox.arma(&nome(p)).is_some()).map(|m| (*p, m)))
+        .filter_map(|p| {
+            arma_vestida(vox, p, skins)
+                .filter(|_| vox.arma(&nome(p)).is_some())
+                .map(|m| (*p, m))
+        })
         .collect();
     if malhas.len() < pecas.len() {
         return false;
     }
-    let Some(vp) = viewport_na_tela(r) else { return false; };
+    let Some(vp) = viewport_na_tela(r) else {
+        return false;
+    };
     // Blade along voxel +Y = world +Z; stood up, it points to +Y. The shield
     // turns a quarter more so its painted face looks at the camera.
     let em_pe = Mat4::from_rotation_x(-std::f32::consts::FRAC_PI_2);
     let caixas: Vec<(Mat4, Vec3, Vec3)> = malhas
         .iter()
         .map(|(p, ms)| {
-            let giro = if *p == "escudo" { Mat4::from_rotation_y(-std::f32::consts::FRAC_PI_2) } else { Mat4::IDENTITY };
+            let giro = if *p == "escudo" {
+                Mat4::from_rotation_y(-std::f32::consts::FRAC_PI_2)
+            } else {
+                Mat4::IDENTITY
+            };
             let m = giro * em_pe;
             let (mut lo, mut hi) = (Vec3::splat(f32::MAX), Vec3::splat(f32::MIN));
             for v in ms.iter().flat_map(|x| &x.vertices) {
@@ -3390,9 +3684,15 @@ pub fn vitrine_arma(vox: &VoxCache, skin: u16, r: Rect, yaw: f32, solido: &Mater
         })
         .collect();
     let vao = 0.12;
-    let larguras: Vec<f32> = caixas.iter().map(|(_, lo, hi)| (hi.x - lo.x).max(hi.z - lo.z)).collect();
+    let larguras: Vec<f32> = caixas
+        .iter()
+        .map(|(_, lo, hi)| (hi.x - lo.x).max(hi.z - lo.z))
+        .collect();
     let total = larguras.iter().sum::<f32>() + vao * (larguras.len() as f32 - 1.0);
-    let altura = caixas.iter().map(|(_, lo, hi)| hi.y - lo.y).fold(0.0, f32::max);
+    let altura = caixas
+        .iter()
+        .map(|(_, lo, hi)| hi.y - lo.y)
+        .fold(0.0, f32::max);
     let aspecto = vp.2 as f32 / vp.3 as f32;
     let meia = (altura * 0.5).max(total * 0.5 / aspecto) * 1.18;
     let fovy = 30f32.to_radians();
@@ -3440,7 +3740,17 @@ pub fn desenha_rig_com_auras(
 ) {
     let (mats, armas) = desenha_rig(base, pose, veste, vox, None);
     if auras != 0 {
-        crate::auras::personagem(auras, &mats, &armas, vox, 0.0, 0, pose.ferramenta.is_some(), false, false);
+        crate::auras::personagem(
+            auras,
+            &mats,
+            &armas,
+            vox,
+            0.0,
+            0,
+            pose.ferramenta.is_some(),
+            false,
+            false,
+        );
         crate::auras::desenha();
     }
 }
@@ -3553,43 +3863,95 @@ pub fn vitrine_pet(
 
 /// A creature by its file (`bicho::BICHOS`), on a stage: previews of models
 /// not yet tied to a mob kind.
-pub fn vitrine_bicho(vox: &crate::vox::VoxCache, nome: &str, r: Rect, yaw: f32, solido: &Material) -> bool {
-    let Some(b) = vox.bicho(nome) else { return false; };
-    let Some(vp) = viewport_na_tela(r) else { return false; };
+pub fn vitrine_bicho(
+    vox: &crate::vox::VoxCache,
+    nome: &str,
+    r: Rect,
+    yaw: f32,
+    solido: &Material,
+) -> bool {
+    let Some(b) = vox.bicho(nome) else {
+        return false;
+    };
+    let Some(vp) = viewport_na_tela(r) else {
+        return false;
+    };
     let cam = camera_da_vitrine(b, 1.0, 1.35, vp);
     set_camera(&cam);
     limpa_so_profundidade();
     macroquad::material::gl_use_material(solido);
-    desenha_bicho_montaria(b, 1.0, None, Vec3::ZERO, yaw, 0.0, 0.0, get_time() as f32, 1.0);
+    desenha_bicho_montaria(
+        b,
+        1.0,
+        None,
+        Vec3::ZERO,
+        yaw,
+        0.0,
+        0.0,
+        get_time() as f32,
+        1.0,
+    );
     macroquad::material::gl_use_default_material();
     camera_padrao();
     true
 }
 
 /// Modelo real do inimigo no bestiário, usando a mesma malha do mundo.
-pub fn vitrine_mob(vox: &crate::vox::VoxCache, kind: u16, chefe: bool,
-    r: Rect, yaw: f32, solido: &Material) -> bool {
-    if let Some((kind,scale))=crate::marinhos::corpo(kind,chefe) {
-        let Some(vp)=viewport_na_tela(r) else {return false;};
-        let d=crate::marinhos::dimensions(kind)*scale;
-        let aspect=vp.2 as f32/vp.3.max(1)as f32;
-        let size=d.y.max(d.x.max(d.z)/aspect.max(0.6));
-        let cam=Camera3D {position:vec3(size*0.7,size*0.7,size*2.5),target:vec3(0.,d.y*0.5+0.85,0.),up:Vec3::Y,fovy:30f32.to_radians(),aspect:Some(aspect),viewport:Some(vp),render_target:alvo(),..Default::default()};
-        set_camera(&cam);limpa_so_profundidade();
+pub fn vitrine_mob(
+    vox: &crate::vox::VoxCache,
+    kind: u16,
+    chefe: bool,
+    r: Rect,
+    yaw: f32,
+    solido: &Material,
+) -> bool {
+    if let Some((kind, scale)) = crate::marinhos::corpo(kind, chefe) {
+        let Some(vp) = viewport_na_tela(r) else {
+            return false;
+        };
+        let d = crate::marinhos::dimensions(kind) * scale;
+        let aspect = vp.2 as f32 / vp.3.max(1) as f32;
+        let size = d.y.max(d.x.max(d.z) / aspect.max(0.6));
+        let cam = Camera3D {
+            position: vec3(size * 0.7, size * 0.7, size * 2.5),
+            target: vec3(0., d.y * 0.5 + 0.85, 0.),
+            up: Vec3::Y,
+            fovy: 30f32.to_radians(),
+            aspect: Some(aspect),
+            viewport: Some(vp),
+            render_target: alvo(),
+            ..Default::default()
+        };
+        set_camera(&cam);
+        limpa_so_profundidade();
         macroquad::material::gl_use_material(solido);
-        crate::marinhos::desenha(kind,Vec3::ZERO,yaw,kind as u64,scale);
-        macroquad::material::gl_use_default_material();camera_padrao();
+        crate::marinhos::desenha(kind, Vec3::ZERO, yaw, kind as u64, scale);
+        macroquad::material::gl_use_default_material();
+        camera_padrao();
         return true;
     }
     if let Some((nome, _)) = crate::bicho::do_mob(shared::EntityTag::Enemy, kind, chefe) {
-        let Some(b) = vox.bicho(nome) else { return false; };
-        let Some(vp) = viewport_na_tela(r) else { return false; };
+        let Some(b) = vox.bicho(nome) else {
+            return false;
+        };
+        let Some(vp) = viewport_na_tela(r) else {
+            return false;
+        };
         let cam = camera_da_vitrine(b, 1.0, 1.35, vp);
         set_camera(&cam);
         limpa_so_profundidade();
         macroquad::material::gl_use_material(solido);
-        desenha_bicho_montaria(b, 1.0, None, Vec3::ZERO, yaw,
-            0.0, 0.0, get_time() as f32, kind as f32);
+        desenha_bicho_montaria(
+            b,
+            1.0,
+            None,
+            Vec3::ZERO,
+            yaw,
+            0.0,
+            0.0,
+            get_time() as f32,
+            kind as f32,
+        );
         macroquad::material::gl_use_default_material();
         camera_padrao();
         true
@@ -3603,7 +3965,9 @@ pub fn vitrine_mob(vox: &crate::vox::VoxCache, kind: u16, chefe: bool,
                 Some(shared::bosses::Corpo::Pirata) => 2,
                 _ => kind,
             }
-        } else { kind };
+        } else {
+            kind
+        };
         let nome = rig_de_gente(corpo).unwrap_or_else(|| modelo_do_mob(corpo));
         vitrine_rig(vox, nome, r, yaw, solido)
     }

@@ -46,7 +46,9 @@ fn kit_da_arma(arma: u16) -> [u16; 7] {
 async fn main() -> Result<()> {
     tracing_subscriber::fmt().with_env_filter("info").init();
     let a: Vec<String> = std::env::args().skip(1).collect();
-    let nome = a.first().context("uso: enviar_kit <personagem> [cor] [tier] [refino]")?;
+    let nome = a
+        .first()
+        .context("uso: enviar_kit <personagem> [cor] [tier] [refino]")?;
     let cor: u8 = a.get(1).map_or(Ok(4), |x| x.parse())?;
     let tier: u8 = a.get(2).map_or(Ok(4), |x| x.parse())?;
     let refino: u8 = a.get(3).map_or(Ok(8), |x| x.parse())?;
@@ -68,9 +70,16 @@ async fn main() -> Result<()> {
     .context("personagem não encontrado")?;
     // KIT_ITEM=<item id> [KIT_QTD=<n>]: only that piece, n copies, instead
     // of the whole set (owner testing one weapon, 13/11/2026).
-    let kit: Vec<u16> = match std::env::var("KIT_ITEM").ok().and_then(|v| v.parse::<u16>().ok()) {
+    let kit: Vec<u16> = match std::env::var("KIT_ITEM")
+        .ok()
+        .and_then(|v| v.parse::<u16>().ok())
+    {
         Some(id) => {
-            let n: usize = std::env::var("KIT_QTD").ok().and_then(|v| v.parse().ok()).unwrap_or(1).clamp(1, 20);
+            let n: usize = std::env::var("KIT_QTD")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(1)
+                .clamp(1, 20);
             vec![id; n]
         }
         None => kit_da_arma(arma as u16).to_vec(),
@@ -108,8 +117,17 @@ async fn main() -> Result<()> {
 
     // The identifier makes the send IDEMPOTENT: running it again with the same
     // arguments does not send twice.
-    let envio = format!("kit-{nome}-{cor}-{tier}-{refino}-{}", kit.iter().map(|i| i.to_string()).collect::<Vec<_>>().join("-")).to_lowercase()
-        + &std::env::var("KIT_SUFIXO").map(|x| format!("-{x}")).unwrap_or_default();
+    let envio = format!(
+        "kit-{nome}-{cor}-{tier}-{refino}-{}",
+        kit.iter()
+            .map(|i| i.to_string())
+            .collect::<Vec<_>>()
+            .join("-")
+    )
+    .to_lowercase()
+        + &std::env::var("KIT_SUFIXO")
+            .map(|x| format!("-{x}"))
+            .unwrap_or_default();
     let pedido = Pedido::EnviarOficial {
         envio,
         para: Some(nome.clone()),

@@ -126,7 +126,11 @@ fn distancia(eu: Option<Vec2>, p: Vec2) -> u32 {
 fn sem_lugar(o: &mut Opcao, ilhas: &[u8], c: &Onde) {
     let fora_daqui = !ilhas.is_empty() && c.ilha_atual.is_none_or(|a| !ilhas.contains(&a));
     if !ilhas.is_empty() {
-        let rotulo = if ilhas.len() == 1 { "Island" } else { "Islands" };
+        let rotulo = if ilhas.len() == 1 {
+            "Island"
+        } else {
+            "Islands"
+        };
         o.detalhe = format!("{} · {rotulo}: {}", o.detalhe, nomes_das_ilhas(ilhas));
     }
     o.sem_ir = Some(if c.info.is_none() {
@@ -260,7 +264,12 @@ fn opcao(f: &FonteDeItem, c: &Onde) -> Opcao {
                     );
                     let alto = z.lv_min as u32 > c.nivel + ACIMA_DO_NIVEL;
                     if alto {
-                        o.aviso = Some(format!("Level {}+ zone: above your level", shared::progressao::texto_de_nivel(z.lv_min.min(shared::progressao::NIVEL_MAX as u16) as u32)));
+                        o.aviso = Some(format!(
+                            "Level {}+ zone: above your level",
+                            shared::progressao::texto_de_nivel(
+                                z.lv_min.min(shared::progressao::NIVEL_MAX as u16) as u32
+                            )
+                        ));
                     }
                     o.ordem = (if alto { 3 } else { 0 }, distancia(c.eu, pos));
                     o.ir = Some(Ir::Alvo(Alvo {
@@ -356,9 +365,15 @@ fn opcao(f: &FonteDeItem, c: &Onde) -> Opcao {
             nivel_min,
         } => {
             o.titulo = format!("Craft: {nome}");
-            o.detalhe = format!("Craft · minimum level {}", shared::progressao::texto_de_nivel((*nivel_min).max(1) as u32));
+            o.detalhe = format!(
+                "Craft · minimum level {}",
+                shared::progressao::texto_de_nivel((*nivel_min).max(1) as u32)
+            );
             if c.nivel < *nivel_min as u32 {
-                o.aviso = Some(format!("Requires level {}", shared::progressao::texto_de_nivel(*nivel_min as u32)));
+                o.aviso = Some(format!(
+                    "Requires level {}",
+                    shared::progressao::texto_de_nivel(*nivel_min as u32)
+                ));
             }
             o.ordem = (2, *nivel_min as u32);
             o.ir = Some(Ir::AbrirCraft(*receita));
@@ -833,7 +848,11 @@ mod tests {
             &onde(&i, &[], true),
         );
         assert_eq!(v[0].sem_ir.as_deref(), Some(OUTRA_ILHA));
-        assert!(v[0].detalhe.ends_with("Island: Geleira"), "{}", v[0].detalhe);
+        assert!(
+            v[0].detalhe.ends_with("Island: Geleira"),
+            "{}",
+            v[0].detalhe
+        );
     }
 
     #[test]

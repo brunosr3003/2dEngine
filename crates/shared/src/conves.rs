@@ -45,10 +45,46 @@ pub struct Medida {
 /// | Galleon | 15.5 × 5.5 u | ~13 × 5 u |
 /// | Man-o'-War | 20.2 × 6.2 u | ~17 × 6 u |
 pub const MEDIDAS: [Medida; 4] = [
-    Medida { comp: 48, larg: 20, calado: 4, borda: 5, vox: 0.15, mastros: &[(0.12, 1.0)], tombadilho: false, castelo: false },
-    Medida { comp: 60, larg: 22, calado: 5, borda: 6, vox: 0.18, mastros: &[(0.32, 0.92), (-0.14, 1.02)], tombadilho: false, castelo: false },
-    Medida { comp: 74, larg: 26, calado: 6, borda: 7, vox: 0.21, mastros: &[(0.36, 0.86), (0.02, 1.0), (-0.34, 0.78)], tombadilho: true, castelo: true },
-    Medida { comp: 72, larg: 22, calado: 5, borda: 7, vox: 0.28, mastros: &[(0.38, 0.86), (0.02, 1.0), (-0.34, 0.8)], tombadilho: true, castelo: true },
+    Medida {
+        comp: 48,
+        larg: 20,
+        calado: 4,
+        borda: 5,
+        vox: 0.15,
+        mastros: &[(0.12, 1.0)],
+        tombadilho: false,
+        castelo: false,
+    },
+    Medida {
+        comp: 60,
+        larg: 22,
+        calado: 5,
+        borda: 6,
+        vox: 0.18,
+        mastros: &[(0.32, 0.92), (-0.14, 1.02)],
+        tombadilho: false,
+        castelo: false,
+    },
+    Medida {
+        comp: 74,
+        larg: 26,
+        calado: 6,
+        borda: 7,
+        vox: 0.21,
+        mastros: &[(0.36, 0.86), (0.02, 1.0), (-0.34, 0.78)],
+        tombadilho: true,
+        castelo: true,
+    },
+    Medida {
+        comp: 72,
+        larg: 22,
+        calado: 5,
+        borda: 7,
+        vox: 0.28,
+        mastros: &[(0.38, 0.86), (0.02, 1.0), (-0.34, 0.8)],
+        tombadilho: true,
+        castelo: true,
+    },
 ];
 
 pub fn medida(classe: usize) -> &'static Medida {
@@ -130,7 +166,9 @@ pub fn meio_comp(classe: usize) -> f32 {
 pub fn mastros(classe: usize) -> impl Iterator<Item = Vec2> {
     let m = medida(classe);
     let l2 = (m.comp / 2) as f32;
-    m.mastros.iter().map(move |(pos, _)| Vec2::new(0.0, (pos * l2).trunc() * m.vox))
+    m.mastros
+        .iter()
+        .map(move |(pos, _)| Vec2::new(0.0, (pos * l2).trunc() * m.vox))
 }
 
 /// The ship's WHEEL, on deck: at the stern (on the quarterdeck of the big
@@ -138,7 +176,11 @@ pub fn mastros(classe: usize) -> impl Iterator<Item = Vec2> {
 pub fn roda(classe: usize) -> Vec2 {
     let m = medida(classe);
     let l2 = m.comp / 2;
-    let z = if m.tombadilho { -l2 + (m.comp as f32 * 0.12) as i32 } else { -l2 + 6 };
+    let z = if m.tombadilho {
+        -l2 + (m.comp as f32 * 0.12) as i32
+    } else {
+        -l2 + 6
+    };
     Vec2::new(0.0, z as f32 * m.vox)
 }
 
@@ -180,7 +222,11 @@ pub fn mover(classe: usize, local: Vec2, passo: Vec2) -> Vec2 {
     if !passo.is_finite() {
         return local;
     }
-    for p in [local + passo, local + Vec2::new(passo.x, 0.0), local + Vec2::new(0.0, passo.y)] {
+    for p in [
+        local + passo,
+        local + Vec2::new(passo.x, 0.0),
+        local + Vec2::new(0.0, passo.y),
+    ] {
         if cabe(classe, p) {
             return p;
         }
@@ -263,8 +309,17 @@ pub struct NoConves {
 
 impl NoConves {
     pub fn novo(id: EntityId, navio: EntityId, local: Vec2, leme: bool) -> Self {
-        let q = |v: f32| (v * ESCALA_LOCAL).round().clamp(i16::MIN as f32, i16::MAX as f32) as i16;
-        NoConves { id, navio, local: [q(local.x), q(local.y)], leme }
+        let q = |v: f32| {
+            (v * ESCALA_LOCAL)
+                .round()
+                .clamp(i16::MIN as f32, i16::MAX as f32) as i16
+        };
+        NoConves {
+            id,
+            navio,
+            local: [q(local.x), q(local.y)],
+            leme,
+        }
     }
     pub fn local_f32(&self) -> Vec2 {
         Vec2::new(self.local[0] as f32, self.local[1] as f32) / ESCALA_LOCAL
@@ -294,8 +349,14 @@ mod testes {
             }
             let comp = ys.last().unwrap() - ys.first().unwrap();
             println!("class {classe}: deck {comp:.1} x {larg:.1} u");
-            assert!((comp - comp_q).abs() < comp_q * 0.15, "class {classe}: deck length {comp}");
-            assert!((larg - larg_q).abs() < larg_q * 0.15, "class {classe}: deck width {larg}");
+            assert!(
+                (comp - comp_q).abs() < comp_q * 0.15,
+                "class {classe}: deck length {comp}"
+            );
+            assert!(
+                (larg - larg_q).abs() < larg_q * 0.15,
+                "class {classe}: deck width {larg}"
+            );
         }
     }
 
@@ -306,7 +367,10 @@ mod testes {
             // A stretch of deck clear of the masts.
             let y = (0..80)
                 .map(|k| -(k as f32) * 0.1)
-                .find(|y| cabe(classe, Vec2::new(0.0, *y)) && mastros(classe).all(|m| m.distance(Vec2::new(0.0, *y)) > 0.9))
+                .find(|y| {
+                    cabe(classe, Vec2::new(0.0, *y))
+                        && mastros(classe).all(|m| m.distance(Vec2::new(0.0, *y)) > 0.9)
+                })
                 .unwrap();
             let hw = meia_largura_andavel(classe, y).unwrap();
             // Walking to starboard forever stops at the rail.
@@ -326,7 +390,10 @@ mod testes {
                 assert!(!cabe(classe, m), "class {classe}: inside a mast");
             }
             assert!(!cabe(classe, roda(classe)));
-            assert!(cabe(classe, leme(classe)), "class {classe}: the helmsman's spot is walkable");
+            assert!(
+                cabe(classe, leme(classe)),
+                "class {classe}: the helmsman's spot is walkable"
+            );
             for n in 0..6 {
                 assert!(cabe(classe, lugar_da_tripulacao(classe, n)));
             }
@@ -338,7 +405,14 @@ mod testes {
     #[test]
     fn a_linha_do_conves_cabe_no_fio() {
         let lista: Vec<NoConves> = (0..8)
-            .map(|k| NoConves::novo(EntityId(40_000 + k), EntityId(41_000), Vec2::new(-2.9 + k as f32 * 0.7, 9.8 - k as f32 * 2.4), k == 0))
+            .map(|k| {
+                NoConves::novo(
+                    EntityId(40_000 + k),
+                    EntityId(41_000),
+                    Vec2::new(-2.9 + k as f32 * 0.7, 9.8 - k as f32 * 2.4),
+                    k == 0,
+                )
+            })
             .collect();
         let m = crate::protocol::ServerMessage::Conves { lista };
         let bytes = postcard::to_allocvec(&m).unwrap();

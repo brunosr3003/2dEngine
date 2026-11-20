@@ -24,7 +24,9 @@ static ENVIADA: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new
 pub fn novidade() -> Option<Arc<TabelaDePrecos>> {
     use std::sync::atomic::Ordering;
     let (v, t) = atual();
-    (v != ENVIADA.swap(v, Ordering::Relaxed)).then_some(t).flatten()
+    (v != ENVIADA.swap(v, Ordering::Relaxed))
+        .then_some(t)
+        .flatten()
 }
 
 /// The current table and its version (0 = none yet).
@@ -96,9 +98,11 @@ async fn levantar(pool: &PgPool, central: Option<PgPool>, realm: &str) -> anyhow
     .await?;
     *e.unidades.entry(shared::item_id::ENERGIA_MIL).or_default() +=
         energia.max(0) as u64 / shared::mercado::ENERGIA_POR_LOTE;
-    let bases = sqlx::query("SELECT id, buy_price FROM items WHERE active AND buy_price IS NOT NULL AND buy_price > 0")
-        .fetch_all(pool)
-        .await?;
+    let bases = sqlx::query(
+        "SELECT id, buy_price FROM items WHERE active AND buy_price IS NOT NULL AND buy_price > 0",
+    )
+    .fetch_all(pool)
+    .await?;
     for l in bases {
         let id: i32 = l.get(0);
         let preco: i32 = l.get(1);

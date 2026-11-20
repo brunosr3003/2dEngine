@@ -29,7 +29,8 @@ const DT: f32 = 1.0 / QPS as f32;
 
 /// The scenes, in the order `todas` renders them.
 pub const CENAS: &[&str] = &[
-    "bosque", "geleira", "ermo", "planalto", "celeste", "kogen", "abissal", "magica", "mar", "auras", "chefe",
+    "bosque", "geleira", "ermo", "planalto", "celeste", "kogen", "abissal", "magica", "mar",
+    "auras", "chefe",
 ];
 
 /// `MMO_FILME`: which scenes to film. `None` (unset, empty, "0" or no known
@@ -42,8 +43,10 @@ pub fn pedido(v: Option<&str>) -> Option<Vec<&'static str>> {
     if v == "todas" || v == "all" {
         return Some(CENAS.to_vec());
     }
-    let lista: Vec<&'static str> =
-        v.split(',').filter_map(|n| CENAS.iter().copied().find(|c| *c == n.trim())).collect();
+    let lista: Vec<&'static str> = v
+        .split(',')
+        .filter_map(|n| CENAS.iter().copied().find(|c| *c == n.trim()))
+        .collect();
     (!lista.is_empty()).then_some(lista)
 }
 
@@ -64,7 +67,10 @@ pub const TAMANHOS: &[(&str, u32, u32)] = &[
 /// the same size lying down. (width, height, name for the files).
 pub fn tamanho(s: &str) -> Option<(u32, u32, String)> {
     let s = s.trim().to_lowercase();
-    let (base, deitar) = match s.strip_suffix("-paisagem").or_else(|| s.strip_suffix("-landscape")) {
+    let (base, deitar) = match s
+        .strip_suffix("-paisagem")
+        .or_else(|| s.strip_suffix("-landscape"))
+    {
         Some(b) => (b.to_string(), true),
         None => (s.clone(), false),
     };
@@ -91,8 +97,14 @@ pub fn tamanho(s: &str) -> Option<(u32, u32, String)> {
 /// times `em`, in seconds, as frame numbers, sorted, no repeats.
 pub fn quadros_dos_prints(n: usize, em: &[f32], duracao: f32) -> Vec<u32> {
     let total = (duracao * QPS as f32).round().max(1.0) as u32;
-    let mut v: Vec<u32> = (0..n).map(|i| (((i as f32 + 0.5) / n as f32) * total as f32) as u32).collect();
-    v.extend(em.iter().filter(|t| **t >= 0.0).map(|t| (t * QPS as f32).round() as u32));
+    let mut v: Vec<u32> = (0..n)
+        .map(|i| (((i as f32 + 0.5) / n as f32) * total as f32) as u32)
+        .collect();
+    v.extend(
+        em.iter()
+            .filter(|t| **t >= 0.0)
+            .map(|t| (t * QPS as f32).round() as u32),
+    );
     v.retain(|q| *q < total);
     v.sort_unstable();
     v.dedup();
@@ -121,7 +133,13 @@ struct Chave {
 }
 
 const fn ch(yaw: f32, zoom: f32, pitch: f32, dx: f32, dz: f32) -> Chave {
-    Chave { yaw, zoom, pitch, dx, dz }
+    Chave {
+        yaw,
+        zoom,
+        pitch,
+        dx,
+        dz,
+    }
 }
 
 /// The path at `u` (0..1): eased in and out over the whole shot, through
@@ -136,9 +154,17 @@ fn caminho(chaves: &[Chave], u: f32) -> Chave {
     let i = (s.floor() as usize).min(n - 1);
     let f = s - i as f32;
     let k = |j: isize| chaves[j.clamp(0, n as isize) as usize];
-    let (p0, p1, p2, p3) = (k(i as isize - 1), k(i as isize), k(i as isize + 1), k(i as isize + 2));
+    let (p0, p1, p2, p3) = (
+        k(i as isize - 1),
+        k(i as isize),
+        k(i as isize + 1),
+        k(i as isize + 2),
+    );
     let cr = |a: f32, b: f32, c: f32, d: f32| {
-        0.5 * (2.0 * b + (c - a) * f + (2.0 * a - 5.0 * b + 4.0 * c - d) * f * f + (3.0 * b - a - 3.0 * c + d) * f * f * f)
+        0.5 * (2.0 * b
+            + (c - a) * f
+            + (2.0 * a - 5.0 * b + 4.0 * c - d) * f * f
+            + (3.0 * b - a - 3.0 * c + d) * f * f * f)
     };
     Chave {
         yaw: cr(p0.yaw, p1.yaw, p2.yaw, p3.yaw),
@@ -263,7 +289,14 @@ struct Plano {
 
 impl Default for Plano {
     fn default() -> Self {
-        Self { clareiras: 4, perto: 4.0, longe: 30.0, entre: 13.0, jogadores: vec![3, 3, 2, 3], mobs: vec![4, 5, 3, 4] }
+        Self {
+            clareiras: 4,
+            perto: 4.0,
+            longe: 30.0,
+            entre: 13.0,
+            jogadores: vec![3, 3, 2, 3],
+            mobs: vec![4, 5, 3, 4],
+        }
     }
 }
 
@@ -306,7 +339,14 @@ struct Ilha {
 
 impl Ilha {
     #[allow(clippy::too_many_arguments)]
-    fn nova(def: &'static shared::terreno::DefIlha, foco: Vec2, elenco: Elenco, tomadas: Vec<Tomada>, noite: bool, abismo: bool) -> Self {
+    fn nova(
+        def: &'static shared::terreno::DefIlha,
+        foco: Vec2,
+        elenco: Elenco,
+        tomadas: Vec<Tomada>,
+        noite: bool,
+        abismo: bool,
+    ) -> Self {
         let mut s = Self {
             def,
             terreno: crate::terreno::Terreno::novo(def),
@@ -349,7 +389,13 @@ impl Ilha {
             for (k, h) in herois.iter().enumerate() {
                 let id = if k == 0 { EU } else { 10 + k as u32 - 1 };
                 metas.push(h.meta(id, k as u32));
-                let mut st = EntityState::quantize(EntityId(id), g(self.foco + vec2(x0 + k as f32 * 2.7, 0.0)), g(Vec2::ZERO), 1000, 0);
+                let mut st = EntityState::quantize(
+                    EntityId(id),
+                    g(self.foco + vec2(x0 + k as f32 * 2.7, 0.0)),
+                    g(Vec2::ZERO),
+                    1000,
+                    0,
+                );
                 st.acao = shared::components::acao::monta(h.conjunto(), true, 0, 0);
                 estados.push(st);
             }
@@ -378,17 +424,39 @@ impl Ilha {
             vec![self.foco]
         } else {
             let altura = |x: f32, z: f32| ger.altura(x, z);
-            crate::filme_luta::clareiras(self.foco, p.clareiras, p.perto, p.longe, p.entre, &livre, &altura)
+            crate::filme_luta::clareiras(
+                self.foco,
+                p.clareiras,
+                p.perto,
+                p.longe,
+                p.entre,
+                &livre,
+                &altura,
+            )
         };
         println!(
             "[filme] {} clearings: {:?}",
             clareiras.len(),
-            clareiras.iter().map(|c| ((c.x - self.foco.x) as i32, (c.y - self.foco.y) as i32)).collect::<Vec<_>>()
+            clareiras
+                .iter()
+                .map(|c| ((c.x - self.foco.x) as i32, (c.y - self.foco.y) as i32))
+                .collect::<Vec<_>>()
         );
-        let (jogadores, mobs) =
-            if el.chefe.is_some() { (vec![el.jogadores.len() + 1], vec![0]) } else { (p.jogadores.clone(), p.mobs.clone()) };
+        let (jogadores, mobs) = if el.chefe.is_some() {
+            (vec![el.jogadores.len() + 1], vec![0])
+        } else {
+            (p.jogadores.clone(), p.mobs.clone())
+        };
         let semente = self.def.semente as u64 ^ 0x51_7cc1;
-        let mut luta = crate::filme_luta::Luta::nova(&clareiras, &jogadores, &mobs, &el.kinds, el.chefe, semente, Box::new(livre));
+        let mut luta = crate::filme_luta::Luta::nova(
+            &clareiras,
+            &jogadores,
+            &mobs,
+            &el.kinds,
+            el.chefe,
+            semente,
+            Box::new(livre),
+        );
         luta.passo(&mut self.mundo, 0.0);
         self.luta = Some(luta);
         self.clareiras = clareiras;
@@ -418,7 +486,14 @@ impl Ilha {
         self.casas.prontas() && feitos >= total
     }
 
-    fn quadro(&mut self, i: usize, t: f32, vox: &crate::vox::VoxCache, solido: &Material, ctx: &Contexto) -> Medida {
+    fn quadro(
+        &mut self,
+        i: usize,
+        t: f32,
+        vox: &crate::vox::VoxCache,
+        solido: &Material,
+        ctx: &Contexto,
+    ) -> Medida {
         self.relogio += DT;
         let u = t / self.tomadas[i].segundos;
         let c = caminho(&self.tomadas[i].chaves, u);
@@ -457,11 +532,21 @@ impl Ilha {
             let mut antiga = camera_de(alvo, t.altura(alvo.x, alvo.y), &c, recuo, ctx).position;
             antiga.y = antiga.y.max(chao(antiga.x, antiga.z) + 1.2);
             let o = vista.cam.position;
-            Medida { olho: o, alvo: vista.cam.target, olho_antigo: antiga, folga: o.y - chao(o.x, o.z), yaw: c.yaw }
+            Medida {
+                olho: o,
+                alvo: vista.cam.target,
+                olho_antigo: antiga,
+                folga: o.y - chao(o.x, o.z),
+                yaw: c.yaw,
+            }
         };
         set_camera(&vista.cam);
         crate::render3d::clear();
-        let luz = crate::render3d::luz_dia(if e.sombras == cg::Sombras::Bonitas { 1.0 } else { 0.0 });
+        let luz = crate::render3d::luz_dia(if e.sombras == cg::Sombras::Bonitas {
+            1.0
+        } else {
+            0.0
+        });
         solido.set_uniform("LuzDia", luz);
         crate::gpu_estatica::define_luz_dia(luz);
         // The haze is solid a chunk INSIDE the loaded square, never past
@@ -469,7 +554,11 @@ impl Ilha {
         // square's edge, trees cut along a line (the owner, 17/11/2026).
         // The square is wide (`RAIO_DA_CAPTURA`), so the haze starts far.
         let (inicio, fim) = neblina_da_captura();
-        let inicio = if self.noite { -inicio.max(0.01) } else { inicio };
+        let inicio = if self.noite {
+            -inicio.max(0.01)
+        } else {
+            inicio
+        };
         crate::gpu_estatica::define_neblina(alvo, inicio, fim);
         solido.set_uniform("Neblina", vec4(alvo.x, alvo.y, inicio, fim));
         crate::luzes::preparar(self.noite, alvo, &chao);
@@ -509,7 +598,8 @@ impl Ilha {
                 lift.set(lift.get() + 2e-5);
                 chao(x, z) + lift.get()
             };
-            l.telegrafos.desenha(&chao_em_camadas, crate::relogio::get_time());
+            l.telegrafos
+                .desenha(&chao_em_camadas, crate::relogio::get_time());
             l.habilidades.desenha_efeitos(&self.mundo, &vista);
             gl_use_default_material();
         }
@@ -534,7 +624,8 @@ pub const RAIO_DA_CAPTURA_NO_MAR: i32 = 18;
 /// ends where the square ends, minus a chunk of margin: the square is
 /// centred on the target's chunk, not on the target).
 fn neblina_da_captura() -> (f32, f32) {
-    let fim = (cg::raio_terreno() as f32 - 1.0) * crate::terreno::CHUNK as f32 * shared::terreno::BLOCO;
+    let fim =
+        (cg::raio_terreno() as f32 - 1.0) * crate::terreno::CHUNK as f32 * shared::terreno::BLOCO;
     (fim * 0.5, fim)
 }
 
@@ -608,10 +699,14 @@ impl Mar {
         let eu = self.aberto + self.rumo * 3.0 * t;
         let vel = self.rumo * 3.0;
         let mut v = vec![(EU, EntityTag::Player, 0, eu, vel, None)];
-        for (k, (kind, raio, vel_a, nome)) in
-            [(TUBARAO, 9.0f32, 0.35f32, None), (TUBARAO, 12.0, -0.28, Some("[ELITE] Dread Reef Shark")), (ENGUIA, 10.5, 0.3, None), (TUBARAO, 14.0, 0.22, None)]
-                .into_iter()
-                .enumerate()
+        for (k, (kind, raio, vel_a, nome)) in [
+            (TUBARAO, 9.0f32, 0.35f32, None),
+            (TUBARAO, 12.0, -0.28, Some("[ELITE] Dread Reef Shark")),
+            (ENGUIA, 10.5, 0.3, None),
+            (TUBARAO, 14.0, 0.22, None),
+        ]
+        .into_iter()
+        .enumerate()
         {
             let a = k as f32 * 1.7 + t * vel_a;
             let p = eu + vec2(a.cos(), a.sin()) * raio;
@@ -636,7 +731,17 @@ impl Mar {
         let estados = corpos
             .iter()
             .map(|(id, _, _, p, d, _)| {
-                EntityState::quantize(EntityId(*id), g(*p), g(*d), 100, if *id == EU { shared::ent_flags::SELF } else { 0 })
+                EntityState::quantize(
+                    EntityId(*id),
+                    g(*p),
+                    g(*d),
+                    100,
+                    if *id == EU {
+                        shared::ent_flags::SELF
+                    } else {
+                        0
+                    },
+                )
             })
             .collect();
         self.mundo.apply(metas, estados, &[]);
@@ -676,18 +781,43 @@ impl Mar {
             // Ships sailing in formation, wakes behind them.
             0 => {
                 let lider = self.aberto + self.rumo * 7.0 * t;
-                let frota: Vec<(Vec2, f32, Visual, u64)> = [(0.0f32, 0.0f32, 2u8), (-9.0, 7.0, 1), (-9.0, -7.0, 1), (-18.0, 13.0, 0), (-18.0, -13.0, 3)]
-                    .into_iter()
-                    .enumerate()
-                    .map(|(k, (atras, lado, classe))| {
-                        let v = Visual { classe, vela: classe + 1, ..Default::default() };
-                        let bal = (crate::relogio::get_time() as f32 * 0.7 + k as f32).sin() * 0.04;
-                        (lider + self.rumo * atras + self.lado * lado, yaw_de(self.rumo) + bal, v, 10 + k as u64)
-                    })
-                    .collect();
-                let c = caminho(&[ch(1.9, 2.6, 0.62, 0.0, 0.0), ch(1.2, 2.1, 0.5, 0.0, 0.0), ch(0.6, 1.9, 0.42, 0.0, 0.0)], u);
+                let frota: Vec<(Vec2, f32, Visual, u64)> = [
+                    (0.0f32, 0.0f32, 2u8),
+                    (-9.0, 7.0, 1),
+                    (-9.0, -7.0, 1),
+                    (-18.0, 13.0, 0),
+                    (-18.0, -13.0, 3),
+                ]
+                .into_iter()
+                .enumerate()
+                .map(|(k, (atras, lado, classe))| {
+                    let v = Visual {
+                        classe,
+                        vela: classe + 1,
+                        ..Default::default()
+                    };
+                    let bal = (crate::relogio::get_time() as f32 * 0.7 + k as f32).sin() * 0.04;
+                    (
+                        lider + self.rumo * atras + self.lado * lado,
+                        yaw_de(self.rumo) + bal,
+                        v,
+                        10 + k as u64,
+                    )
+                })
+                .collect();
+                let c = caminho(
+                    &[
+                        ch(1.9, 2.6, 0.62, 0.0, 0.0),
+                        ch(1.2, 2.1, 0.5, 0.0, 0.0),
+                        ch(0.6, 1.9, 0.42, 0.0, 0.0),
+                    ],
+                    u,
+                );
                 let foco = lider - self.rumo * 8.0;
-                let c = Chave { yaw: yaw_de(self.rumo) + c.yaw, ..c };
+                let c = Chave {
+                    yaw: yaw_de(self.rumo) + c.yaw,
+                    ..c
+                };
                 (camera_de(foco, 0.0, &c, ctx.recuo, ctx), frota, false)
             }
             // The broadside fight.
@@ -707,7 +837,11 @@ impl Mar {
                         e.render_pos = p;
                     }
                 }
-                let eu =self.mundo.ents.get(&EntityId(EU)).map_or(self.aberto, |e| e.render_pos);
+                let eu = self
+                    .mundo
+                    .ents
+                    .get(&EntityId(EU))
+                    .map_or(self.aberto, |e| e.render_pos);
                 if let Some(e) = self.mundo.ents.get_mut(&EntityId(EU)) {
                     e.yaw = yaw_de(self.rumo);
                 }
@@ -719,37 +853,103 @@ impl Mar {
                 }
                 if t >= self.proximo_tiro {
                     let alvo = 2 + self.tiros % 4;
-                    let mira = self.mundo.ents.get(&EntityId(alvo)).map_or(eu + self.lado * 9.0, |e| e.render_pos);
+                    let mira = self
+                        .mundo
+                        .ents
+                        .get(&EntityId(alvo))
+                        .map_or(eu + self.lado * 9.0, |e| e.render_pos);
                     let skill = if self.tiros % 3 == 2 { 1 } else { 0 };
-                    self.vfx.tiro(&self.mundo, shared::navio::id_de_skill(skill), EntityId(EU), eu, mira, (self.tiros % 3) as u8);
+                    self.vfx.tiro(
+                        &self.mundo,
+                        shared::navio::id_de_skill(skill),
+                        EntityId(EU),
+                        eu,
+                        mira,
+                        (self.tiros % 3) as u8,
+                    );
                     if skill == 0 {
                         // The broadside fires both sides.
                         let outro = 2 + (self.tiros + 2) % 4;
-                        if let Some(m) = self.mundo.ents.get(&EntityId(outro)).map(|e| e.render_pos) {
-                            self.vfx.tiro(&self.mundo, shared::navio::id_de_skill(0), EntityId(EU), eu, m, 1);
+                        if let Some(m) = self.mundo.ents.get(&EntityId(outro)).map(|e| e.render_pos)
+                        {
+                            self.vfx.tiro(
+                                &self.mundo,
+                                shared::navio::id_de_skill(0),
+                                EntityId(EU),
+                                eu,
+                                m,
+                                1,
+                            );
                         }
                     }
                     self.tiros += 1;
                     self.proximo_tiro = t + 1.35;
                 }
-                let c = caminho(&[ch(0.5, 1.6, 0.6, 0.0, 0.0), ch(1.4, 1.35, 0.5, 0.0, 0.0), ch(2.3, 1.5, 0.55, 0.0, 0.0)], u);
-                let c = Chave { yaw: yaw_de(self.rumo) + c.yaw, ..c };
-                let navios = vec![(eu, yaw_de(self.rumo), Visual { classe: 2, vela: 3, ..Default::default() }, 1u64)];
+                let c = caminho(
+                    &[
+                        ch(0.5, 1.6, 0.6, 0.0, 0.0),
+                        ch(1.4, 1.35, 0.5, 0.0, 0.0),
+                        ch(2.3, 1.5, 0.55, 0.0, 0.0),
+                    ],
+                    u,
+                );
+                let c = Chave {
+                    yaw: yaw_de(self.rumo) + c.yaw,
+                    ..c
+                };
+                let navios = vec![(
+                    eu,
+                    yaw_de(self.rumo),
+                    Visual {
+                        classe: 2,
+                        vela: 3,
+                        ..Default::default()
+                    },
+                    1u64,
+                )];
                 (camera_de(eu, 0.0, &c, ctx.recuo, ctx), navios, true)
             }
             // Into a dock: the Grove's with its lighthouse, then the themed one.
             _ => {
-                let (cais, eixo, longe) = if i == 2 { (self.cais, self.eixo, 70.0) } else { (self.cais2, self.eixo2, 75.0) };
+                let (cais, eixo, longe) = if i == 2 {
+                    (self.cais, self.eixo, 70.0)
+                } else {
+                    (self.cais2, self.eixo2, 75.0)
+                };
                 let _ = longe;
                 let foco = cais + eixo * (30.0 - 36.0 * u);
                 let barco = cais + eixo * (longe - 8.0 - 40.0 * u) + vec2(eixo.y, -eixo.x) * 6.0;
                 let navios = vec![
-                    (barco, yaw_de(-eixo), Visual { classe: 1, vela: 2, ..Default::default() }, 21u64),
-                    (barco + eixo * 16.0 - vec2(eixo.y, -eixo.x) * 12.0, yaw_de(-eixo) + 0.2, Visual { classe: 0, vela: 1, ..Default::default() }, 22),
+                    (
+                        barco,
+                        yaw_de(-eixo),
+                        Visual {
+                            classe: 1,
+                            vela: 2,
+                            ..Default::default()
+                        },
+                        21u64,
+                    ),
+                    (
+                        barco + eixo * 16.0 - vec2(eixo.y, -eixo.x) * 12.0,
+                        yaw_de(-eixo) + 0.2,
+                        Visual {
+                            classe: 0,
+                            vela: 1,
+                            ..Default::default()
+                        },
+                        22,
+                    ),
                 ];
-                let c = caminho(&[ch(0.7, 2.6, 0.42, 0.0, 0.0), ch(0.3, 2.1, 0.3, 0.0, 0.0)], u);
+                let c = caminho(
+                    &[ch(0.7, 2.6, 0.42, 0.0, 0.0), ch(0.3, 2.1, 0.3, 0.0, 0.0)],
+                    u,
+                );
                 // The eye out at sea, looking in at the dock.
-                let c = Chave { yaw: (-eixo.x).atan2(eixo.y) + c.yaw, ..c };
+                let c = Chave {
+                    yaw: (-eixo.x).atan2(eixo.y) + c.yaw,
+                    ..c
+                };
                 (camera_de(foco, 0.0, &c, ctx.recuo, ctx), navios, false)
             }
         };
@@ -761,19 +961,36 @@ impl Mar {
             gl_use_material(solido);
             for (id, e) in &self.mundo.ents {
                 if e.meta.tag == EntityTag::Enemy {
-                    let escala = if crate::mar_combate_ui::e_elite(e) { 1.6 } else { 1.0 };
-                    crate::marinhos::desenha(e.meta.kind, vec3(e.render_pos.x, 0.0, e.render_pos.y), e.yaw, id.0 as u64, escala);
+                    let escala = if crate::mar_combate_ui::e_elite(e) {
+                        1.6
+                    } else {
+                        1.0
+                    };
+                    crate::marinhos::desenha(
+                        e.meta.kind,
+                        vec3(e.render_pos.x, 0.0, e.render_pos.y),
+                        e.yaw,
+                        id.0 as u64,
+                        escala,
+                    );
                 }
             }
             gl_use_default_material();
             self.vfx.atualiza(&self.mundo);
-            self.vfx.desenha_3d(&self.mundo, &cam, None, Default::default());
+            self.vfx
+                .desenha_3d(&self.mundo, &cam, None, Default::default());
         }
         apaga_luz_e_neblina(solido);
         crate::render3d::camera_padrao();
         crate::mar_ui::define_no_mar(false);
         // The sea is flat: the eye over the water at y 0.
-        Medida { olho: cam.position, alvo: cam.target, olho_antigo: cam.position, folga: cam.position.y, yaw: 0.0 }
+        Medida {
+            olho: cam.position,
+            alvo: cam.target,
+            olho_antigo: cam.position,
+            folga: cam.position.y,
+            yaw: 0.0,
+        }
     }
 }
 
@@ -799,7 +1016,14 @@ impl Cena {
         }
     }
 
-    fn quadro(&mut self, i: usize, t: f32, vox: &crate::vox::VoxCache, solido: &Material, ctx: &Contexto) -> Medida {
+    fn quadro(
+        &mut self,
+        i: usize,
+        t: f32,
+        vox: &crate::vox::VoxCache,
+        solido: &Material,
+        ctx: &Contexto,
+    ) -> Medida {
         match self {
             Cena::Ilha(s) => s.quadro(i, t, vox, solido, ctx),
             Cena::Mar(s) => s.quadro(i, t, solido, ctx),
@@ -818,7 +1042,9 @@ fn v2(p: ::glam::Vec2) -> Vec2 {
 }
 
 fn cidade(def: &'static shared::terreno::DefIlha) -> Vec2 {
-    shared::terreno::Gerador::da_ilha(def).cidade().map_or(Vec2::ZERO, |c| v2(c.centro()))
+    shared::terreno::Gerador::da_ilha(def)
+        .cidade()
+        .map_or(Vec2::ZERO, |c| v2(c.centro()))
 }
 
 fn elenco(renascimentos: u8, jogadores: &[u8], kinds: &[u16], inimigos: u32) -> Elenco {
@@ -835,7 +1061,10 @@ fn elenco(renascimentos: u8, jogadores: &[u8], kinds: &[u16], inimigos: u32) -> 
 }
 
 fn tomada(segundos: f32, chaves: &[Chave]) -> Tomada {
-    Tomada { segundos, chaves: chaves.to_vec() }
+    Tomada {
+        segundos,
+        chaves: chaves.to_vec(),
+    }
 }
 
 /// The Plateau's camera over its clearings: a low glide past the three
@@ -851,7 +1080,8 @@ fn tomadas_da_batalha(foco: Vec2, clareiras: &[Vec2]) -> Vec<Tomada> {
     let n = c.len();
     let k = (0..n)
         .min_by(|&i, &j| {
-            let l = |i: usize| c[i].distance(c[(i + 1) % n]) + c[(i + 1) % n].distance(c[(i + 2) % n]);
+            let l =
+                |i: usize| c[i].distance(c[(i + 1) % n]) + c[(i + 1) % n].distance(c[(i + 2) % n]);
             l(i).total_cmp(&l(j))
         })
         .unwrap_or(0);
@@ -864,7 +1094,10 @@ fn tomadas_da_batalha(foco: Vec2, clareiras: &[Vec2]) -> Vec<Tomada> {
     let fora = |v: Vec2| v.y.atan2(v.x) + std::f32::consts::PI - 0.35;
     let (ya, yb, yd) = (fora(a), fora(b), fora(d));
     // Unwrapped so the path turns the short way.
-    let perto = |de: f32, para: f32| de + (para - de + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU) - std::f32::consts::PI;
+    let perto = |de: f32, para: f32| {
+        de + (para - de + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU)
+            - std::f32::consts::PI
+    };
     let yb = perto(ya, yb);
     let yd = perto(yb, yd);
     let (y0, y1) = (ya, yd);
@@ -885,7 +1118,13 @@ fn tomadas_da_batalha(foco: Vec2, clareiras: &[Vec2]) -> Vec<Tomada> {
             10.0,
             &[
                 ch(y1, 1.15, 0.62, d.x, d.y),
-                ch(y1 + 0.35, 1.8, 0.74, d.x * 0.6 + meio.x * 0.4, d.y * 0.6 + meio.y * 0.4),
+                ch(
+                    y1 + 0.35,
+                    1.8,
+                    0.74,
+                    d.x * 0.6 + meio.x * 0.4,
+                    d.y * 0.6 + meio.y * 0.4,
+                ),
                 ch(y1 + 0.7, longe, 0.95, meio.x, meio.y),
             ],
         ),
@@ -895,7 +1134,11 @@ fn tomadas_da_batalha(foco: Vec2, clareiras: &[Vec2]) -> Vec<Tomada> {
 /// Scene by name. `None`: this zone cannot be built here.
 fn monta(nome: &str) -> Option<Cena> {
     use shared::terreno::ARQUIPELAGO as A;
-    let ilha = |def, foco, el, tomadas, noite, abismo| Some(Cena::Ilha(Box::new(Ilha::nova(def, foco, el, tomadas, noite, abismo))));
+    let ilha = |def, foco, el, tomadas, noite, abismo| {
+        Some(Cena::Ilha(Box::new(Ilha::nova(
+            def, foco, el, tomadas, noite, abismo,
+        ))))
+    };
     match nome {
         // The Grove: the village edge, a hunt among the trees.
         "bosque" => {
@@ -905,8 +1148,22 @@ fn monta(nome: &str) -> Option<Cena> {
                 cidade(def) + vec2(-28.0, 18.0),
                 elenco(5, &[3, 0, 1, 0], &[0, 1, 3, 5, 6, 2], 18),
                 vec![
-                    tomada(9.0, &[ch(-0.4, 3.2, 0.95, 26.0, -22.0), ch(0.2, 2.4, 0.78, 10.0, -8.0), ch(0.6, 1.7, 0.62, 0.0, 0.0)]),
-                    tomada(9.0, &[ch(0.7, 1.05, 0.5, 0.0, 0.0), ch(1.5, 0.85, 0.42, 0.0, 0.0), ch(2.2, 0.95, 0.46, 0.0, 0.0)]),
+                    tomada(
+                        9.0,
+                        &[
+                            ch(-0.4, 3.2, 0.95, 26.0, -22.0),
+                            ch(0.2, 2.4, 0.78, 10.0, -8.0),
+                            ch(0.6, 1.7, 0.62, 0.0, 0.0),
+                        ],
+                    ),
+                    tomada(
+                        9.0,
+                        &[
+                            ch(0.7, 1.05, 0.5, 0.0, 0.0),
+                            ch(1.5, 0.85, 0.42, 0.0, 0.0),
+                            ch(2.2, 0.95, 0.46, 0.0, 0.0),
+                        ],
+                    ),
                 ],
                 false,
                 false,
@@ -919,8 +1176,18 @@ fn monta(nome: &str) -> Option<Cena> {
                 cidade(def) + vec2(24.0, -20.0),
                 elenco(10, &[5, 3, 0, 1, 0], &[30, 31, 32, 0, 3], 22),
                 vec![
-                    tomada(9.0, &[ch(2.6, 3.0, 0.85, -20.0, 20.0), ch(3.1, 2.0, 0.66, -6.0, 6.0), ch(3.5, 1.4, 0.56, 0.0, 0.0)]),
-                    tomada(9.0, &[ch(3.6, 1.0, 0.48, 0.0, 0.0), ch(4.6, 0.9, 0.44, 0.0, 0.0)]),
+                    tomada(
+                        9.0,
+                        &[
+                            ch(2.6, 3.0, 0.85, -20.0, 20.0),
+                            ch(3.1, 2.0, 0.66, -6.0, 6.0),
+                            ch(3.5, 1.4, 0.56, 0.0, 0.0),
+                        ],
+                    ),
+                    tomada(
+                        9.0,
+                        &[ch(3.6, 1.0, 0.48, 0.0, 0.0), ch(4.6, 0.9, 0.44, 0.0, 0.0)],
+                    ),
                 ],
                 false,
                 false,
@@ -933,8 +1200,18 @@ fn monta(nome: &str) -> Option<Cena> {
                 cidade(def) + vec2(-22.0, -26.0),
                 elenco(3, &[10, 1, 0, 5, 0], &[33, 34, 35, 3], 22),
                 vec![
-                    tomada(9.0, &[ch(5.2, 3.6, 0.8, 30.0, 10.0), ch(5.8, 2.4, 0.62, 10.0, 4.0), ch(6.3, 1.5, 0.52, 0.0, 0.0)]),
-                    tomada(9.0, &[ch(0.1, 1.0, 0.45, 0.0, 0.0), ch(1.2, 0.95, 0.42, 0.0, 0.0)]),
+                    tomada(
+                        9.0,
+                        &[
+                            ch(5.2, 3.6, 0.8, 30.0, 10.0),
+                            ch(5.8, 2.4, 0.62, 10.0, 4.0),
+                            ch(6.3, 1.5, 0.52, 0.0, 0.0),
+                        ],
+                    ),
+                    tomada(
+                        9.0,
+                        &[ch(0.1, 1.0, 0.45, 0.0, 0.0), ch(1.2, 0.95, 0.42, 0.0, 0.0)],
+                    ),
                 ],
                 false,
                 false,
@@ -954,7 +1231,14 @@ fn monta(nome: &str) -> Option<Cena> {
                 jogadores: vec![3, 2, 4, 3, 2, 3],
                 mobs: vec![4, 3, 5, 4, 3, 4],
             };
-            let s = Ilha::nova(def, cidade(def), el, vec![tomada(1.0, &[ch(0.0, 1.0, 0.6, 0.0, 0.0)])], false, false);
+            let s = Ilha::nova(
+                def,
+                cidade(def),
+                el,
+                vec![tomada(1.0, &[ch(0.0, 1.0, 0.6, 0.0, 0.0)])],
+                false,
+                false,
+            );
             Some(Cena::Ilha(Box::new(s.com_tomadas(tomadas_da_batalha))))
         }
         // Skyreach: over the clouds, from island to island.
@@ -967,8 +1251,18 @@ fn monta(nome: &str) -> Option<Cena> {
                 foco,
                 elenco(10, &[5, 3, 1, 0], &[41, 42, 43, 44, 45, 46], 20),
                 vec![
-                    tomada(10.0, &[ch(0.5, 7.0, 0.7, ate.x * 0.8, ate.y * 0.8), ch(0.9, 5.0, 0.6, ate.x * 0.4, ate.y * 0.4), ch(1.3, 2.4, 0.55, 0.0, 0.0)]),
-                    tomada(8.0, &[ch(1.3, 1.2, 0.7, 0.0, 0.0), ch(1.9, 1.0, 0.64, 0.0, 0.0)]),
+                    tomada(
+                        10.0,
+                        &[
+                            ch(0.5, 7.0, 0.7, ate.x * 0.8, ate.y * 0.8),
+                            ch(0.9, 5.0, 0.6, ate.x * 0.4, ate.y * 0.4),
+                            ch(1.3, 2.4, 0.55, 0.0, 0.0),
+                        ],
+                    ),
+                    tomada(
+                        8.0,
+                        &[ch(1.3, 1.2, 0.7, 0.0, 0.0), ch(1.9, 1.0, 0.64, 0.0, 0.0)],
+                    ),
                 ],
                 false,
                 false,
@@ -982,8 +1276,18 @@ fn monta(nome: &str) -> Option<Cena> {
                 v2(shared::kogen::cruzamento()),
                 elenco(15, &[10, 5, 3, 0], &[56, 57, 58, 59, 60, 61, 62], 22),
                 vec![
-                    tomada(10.0, &[ch(0.3, 4.6, 0.62, 0.0, 40.0), ch(0.7, 2.8, 0.55, 0.0, 14.0), ch(1.0, 1.4, 0.5, 0.0, 0.0)]),
-                    tomada(8.0, &[ch(1.1, 1.0, 0.46, 0.0, 0.0), ch(2.0, 0.9, 0.42, 0.0, 0.0)]),
+                    tomada(
+                        10.0,
+                        &[
+                            ch(0.3, 4.6, 0.62, 0.0, 40.0),
+                            ch(0.7, 2.8, 0.55, 0.0, 14.0),
+                            ch(1.0, 1.4, 0.5, 0.0, 0.0),
+                        ],
+                    ),
+                    tomada(
+                        8.0,
+                        &[ch(1.1, 1.0, 0.46, 0.0, 0.0), ch(2.0, 0.9, 0.42, 0.0, 0.0)],
+                    ),
                 ],
                 true,
                 false,
@@ -998,8 +1302,18 @@ fn monta(nome: &str) -> Option<Cena> {
                 v2(shared::abissal::centro_da_cidade()) + vec2(0.0, 30.0),
                 elenco(15, &[10, 5, 3, 1], &[70, 71, 72, 73, 75, 91, 92], 20),
                 vec![
-                    tomada(10.0, &[ch(0.2, 5.0, 0.75, 0.0, -40.0), ch(0.6, 3.0, 0.65, 0.0, -15.0), ch(0.9, 1.6, 0.6, 0.0, 0.0)]),
-                    tomada(8.0, &[ch(1.0, 1.15, 0.6, 0.0, 0.0), ch(1.9, 1.0, 0.56, 0.0, 0.0)]),
+                    tomada(
+                        10.0,
+                        &[
+                            ch(0.2, 5.0, 0.75, 0.0, -40.0),
+                            ch(0.6, 3.0, 0.65, 0.0, -15.0),
+                            ch(0.9, 1.6, 0.6, 0.0, 0.0),
+                        ],
+                    ),
+                    tomada(
+                        8.0,
+                        &[ch(1.0, 1.15, 0.6, 0.0, 0.0), ch(1.9, 1.0, 0.56, 0.0, 0.0)],
+                    ),
                 ],
                 true,
                 true,
@@ -1013,8 +1327,18 @@ fn monta(nome: &str) -> Option<Cena> {
                 v2(shared::magica::CHEGADA) + vec2(6.0, -6.0),
                 elenco(10, &[5, 3, 1, 0], &[0, 1, 3, 5, 6, 4], 18),
                 vec![
-                    tomada(10.0, &[ch(0.8, 6.0, 0.8, 30.0, 0.0), ch(1.2, 3.5, 0.65, 12.0, 0.0), ch(1.5, 1.5, 0.55, 0.0, 0.0)]),
-                    tomada(8.0, &[ch(1.6, 1.0, 0.46, 0.0, 0.0), ch(2.5, 0.9, 0.44, 0.0, 0.0)]),
+                    tomada(
+                        10.0,
+                        &[
+                            ch(0.8, 6.0, 0.8, 30.0, 0.0),
+                            ch(1.2, 3.5, 0.65, 12.0, 0.0),
+                            ch(1.5, 1.5, 0.55, 0.0, 0.0),
+                        ],
+                    ),
+                    tomada(
+                        8.0,
+                        &[ch(1.6, 1.0, 0.46, 0.0, 0.0), ch(2.5, 0.9, 0.44, 0.0, 0.0)],
+                    ),
                 ],
                 false,
                 false,
@@ -1036,7 +1360,11 @@ fn monta(nome: &str) -> Option<Cena> {
                 el,
                 vec![tomada(
                     14.0,
-                    &[ch(PI - 0.3, 0.54, 0.3, -4.6, 2.1), ch(PI, 0.5, 0.27, 0.0, 2.0), ch(PI + 0.3, 0.54, 0.3, 4.6, 2.1)],
+                    &[
+                        ch(PI - 0.3, 0.54, 0.3, -4.6, 2.1),
+                        ch(PI, 0.5, 0.27, 0.0, 2.0),
+                        ch(PI + 0.3, 0.54, 0.3, 4.6, 2.1),
+                    ],
                 )],
                 false,
                 false,
@@ -1049,14 +1377,26 @@ fn monta(nome: &str) -> Option<Cena> {
             el.chefe = Some(22);
             // Seven players round it: the Luta's boss mode.
             el.roda = 5.0;
-            let foco = shared::terreno::Gerador::da_ilha(def).planalto().map_or(cidade(def), |p| v2(p.regioes[0].centro));
+            let foco = shared::terreno::Gerador::da_ilha(def)
+                .planalto()
+                .map_or(cidade(def), |p| v2(p.regioes[0].centro));
             ilha(
                 def,
                 foco,
                 el,
                 vec![
-                    tomada(10.0, &[ch(0.4, 0.6, 0.26, 0.0, 0.0), ch(1.3, 0.68, 0.3, 0.0, 0.0), ch(2.2, 0.8, 0.36, 0.0, 0.0)]),
-                    tomada(8.0, &[ch(2.4, 0.9, 0.42, 0.0, 0.0), ch(3.2, 1.2, 0.55, 0.0, 0.0)]),
+                    tomada(
+                        10.0,
+                        &[
+                            ch(0.4, 0.6, 0.26, 0.0, 0.0),
+                            ch(1.3, 0.68, 0.3, 0.0, 0.0),
+                            ch(2.2, 0.8, 0.36, 0.0, 0.0),
+                        ],
+                    ),
+                    tomada(
+                        8.0,
+                        &[ch(2.4, 0.9, 0.42, 0.0, 0.0), ch(3.2, 1.2, 0.55, 0.0, 0.0)],
+                    ),
                 ],
                 false,
                 false,
@@ -1098,23 +1438,38 @@ fn config() -> Config {
         .and_then(|s| tamanho(&s))
         .unwrap_or_else(|| (1920, 1080, "16x9".into()));
     let lista = |v: &str| -> Vec<f32> {
-        std::env::var(v).ok().map_or(Vec::new(), |s| s.split(',').filter_map(|x| x.trim().parse().ok()).collect())
+        std::env::var(v).ok().map_or(Vec::new(), |s| {
+            s.split(',').filter_map(|x| x.trim().parse().ok()).collect()
+        })
     };
     Config {
         w,
         h,
         nome_tam,
         saida: std::env::var("MMO_FILME_SAIDA").unwrap_or_else(|_| "target/filme".into()),
-        prints: std::env::var("MMO_FILME_PRINTS").ok().and_then(|s| s.parse().ok()).unwrap_or(0),
+        prints: std::env::var("MMO_FILME_PRINTS")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0),
         prints_em: lista("MMO_FILME_PRINTS_EM"),
         so_prints: std::env::var("MMO_FILME_SO_PRINTS").is_ok_and(|s| !s.is_empty() && s != "0"),
         // Stills for the stores are clean unless asked otherwise.
-        limpo: std::env::var("MMO_FILME_LIMPO").map_or(std::env::var("MMO_FILME_SO_PRINTS").is_ok_and(|s| !s.is_empty() && s != "0"), |s| !s.is_empty() && s != "0"),
-        amostras: std::env::var("MMO_FILME_MSAA").ok().and_then(|s| s.parse().ok()).unwrap_or(8),
-        escala: std::env::var("MMO_FILME_ESCALA").ok().filter(|s| !s.is_empty()),
+        limpo: std::env::var("MMO_FILME_LIMPO").map_or(
+            std::env::var("MMO_FILME_SO_PRINTS").is_ok_and(|s| !s.is_empty() && s != "0"),
+            |s| !s.is_empty() && s != "0",
+        ),
+        amostras: std::env::var("MMO_FILME_MSAA")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(8),
+        escala: std::env::var("MMO_FILME_ESCALA")
+            .ok()
+            .filter(|s| !s.is_empty()),
         crf: std::env::var("MMO_FILME_CRF").unwrap_or_else(|_| "18".into()),
         preset: std::env::var("MMO_FILME_PRESET").unwrap_or_else(|_| "slow".into()),
-        camera: std::env::var("MMO_FILME_CAMERA").ok().filter(|s| !s.is_empty()),
+        camera: std::env::var("MMO_FILME_CAMERA")
+            .ok()
+            .filter(|s| !s.is_empty()),
         so_camera: std::env::var("MMO_FILME_SO_CAMERA").is_ok_and(|s| !s.is_empty() && s != "0"),
     }
 }
@@ -1128,9 +1483,33 @@ fn ffmpeg(c: &Config, caminho: &str) -> std::process::Child {
         None => "vflip".into(),
     };
     std::process::Command::new("ffmpeg")
-        .args(["-y", "-nostdin", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "rgba", "-s"])
+        .args([
+            "-y",
+            "-nostdin",
+            "-loglevel",
+            "error",
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "rgba",
+            "-s",
+        ])
         .arg(format!("{}x{}", c.w, c.h))
-        .args(["-r", &QPS.to_string(), "-i", "-", "-vf", &filtro, "-an", "-c:v", "libx264", "-preset", &c.preset, "-crf", &c.crf])
+        .args([
+            "-r",
+            &QPS.to_string(),
+            "-i",
+            "-",
+            "-vf",
+            &filtro,
+            "-an",
+            "-c:v",
+            "libx264",
+            "-preset",
+            &c.preset,
+            "-crf",
+            &c.crf,
+        ])
         .args(["-pix_fmt", "yuv420p", "-movflags", "+faststart"])
         .arg(caminho)
         .stdin(std::process::Stdio::piped())
@@ -1149,16 +1528,33 @@ pub async fn rodar(vox: &mut crate::vox::VoxCache, cenas: Vec<&'static str>) {
     let solido = crate::render3d::material_solido();
     // Ultra, as the benchmark publishes a preset: only the renderer's statics.
     let mut escolha = cg::preset(cg::PRESETS.len() - 1);
-    let raio_da_captura = std::env::var("MMO_FILME_RAIO").ok().and_then(|s| s.parse().ok()).unwrap_or(RAIO_DA_CAPTURA).clamp(3, 40);
+    let raio_da_captura = std::env::var("MMO_FILME_RAIO")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(RAIO_DA_CAPTURA)
+        .clamp(3, 40);
     escolha.raio = raio_da_captura;
     cg::publica_para_teste(&escolha);
-    let rt = render_target_ex(c.w, c.h, RenderTargetParams { depth: true, sample_count: c.amostras });
+    let rt = render_target_ex(
+        c.w,
+        c.h,
+        RenderTargetParams {
+            depth: true,
+            sample_count: c.amostras,
+        },
+    );
     rt.texture.set_filter(FilterMode::Linear);
     crate::render3d::define_alvo(Some(rt.clone()));
     // The 2D over the world (numbers, bars) at the size it has at 1080p.
     crate::render3d::define_escala_do_alvo(c.w.min(c.h) as f32 / 1080.0);
     let aspecto = c.w as f32 / c.h as f32;
-    let mut ctx = Contexto { rt: rt.clone(), aspecto, recuo: recuo_do_aspecto(aspecto), escolha, limpo: c.limpo };
+    let mut ctx = Contexto {
+        rt: rt.clone(),
+        aspecto,
+        recuo: recuo_do_aspecto(aspecto),
+        escolha,
+        limpo: c.limpo,
+    };
     let mut relogio = 100.0f64;
     let mut log = c.camera.as_ref().map(|p| {
         let mut f = std::io::BufWriter::new(std::fs::File::create(p).expect("MMO_FILME_CAMERA"));
@@ -1167,7 +1563,11 @@ pub async fn rodar(vox: &mut crate::vox::VoxCache, cenas: Vec<&'static str>) {
     });
     for nome in cenas {
         // Beyond Ultra for the capture; the sea's own band follows its radius.
-        ctx.escolha.raio = if nome == "mar" { RAIO_DA_CAPTURA_NO_MAR.min(raio_da_captura.max(12)) } else { raio_da_captura };
+        ctx.escolha.raio = if nome == "mar" {
+            RAIO_DA_CAPTURA_NO_MAR.min(raio_da_captura.max(12))
+        } else {
+            raio_da_captura
+        };
         cg::publica_para_teste(&ctx.escolha);
         let r = ctx.escolha.raio as f32 * crate::terreno::CHUNK as f32 * shared::terreno::BLOCO;
         crate::construcoes::define_alcance_da_captura(r - 16.0);
@@ -1195,7 +1595,10 @@ pub async fn rodar(vox: &mut crate::vox::VoxCache, cenas: Vec<&'static str>) {
                 if cena.prepara(i, &ctx) && k > 2 {
                     break;
                 }
-                set_camera(&Camera2D { render_target: Some(rt.clone()), ..Default::default() });
+                set_camera(&Camera2D {
+                    render_target: Some(rt.clone()),
+                    ..Default::default()
+                });
                 clear_background(BLACK);
                 next_frame().await;
             }
@@ -1217,7 +1620,12 @@ pub async fn rodar(vox: &mut crate::vox::VoxCache, cenas: Vec<&'static str>) {
                 let m = cena.quadro(i, q as f32 * DT, vox, &solido, &ctx);
                 if let Some(f) = &mut log {
                     let (o, a, v) = (m.olho, m.alvo, m.olho_antigo);
-                    writeln!(f, "{nome},{i},{q},{},{},{},{},{},{},{},{},{},{}", o.x, o.y, o.z, a.x, a.y, a.z, v.x, v.y, v.z, m.folga).unwrap();
+                    writeln!(
+                        f,
+                        "{nome},{i},{q},{},{},{},{},{},{},{},{},{},{}",
+                        o.x, o.y, o.z, a.x, a.y, a.z, v.x, v.y, v.z, m.folga
+                    )
+                    .unwrap();
                 }
                 unsafe { get_internal_gl().flush() };
                 let precisa_print = prints.binary_search(&quadro_global).is_ok();
@@ -1227,7 +1635,11 @@ pub async fn rodar(vox: &mut crate::vox::VoxCache, cenas: Vec<&'static str>) {
                         px[3] = 255;
                     }
                     if let Some(p) = &mut enc {
-                        p.stdin.as_mut().unwrap().write_all(&img.bytes).expect("ffmpeg stdin");
+                        p.stdin
+                            .as_mut()
+                            .unwrap()
+                            .write_all(&img.bytes)
+                            .expect("ffmpeg stdin");
                     }
                     if precisa_print {
                         let t = quadro_global as f32 * DT;
@@ -1241,7 +1653,11 @@ pub async fn rodar(vox: &mut crate::vox::VoxCache, cenas: Vec<&'static str>) {
         if let Some(mut p) = enc {
             drop(p.stdin.take());
             let ok = p.wait().is_ok_and(|s| s.success());
-            println!("[filme] {base}.mp4: {quadro_global} frames, {:.0} s to render, ffmpeg {}", get_time() - inicio, if ok { "ok" } else { "FAILED" });
+            println!(
+                "[filme] {base}.mp4: {quadro_global} frames, {:.0} s to render, ffmpeg {}",
+                get_time() - inicio,
+                if ok { "ok" } else { "FAILED" }
+            );
         } else {
             println!("[filme] {nome}: {} stills", prints.len());
         }
@@ -1277,7 +1693,10 @@ mod testes {
         assert_eq!(tamanho("16x9"), Some((1920, 1080, "16x9".into())));
         assert_eq!(tamanho("9x16"), Some((1080, 1920, "9x16".into())));
         assert_eq!(tamanho("iphone67"), Some((1290, 2796, "iphone67".into())));
-        assert_eq!(tamanho("ipad13-paisagem"), Some((2752, 2064, "ipad13-paisagem".into())));
+        assert_eq!(
+            tamanho("ipad13-paisagem"),
+            Some((2752, 2064, "ipad13-paisagem".into()))
+        );
         assert_eq!(tamanho("2048x2732"), Some((2048, 2732, "2048x2732".into())));
         assert_eq!(tamanho("16x9-paisagem").unwrap().0, 1920);
         assert_eq!(tamanho("10x10"), None);
@@ -1309,8 +1728,16 @@ mod testes {
             ys.push(h);
         }
         let d: Vec<f32> = ys.windows(2).map(|w| w[1] - w[0]).collect();
-        assert!(d.iter().all(|x| x.abs() < 0.04), "{:?}", d.iter().fold(0.0f32, |a, b| a.max(b.abs())));
-        let kink = d.windows(2).skip(60).map(|w| (w[1] - w[0]).abs()).fold(0.0f32, f32::max);
+        assert!(
+            d.iter().all(|x| x.abs() < 0.04),
+            "{:?}",
+            d.iter().fold(0.0f32, |a, b| a.max(b.abs()))
+        );
+        let kink = d
+            .windows(2)
+            .skip(60)
+            .map(|w| (w[1] - w[0]).abs())
+            .fold(0.0f32, f32::max);
         assert!(kink < 0.002, "kink {kink}");
         // And the near plane is never the game's 0.01, nor in front of the target.
         let (perto, longe) = planos_da_captura(8.0);
@@ -1319,7 +1746,11 @@ mod testes {
 
     #[test]
     fn o_caminho_passa_pelas_chaves() {
-        let k = [ch(0.0, 1.0, 0.5, 0.0, 0.0), ch(1.0, 2.0, 0.6, 5.0, 0.0), ch(2.0, 1.0, 0.5, 10.0, 0.0)];
+        let k = [
+            ch(0.0, 1.0, 0.5, 0.0, 0.0),
+            ch(1.0, 2.0, 0.6, 5.0, 0.0),
+            ch(2.0, 1.0, 0.5, 10.0, 0.0),
+        ];
         assert!((caminho(&k, 0.0).yaw).abs() < 1e-5);
         assert!((caminho(&k, 1.0).dx - 10.0).abs() < 1e-4);
         assert!((caminho(&k, 0.5).zoom - 2.0).abs() < 1e-4);

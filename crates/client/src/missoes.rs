@@ -197,12 +197,20 @@ pub const NO_RASTREADOR_EXPANDIDO: usize = 6;
 
 /// How many quests the tracker shows.
 pub fn linhas_no_rastreador(expandido: bool) -> usize {
-    if expandido { NO_RASTREADOR_EXPANDIDO } else { NO_RASTREADOR }
+    if expandido {
+        NO_RASTREADOR_EXPANDIDO
+    } else {
+        NO_RASTREADOR
+    }
 }
 
 /// Height of one tracker row, in HUD units.
 fn altura_da_linha(expandido: bool) -> f32 {
-    if expandido { 44.0 } else { 40.0 }
+    if expandido {
+        44.0
+    } else {
+        40.0
+    }
 }
 
 /// Altura de uma linha. Era 52; o dono: "tem que ser menor, mais resumido,
@@ -231,7 +239,8 @@ pub(crate) fn rastreador_rect_com(
     let corpo = if aba_grupo {
         crate::social_hud::LINHA_GRUPO * membros.clamp(1, 5) as f32 + 30.0
     } else {
-        altura_da_linha(expandido) * missoes.min(linhas_no_rastreador(expandido)).max(1) as f32 + 6.0
+        altura_da_linha(expandido) * missoes.min(linhas_no_rastreador(expandido)).max(1) as f32
+            + 6.0
     };
     // Normal: never past what the layout reserves (the Magic Island banner and
     // the notices below are measured from there). Expanded: down to the
@@ -415,7 +424,10 @@ pub fn recompensa(q: &QuestNet, nomes: &HashMap<u16, String>) -> String {
             .unwrap_or_else(|| format!("item {}", q.reward_item));
         partes.push(format!("{}x {nome}", q.reward_item_qty));
     }
-    if q.reward_item2 != 0 && q.reward_item2_qty > 0 && crate::pocoes_xp::mostrar(q.reward_item2, q.daily) {
+    if q.reward_item2 != 0
+        && q.reward_item2_qty > 0
+        && crate::pocoes_xp::mostrar(q.reward_item2, q.daily)
+    {
         let nome = nomes
             .get(&q.reward_item2)
             .cloned()
@@ -739,13 +751,7 @@ impl Missoes {
             }
         }
 
-        estilo::texto(
-            p.x + u(16.0),
-            y + u(18.0),
-            "In progress",
-            15,
-            estilo::SUAVE,
-        );
+        estilo::texto(p.x + u(16.0), y + u(18.0), "In progress", 15, estilo::SUAVE);
         y += u(TITULO_SECAO);
         if self.log.is_empty() {
             let dica = if self.npc.is_some() {
@@ -887,7 +893,11 @@ impl Missoes {
         // conteúdo. Clicar em "Quests" não abre mais o diário — só volta pra
         // aba das missões de hoje; "Todas as missões" é do Menu.
         // The tabs leave room on the right for the scroll arrows and the "+".
-        let canto = if total_missoes > cabem && !self.aba_grupo { 96.0 } else { 44.0 } * s;
+        let canto = if total_missoes > cabem && !self.aba_grupo {
+            96.0
+        } else {
+            44.0
+        } * s;
         let meia = (r.w - canto) * 0.5;
         for (caixa, rotulo, grupo) in [
             (Rect::new(r.x, r.y, meia, 40.0 * s), "Quests", false),
@@ -923,7 +933,11 @@ impl Missoes {
             mais.center().y + 8.0 * s,
             if exp { "−" } else { "+" },
             20,
-            if sobre_mais || exp { estilo::OURO } else { estilo::TEXTO },
+            if sobre_mais || exp {
+                estilo::OURO
+            } else {
+                estilo::TEXTO
+            },
         );
         if clique && sobre_mais {
             return Some(NoRastreador::Expandir);
@@ -975,9 +989,22 @@ impl Missoes {
                 let r = if fixada { 7.0 } else { 6.0 } * s;
                 if fixada {
                     draw_poly(c.x, c.y, 4, r, 0.0, estilo::OURO);
-                    draw_circle(c.x - 1.0 * s, c.y - 1.0 * s, 1.0 * s, Color::new(1.0, 0.95, 0.8, 0.9));
+                    draw_circle(
+                        c.x - 1.0 * s,
+                        c.y - 1.0 * s,
+                        1.0 * s,
+                        Color::new(1.0, 0.95, 0.8, 0.9),
+                    );
                 } else {
-                    draw_poly_lines(c.x, c.y, 4, r, 0.0, 1.2 * s, estilo::alfa(estilo::SUAVE, 0.8));
+                    draw_poly_lines(
+                        c.x,
+                        c.y,
+                        4,
+                        r,
+                        0.0,
+                        1.2 * s,
+                        estilo::alfa(estilo::SUAVE, 0.8),
+                    );
                 }
             }
             if linha.toca(mouse) {
@@ -1213,8 +1240,15 @@ mod tests {
         assert!(!pronta(&p, &quarenta));
         let cheia = |_: u16| 999;
         assert!(pronta(&p, &cheia));
-        assert_eq!(linha_de_posse(p.obj_target, p.obj_count, 40), format!("Have {} Wood T1 · you: 40", p.obj_count));
-        assert!(resumo(&p, &quarenta).starts_with("Wood T1 40/"), "{}", resumo(&p, &quarenta));
+        assert_eq!(
+            linha_de_posse(p.obj_target, p.obj_count, 40),
+            format!("Have {} Wood T1 · you: 40", p.obj_count)
+        );
+        assert!(
+            resumo(&p, &quarenta).starts_with("Wood T1 40/"),
+            "{}",
+            resumo(&p, &quarenta)
+        );
     }
 
     #[test]

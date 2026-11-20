@@ -213,7 +213,9 @@ pub fn esqueci_a_senha(email: &str) -> Receiver<Result<(), String>> {
     let corpo = format!(r#"{{"email":"{}"}}"#, escapa(email));
     em_thread(move || match post("/api/auth/esqueci", &corpo) {
         Ok((c, _)) if (200..300).contains(&c) => Ok(()),
-        Ok((c, corpo)) => Err(campo_json(&corpo, "error").unwrap_or_else(|| format!("error ({c})"))),
+        Ok((c, corpo)) => {
+            Err(campo_json(&corpo, "error").unwrap_or_else(|| format!("error ({c})")))
+        }
         Err(e) => Err(e),
     })
 }
@@ -280,8 +282,10 @@ pub fn google_start() -> Receiver<Result<(String, String), String>> {
         let (codigo, corpo) = get("/api/auth/google/start")?;
         match (campo_json(&corpo, "state"), campo_json(&corpo, "url")) {
             (Some(state), Some(url)) if codigo == 200 => Ok((state, url)),
-            _ => Err(campo_json(&corpo, "error")
-                .unwrap_or_else(|| format!("server replied {codigo}"))),
+            _ => {
+                Err(campo_json(&corpo, "error")
+                    .unwrap_or_else(|| format!("server replied {codigo}")))
+            }
         }
     })
 }

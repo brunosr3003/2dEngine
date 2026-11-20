@@ -27,11 +27,17 @@ fn main() {
                 let t = ((h - shared::magica::NIVEL_CHAO) as f32 / 26.0).clamp(0.0, 1.0);
                 ((60.0 + 110.0 * t) as u8, (140.0 + 80.0 * t) as u8, 62)
             };
-            px[i] = r; px[i + 1] = g; px[i + 2] = b;
+            px[i] = r;
+            px[i + 1] = g;
+            px[i + 2] = b;
         }
     }
     let mut out = format!("P6\n{lado} {lado}\n255\n").into_bytes();
     out.extend_from_slice(&px);
-    std::fs::write("/tmp/claude-1000/-home-brunji/6887f422-9520-48d5-9fe3-e311b5831797/scratchpad/magica.ppm", out).unwrap();
+    std::fs::write(
+        "/tmp/claude-1000/-home-brunji/6887f422-9520-48d5-9fe3-e311b5831797/scratchpad/magica.ppm",
+        out,
+    )
+    .unwrap();
     println!("ok");
 }

@@ -71,12 +71,18 @@ pub fn custos_em_tp() -> Vec<(u16, f64)> {
     for i in loja::itens_de_pet() {
         poe(i.item_id, i.preco_tp as f64);
     }
-    for m in loja::MOEDAS.iter().filter(|m| m.item_id != item_id::GOLD && m.qtd > 0) {
+    for m in loja::MOEDAS
+        .iter()
+        .filter(|m| m.item_id != item_id::GOLD && m.qtd > 0)
+    {
         poe(m.item_id, m.preco_tp as f64 / m.qtd as f64);
     }
     // Energy, by the lot the market sells it in.
     for e in loja::ENERGIAS.iter().filter(|e| e.qtd > 0) {
-        poe(item_id::ENERGIA_MIL, e.preco_tp as f64 * crate::mercado::ENERGIA_POR_LOTE as f64 / e.qtd as f64);
+        poe(
+            item_id::ENERGIA_MIL,
+            e.preco_tp as f64 * crate::mercado::ENERGIA_POR_LOTE as f64 / e.qtd as f64,
+        );
     }
     for p in loja::PASSES {
         poe(item_id::PASSE_MAGICO, p.tp_por_passe() as f64);
@@ -87,7 +93,10 @@ pub fn custos_em_tp() -> Vec<(u16, f64)> {
         // A key: one of four kinds, in a colour by the scroll's odds.
         for (k, &chance) in b.chances_cor.iter().enumerate() {
             for &base in &item_id::CHAVES {
-                poe(item_id::chave_na_cor(base, k as u8 + 1), b.preco_tp as f64 * 4.0 * 100.0 / chance.max(1) as f64);
+                poe(
+                    item_id::chave_na_cor(base, k as u8 + 1),
+                    b.preco_tp as f64 * 4.0 * 100.0 / chance.max(1) as f64,
+                );
             }
         }
     }
@@ -98,7 +107,10 @@ pub fn custos_em_tp() -> Vec<(u16, f64)> {
         poe(item_id::PERGAMINHO_INVOCA_MONTARIA, m.preco_tp as f64);
         for (k, &chance) in crate::montarias::CHANCES_DO_PERGAMINHO.iter().enumerate() {
             for &base in &item_id::MONTARIAS {
-                poe(item_id::montaria_no_grau(base, k as u8 + 1), m.preco_tp as f64 * 100.0 / chance.max(1) as f64);
+                poe(
+                    item_id::montaria_no_grau(base, k as u8 + 1),
+                    m.preco_tp as f64 * 100.0 / chance.max(1) as f64,
+                );
             }
         }
     }
@@ -106,7 +118,10 @@ pub fn custos_em_tp() -> Vec<(u16, f64)> {
         poe(item_id::PERGAMINHO_INVOCA_PET, p.preco_tp as f64);
         for (k, &chance) in crate::pets::CHANCES_DO_PERGAMINHO.iter().enumerate() {
             for &base in &item_id::PETS {
-                poe(item_id::pet_no_grau(base, k as u8 + 1), p.preco_tp as f64 * 100.0 / chance.max(1) as f64);
+                poe(
+                    item_id::pet_no_grau(base, k as u8 + 1),
+                    p.preco_tp as f64 * 100.0 / chance.max(1) as f64,
+                );
             }
         }
     }
@@ -152,7 +167,11 @@ pub fn calcular(e: &Estoque) -> TabelaDePrecos {
     }
     // THE TP: gold per TP like any item (gold over TP held), floored by the
     // shop's own exchange. Then every cash item is at most its TP in gold.
-    let por_estoque = if e.tp > 0 { e.ouro as f64 / e.tp as f64 } else { 0.0 };
+    let por_estoque = if e.tp > 0 {
+        e.ouro as f64 / e.tp as f64
+    } else {
+        0.0
+    };
     let ouro_por_tp = por_estoque.max(ouro_por_tp_da_loja());
     if ouro_por_tp > 0.0 {
         p.insert(ID_DO_TP, ouro_por_tp);
@@ -196,7 +215,8 @@ pub fn calcular(e: &Estoque) -> TabelaDePrecos {
     // Few keys exist at once (each run eats one), so the stock price is
     // usually missing; the recipe fills it.
     for c in crate::dungeon::CONTEUDOS {
-        let (Some(chave), Some(r)) = (crate::porao::chave_de(c), crate::porao::receita_de(c)) else {
+        let (Some(chave), Some(r)) = (crate::porao::chave_de(c), crate::porao::receita_de(c))
+        else {
             continue;
         };
         let (Some(&madeira), Some(&material)) = (p.get(&r.madeira), p.get(&r.material)) else {
@@ -204,7 +224,9 @@ pub fn calcular(e: &Estoque) -> TabelaDePrecos {
         };
         let custo = madeira * r.madeira_qtd as f64 + material * r.material_qtd as f64;
         if custo > 0.0 {
-            p.entry(chave).and_modify(|v| *v = v.min(custo)).or_insert(custo);
+            p.entry(chave)
+                .and_modify(|v| *v = v.min(custo))
+                .or_insert(custo);
         }
     }
     // WRECK PLANKS (sea-only, few in the world): with no stock price they
@@ -215,6 +237,17 @@ pub fn calcular(e: &Estoque) -> TabelaDePrecos {
             p.insert(item_id::PRANCHA_DE_NAUFRAGIO, 5.0 * m + 20.0 * ds);
         }
     }
+    // NAVAL PVP currency/material: until the token shop sets a real sink,
+    // value them from the Wreck Plank ladder so the Prime and market have a
+    // defensible reference price.
+    if !p.contains_key(&item_id::NAVAL_TOKEN) {
+        let base = p
+            .get(&item_id::PRANCHA_DE_NAUFRAGIO)
+            .copied()
+            .unwrap_or(100.0);
+        p.insert(item_id::NAVAL_TOKEN, base * 5.0);
+        p.insert(item_id::FRAGMENTO_NAVAL, base * 2.5);
+    }
     // GEAR: the value is the Common I piece; the instance adds the ladder.
     if let Some(&cobre) = p.get(&item_id::COPPER) {
         for (&id, &em_cobre) in &e.base_em_cobre {
@@ -223,7 +256,10 @@ pub fn calcular(e: &Estoque) -> TabelaDePrecos {
             }
         }
     }
-    let mut precos: Vec<(u16, f64)> = p.into_iter().filter(|(_, v)| v.is_finite() && *v > 0.0).collect();
+    let mut precos: Vec<(u16, f64)> = p
+        .into_iter()
+        .filter(|(_, v)| v.is_finite() && *v > 0.0)
+        .collect();
     precos.sort_by_key(|(id, _)| *id);
     TabelaDePrecos { precos }
 }
@@ -290,7 +326,11 @@ mod testes {
     /// The owner's rule: gold there is / units there are.
     #[test]
     fn o_preco_e_o_ouro_dividido_pelas_unidades() {
-        let t = calcular(&estoque(100_000, &[(item_id::STEEL, 1_000), (item_id::COPPER, 4_000_000)])).mapa();
+        let t = calcular(&estoque(
+            100_000,
+            &[(item_id::STEEL, 1_000), (item_id::COPPER, 4_000_000)],
+        ))
+        .mapa();
         assert!((t[&item_id::STEEL] - 100.0).abs() < 1e-9);
         assert!((t[&item_id::COPPER] - 0.025).abs() < 1e-9);
         // Copper is worth a fortieth of a gold, but the market's floor is 1.
@@ -325,7 +365,11 @@ mod testes {
             + cu as f64 * t[&item_id::COPPER]
             + ds as f64 * t[&item_id::DARKSTEEL]
             + po as f64 * t[&item_id::GLITTERING_POWDER];
-        assert!((t[&roxo] - esperado).abs() < 1e-6, "{} vs {esperado}", t[&roxo]);
+        assert!(
+            (t[&roxo] - esperado).abs() < 1e-6,
+            "{} vs {esperado}",
+            t[&roxo]
+        );
     }
 
     /// The forge ladder multiplies: a Rare IV +7 is ~34 thousand Common I.
@@ -336,7 +380,10 @@ mod testes {
         e.base_em_cobre.insert(item_id::KATANA, 1_000);
         let t = calcular(&e).mapa();
         let base = t[&item_id::KATANA];
-        assert!((base - 1_000.0).abs() < 1e-9, "Common I = shop copper x copper price");
+        assert!(
+            (base - 1_000.0).abs() < 1e-9,
+            "Common I = shop copper x copper price"
+        );
         let mut i = ItemInstance::vazia_de_grau(1);
         i.tier = 1;
         let comum = recomendado(&t, item_id::KATANA, Some(&i)).unwrap();
@@ -354,19 +401,45 @@ mod testes {
     #[test]
     fn itens_de_cash_valem_o_tp_em_ouro() {
         let loja = ouro_por_tp_da_loja();
-        assert!((loja - 200.0).abs() < 1e-9, "Sack of Gold: 10,000 for 50 TP");
+        assert!(
+            (loja - 200.0).abs() < 1e-9,
+            "Sack of Gold: 10,000 for 50 TP"
+        );
         // Little gold per TP in the world: the shop's floor holds.
-        let t = calcular(&Estoque { ouro: 1_000, tp: 1_000, ..Default::default() }).mapa();
+        let t = calcular(&Estoque {
+            ouro: 1_000,
+            tp: 1_000,
+            ..Default::default()
+        })
+        .mapa();
         assert!((t[&ID_DO_TP] - 200.0).abs() < 1e-9);
-        assert!((t[&item_id::RACAO_DE_PET] - 30.0 * 200.0).abs() < 1e-6, "Pet Feed: 30 TP");
+        assert!(
+            (t[&item_id::RACAO_DE_PET] - 30.0 * 200.0).abs() < 1e-6,
+            "Pet Feed: 30 TP"
+        );
         // Much gold per TP: the stock's ratio rules.
-        let t = calcular(&Estoque { ouro: 1_000_000, tp: 1_000, ..Default::default() }).mapa();
+        let t = calcular(&Estoque {
+            ouro: 1_000_000,
+            tp: 1_000,
+            ..Default::default()
+        })
+        .mapa();
         assert!((t[&ID_DO_TP] - 1_000.0).abs() < 1e-9);
         // The orange mount: 500 TP at 1% = 50,000 TP.
         let laranja = item_id::montaria_no_grau(item_id::MONTARIAS[0], 5);
-        assert!((t[&laranja] - 50_000.0 * 1_000.0).abs() < 1e-3, "{}", t[&laranja]);
+        assert!(
+            (t[&laranja] - 50_000.0 * 1_000.0).abs() < 1e-3,
+            "{}",
+            t[&laranja]
+        );
         // A material held in bulk stays at its own (lower) ratio.
-        let t = calcular(&Estoque { ouro: 1_000_000, tp: 1_000, unidades: [(item_id::COPPER, 10_000_000)].into_iter().collect(), ..Default::default() }).mapa();
+        let t = calcular(&Estoque {
+            ouro: 1_000_000,
+            tp: 1_000,
+            unidades: [(item_id::COPPER, 10_000_000)].into_iter().collect(),
+            ..Default::default()
+        })
+        .mapa();
         assert!((t[&item_id::COPPER] - 0.1).abs() < 1e-9);
     }
 
@@ -379,10 +452,18 @@ mod testes {
             .find(|c| crate::porao::chave_de(c).is_some())
             .unwrap();
         let r = crate::porao::receita_de(c).unwrap();
-        let t = calcular(&estoque(1_000_000, &[(r.madeira, 1_000), (r.material, 10_000)])).mapa();
+        let t = calcular(&estoque(
+            1_000_000,
+            &[(r.madeira, 1_000), (r.material, 10_000)],
+        ))
+        .mapa();
         let esperado = 1_000.0 * r.madeira_qtd as f64 + 100.0 * r.material_qtd as f64;
         let chave = crate::porao::chave_de(c).unwrap();
-        assert!((t[&chave] - esperado).abs() < 1e-6, "{} vs {esperado}", t[&chave]);
+        assert!(
+            (t[&chave] - esperado).abs() < 1e-6,
+            "{} vs {esperado}",
+            t[&chave]
+        );
     }
 
     #[test]
@@ -392,7 +473,10 @@ mod testes {
         let t = calcular(&estoque(100_000, &[(pet, 100), (livro, 100)])).mapa();
         let mut i = ItemInstance::vazia_de_grau(1);
         let sem = recomendado(&t, pet, Some(&i)).unwrap();
-        i.pet = Some(crate::items::PetData { skills: [livro, 0, 0], ..Default::default() });
+        i.pet = Some(crate::items::PetData {
+            skills: [livro, 0, 0],
+            ..Default::default()
+        });
         let com = recomendado(&t, pet, Some(&i)).unwrap();
         assert_eq!(com, sem + 1_000);
     }

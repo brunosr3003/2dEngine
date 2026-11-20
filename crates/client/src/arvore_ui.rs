@@ -136,7 +136,12 @@ struct Layout {
 
 fn layout(seguro: Rect, f: f32) -> Layout {
     let m = 6.0;
-    let painel = Rect::new(seguro.x + m, seguro.y + m, seguro.w - 2.0 * m, seguro.h - 2.0 * m);
+    let painel = Rect::new(
+        seguro.x + m,
+        seguro.y + m,
+        seguro.w - 2.0 * m,
+        seguro.h - 2.0 * m,
+    );
     let duas_linhas = painel.w < 760.0 * f;
     let ch = if duas_linhas { 104.0 * f } else { 60.0 * f };
     let cabecalho = Rect::new(painel.x, painel.y, painel.w, ch);
@@ -145,10 +150,20 @@ fn layout(seguro: Rect, f: f32) -> Layout {
     let pad = 12.0 * f;
     let doca = if retrato {
         let h = (canvas.h * 0.46).min(330.0 * f);
-        Rect::new(canvas.x + pad, canvas.y + canvas.h - h - pad, canvas.w - 2.0 * pad, h)
+        Rect::new(
+            canvas.x + pad,
+            canvas.y + canvas.h - h - pad,
+            canvas.w - 2.0 * pad,
+            h,
+        )
     } else {
         let w = (canvas.w * 0.42).min(370.0 * f);
-        Rect::new(canvas.x + canvas.w - w - pad, canvas.y + pad, w, canvas.h - 2.0 * pad)
+        Rect::new(
+            canvas.x + canvas.w - w - pad,
+            canvas.y + pad,
+            w,
+            canvas.h - 2.0 * pad,
+        )
     };
     let b = 46.0 * f;
     let x = canvas.x + pad;
@@ -170,7 +185,9 @@ fn layout(seguro: Rect, f: f32) -> Layout {
 /// interface scale.
 fn px_base(f: f32, celular: bool) -> f32 {
     if celular {
-        let raio_px = (crate::ui::alvo_minimo() * 0.36).max(18.0).max(18.0 * f.min(1.6));
+        let raio_px = (crate::ui::alvo_minimo() * 0.36)
+            .max(18.0)
+            .max(18.0 * f.min(1.6));
         raio_px / raio_u(TipoNo::Menor)
     } else {
         44.0 * f
@@ -205,7 +222,10 @@ fn glifo_do_no(n: &No) -> Glifo {
     match n.tipo {
         TipoNo::Inicio => Glifo::Bussola,
         TipoNo::Chave => icones::da_chave(n.efeitos()),
-        _ => n.efeitos().first().map_or(Glifo::Estrela, |&(e, _)| icones::do_efeito(e)),
+        _ => n
+            .efeitos()
+            .first()
+            .map_or(Glifo::Estrela, |&(e, _)| icones::do_efeito(e)),
     }
 }
 
@@ -248,7 +268,9 @@ fn titulo(n: &No) -> String {
     if !n.nome.is_empty() {
         return shared::idioma::tr(n.nome).into_owned();
     }
-    n.efeitos().first().map_or_else(String::new, |&(e, v)| linha_traduzida(e, v))
+    n.efeitos()
+        .first()
+        .map_or_else(String::new, |&(e, v)| linha_traduzida(e, v))
 }
 
 /// "Crit chance +1%" in the player's language: the template translated,
@@ -282,8 +304,12 @@ impl ArvoreUi {
         // the wire): keep both views the same.
         estado.arvore.slots = estado.slots;
         if let Some(antes) = self.estado {
-            let novos: Vec<u16> =
-                estado.arvore.ids().into_iter().filter(|&id| !antes.arvore.tem(id)).collect();
+            let novos: Vec<u16> = estado
+                .arvore
+                .ids()
+                .into_iter()
+                .filter(|&id| !antes.arvore.tem(id))
+                .collect();
             let agora = self.agora();
             let mut grande = false;
             for id in &novos {
@@ -291,7 +317,11 @@ impl ArvoreUi {
                 grande |= av::no(*id).is_some_and(|n| n.tipo != TipoNo::Menor);
             }
             if !novos.is_empty() && self.relogio.is_none() {
-                crate::sons::tocar(if grande { crate::sons::Som::Recompensa } else { crate::sons::Som::Progresso });
+                crate::sons::tocar(if grande {
+                    crate::sons::Som::Recompensa
+                } else {
+                    crate::sons::Som::Progresso
+                });
             }
         }
         self.estado = Some(estado);
@@ -302,13 +332,17 @@ impl ArvoreUi {
     pub fn tem_ponto_livre(&self) -> bool {
         self.estado.is_some_and(|e| {
             let livres = e.livres();
-            livres > 0 && av::nos().iter().any(|n| e.arvore.alcancavel(n.id) && n.custo as u32 <= livres)
+            livres > 0
+                && av::nos()
+                    .iter()
+                    .any(|n| e.arvore.alcancavel(n.id) && n.custo as u32 <= livres)
         })
     }
 
     /// Can node `id` be learned right now? The same rule as the server's.
     fn pode_aprender(&self, id: u16) -> bool {
-        self.estado.is_some_and(|e| e.arvore.pode_aprender(id, e.ganhos).is_ok())
+        self.estado
+            .is_some_and(|e| e.arvore.pode_aprender(id, e.ganhos).is_ok())
     }
 
     fn agora(&self) -> f64 {
@@ -345,7 +379,11 @@ impl ArvoreUi {
         let zmin = zoom_min(l.canvas, base);
         if !self.zoom_pronto {
             self.zoom_pronto = true;
-            let z = if celular { 1.0 } else { zoom_que_cabe(l.canvas, base).max(0.78).min(1.0) };
+            let z = if celular {
+                1.0
+            } else {
+                zoom_que_cabe(l.canvas, base).max(0.78).min(1.0)
+            };
             self.zoom = z.clamp(zmin, ZOOM_MAX);
             self.zoom_alvo = self.zoom;
         }
@@ -373,18 +411,36 @@ impl ArvoreUi {
         crate::hud_layout::escurece(0.6);
         estilo::sombra(l.painel, 10.0, 1.4);
         crate::rolagem::recortar(Some(l.painel));
-        ceu(l.canvas.combine_with(l.cabecalho), centro, self.cam, escala, base, agora);
+        ceu(
+            l.canvas.combine_with(l.cabecalho),
+            centro,
+            self.cam,
+            escala,
+            base,
+            agora,
+        );
         crate::rolagem::recortar(Some(l.canvas));
         let cam = self.cam;
         // Ring guides: dashed circles around the start.
         let c0 = tela(0.0, 0.0, cam);
         for (i, r) in GUIAS_U.iter().enumerate() {
-            circulo_tracejado(c0, r * escala, (1.0 + escala * 0.02).min(2.0), estilo::alfa(estilo::OURO, 0.10 - i as f32 * 0.02));
+            circulo_tracejado(
+                c0,
+                r * escala,
+                (1.0 + escala * 0.02).min(2.0),
+                estilo::alfa(estilo::OURO, 0.10 - i as f32 * 0.02),
+            );
         }
         let Some(estado) = self.estado else {
             crate::rolagem::recortar(None);
             self.desenha_cabecalho(&l, None, ouro, ativo, m);
-            estilo::texto_centro(centro.x, centro.y, "Waiting for the server…", 16, estilo::SUAVE);
+            estilo::texto_centro(
+                centro.x,
+                centro.y,
+                "Waiting for the server…",
+                16,
+                estilo::SUAVE,
+            );
             return None;
         };
         let arv = estado.arvore;
@@ -393,12 +449,23 @@ impl ArvoreUi {
         // ── links ──
         let largura = (0.075 * escala).clamp(1.5, 7.0);
         for &(a, b) in av::ligacoes() {
-            let (Some(na), Some(nb)) = (av::no(a), av::no(b)) else { continue };
+            let (Some(na), Some(nb)) = (av::no(a), av::no(b)) else {
+                continue;
+            };
             let (pa, pb) = (tela(na.x, na.y, cam), tela(nb.x, nb.y, cam));
-            if !l.canvas.overlaps(&Rect::new(pa.x.min(pb.x) - 4.0, pa.y.min(pb.y) - 4.0, (pa.x - pb.x).abs() + 8.0, (pa.y - pb.y).abs() + 8.0)) {
+            if !l.canvas.overlaps(&Rect::new(
+                pa.x.min(pb.x) - 4.0,
+                pa.y.min(pb.y) - 4.0,
+                (pa.x - pb.x).abs() + 8.0,
+                (pa.y - pb.y).abs() + 8.0,
+            )) {
                 continue;
             }
-            let cor = if na.tipo == TipoNo::Inicio { cor_do_no(nb) } else if nb.tipo == TipoNo::Inicio { cor_do_no(na) } else {
+            let cor = if na.tipo == TipoNo::Inicio {
+                cor_do_no(nb)
+            } else if nb.tipo == TipoNo::Inicio {
+                cor_do_no(na)
+            } else {
                 estilo::misturar(cor_do_no(na), cor_do_no(nb), 0.5)
             };
             let (ta, tb) = (arv.tem(a), arv.tem(b));
@@ -412,7 +479,12 @@ impl ArvoreUi {
                 draw_circle(q.x, q.y, largura * 0.9, estilo::alfa(WHITE, 0.55));
             } else if ta || tb {
                 let pulso = 0.5 + 0.5 * (agora as f32 * 2.6).sin();
-                estilo::traco(pa, pb, largura * 0.8, estilo::alfa(cor, 0.30 + 0.25 * pulso));
+                estilo::traco(
+                    pa,
+                    pb,
+                    largura * 0.8,
+                    estilo::alfa(cor, 0.30 + 0.25 * pulso),
+                );
             } else {
                 estilo::traco(pa, pb, largura * 0.6, estilo::alfa(APAGADO, 0.22));
             }
@@ -423,15 +495,22 @@ impl ArvoreUi {
         for n in av::nos() {
             let p = tela(n.x, n.y, cam);
             let r = raio_de(n);
-            if !l.canvas.overlaps(&Rect::new(p.x - r * 3.0, p.y - r * 3.0, r * 6.0, r * 6.0)) {
+            if !l
+                .canvas
+                .overlaps(&Rect::new(p.x - r * 3.0, p.y - r * 3.0, r * 6.0, r * 6.0))
+            {
                 continue;
             }
             let tem = arv.tem(n.id);
             let pode = !tem && arv.alcancavel(n.id);
             let barato = pode && n.custo as u32 <= livres;
             let realce = if self.sobre == Some(n.id) { 1.08 } else { 1.0 };
-            let suprema = n.ativa.is_some_and(|a| av::e_suprema(a, estado.renascimentos));
-            let slot = n.ativa.and_then(|a| estado.slots.iter().position(|s| *s == Some(a)));
+            let suprema = n
+                .ativa
+                .is_some_and(|a| av::e_suprema(a, estado.renascimentos));
+            let slot = n
+                .ativa
+                .and_then(|a| estado.slots.iter().position(|s| *s == Some(a)));
             desenha_no(n, p, r * realce, tem, pode, barato, suprema, slot, agora);
             if self.selecionado == Some(n.id) {
                 anel_de_selecao(p, r * realce + 7.0 * f.min(1.6), agora);
@@ -441,14 +520,25 @@ impl ArvoreUi {
         self.explosoes.retain(|(_, t0)| agora - t0 < 1.1);
         for &(id, t0) in &self.explosoes {
             if let Some(n) = av::no(id) {
-                explosao(tela(n.x, n.y, cam), raio_de(n), cor_do_no(n), (agora - t0) as f32, id);
+                explosao(
+                    tela(n.x, n.y, cam),
+                    raio_de(n),
+                    cor_do_no(n),
+                    (agora - t0) as f32,
+                    id,
+                );
             }
         }
         crate::rolagem::recortar(None);
         // The frame of the sky.
         estilo::borda_arredondada(l.painel, 10.0, 2.0, estilo::alfa(estilo::BORDA_FORTE, 0.75));
         estilo::borda_arredondada(
-            Rect::new(l.painel.x + 4.0, l.painel.y + 4.0, l.painel.w - 8.0, l.painel.h - 8.0),
+            Rect::new(
+                l.painel.x + 4.0,
+                l.painel.y + 4.0,
+                l.painel.w - 8.0,
+                l.painel.h - 8.0,
+            ),
             8.0,
             1.0,
             estilo::alfa(estilo::OURO, 0.18),
@@ -459,7 +549,11 @@ impl ArvoreUi {
         controle(l.centro, "Center", clique, m);
         if clique && l.centro.toca(m) {
             self.cam_alvo = Vec2::ZERO;
-            self.zoom_alvo = if celular { 1.0 } else { zoom_que_cabe(l.canvas, base).clamp(zmin, 1.0) };
+            self.zoom_alvo = if celular {
+                1.0
+            } else {
+                zoom_que_cabe(l.canvas, base).clamp(zmin, 1.0)
+            };
         }
         controle(l.mais, "+", clique, m);
         controle(l.menos, "−", clique, m);
@@ -474,12 +568,28 @@ impl ArvoreUi {
         } else {
             "Drag to move · scroll to zoom · click a node twice to learn it"
         };
-        let livre_w = if self.selecionado.is_some() && l.doca.x > l.canvas.x + l.canvas.w * 0.4 { l.doca.x - l.canvas.x - 24.0 * f } else { l.canvas.w - 24.0 * f };
+        let livre_w = if self.selecionado.is_some() && l.doca.x > l.canvas.x + l.canvas.w * 0.4 {
+            l.doca.x - l.canvas.x - 24.0 * f
+        } else {
+            l.canvas.w - 24.0 * f
+        };
         if self.selecionado.is_none() || l.doca.x > l.canvas.x + l.canvas.w * 0.4 {
             let tw = (estilo::medir(dica, 12) + 20.0 * f).min(livre_w + 8.0 * f);
-            let fundo = Rect::new(l.canvas.x + 8.0 * f, l.canvas.y + l.canvas.h - 32.0 * f, tw, 24.0 * f);
+            let fundo = Rect::new(
+                l.canvas.x + 8.0 * f,
+                l.canvas.y + l.canvas.h - 32.0 * f,
+                tw,
+                24.0 * f,
+            );
             estilo::ret_arredondado(fundo, 12.0 * f, Color::new(0.0, 0.0, 0.0, 0.55));
-            estilo::texto_ajustado(dica, l.canvas.x + 18.0 * f, l.canvas.y + l.canvas.h - 15.0 * f, livre_w - 10.0 * f, 12, estilo::alfa(estilo::SUAVE, 0.9));
+            estilo::texto_ajustado(
+                dica,
+                l.canvas.x + 18.0 * f,
+                l.canvas.y + l.canvas.h - 15.0 * f,
+                livre_w - 10.0 * f,
+                12,
+                estilo::alfa(estilo::SUAVE, 0.9),
+            );
         }
 
         // ── header ──
@@ -502,7 +612,14 @@ impl ArvoreUi {
 
     /// Pan, pinch, wheel and taps on the canvas. A tap on a node selects
     /// it; a second tap on the selected node learns it.
-    fn entrada(&mut self, l: &Layout, base: f32, zmin: f32, celular: bool, m: Vec2) -> Option<ClientMessage> {
+    fn entrada(
+        &mut self,
+        l: &Layout,
+        base: f32,
+        zmin: f32,
+        celular: bool,
+        m: Vec2,
+    ) -> Option<ClientMessage> {
         let f = estilo::fator_texto();
         let escala = base * self.zoom;
         let centro = l.canvas.center();
@@ -515,8 +632,11 @@ impl ArvoreUi {
                 || l.mais.contains(p)
                 || l.menos.contains(p)
         };
-        let dedos: Vec<Vec2> =
-            touches().iter().filter(|t| t.phase != TouchPhase::Ended && t.phase != TouchPhase::Cancelled).map(|t| t.position).collect();
+        let dedos: Vec<Vec2> = touches()
+            .iter()
+            .filter(|t| t.phase != TouchPhase::Ended && t.phase != TouchPhase::Cancelled)
+            .map(|t| t.position)
+            .collect();
         if dedos.len() >= 2 {
             self.arrasto = None;
             self.pincou = true;
@@ -543,7 +663,11 @@ impl ArvoreUi {
         }
         if let Some(p) = apertou_em() {
             if !fora(p) && crate::foco::passa_ponto(p) && !self.pincou {
-                self.arrasto = Some(Arrasto { inicio: p, ultimo: p, moveu: false });
+                self.arrasto = Some(Arrasto {
+                    inicio: p,
+                    ultimo: p,
+                    moveu: false,
+                });
             }
         }
         if let Some(mut a) = self.arrasto {
@@ -563,7 +687,8 @@ impl ArvoreUi {
         // Wheel: zoom around the pointer.
         let roda = mouse_wheel().1;
         if roda != 0.0 && !fora(m) {
-            let z = (self.zoom_alvo * if roda > 0.0 { 1.15 } else { 1.0 / 1.15 }).clamp(zmin, ZOOM_MAX);
+            let z =
+                (self.zoom_alvo * if roda > 0.0 { 1.15 } else { 1.0 / 1.15 }).clamp(zmin, ZOOM_MAX);
             self.zoom_em(m, centro, base, z);
         }
         // Hover (mouse only).
@@ -596,7 +721,11 @@ impl ArvoreUi {
             .iter()
             .map(|n| {
                 let q = centro + (vec2(n.x, n.y) - self.cam) * escala;
-                (n.id, q.distance(p), (raio_u(n.tipo) * escala * 1.15).max(alvo))
+                (
+                    n.id,
+                    q.distance(p),
+                    (raio_u(n.tipo) * escala * 1.15).max(alvo),
+                )
             })
             .filter(|(_, d, r)| d <= r)
             .min_by(|a, b| a.1.total_cmp(&b.1))
@@ -610,7 +739,9 @@ impl ArvoreUi {
         };
         if self.selecionado == Some(id) {
             if self.pode_aprender(id) {
-                return Some(ClientMessage::Arvore { pedido: PedidoArvore::Aprender { no: id } });
+                return Some(ClientMessage::Arvore {
+                    pedido: PedidoArvore::Aprender { no: id },
+                });
             }
             return None;
         }
@@ -619,7 +750,12 @@ impl ArvoreUi {
         let escala = base * self.zoom;
         if let Some(n) = av::no(id) {
             let q = l.canvas.center() + (vec2(n.x, n.y) - self.cam) * escala;
-            let folga = Rect::new(l.doca.x - 30.0, l.doca.y - 30.0, l.doca.w + 60.0, l.doca.h + 60.0);
+            let folga = Rect::new(
+                l.doca.x - 30.0,
+                l.doca.y - 30.0,
+                l.doca.w + 60.0,
+                l.doca.h + 60.0,
+            );
             if folga.contains(q) {
                 let livre = if l.doca.y > l.canvas.y + l.canvas.h * 0.3 {
                     vec2(l.canvas.center().x, (l.canvas.y + l.doca.y) * 0.5)
@@ -633,18 +769,43 @@ impl ArvoreUi {
     }
 
     /// Title, the three point counters, the gold reset, Close.
-    fn desenha_cabecalho(&mut self, l: &Layout, estado: Option<&EstadoArvore>, ouro: u64, ativo: bool, m: Vec2) -> Option<ClientMessage> {
+    fn desenha_cabecalho(
+        &mut self,
+        l: &Layout,
+        estado: Option<&EstadoArvore>,
+        ouro: u64,
+        ativo: bool,
+        m: Vec2,
+    ) -> Option<ClientMessage> {
         let f = estilo::fator_texto();
         let h = l.cabecalho;
-        estilo::ret_gradiente(h, 10.0, Color::new(0.10, 0.075, 0.12, 0.96), Color::new(0.05, 0.04, 0.07, 0.94));
-        draw_line(h.x + 8.0, h.y + h.h, h.x + h.w - 8.0, h.y + h.h, 1.5, estilo::alfa(estilo::OURO, 0.55));
+        estilo::ret_gradiente(
+            h,
+            10.0,
+            Color::new(0.10, 0.075, 0.12, 0.96),
+            Color::new(0.05, 0.04, 0.07, 0.94),
+        );
+        draw_line(
+            h.x + 8.0,
+            h.y + h.h,
+            h.x + h.w - 8.0,
+            h.y + h.h,
+            1.5,
+            estilo::alfa(estilo::OURO, 0.55),
+        );
         let linha1 = Rect::new(h.x, h.y, h.w, 60.0 * f);
         let clique = crate::foco::clique() && ativo;
         // Title with the compass.
         let ic = vec2(h.x + 30.0 * f, linha1.y + linha1.h * 0.5);
         crate::loja_tp::brilho_radial(ic, 24.0 * f, estilo::OURO, 0.35);
         icones::desenha(Glifo::Bussola, ic, 16.0 * f, estilo::OURO);
-        estilo::texto_forte(h.x + 54.0 * f, linha1.y + 39.0 * f, "PATHS", 24, estilo::OURO);
+        estilo::texto_forte(
+            h.x + 54.0 * f,
+            linha1.y + 39.0 * f,
+            "PATHS",
+            24,
+            estilo::OURO,
+        );
         let fechar = Rect::new(h.x + h.w - 50.0 * f, linha1.y + 9.0 * f, 42.0 * f, 42.0 * f);
         estilo::botao(fechar, "X", estilo::estado_de(fechar, false, false), false);
         if clique && fechar.toca(m) {
@@ -657,18 +818,32 @@ impl ArvoreUi {
         let (mut x, y) = if l.duas_linhas {
             (h.x + 14.0 * f, h.y + 60.0 * f)
         } else {
-            (h.x + 54.0 * f + estilo::medir_forte("PATHS", 24) + 44.0 * f, h.y + 10.0 * f)
+            (
+                h.x + 54.0 * f + estilo::medir_forte("PATHS", 24) + 44.0 * f,
+                h.y + 10.0 * f,
+            )
         };
         let livres = estado.livres();
         for (rotulo, valor, cor) in [
-            ("Available", livres, if livres > 0 { estilo::VERDE } else { estilo::SUAVE }),
+            (
+                "Available",
+                livres,
+                if livres > 0 {
+                    estilo::VERDE
+                } else {
+                    estilo::SUAVE
+                },
+            ),
             ("Spent", gastos, estilo::OURO),
             ("Total", estado.ganhos, estilo::TEXTO),
         ] {
             x += chip(vec2(x, y), rotulo, valor, cor, f) + 8.0 * f;
         }
         // The reset, at the right.
-        let rotulo = format!("Reset paths · {} gold", crate::bolsa::milhar(estado.custo_redistribuir));
+        let rotulo = format!(
+            "Reset paths · {} gold",
+            crate::bolsa::milhar(estado.custo_redistribuir)
+        );
         let rw = (estilo::medir_forte(&shared::idioma::tr(&rotulo), 15) + 30.0 * f).max(150.0 * f);
         let reset = if l.duas_linhas {
             Rect::new(h.x + h.w - rw - 10.0 * f, h.y + 60.0 * f, rw, 38.0 * f)
@@ -678,7 +853,12 @@ impl ArvoreUi {
         // Narrow and the counters reach the button: drop the "Total" chip's row
         // overlap by moving the button (it never covers the counters).
         let pode_reset = gastos > 0;
-        estilo::botao(reset, &rotulo, estilo::estado_de(reset, !pode_reset, false), false);
+        estilo::botao(
+            reset,
+            &rotulo,
+            estilo::estado_de(reset, !pode_reset, false),
+            false,
+        );
         let _ = ouro;
         if clique && reset.toca(m) && pode_reset {
             self.confirmar_redistribuir = true;
@@ -687,7 +867,15 @@ impl ArvoreUi {
     }
 
     /// The selected node's card: what it gives, what it costs, Learn.
-    fn desenha_cartao(&mut self, l: &Layout, estado: &EstadoArvore, id: u16, ativo: bool, m: Vec2, agora: f64) -> Option<ClientMessage> {
+    fn desenha_cartao(
+        &mut self,
+        l: &Layout,
+        estado: &EstadoArvore,
+        id: u16,
+        ativo: bool,
+        m: Vec2,
+        agora: f64,
+    ) -> Option<ClientMessage> {
         let n = av::no(id)?;
         let f = estilo::fator_texto();
         let arv = estado.arvore;
@@ -696,10 +884,9 @@ impl ArvoreUi {
         let pad = 16.0 * f;
         let larg = d.w - 2.0 * pad;
         // ── measure the content first, to size the card ──
-        let desc: Vec<String> = n
-            .ativa
-            .and_then(av::def)
-            .map_or_else(Vec::new, |dd| crate::missoes::quebra(dd.descricao, larg, 13, 5));
+        let desc: Vec<String> = n.ativa.and_then(av::def).map_or_else(Vec::new, |dd| {
+            crate::missoes::quebra(dd.descricao, larg, 13, 5)
+        });
         let efeitos = n.efeitos().len();
         let tem_slots = n.ativa.is_some() && arv.tem(id);
         let mut h = pad + 54.0 * f; // title block
@@ -708,7 +895,11 @@ impl ArvoreUi {
             h += 22.0 * f + desc.len() as f32 * 18.0 * f;
         }
         h += 50.0 * f; // cost, status
-        h += if tem_slots { 30.0 * f + 50.0 * f } else { 56.0 * f };
+        h += if tem_slots {
+            30.0 * f + 50.0 * f
+        } else {
+            56.0 * f
+        };
         h += pad;
         let retrato = d.y > l.canvas.y + l.canvas.h * 0.3;
         let r = if retrato {
@@ -719,11 +910,25 @@ impl ArvoreUi {
         };
         // ── the card ──
         estilo::sombra(r, 10.0, 1.3);
-        estilo::ret_gradiente(r, 10.0, Color::new(0.09, 0.07, 0.12, 0.97), Color::new(0.04, 0.03, 0.06, 0.97));
+        estilo::ret_gradiente(
+            r,
+            10.0,
+            Color::new(0.09, 0.07, 0.12, 0.97),
+            Color::new(0.04, 0.03, 0.06, 0.97),
+        );
         crate::loja_tp::brilho_radial(vec2(r.x + 40.0 * f, r.y + 40.0 * f), 90.0 * f, cor, 0.16);
-        let borda = if matches!(n.tipo, TipoNo::Chave | TipoNo::Notavel) { estilo::OURO } else { cor };
+        let borda = if matches!(n.tipo, TipoNo::Chave | TipoNo::Notavel) {
+            estilo::OURO
+        } else {
+            cor
+        };
         estilo::borda_arredondada(r, 10.0, 2.0, estilo::alfa(borda, 0.85));
-        estilo::borda_arredondada(Rect::new(r.x + 4.0, r.y + 4.0, r.w - 8.0, r.h - 8.0), 8.0, 1.0, estilo::alfa(borda, 0.22));
+        estilo::borda_arredondada(
+            Rect::new(r.x + 4.0, r.y + 4.0, r.w - 8.0, r.h - 8.0),
+            8.0,
+            1.0,
+            estilo::alfa(borda, 0.22),
+        );
         let x = r.x + pad;
         let mut y = r.y + pad;
         // Medallion + title.
@@ -738,24 +943,65 @@ impl ArvoreUi {
             _ => estilo::TEXTO,
         };
         estilo::texto_ajustado(&titulo(n), tx, y + 20.0 * f, tw, 18, cor_titulo);
-        estilo::texto_ajustado(&subtitulo(n), tx, y + 42.0 * f, tw, 13, estilo::alfa(cor, 0.95));
+        estilo::texto_ajustado(
+            &subtitulo(n),
+            tx,
+            y + 42.0 * f,
+            tw,
+            13,
+            estilo::alfa(cor, 0.95),
+        );
         // Close (deselect).
-        let x_r = Rect::new(r.x + r.w - pad - 30.0 * f, r.y + 10.0 * f, 30.0 * f, 30.0 * f);
-        estilo::texto_centro_forte(x_r.center().x, x_r.center().y + 6.0 * f, "×", 20, estilo::SUAVE);
+        let x_r = Rect::new(
+            r.x + r.w - pad - 30.0 * f,
+            r.y + 10.0 * f,
+            30.0 * f,
+            30.0 * f,
+        );
+        estilo::texto_centro_forte(
+            x_r.center().x,
+            x_r.center().y + 6.0 * f,
+            "×",
+            20,
+            estilo::SUAVE,
+        );
         let clique = crate::foco::clique() && ativo;
         if clique && x_r.toca(m) {
             self.selecionado = None;
             return None;
         }
         y += 54.0 * f;
-        draw_line(x, y, r.x + r.w - pad, y, 1.0, estilo::alfa(estilo::OURO, 0.25));
+        draw_line(
+            x,
+            y,
+            r.x + r.w - pad,
+            y,
+            1.0,
+            estilo::alfa(estilo::OURO, 0.25),
+        );
         y += 10.0 * f;
         // Effects, each with its glyph; costs in red.
         for &(e, v) in n.efeitos() {
             let bom = e.bom(v);
-            let c = if bom { Color::new(0.62, 0.92, 0.66, 1.0) } else { estilo::VERMELHO };
-            icones::desenha(icones::do_efeito(e), vec2(x + 9.0 * f, y + 11.0 * f), 9.0 * f, c);
-            estilo::texto_ajustado(&linha_traduzida(e, v), x + 26.0 * f, y + 17.0 * f, larg - 26.0 * f, 15, c);
+            let c = if bom {
+                Color::new(0.62, 0.92, 0.66, 1.0)
+            } else {
+                estilo::VERMELHO
+            };
+            icones::desenha(
+                icones::do_efeito(e),
+                vec2(x + 9.0 * f, y + 11.0 * f),
+                9.0 * f,
+                c,
+            );
+            estilo::texto_ajustado(
+                &linha_traduzida(e, v),
+                x + 26.0 * f,
+                y + 17.0 * f,
+                larg - 26.0 * f,
+                15,
+                c,
+            );
             y += 24.0 * f;
         }
         if let Some(dd) = n.ativa.and_then(av::def) {
@@ -767,7 +1013,10 @@ impl ArvoreUi {
             };
             let info = format!(
                 "{}{sup}",
-                shared::idioma::tr(&format!("{} MP · {}s cooldown", dd.custo_mp, dd.espera_s as u32))
+                shared::idioma::tr(&format!(
+                    "{} MP · {}s cooldown",
+                    dd.custo_mp, dd.espera_s as u32
+                ))
             );
             estilo::texto(x, y + 16.0 * f, &info, 13, estilo::OURO);
             y += 22.0 * f;
@@ -784,13 +1033,25 @@ impl ArvoreUi {
             ("Learned".to_string(), estilo::VERDE)
         } else if !arv.alcancavel(id) {
             let rota = arv.rota_ate(id);
-            let pts: u32 = rota.iter().filter_map(|&i| av::no(i)).map(|n| n.custo as u32).sum();
+            let pts: u32 = rota
+                .iter()
+                .filter_map(|&i| av::no(i))
+                .map(|n| n.custo as u32)
+                .sum();
             (
-                shared::idioma::tr(&format!("Not connected yet: {} nodes, {} points away", rota.len(), pts)).into_owned(),
+                shared::idioma::tr(&format!(
+                    "Not connected yet: {} nodes, {} points away",
+                    rota.len(),
+                    pts
+                ))
+                .into_owned(),
                 estilo::SUAVE,
             )
         } else if (n.custo as u32) > livres {
-            (shared::idioma::tr(&format!("Needs {} free points", n.custo)).into_owned(), estilo::VERMELHO)
+            (
+                shared::idioma::tr(&format!("Needs {} free points", n.custo)).into_owned(),
+                estilo::VERMELHO,
+            )
         } else {
             ("Ready to learn".to_string(), estilo::ACENTO)
         };
@@ -806,10 +1067,23 @@ impl ArvoreUi {
             let onde = estado.slots.iter().position(|s| *s == Some(a));
             let dica = match onde {
                 Some(i) => shared::idioma::tr(&format!("In skill slot {}", i + 4)).into_owned(),
-                None if estado.slots_abertos == 0 => shared::idioma::tr("Skill slot 4 opens at the first rebirth").into_owned(),
+                None if estado.slots_abertos == 0 => {
+                    shared::idioma::tr("Skill slot 4 opens at the first rebirth").into_owned()
+                }
                 None => shared::idioma::tr("Tap a slot to equip it").into_owned(),
             };
-            estilo::texto_ajustado(&dica, x, y + 14.0 * f, larg, 13, if onde.is_some() { estilo::VERDE } else { estilo::SUAVE });
+            estilo::texto_ajustado(
+                &dica,
+                x,
+                y + 14.0 * f,
+                larg,
+                13,
+                if onde.is_some() {
+                    estilo::VERDE
+                } else {
+                    estilo::SUAVE
+                },
+            );
             y += 24.0 * f;
             let gap = 8.0 * f;
             let bw = (larg - 2.0 * gap) / 3.0;
@@ -817,11 +1091,20 @@ impl ArvoreUi {
                 let b = Rect::new(x + i as f32 * (bw + gap), y, bw, 44.0 * f);
                 let aberto = i < estado.slots_abertos as usize;
                 let aqui = estado.slots[i] == Some(a);
-                let rotulo = if aberto { (i + 4).to_string() } else { format!("R{}", av::ABRE_SLOT_EM[i]) };
+                let rotulo = if aberto {
+                    (i + 4).to_string()
+                } else {
+                    format!("R{}", av::ABRE_SLOT_EM[i])
+                };
                 estilo::botao(b, &rotulo, estilo::estado_de(b, !aberto, aqui), aqui);
                 if clique && aberto && b.toca(m) {
                     let ativa = if aqui { None } else { Some(a) };
-                    pedido = Some(ClientMessage::Arvore { pedido: PedidoArvore::Equipar { slot: i as u8, ativa } });
+                    pedido = Some(ClientMessage::Arvore {
+                        pedido: PedidoArvore::Equipar {
+                            slot: i as u8,
+                            ativa,
+                        },
+                    });
                 }
             }
         } else if n.tipo != TipoNo::Inicio && !tem {
@@ -829,9 +1112,18 @@ impl ArvoreUi {
             let pode = self.pode_aprender(id);
             let rotulo = format!("Learn ({} pts)", n.custo);
             let sobre = b.toca(m);
-            crate::loja_tp::botao_ouro(b, &shared::idioma::tr(&rotulo), pode, sobre && pode, f, agora);
+            crate::loja_tp::botao_ouro(
+                b,
+                &shared::idioma::tr(&rotulo),
+                pode,
+                sobre && pode,
+                f,
+                agora,
+            );
             if clique && pode && b.toca(m) {
-                pedido = Some(ClientMessage::Arvore { pedido: PedidoArvore::Aprender { no: id } });
+                pedido = Some(ClientMessage::Arvore {
+                    pedido: PedidoArvore::Aprender { no: id },
+                });
             }
         }
         pedido
@@ -842,11 +1134,24 @@ impl ArvoreUi {
         let estado = self.estado?;
         let f = estilo::fator_texto();
         let seguro = crate::hud_layout::tela_segura();
-        let (w, h) = ((560.0 * f).min(seguro.w - 24.0), (250.0 * f).min(seguro.h - 24.0));
-        let r = Rect::new(seguro.center().x - w * 0.5, seguro.center().y - h * 0.5, w, h);
+        let (w, h) = (
+            (560.0 * f).min(seguro.w - 24.0),
+            (250.0 * f).min(seguro.h - 24.0),
+        );
+        let r = Rect::new(
+            seguro.center().x - w * 0.5,
+            seguro.center().y - h * 0.5,
+            w,
+            h,
+        );
         crate::hud_layout::escurece(0.5);
         estilo::sombra(r, 10.0, 1.4);
-        estilo::ret_gradiente(r, 10.0, Color::new(0.10, 0.08, 0.13, 0.98), Color::new(0.05, 0.04, 0.07, 0.98));
+        estilo::ret_gradiente(
+            r,
+            10.0,
+            Color::new(0.10, 0.08, 0.13, 0.98),
+            Color::new(0.05, 0.04, 0.07, 0.98),
+        );
         estilo::borda_arredondada(r, 10.0, 2.0, estilo::alfa(estilo::OURO, 0.8));
         let x = r.x + 24.0 * f;
         let larg = w - 48.0 * f;
@@ -870,7 +1175,11 @@ impl ArvoreUi {
             r.y + 118.0 * f,
             &shared::idioma::tr(&format!("You have {} gold.", crate::bolsa::milhar(ouro))),
             14,
-            if paga { estilo::SUAVE } else { estilo::VERMELHO },
+            if paga {
+                estilo::SUAVE
+            } else {
+                estilo::VERMELHO
+            },
             false,
         );
         let bw = (w - 60.0 * f) * 0.5;
@@ -878,7 +1187,12 @@ impl ArvoreUi {
         let by = r.y + r.h - 22.0 * f - bh;
         let cancelar = Rect::new(x, by, bw, bh);
         let ok = Rect::new(cancelar.x + bw + 12.0 * f, by, bw, bh);
-        estilo::botao(cancelar, "Cancel", estilo::estado_de(cancelar, false, false), false);
+        estilo::botao(
+            cancelar,
+            "Cancel",
+            estilo::estado_de(cancelar, false, false),
+            false,
+        );
         estilo::botao(ok, "Reset", estilo::estado_de(ok, !paga, false), paga);
         if !crate::foco::clique() {
             return None;
@@ -886,7 +1200,9 @@ impl ArvoreUi {
         let m = Vec2::from(mouse_position());
         if ok.toca(m) && paga {
             self.confirmar_redistribuir = false;
-            return Some(ClientMessage::Arvore { pedido: PedidoArvore::Redistribuir });
+            return Some(ClientMessage::Arvore {
+                pedido: PedidoArvore::Redistribuir,
+            });
         }
         if cancelar.toca(m) || !r.toca(m) {
             self.confirmar_redistribuir = false;
@@ -897,7 +1213,10 @@ impl ArvoreUi {
 
 /// The point where the finger (or the mouse) went down this frame.
 fn apertou_em() -> Option<Vec2> {
-    if let Some(t) = touches().into_iter().find(|t| t.phase == TouchPhase::Started) {
+    if let Some(t) = touches()
+        .into_iter()
+        .find(|t| t.phase == TouchPhase::Started)
+    {
         return Some(t.position);
     }
     is_mouse_button_pressed(MouseButton::Left).then(|| Vec2::from(mouse_position()))
@@ -913,7 +1232,11 @@ fn ceu(r: Rect, centro: Vec2, cam: Vec2, escala: f32, base: f32, agora: f64) {
         for (k, (dist, raio, forca)) in [(6.5, 7.5, 0.10), (10.5, 5.0, 0.06)].iter().enumerate() {
             let p = vec2(a.cos(), a.sin()) * *dist;
             let q = centro + (p - cam * 0.6) * escala * 0.8;
-            let tom = if k == 1 { estilo::misturar(cor_do_caminho(c), Color::new(0.5, 0.3, 0.9, 1.0), 0.3) } else { cor_do_caminho(c) };
+            let tom = if k == 1 {
+                estilo::misturar(cor_do_caminho(c), Color::new(0.5, 0.3, 0.9, 1.0), 0.3)
+            } else {
+                cor_do_caminho(c)
+            };
             let raio_px = (raio * escala).min(r.w.max(r.h) * 0.55);
             crate::loja_tp::brilho_radial(q, raio_px, tom, *forca);
         }
@@ -951,9 +1274,21 @@ fn ceu(r: Rect, centro: Vec2, cam: Vec2, escala: f32, base: f32, agora: f64) {
         let a = 0.055 * (1.0 - k);
         let cor = Color::new(0.0, 0.0, 0.0, a);
         draw_rectangle(r.x, r.y + d, r.w, (r.h * 0.03).max(4.0), cor);
-        draw_rectangle(r.x, r.y + r.h - d - (r.h * 0.03).max(4.0), r.w, (r.h * 0.03).max(4.0), cor);
+        draw_rectangle(
+            r.x,
+            r.y + r.h - d - (r.h * 0.03).max(4.0),
+            r.w,
+            (r.h * 0.03).max(4.0),
+            cor,
+        );
         draw_rectangle(r.x + d, r.y, (r.w * 0.02).max(4.0), r.h, cor);
-        draw_rectangle(r.x + r.w - d - (r.w * 0.02).max(4.0), r.y, (r.w * 0.02).max(4.0), r.h, cor);
+        draw_rectangle(
+            r.x + r.w - d - (r.w * 0.02).max(4.0),
+            r.y,
+            (r.w * 0.02).max(4.0),
+            r.h,
+            cor,
+        );
     }
 }
 
@@ -970,7 +1305,17 @@ fn circulo_tracejado(c: Vec2, raio: f32, w: f32, cor: Color) {
 
 /// One node: its halo, body, ring(s) and glyph, by kind and state.
 #[allow(clippy::too_many_arguments)]
-fn desenha_no(n: &No, p: Vec2, r: f32, tem: bool, pode: bool, barato: bool, suprema: bool, slot: Option<usize>, agora: f64) {
+fn desenha_no(
+    n: &No,
+    p: Vec2,
+    r: f32,
+    tem: bool,
+    pode: bool,
+    barato: bool,
+    suprema: bool,
+    slot: Option<usize>,
+    agora: f64,
+) {
     let cor = cor_do_no(n);
     let t = agora as f32;
     let pulso = 0.5 + 0.5 * (t * 3.0 + n.id as f32 * 0.7).sin();
@@ -980,7 +1325,11 @@ fn desenha_no(n: &No, p: Vec2, r: f32, tem: bool, pode: bool, barato: bool, supr
     } else if pode && barato {
         crate::loja_tp::brilho_radial(p, r * (1.8 + 0.4 * pulso), cor, 0.16 + 0.16 * pulso);
     }
-    let corpo = if tem { estilo::misturar(FUNDO_NO, cor, 0.28) } else { FUNDO_NO };
+    let corpo = if tem {
+        estilo::misturar(FUNDO_NO, cor, 0.28)
+    } else {
+        FUNDO_NO
+    };
     let anel = if tem {
         estilo::clarear(cor, 0.2)
     } else if pode {
@@ -995,7 +1344,13 @@ fn desenha_no(n: &No, p: Vec2, r: f32, tem: bool, pode: bool, barato: bool, supr
     } else {
         estilo::alfa(APAGADO, 0.9)
     };
-    let ouro = if tem { estilo::OURO } else if pode { estilo::alfa(estilo::OURO, 0.75) } else { estilo::alfa(Color::new(0.55, 0.47, 0.32, 1.0), 0.8) };
+    let ouro = if tem {
+        estilo::OURO
+    } else if pode {
+        estilo::alfa(estilo::OURO, 0.75)
+    } else {
+        estilo::alfa(Color::new(0.55, 0.47, 0.32, 1.0), 0.8)
+    };
     let esp = (r * 0.13).max(1.4);
     match n.tipo {
         TipoNo::Inicio => {
@@ -1010,7 +1365,13 @@ fn desenha_no(n: &No, p: Vec2, r: f32, tem: bool, pode: bool, barato: bool, supr
                 draw_triangle(ponta, e1, e2, cor_do_caminho(c));
             }
             draw_circle_lines(p.x, p.y, r, esp, estilo::OURO);
-            draw_circle_lines(p.x, p.y, r * 1.18, esp * 0.5, estilo::alfa(estilo::OURO, 0.5));
+            draw_circle_lines(
+                p.x,
+                p.y,
+                r * 1.18,
+                esp * 0.5,
+                estilo::alfa(estilo::OURO, 0.5),
+            );
             draw_circle(p.x, p.y, r * 0.18, estilo::OURO);
         }
         TipoNo::Menor => {
@@ -1042,12 +1403,37 @@ fn desenha_no(n: &No, p: Vec2, r: f32, tem: bool, pode: bool, barato: bool, supr
         }
         TipoNo::Ativa => {
             // A hexagon in the path colour, the skill's own icon inside.
-            draw_poly(p.x, p.y, 6, r * 1.08, 30.0, if tem { estilo::alfa(cor, 0.95) } else { estilo::alfa(cor, 0.35) });
+            draw_poly(
+                p.x,
+                p.y,
+                6,
+                r * 1.08,
+                30.0,
+                if tem {
+                    estilo::alfa(cor, 0.95)
+                } else {
+                    estilo::alfa(cor, 0.35)
+                },
+            );
             draw_poly(p.x, p.y, 6, r * 0.92, 30.0, corpo);
-            draw_poly_lines(p.x, p.y, 6, r * 1.08, 30.0, esp, if tem { estilo::clarear(cor, 0.3) } else { anel });
+            draw_poly_lines(
+                p.x,
+                p.y,
+                6,
+                r * 1.08,
+                30.0,
+                esp,
+                if tem { estilo::clarear(cor, 0.3) } else { anel },
+            );
             let a = n.ativa.unwrap_or(0);
             let icone = crate::ativas::icone_da_ativa(a);
-            let alfa = if tem { 1.0 } else if pode { 0.75 } else { 0.4 };
+            let alfa = if tem {
+                1.0
+            } else if pode {
+                0.75
+            } else {
+                0.4
+            };
             if !crate::icones_ui::skill(icone, p, r * 1.25, alfa) {
                 estilo::icone(icone, p, r * 0.55, estilo::alfa(tinta, alfa));
             }
@@ -1055,14 +1441,35 @@ fn desenha_no(n: &No, p: Vec2, r: f32, tem: bool, pode: bool, barato: bool, supr
                 // The supreme crown.
                 let c = p + vec2(0.0, -r * 1.28);
                 let s = r * 0.30;
-                draw_triangle(c + vec2(-s, s * 0.5), c + vec2(s, s * 0.5), c + vec2(0.0, -s * 0.6), estilo::OURO);
-                draw_triangle(c + vec2(-s, s * 0.5), c + vec2(-s * 0.4, s * 0.5), c + vec2(-s * 0.9, -s * 0.5), estilo::OURO);
-                draw_triangle(c + vec2(s, s * 0.5), c + vec2(s * 0.4, s * 0.5), c + vec2(s * 0.9, -s * 0.5), estilo::OURO);
+                draw_triangle(
+                    c + vec2(-s, s * 0.5),
+                    c + vec2(s, s * 0.5),
+                    c + vec2(0.0, -s * 0.6),
+                    estilo::OURO,
+                );
+                draw_triangle(
+                    c + vec2(-s, s * 0.5),
+                    c + vec2(-s * 0.4, s * 0.5),
+                    c + vec2(-s * 0.9, -s * 0.5),
+                    estilo::OURO,
+                );
+                draw_triangle(
+                    c + vec2(s, s * 0.5),
+                    c + vec2(s * 0.4, s * 0.5),
+                    c + vec2(s * 0.9, -s * 0.5),
+                    estilo::OURO,
+                );
             }
             if let Some(i) = slot {
                 let b = p + vec2(r * 0.9, r * 0.8);
                 draw_circle(b.x, b.y, r * 0.36, estilo::OURO);
-                estilo::texto_centro_forte(b.x, b.y + r * 0.16, &(i + 4).to_string(), ((r * 0.5) / estilo::fator_texto()).max(8.0) as u16, Color::new(0.1, 0.07, 0.03, 1.0));
+                estilo::texto_centro_forte(
+                    b.x,
+                    b.y + r * 0.16,
+                    &(i + 4).to_string(),
+                    ((r * 0.5) / estilo::fator_texto()).max(8.0) as u16,
+                    Color::new(0.1, 0.07, 0.03, 1.0),
+                );
             }
         }
     }
@@ -1081,14 +1488,31 @@ fn anel_de_selecao(p: Vec2, r: f32, agora: f64) {
 fn explosao(p: Vec2, r: f32, cor: Color, t: f32, semente: u16) {
     let k = (t / 1.1).clamp(0.0, 1.0);
     let some = 1.0 - k;
-    draw_circle_lines(p.x, p.y, r * (1.0 + 3.0 * k), (4.0 * some).max(0.5), estilo::alfa(estilo::clarear(cor, 0.3), some));
-    draw_circle_lines(p.x, p.y, r * (1.0 + 1.8 * k), (2.0 * some).max(0.5), estilo::alfa(WHITE, some * 0.8));
+    draw_circle_lines(
+        p.x,
+        p.y,
+        r * (1.0 + 3.0 * k),
+        (4.0 * some).max(0.5),
+        estilo::alfa(estilo::clarear(cor, 0.3), some),
+    );
+    draw_circle_lines(
+        p.x,
+        p.y,
+        r * (1.0 + 1.8 * k),
+        (2.0 * some).max(0.5),
+        estilo::alfa(WHITE, some * 0.8),
+    );
     crate::loja_tp::brilho_radial(p, r * (2.0 + 2.0 * k), cor, 0.5 * some);
     for i in 0..14u32 {
         let a = TAU * i as f32 / 14.0 + sorte(semente as u32 * 17 + i);
         let v = 1.6 + 2.6 * sorte(semente as u32 * 5 + i * 3);
         let q = p + Vec2::from_angle(a) * r * (1.0 + v * k);
-        draw_circle(q.x, q.y, (r * 0.12 * some).max(0.6), estilo::alfa(if i % 2 == 0 { WHITE } else { cor }, some));
+        draw_circle(
+            q.x,
+            q.y,
+            (r * 0.12 * some).max(0.6),
+            estilo::alfa(if i % 2 == 0 { WHITE } else { cor }, some),
+        );
     }
 }
 
@@ -1101,22 +1525,49 @@ fn chip(p: Vec2, rotulo: &str, valor: u32, cor: Color, f: f32) -> f32 {
     estilo::ret_arredondado(r, r.h * 0.5, Color::new(0.0, 0.0, 0.0, 0.35));
     estilo::borda_arredondada(r, r.h * 0.5, 1.0, estilo::alfa(cor, 0.55));
     estilo::texto(r.x + 12.0 * f, r.y + 24.0 * f, &r_txt, 12, estilo::SUAVE);
-    estilo::texto_forte(r.x + 18.0 * f + estilo::medir(&r_txt, 12), r.y + 26.0 * f, &v, 18, cor);
+    estilo::texto_forte(
+        r.x + 18.0 * f + estilo::medir(&r_txt, 12),
+        r.y + 26.0 * f,
+        &v,
+        18,
+        cor,
+    );
     w
 }
 
 /// A round-cornered control on the sky (Center, +, −).
 fn controle(r: Rect, rotulo: &str, _clique: bool, m: Vec2) {
     let sobre = r.toca(m);
-    estilo::ret_arredondado(r, 8.0, Color::new(0.06, 0.05, 0.09, if sobre { 0.95 } else { 0.8 }));
-    estilo::borda_arredondada(r, 8.0, 1.0, estilo::alfa(estilo::OURO, if sobre { 0.8 } else { 0.4 }));
+    estilo::ret_arredondado(
+        r,
+        8.0,
+        Color::new(0.06, 0.05, 0.09, if sobre { 0.95 } else { 0.8 }),
+    );
+    estilo::borda_arredondada(
+        r,
+        8.0,
+        1.0,
+        estilo::alfa(estilo::OURO, if sobre { 0.8 } else { 0.4 }),
+    );
     let f = estilo::fator_texto();
     if rotulo == "Center" {
         let c = vec2(r.x + 20.0 * f, r.center().y);
         icones::desenha(Glifo::Mira, c, 10.0 * f, estilo::ACENTO);
-        estilo::texto(r.x + 36.0 * f, r.center().y + 5.0 * f, rotulo, 14, estilo::TEXTO);
+        estilo::texto(
+            r.x + 36.0 * f,
+            r.center().y + 5.0 * f,
+            rotulo,
+            14,
+            estilo::TEXTO,
+        );
     } else {
-        estilo::texto_centro_forte(r.center().x, r.center().y + 8.0 * f, rotulo, 22, estilo::TEXTO);
+        estilo::texto_centro_forte(
+            r.center().x,
+            r.center().y + 8.0 * f,
+            rotulo,
+            22,
+            estilo::TEXTO,
+        );
     }
 }
 
@@ -1126,11 +1577,22 @@ fn dica_flutuante(n: &No, estado: &EstadoArvore, p: Vec2, r: f32, canvas: Rect) 
     let titulo = titulo(n);
     let sub = subtitulo(n);
     let linhas: Vec<(String, bool)> = if n.nome.is_empty() {
-        n.efeitos().iter().skip(1).map(|&(e, v)| (linha_traduzida(e, v), e.bom(v))).collect()
+        n.efeitos()
+            .iter()
+            .skip(1)
+            .map(|&(e, v)| (linha_traduzida(e, v), e.bom(v)))
+            .collect()
     } else {
-        n.efeitos().iter().map(|&(e, v)| (linha_traduzida(e, v), e.bom(v))).collect()
+        n.efeitos()
+            .iter()
+            .map(|&(e, v)| (linha_traduzida(e, v), e.bom(v)))
+            .collect()
     };
-    let custo = if n.tipo == TipoNo::Inicio { String::new() } else { shared::idioma::tr(&format!("Cost: {} points", n.custo)).into_owned() };
+    let custo = if n.tipo == TipoNo::Inicio {
+        String::new()
+    } else {
+        shared::idioma::tr(&format!("Cost: {} points", n.custo)).into_owned()
+    };
     let estado_txt = if estado.arvore.tem(n.id) {
         shared::idioma::tr("Learned").into_owned()
     } else {
@@ -1151,14 +1613,46 @@ fn dica_flutuante(n: &No, estado: &EstadoArvore, p: Vec2, r: f32, canvas: Rect) 
     estilo::sombra(b, 8.0, 1.0);
     estilo::ret_arredondado(b, 8.0, Color::new(0.05, 0.04, 0.08, 0.95));
     estilo::borda_arredondada(b, 8.0, 1.5, estilo::alfa(cor_do_no(n), 0.8));
-    estilo::texto_forte(b.x + 12.0 * f, b.y + 22.0 * f, &titulo, 15, if n.nome.is_empty() { estilo::TEXTO } else { estilo::ACENTO });
-    estilo::texto(b.x + 12.0 * f, b.y + 40.0 * f, &sub, 12, estilo::alfa(cor_do_no(n), 0.95));
+    estilo::texto_forte(
+        b.x + 12.0 * f,
+        b.y + 22.0 * f,
+        &titulo,
+        15,
+        if n.nome.is_empty() {
+            estilo::TEXTO
+        } else {
+            estilo::ACENTO
+        },
+    );
+    estilo::texto(
+        b.x + 12.0 * f,
+        b.y + 40.0 * f,
+        &sub,
+        12,
+        estilo::alfa(cor_do_no(n), 0.95),
+    );
     let mut yy = b.y + 60.0 * f;
     for (l, bom) in &linhas {
-        estilo::texto(b.x + 12.0 * f, yy, l, 13, if *bom { Color::new(0.62, 0.92, 0.66, 1.0) } else { estilo::VERMELHO });
+        estilo::texto(
+            b.x + 12.0 * f,
+            yy,
+            l,
+            13,
+            if *bom {
+                Color::new(0.62, 0.92, 0.66, 1.0)
+            } else {
+                estilo::VERMELHO
+            },
+        );
         yy += 19.0 * f;
     }
-    estilo::texto(b.x + 12.0 * f, yy + 4.0 * f, &format!("{custo}   {estado_txt}"), 12, estilo::SUAVE);
+    estilo::texto(
+        b.x + 12.0 * f,
+        yy + 4.0 * f,
+        &format!("{custo}   {estado_txt}"),
+        12,
+        estilo::SUAVE,
+    );
 }
 
 #[cfg(test)]
@@ -1178,8 +1672,14 @@ mod tests {
         let ui = com([2, 0, 0, 0], 5);
         let s2 = av::id_no_braco(Caminho::Assassino, 2);
         assert!(ui.pode_aprender(s2));
-        assert!(!ui.pode_aprender(av::id_no_braco(Caminho::Assassino, 1)), "already learned");
-        assert!(!ui.pode_aprender(av::id_no_braco(Caminho::Assassino, 3)), "not connected");
+        assert!(
+            !ui.pode_aprender(av::id_no_braco(Caminho::Assassino, 1)),
+            "already learned"
+        );
+        assert!(
+            !ui.pode_aprender(av::id_no_braco(Caminho::Assassino, 3)),
+            "not connected"
+        );
         assert!(ui.pode_aprender(av::id_no_braco(Caminho::Corsario, 0)));
         assert!(!ui.pode_aprender(9_999));
         let ui = com([2, 0, 0, 0], 2);
@@ -1189,7 +1689,10 @@ mod tests {
         let tudo = av::Arvore::com_ids(&(1..av::NOS_TOTAL as u16).collect::<Vec<_>>());
         let mut cheio = ArvoreUi::default();
         cheio.receber(EstadoArvore::de(tudo, 600));
-        assert!(!cheio.tem_ponto_livre(), "a full web has nothing to spend on");
+        assert!(
+            !cheio.tem_ponto_livre(),
+            "a full web has nothing to spend on"
+        );
     }
 
     #[test]
@@ -1208,7 +1711,10 @@ mod tests {
         assert_eq!(titulo(n), "Crit chance +0.5%");
         let k = av::no(av::id_no_braco(Caminho::Assassino, 28)).unwrap();
         assert_eq!(titulo(k), "Death's Edge");
-        assert_eq!(linha_traduzida(av::Efeito::VidaPct, -0.15), "Max health -15%");
+        assert_eq!(
+            linha_traduzida(av::Efeito::VidaPct, -0.15),
+            "Max health -15%"
+        );
         assert!(subtitulo(k).contains("Keystone"));
     }
 
@@ -1216,7 +1722,13 @@ mod tests {
     /// and no two nodes overlap on screen at the smallest zoom either.
     #[test]
     fn layout_cabe_e_os_nos_nao_se_sobrepoem() {
-        for (w, h) in [(2400.0, 1080.0), (1080.0, 2160.0), (1280.0, 720.0), (1920.0, 1080.0), (812.0, 375.0)] {
+        for (w, h) in [
+            (2400.0, 1080.0),
+            (1080.0, 2160.0),
+            (1280.0, 720.0),
+            (1920.0, 1080.0),
+            (812.0, 375.0),
+        ] {
             let seguro = Rect::new(0.0, 0.0, w, h);
             for f in [1.0, 1.3, 2.0] {
                 let l = layout(seguro, f);
@@ -1226,7 +1738,10 @@ mod tests {
                 assert!(l.doca.y + l.doca.h <= l.painel.y + l.painel.h + 0.5);
                 assert!(l.mais.y > l.centro.y && l.menos.y > l.mais.y);
                 let base = px_base(f, true);
-                assert!(2.0 * raio_u(TipoNo::Menor) * base >= 36.0, "a minor is a finger target");
+                assert!(
+                    2.0 * raio_u(TipoNo::Menor) * base >= 36.0,
+                    "a minor is a finger target"
+                );
                 let zmin = zoom_min(l.canvas, base);
                 assert!(zmin <= 1.0);
                 // Whole web inside the canvas at the smallest zoom.
@@ -1280,13 +1795,16 @@ pub async fn previa() {
         clear_background(Color::new(0.08, 0.12, 0.16, 1.0));
         ui.desenha(312_500);
         unsafe { get_internal_gl().flush() };
-        rt.texture.get_texture_data().export_png(&format!("{saida}/{nome}.png"));
+        rt.texture
+            .get_texture_data()
+            .export_png(&format!("{saida}/{nome}.png"));
     };
     // A rebirth-12 build: Assassin deep with a keystone, a bridge into Mage,
     // some Guardian.
     let mut a = av::Arvore::com_nos([13, 4, 6, 0]);
     for l in [4, 5, 6, 14, 15, 16, 7, 8, 9] {
-        a.aprender(av::id_no_braco(Caminho::Assassino, l), 999).unwrap();
+        a.aprender(av::id_no_braco(Caminho::Assassino, l), 999)
+            .unwrap();
     }
     a.aprender(av::id_no_braco(Caminho::Mago, 4), 999).ok();
     a.slots = [Some(0), Some(2), Some(1)];
@@ -1333,13 +1851,17 @@ pub async fn previa() {
     ui.zoom = 1.0;
     ui.zoom_alvo = 1.0;
     let mut b = a;
-    b.aprender(av::id_no_braco(Caminho::Guardiao, 4), 999).unwrap();
+    b.aprender(av::id_no_braco(Caminho::Guardiao, 4), 999)
+        .unwrap();
     ui.relogio = Some(12.0);
     ui.receber(EstadoArvore::de(b, ganhos + 5).com_renascimentos(12));
     ui.relogio = Some(12.35);
     foto(&mut ui, "arvore-explosao");
     // The mouse tooltip on a notable bridge.
-    let ponte = av::nos().iter().find(|n| n.ponte.is_some() && n.tipo == TipoNo::Notavel).unwrap();
+    let ponte = av::nos()
+        .iter()
+        .find(|n| n.ponte.is_some() && n.tipo == TipoNo::Notavel)
+        .unwrap();
     ui.sobre = Some(ponte.id);
     ui.cam = vec2(ponte.x, ponte.y) * 0.6;
     ui.cam_alvo = ui.cam;
@@ -1360,10 +1882,18 @@ pub async fn previa() {
         draw_circle(c.x, c.y, lado * 0.5, FUNDO_NO);
         draw_circle_lines(c.x, c.y, lado * 0.5, 2.0, estilo::OURO);
         icones::desenha(*g, c, lado * 0.32, Color::new(0.95, 0.9, 0.8, 1.0));
-        estilo::texto_centro(c.x, c.y + lado * 0.5 + 16.0, &format!("{g:?}"), 11, estilo::SUAVE);
+        estilo::texto_centro(
+            c.x,
+            c.y + lado * 0.5 + 16.0,
+            &format!("{g:?}"),
+            11,
+            estilo::SUAVE,
+        );
     }
     unsafe { get_internal_gl().flush() };
-    rt.texture.get_texture_data().export_png(&format!("{saida}/arvore-icones.png"));
+    rt.texture
+        .get_texture_data()
+        .export_png(&format!("{saida}/arvore-icones.png"));
     // Portrait (a phone held upright), when the window can be resized.
     let (pw, ph) = (540.0, 1080.0);
     request_new_screen_size(pw, ph);
@@ -1378,7 +1908,9 @@ pub async fn previa() {
             clear_background(Color::new(0.08, 0.12, 0.16, 1.0));
             ui.desenha(312_500);
             unsafe { get_internal_gl().flush() };
-            rt2.texture.get_texture_data().export_png(&format!("{saida}/{nome}.png"));
+            rt2.texture
+                .get_texture_data()
+                .export_png(&format!("{saida}/{nome}.png"));
         };
         ui.zoom_pronto = false;
         foto2(&mut ui, "arvore-retrato");

@@ -65,8 +65,9 @@ pub(crate) fn caminho() -> Option<PathBuf> {
     }
     #[cfg(target_os = "windows")]
     {
-        let mut p = PathBuf::from(std::env::var_os("LOCALAPPDATA")
-            .or_else(|| std::env::var_os("APPDATA"))?);
+        let mut p = PathBuf::from(
+            std::env::var_os("LOCALAPPDATA").or_else(|| std::env::var_os("APPDATA"))?,
+        );
         p.push("Tempest");
         std::fs::create_dir_all(&p).ok()?;
         p.push("prefs");
@@ -282,7 +283,9 @@ mod android {
 
     pub(super) fn pasta_de_arquivos() -> Option<PathBuf> {
         static PASTA: OnceLock<Option<PathBuf>> = OnceLock::new();
-        PASTA.get_or_init(|| unsafe { le_pasta_de_arquivos() }).clone()
+        PASTA
+            .get_or_init(|| unsafe { le_pasta_de_arquivos() })
+            .clone()
     }
 
     unsafe fn le_pasta_de_arquivos() -> Option<PathBuf> {
@@ -329,7 +332,9 @@ mod android {
         if ptr.is_null() {
             return None;
         }
-        let texto = CStr::from_ptr(ptr as *const c_char).to_string_lossy().into_owned();
+        let texto = CStr::from_ptr(ptr as *const c_char)
+            .to_string_lossy()
+            .into_owned();
         release(env, caminho, ptr);
         Some(PathBuf::from(texto))
     }

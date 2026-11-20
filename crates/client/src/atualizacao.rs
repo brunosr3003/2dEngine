@@ -3,7 +3,7 @@ use macroquad::prelude::*;
 use std::sync::mpsc::{Receiver, TryRecvError};
 use std::time::{Duration, Instant};
 
-pub const BUILD: u64 = 2026111301;
+pub const BUILD: u64 = 2026112001;
 const SITE: &str = "https://mmo.brunji.com.br/#downloads";
 /// Google Play page of the game: the Play Store APP first (`market://`), the
 /// web page if the phone has no store app.
@@ -15,7 +15,8 @@ const LOJA_ANDROID_WEB: &str = "https://play.google.com/store/apps/details?id=co
 /// store to update the game"). Everyone else: the site's download page.
 fn abrir_atualizacao(url_do_manifesto: Option<&str>) -> bool {
     if plataforma() == "android" {
-        return crate::nativo::abrir_url(LOJA_ANDROID_APP) || crate::nativo::abrir_url(LOJA_ANDROID_WEB);
+        return crate::nativo::abrir_url(LOJA_ANDROID_APP)
+            || crate::nativo::abrir_url(LOJA_ANDROID_WEB);
     }
     crate::nativo::abrir_url(url_do_manifesto.unwrap_or(SITE))
 }
@@ -107,21 +108,56 @@ impl Atualizacao {
         }
         let r = crate::ui::painel((screen_width() - 24.0).min(560.0), 340.0, "Update required");
         let cx = r.center().x;
-        crate::ui::texto_centro(cx, r.y + 20.0,
-            "A new version of Tempest is out.", 16, crate::ui::OURO);
-        crate::ui::texto_centro(cx, r.y + 44.0,
-            if android { "Update it on Google Play to keep playing." }
-            else { "Update the game from the site to continue." }, 16, crate::ui::OURO);
-        if crate::ui::botao(Rect::new(r.x, r.y + 68.0, r.w, 44.0),
-            if android { "Update on Google Play" } else { "Open the site to update" }, true) {
+        crate::ui::texto_centro(
+            cx,
+            r.y + 20.0,
+            "A new version of Tempest is out.",
+            16,
+            crate::ui::OURO,
+        );
+        crate::ui::texto_centro(
+            cx,
+            r.y + 44.0,
+            if android {
+                "Update it on Google Play to keep playing."
+            } else {
+                "Update the game from the site to continue."
+            },
+            16,
+            crate::ui::OURO,
+        );
+        if crate::ui::botao(
+            Rect::new(r.x, r.y + 68.0, r.w, 44.0),
+            if android {
+                "Update on Google Play"
+            } else {
+                "Open the site to update"
+            },
+            true,
+        ) {
             self.erro = !abrir_atualizacao(None);
         }
-        crate::ui::texto_centro(cx, r.y + 138.0,
-            if android { "Google Play \u{2192} Tempest Online \u{2192} Update" } else { "mmo.brunji.com.br" },
-            16, crate::ui::OURO);
+        crate::ui::texto_centro(
+            cx,
+            r.y + 138.0,
+            if android {
+                "Google Play \u{2192} Tempest Online \u{2192} Update"
+            } else {
+                "mmo.brunji.com.br"
+            },
+            16,
+            crate::ui::OURO,
+        );
         if self.erro {
-            crate::ui::erro(cx, r.y + 164.0,
-                if android { "Could not open Google Play." } else { "Could not open the browser." });
+            crate::ui::erro(
+                cx,
+                r.y + 164.0,
+                if android {
+                    "Could not open Google Play."
+                } else {
+                    "Could not open the browser."
+                },
+            );
         }
         crate::ui::botao(Rect::new(r.x, r.y + 186.0, r.w, 44.0), "Back", true)
     }
@@ -197,8 +233,11 @@ impl Atualizacao {
             crate::ui::erro(
                 r.center().x,
                 r.y + 140.0,
-                if android { "Open Google Play and update Tempest Online." }
-                else { "Open mmo.brunji.com.br in your browser." },
+                if android {
+                    "Open Google Play and update Tempest Online."
+                } else {
+                    "Open mmo.brunji.com.br in your browser."
+                },
             );
         }
         // No "Not now": an old client is not allowed to play (owner,
@@ -210,12 +249,19 @@ impl Atualizacao {
 #[cfg(debug_assertions)]
 pub async fn previa_incompativel() {
     let mut aviso = Atualizacao {
-        busca: None, inicio: Instant::now(), aviso: None, dispensado: true, erro: false,
-        redirecionado: true, ultima_busca: Instant::now(),
+        busca: None,
+        inicio: Instant::now(),
+        aviso: None,
+        dispensado: true,
+        erro: false,
+        redirecionado: true,
+        ultima_busca: Instant::now(),
     };
     for (w, h) in [(960, 540), (640, 360)] {
         request_new_screen_size(w as f32, h as f32);
-        for _ in 0..3 { next_frame().await; }
+        for _ in 0..3 {
+            next_frame().await;
+        }
         let rt = render_target(screen_width() as u32, screen_height() as u32);
         crate::render3d::define_alvo(Some(rt.clone()));
         for erro in [false, true] {
@@ -225,7 +271,9 @@ pub async fn previa_incompativel() {
                 crate::ui::fundo();
                 aviso.desenha_incompativel();
                 unsafe { get_internal_gl().flush() };
-                rt.texture.get_texture_data().export_png(&format!("/tmp/tempest-protocolo-{w}-{erro}.png"));
+                rt.texture
+                    .get_texture_data()
+                    .export_png(&format!("/tmp/tempest-protocolo-{w}-{erro}.png"));
                 next_frame().await;
             }
         }

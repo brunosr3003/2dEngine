@@ -99,8 +99,11 @@ async fn repassa(
         let Ok(req) = hyper::Request::builder().uri(uri).body(String::new()) else {
             continue;
         };
-        let Ok(Ok(resp)) =
-            tokio::time::timeout(std::time::Duration::from_secs(prazo_s), st.http.request(req)).await
+        let Ok(Ok(resp)) = tokio::time::timeout(
+            std::time::Duration::from_secs(prazo_s),
+            st.http.request(req),
+        )
+        .await
         else {
             continue;
         };

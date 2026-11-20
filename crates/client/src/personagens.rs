@@ -259,7 +259,9 @@ impl Personagens {
         let l = LayoutCriacao::novo(largura_tela(), altura_tela(), crate::nativo::area_segura());
         // ONE scale for the whole screen: every text size below is in design
         // units and `no_painel(k)` scales it with the boxes.
-        ui::no_painel(l.k, || self.criacao_na_escala(l, armas, digitado, vox, solido))
+        ui::no_painel(l.k, || {
+            self.criacao_na_escala(l, armas, digitado, vox, solido)
+        })
     }
 
     fn criacao_na_escala(
@@ -276,9 +278,21 @@ impl Personagens {
         let conjunto = Conjunto::da_arma(self.arma.unwrap_or(0));
 
         // ── header: title and Cancel ─────────────────────────────────────────
-        ui::texto_forte(l.ox + 12.0 * k, l.oy + 32.0 * k, "Create your hero", 26, ui::TEXTO);
-        if botao_k(l.r(BASE_W - 12.0 - 130.0, 6.0, 130.0, 36.0), "Cancel", 17, k, !ocupado, false)
-            || (!ocupado && is_key_pressed(KeyCode::Escape))
+        ui::texto_forte(
+            l.ox + 12.0 * k,
+            l.oy + 32.0 * k,
+            "Create your hero",
+            26,
+            ui::TEXTO,
+        );
+        if botao_k(
+            l.r(BASE_W - 12.0 - 130.0, 6.0, 130.0, 36.0),
+            "Cancel",
+            17,
+            k,
+            !ocupado,
+            false,
+        ) || (!ocupado && is_key_pressed(KeyCode::Escape))
         {
             self.mensagem = None;
             self.foco_nome = false;
@@ -290,7 +304,13 @@ impl Personagens {
         let visual = (self.aparencia.empacota(), 0, 0);
         self.desenha_retrato(l.retrato, l.rodape_retrato, conjunto, visual, vox, solido);
         let cx = l.retrato.x + l.retrato.w * 0.5;
-        ui::texto_centro_forte(cx, l.retrato.y + l.retrato.h - 18.0 * k, conjunto.nome(), 22, ui::OURO);
+        ui::texto_centro_forte(
+            cx,
+            l.retrato.y + l.retrato.h - 18.0 * k,
+            conjunto.nome(),
+            22,
+            ui::OURO,
+        );
         ui::texto_centro(cx, l.retrato.y + 14.0 * k, "Drag to rotate", 13, ui::SUAVE);
 
         // The name and the Create button live on the Appearance tab: the
@@ -308,7 +328,14 @@ impl Personagens {
                 ui::TEXTO,
                 l.botao.y - 4.0 * k,
             );
-            if botao_k(l.botao, "Next: Appearance  ›", 22, k, !ocupado && self.arma.is_some(), true) {
+            if botao_k(
+                l.botao,
+                "Next: Appearance  ›",
+                22,
+                k,
+                !ocupado && self.arma.is_some(),
+                true,
+            ) {
                 self.aba = 1;
             }
         } else if let Some(a) = self.campo_e_botao(&l, armas, digitado, h, ocupado) {
@@ -320,7 +347,12 @@ impl Personagens {
         let px = 354.0 + 14.0; // design x inside the panel
         let pw = BASE_W - 354.0 - 12.0 - 28.0;
         for (i, nome) in ["Weapon & Faction", "Appearance"].iter().enumerate() {
-            let r = l.r(px + i as f32 * (pw + 10.0) * 0.5, 58.0, (pw - 10.0) * 0.5, 44.0);
+            let r = l.r(
+                px + i as f32 * (pw + 10.0) * 0.5,
+                58.0,
+                (pw - 10.0) * 0.5,
+                44.0,
+            );
             if aba_k(r, nome, k, self.aba == i as u8, !ocupado) {
                 self.aba = i as u8;
             }
@@ -379,23 +411,55 @@ impl Personagens {
         if self.foco_nome {
             ui::borda_arredondada(campo, ui::RAIO_PEQUENO, 2.0 * k, ui::OURO);
         }
-        let cursor = if self.foco_nome && (get_time() * 2.0) as u32 % 2 == 0 { "|" } else { "" };
+        let cursor = if self.foco_nome && (get_time() * 2.0) as u32 % 2 == 0 {
+            "|"
+        } else {
+            ""
+        };
         let meio = campo.y + campo.h * 0.5 + 7.0 * k;
         if self.nome.is_empty() && !self.foco_nome {
-            ui::texto_centro(campo.x + campo.w * 0.5, meio, "Tap to choose your name", 19, ui::SUAVE);
+            ui::texto_centro(
+                campo.x + campo.w * 0.5,
+                meio,
+                "Tap to choose your name",
+                19,
+                ui::SUAVE,
+            );
         } else {
-            ui::texto_centro_forte(campo.x + campo.w * 0.5, meio, &format!("{}{cursor}", self.nome), 22, ui::TEXTO);
+            ui::texto_centro_forte(
+                campo.x + campo.w * 0.5,
+                meio,
+                &format!("{}{cursor}", self.nome),
+                22,
+                ui::TEXTO,
+            );
         }
 
-        let erro = if self.nome.is_empty() { None } else { valida_nome(&self.nome).err() };
+        let erro = if self.nome.is_empty() {
+            None
+        } else {
+            valida_nome(&self.nome).err()
+        };
         let msg = self
             .mensagem
             .as_deref()
             .or(erro)
-            .or(if self.arma.is_none() { Some("Nenhuma arma inicial disponível neste servidor.") } else { None })
-            .or(if self.foco_nome { Some("2 to 24 characters · letters, numbers and _") } else { None });
+            .or(if self.arma.is_none() {
+                Some("Nenhuma arma inicial disponível neste servidor.")
+            } else {
+                None
+            })
+            .or(if self.foco_nome {
+                Some("2 to 24 characters · letters, numbers and _")
+            } else {
+                None
+            });
         if let Some(msg) = msg {
-            let cor = if erro.is_some() || self.mensagem.is_some() { ui::OURO } else { ui::SUAVE };
+            let cor = if erro.is_some() || self.mensagem.is_some() {
+                ui::OURO
+            } else {
+                ui::SUAVE
+            };
             ui::texto_centro(cx, campo.y - 8.0 * k, msg, 14, cor);
         }
 
@@ -442,26 +506,55 @@ impl Personagens {
         ui::texto_forte(sx(px), sy(128.0), "STARTING WEAPON", 14, ui::OURO);
         let cw = (pw - 10.0) * 0.5;
         for (i, c) in Conjunto::TODOS.iter().enumerate() {
-            let r = l.r(px + (i % 2) as f32 * (cw + 10.0), 136.0 + (i / 2) as f32 * 72.0, cw, 64.0);
+            let r = l.r(
+                px + (i % 2) as f32 * (cw + 10.0),
+                136.0 + (i / 2) as f32 * 72.0,
+                cw,
+                64.0,
+            );
             let disponivel = armas.contains(&c.arma());
             let ativo = self.arma == Some(c.arma());
             let sobre = disponivel && !ocupado && r.toca(Vec2::from(mouse_position()));
             ui::cartao(r, sobre, ativo);
             if ativo {
-                ui::borda_arredondada(r, ui::RAIO_PEQUENO, 2.0 * k, ui::cor_skill(*c as u32 * 3 + 1));
+                ui::borda_arredondada(
+                    r,
+                    ui::RAIO_PEQUENO,
+                    2.0 * k,
+                    ui::cor_skill(*c as u32 * 3 + 1),
+                );
             }
             let icone = 40.0 * k;
             let ic = vec2(r.x + 10.0 * k + icone * 0.5, r.y + r.h * 0.5);
             let opaco = if disponivel { 1.0 } else { 0.35 };
             if !crate::icones_ui::skill(*c as u32 * 3 + 1, ic, icone, opaco) {
-                ui::icone(*c as u32 * 3 + 1, ic, icone * 0.5, ui::cor_skill(*c as u32 * 3 + 1));
+                ui::icone(
+                    *c as u32 * 3 + 1,
+                    ic,
+                    icone * 0.5,
+                    ui::cor_skill(*c as u32 * 3 + 1),
+                );
             }
             let tx = r.x + 20.0 * k + icone;
             let livre = r.x + r.w - tx - 8.0 * k;
-            ui::texto_ajustado(c.nome(), tx, r.y + 27.0 * k, livre, 19, if disponivel { ui::TEXTO } else { ui::SUAVE });
+            ui::texto_ajustado(
+                c.nome(),
+                tx,
+                r.y + 27.0 * k,
+                livre,
+                19,
+                if disponivel { ui::TEXTO } else { ui::SUAVE },
+            );
             if disponivel {
                 let fim = estrelas(tx, r.y + 44.0 * k, 6.0 * k, dificuldade(*c));
-                ui::texto_ajustado(estilo(*c).0, fim + 6.0 * k, r.y + 49.0 * k, r.x + r.w - fim - 14.0 * k, 13, ui::SUAVE);
+                ui::texto_ajustado(
+                    estilo(*c).0,
+                    fim + 6.0 * k,
+                    r.y + 49.0 * k,
+                    r.x + r.w - fim - 14.0 * k,
+                    13,
+                    ui::SUAVE,
+                );
             } else {
                 ui::texto_ajustado("Unavailable", tx, r.y + 49.0 * k, livre, 13, ui::SUAVE);
             }
@@ -472,9 +565,12 @@ impl Personagens {
             }
         }
         ui::texto_forte(sx(px), sy(298.0), "FACTION", 14, ui::OURO);
-        for (i, (f, n)) in [(Faction::Peacemain, "Peacemain"), (Faction::Morganeers, "Morganeers")]
-            .iter()
-            .enumerate()
+        for (i, (f, n)) in [
+            (Faction::Peacemain, "Peacemain"),
+            (Faction::Morganeers, "Morganeers"),
+        ]
+        .iter()
+        .enumerate()
         {
             let r = l.r(px + i as f32 * (cw + 10.0), 306.0, cw, 42.0);
             if aba_k(r, n, k, self.faccao == *f, !ocupado) {
@@ -484,15 +580,30 @@ impl Personagens {
         ui::texto(
             sx(px),
             sy(370.0),
-            if self.faccao == Faction::Peacemain { "Adventurers and explorers." } else { "Pirates after plunder." },
+            if self.faccao == Faction::Peacemain {
+                "Adventurers and explorers."
+            } else {
+                "Pirates after plunder."
+            },
             15,
             ui::SUAVE,
         );
         let n = dificuldade(conjunto);
         let y = sy(394.0);
         ui::texto_forte(sx(px), y, "DIFFICULTY", 14, ui::OURO);
-        let ex = estrelas(sx(px) + ui::medir_forte("DIFFICULTY", 14) + 10.0 * k, y - 5.0 * k, 7.0 * k, n);
-        ui::texto(ex + 10.0 * k, y, ["", "Easy", "Medium", "Hard"][n as usize], 15, ui::TEXTO);
+        let ex = estrelas(
+            sx(px) + ui::medir_forte("DIFFICULTY", 14) + 10.0 * k,
+            y - 5.0 * k,
+            7.0 * k,
+            n,
+        );
+        ui::texto(
+            ex + 10.0 * k,
+            y,
+            ["", "Easy", "Medium", "Hard"][n as usize],
+            15,
+            ui::TEXTO,
+        );
     }
 
     fn envia_criacao(&mut self, armas: &[u16]) -> Option<Acao> {
@@ -606,7 +717,11 @@ impl Personagens {
             ui::texto(
                 card.x + 54.0,
                 card.y + 53.0,
-                &format!("Lv {}  ·  {}", shared::progressao::texto_de_nivel(c.level), conjunto.nome()),
+                &format!(
+                    "Lv {}  ·  {}",
+                    shared::progressao::texto_de_nivel(c.level),
+                    conjunto.nome()
+                ),
                 12,
                 ui::SUAVE,
             );
@@ -655,13 +770,24 @@ impl Personagens {
             let hero = Rect::new(r.x + r.w + 20.0, 128.0, w - r.x - r.w - 48.0, h - 218.0);
             // THIS character's look, skins and auras — it drew the creation
             // screen's appearance for every character on the list.
-            self.desenha_retrato(hero, 84.0, conjunto, (c.aparencia, c.skins, c.auras), vox, solido);
+            self.desenha_retrato(
+                hero,
+                84.0,
+                conjunto,
+                (c.aparencia, c.skins, c.auras),
+                vox,
+                solido,
+            );
             let cx = hero.x + hero.w * 0.5;
             ui::texto_centro(cx, hero.y + hero.h - 57.0, &c.name, 30, ui::TEXTO);
             ui::texto_centro(
                 cx,
                 hero.y + hero.h - 29.0,
-                &format!("Level {}  ·  {}", shared::progressao::texto_de_nivel(c.level), conjunto.nome()),
+                &format!(
+                    "Level {}  ·  {}",
+                    shared::progressao::texto_de_nivel(c.level),
+                    conjunto.nome()
+                ),
                 16,
                 ui::OURO,
             );
@@ -725,7 +851,10 @@ impl Personagens {
         let fim_neblina = 18.0 * crate::terreno::CHUNK as f32 * shared::terreno::BLOCO;
         let inicio_neblina = fim_neblina * 0.6;
         crate::gpu_estatica::define_neblina(f.centro, inicio_neblina, fim_neblina);
-        solido.set_uniform("Neblina", vec4(f.centro.x, f.centro.y, inicio_neblina, fim_neblina));
+        solido.set_uniform(
+            "Neblina",
+            vec4(f.centro.x, f.centro.y, inicio_neblina, fim_neblina),
+        );
         let giro = t * 0.04;
         let chao = f.terreno.altura(f.centro.x, f.centro.y);
         // ~33 graus e LONGE da vila. Perto demais, a casa no caminho da orbita
@@ -957,7 +1086,11 @@ fn dificuldade(c: Conjunto) -> u8 {
 fn estrelas(x: f32, y: f32, raio: f32, cheias: u8) -> f32 {
     for i in 0..3u8 {
         let c = vec2(x + raio + i as f32 * raio * 2.3, y);
-        let cor = if i < cheias { ui::OURO } else { Color::new(0.35, 0.33, 0.30, 1.0) };
+        let cor = if i < cheias {
+            ui::OURO
+        } else {
+            Color::new(0.35, 0.33, 0.30, 1.0)
+        };
         let p: Vec<Vec2> = (0..10)
             .map(|k| {
                 let a = -std::f32::consts::FRAC_PI_2 + k as f32 * std::f32::consts::PI / 5.0;
@@ -1057,19 +1190,32 @@ impl Personagens {
         use shared::aparencia as ap;
         let k = l.k;
         ui::texto_forte(l.ox + px * k, l.oy + 136.0 * k, "YOUR LOOK", 14, ui::OURO);
-        if botao_k(l.r(px + pw - 160.0, 112.0, 160.0, 38.0), "Randomize", 17, k, !ocupado, false) {
+        if botao_k(
+            l.r(px + pw - 160.0, 112.0, 160.0, 38.0),
+            "Randomize",
+            17,
+            k,
+            !ocupado,
+            false,
+        ) {
             self.sortear_aparencia();
         }
         // Hair + "no hair" + the FREE hats; the paid ones are for the shop.
         let chapeus = ap::chapeus_gratis();
         let cabelos = ap::CABELOS + 1 + chapeus.len() as u8;
         let atual_cabelo = match ap::chapeu_do_cabelo(self.aparencia.cabelo) {
-            Some(c) => chapeus.iter().position(|x| *x == c).map_or(0, |i| ap::CABELOS + 1 + i as u8),
+            Some(c) => chapeus
+                .iter()
+                .position(|x| *x == c)
+                .map_or(0, |i| ap::CABELOS + 1 + i as u8),
             None => self.aparencia.cabelo,
         };
         let gratis = ap::roupas_gratis();
         let roupas = gratis.len() as u8 + 1;
-        let atual_roupa = gratis.iter().position(|r| *r == self.aparencia.roupa).map_or(0, |i| i as u8 + 1);
+        let atual_roupa = gratis
+            .iter()
+            .position(|r| *r == self.aparencia.roupa)
+            .map_or(0, |i| i as u8 + 1);
         let nome_cabelo = |v: u8| -> String {
             if v < ap::CABELOS {
                 format!("Style {}", v + 1)
@@ -1087,7 +1233,11 @@ impl Personagens {
             if v == 0 {
                 "Default".into()
             } else {
-                gratis.get(v as usize - 1).and_then(|r| ap::nome_da_skin(*r)).unwrap_or("Default").to_string()
+                gratis
+                    .get(v as usize - 1)
+                    .and_then(|r| ap::nome_da_skin(*r))
+                    .unwrap_or("Default")
+                    .to_string()
             }
         };
         let linha_y = |i: usize| 160.0 + i as f32 * 48.0;
@@ -1099,35 +1249,69 @@ impl Personagens {
         let mut cabelo = atual_cabelo;
         let mut roupa = atual_roupa;
         for (i, rotulo, n, atual, nome) in [
-            (0usize, "FACE", ap::ROSTOS, &mut rosto, format!("Face {}", self.aparencia.rosto + 1)),
+            (
+                0usize,
+                "FACE",
+                ap::ROSTOS,
+                &mut rosto,
+                format!("Face {}", self.aparencia.rosto + 1),
+            ),
             (1, "HAIR", cabelos, &mut cabelo, nome_cabelo(atual_cabelo)),
             (4, "OUTFIT", roupas, &mut roupa, nome_roupa(atual_roupa)),
         ] {
             let y = linha_y(i);
             let fundo = l.r(px, y, pw, 42.0);
             ui::cartao(fundo, false, false);
-            ui::texto_forte(l.ox + (px + 12.0) * k, l.oy + (y + 27.0) * k, rotulo, 14, ui::OURO);
+            ui::texto_forte(
+                l.ox + (px + 12.0) * k,
+                l.oy + (y + 27.0) * k,
+                rotulo,
+                14,
+                ui::OURO,
+            );
             if botao_k(l.r(cx, y, 42.0, 42.0), "‹", 24, k, !ocupado, false) {
                 *atual = (*atual + n - 1) % n;
             }
-            if botao_k(l.r(cx + cw - 42.0, y, 42.0, 42.0), "›", 24, k, !ocupado, false) {
+            if botao_k(
+                l.r(cx + cw - 42.0, y, 42.0, 42.0),
+                "›",
+                24,
+                k,
+                !ocupado,
+                false,
+            ) {
                 *atual = (*atual + 1) % n;
             }
             let meio = l.ox + (cx + cw * 0.5) * k;
             ui::texto_centro_forte(meio, l.oy + (y + 24.0) * k, &nome, 19, ui::TEXTO);
-            ui::texto_centro(meio, l.oy + (y + 38.0) * k, &format!("{} / {n}", *atual + 1), 11, ui::SUAVE);
+            ui::texto_centro(
+                meio,
+                l.oy + (y + 38.0) * k,
+                &format!("{} / {n}", *atual + 1),
+                11,
+                ui::SUAVE,
+            );
         }
         // Swatch rows: hair colour and skin tone.
         let swatches = |i: usize, rotulo: &str, cores: Vec<Color>, atual: u8| -> Option<u8> {
             let y = linha_y(i);
             ui::cartao(l.r(px, y, pw, 42.0), false, false);
-            ui::texto_forte(l.ox + (px + 12.0) * k, l.oy + (y + 27.0) * k, rotulo, 14, ui::OURO);
+            ui::texto_forte(
+                l.ox + (px + 12.0) * k,
+                l.oy + (y + 27.0) * k,
+                rotulo,
+                14,
+                ui::OURO,
+            );
             let n = cores.len() as f32;
             let passo = (cw - 12.0) / n;
             let raio = (passo * 0.5 - 4.0).min(15.0) * k;
             let mut escolha = None;
             for (j, cor) in cores.iter().enumerate() {
-                let c = vec2(l.ox + (cx + 6.0 + passo * (j as f32 + 0.5)) * k, l.oy + (y + 21.0) * k);
+                let c = vec2(
+                    l.ox + (cx + 6.0 + passo * (j as f32 + 0.5)) * k,
+                    l.oy + (y + 21.0) * k,
+                );
                 if j as u8 == atual {
                     draw_circle(c.x, c.y, raio + 4.0 * k, ui::OURO);
                 }
@@ -1141,8 +1325,12 @@ impl Personagens {
             escolha
         };
         let cor = |c: [[f32; 3]; 2]| Color::new(c[0][0], c[0][1], c[0][2], 1.0);
-        let cabelos_cor: Vec<Color> = (0..ap::CORES_DE_CABELO.len() as u8).map(|i| cor(render3d::cores_do_cabelo(i))).collect();
-        let peles: Vec<Color> = (0..ap::TONS_DE_PELE.len() as u8).map(|i| cor(render3d::cores_da_pele(i))).collect();
+        let cabelos_cor: Vec<Color> = (0..ap::CORES_DE_CABELO.len() as u8)
+            .map(|i| cor(render3d::cores_do_cabelo(i)))
+            .collect();
+        let peles: Vec<Color> = (0..ap::TONS_DE_PELE.len() as u8)
+            .map(|i| cor(render3d::cores_da_pele(i)))
+            .collect();
         if let Some(v) = swatches(2, "HAIR COLOR", cabelos_cor, self.aparencia.cor_cabelo) {
             self.aparencia.cor_cabelo = v;
         }
@@ -1168,14 +1356,25 @@ impl Personagens {
 /// size, `k` = the screen's scale). Gold when it is the main action.
 fn botao_k(r: Rect, t: &str, tam: u16, k: f32, ativo: bool, primario: bool) -> bool {
     let sobre = ativo && r.toca(Vec2::from(mouse_position()));
-    let e = ui::estado(sobre, is_mouse_button_down(MouseButton::Left), !ativo, false);
+    let e = ui::estado(
+        sobre,
+        is_mouse_button_down(MouseButton::Left),
+        !ativo,
+        false,
+    );
     ui::botao(r, "", e, primario && ativo);
     ui::texto_centro_forte(
         r.x + r.w * 0.5,
         r.y + r.h * 0.5 + tam as f32 * 0.36 * k,
         t,
         tam,
-        if !ativo { ui::SUAVE } else if primario { crate::ui::OURO_CLARO } else { ui::TEXTO },
+        if !ativo {
+            ui::SUAVE
+        } else if primario {
+            crate::ui::OURO_CLARO
+        } else {
+            ui::TEXTO
+        },
     );
     ativo && clicou(r)
 }
@@ -1297,11 +1496,15 @@ struct LayoutCriacao {
 impl LayoutCriacao {
     /// `seguro` = area segura (topo, esquerda, baixo, direita).
     fn novo(w: f32, h: f32, seguro: [f32; 4]) -> Self {
-        let (aw, ah) = ((w - seguro[1] - seguro[3]).max(1.0), (h - seguro[0] - seguro[2]).max(1.0));
+        let (aw, ah) = (
+            (w - seguro[1] - seguro[3]).max(1.0),
+            (h - seguro[0] - seguro[2]).max(1.0),
+        );
         let k = (aw / BASE_W).min(ah / BASE_H).clamp(0.5, 2.2);
         let ox = seguro[1] + (aw - BASE_W * k) * 0.5;
         let oy = seguro[0] + (ah - BASE_H * k) * 0.5;
-        let r = |x: f32, y: f32, rw: f32, rh: f32| Rect::new(ox + x * k, oy + y * k, rw * k, rh * k);
+        let r =
+            |x: f32, y: f32, rw: f32, rh: f32| Rect::new(ox + x * k, oy + y * k, rw * k, rh * k);
         Self {
             compacto: k < 1.0,
             k,
@@ -1320,7 +1523,12 @@ impl LayoutCriacao {
 
     /// A rect in design units, on screen.
     fn r(&self, x: f32, y: f32, w: f32, h: f32) -> Rect {
-        Rect::new(self.ox + x * self.k, self.oy + y * self.k, w * self.k, h * self.k)
+        Rect::new(
+            self.ox + x * self.k,
+            self.oy + y * self.k,
+            w * self.k,
+            h * self.k,
+        )
     }
 
     /// Quanto o campo de nome sobe com o teclado da tela aberto: o bastante pra

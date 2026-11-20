@@ -1064,7 +1064,16 @@ impl LojaTp {
         a
     }
 
-    fn aba_skins(&mut self, area: Rect, k: f32, m: Vec2, livre: bool, modal: bool, vox: &VoxCache, solido: &Material) {
+    fn aba_skins(
+        &mut self,
+        area: Rect,
+        k: f32,
+        m: Vec2,
+        livre: bool,
+        modal: bool,
+        vox: &VoxCache,
+        solido: &Material,
+    ) {
         use shared::aparencia as ap;
         // Categories: 25 skins in one grid made cards too small to read.
         const CATEGORIAS: [&str; 5] = ["Outfits", "Hats", "Weapons", "Mount coats", "Ship"];
@@ -1094,7 +1103,10 @@ impl LojaTp {
             self.cosmeticos_de_navio(area, k, m, livre, modal);
             return;
         }
-        let venda: Vec<u16> = ap::a_venda().into_iter().filter(|id| categoria(*id) == self.filtro_skin).collect();
+        let venda: Vec<u16> = ap::a_venda()
+            .into_iter()
+            .filter(|id| categoria(*id) == self.filtro_skin)
+            .collect();
         if venda.is_empty() {
             estilo::texto_centro(
                 area.center().x,
@@ -1137,8 +1149,15 @@ impl LojaTp {
             // The figure takes a tall column on the left: a strip above the
             // text left it about 45 px high, too small to tell outfits apart.
             let prev = Rect::new(r.x + 6.0 * k, r.y + 6.0 * k, r.w * 0.38, r.h - 12.0 * k);
-            crate::render3d::vitrine_de_skin(vox, *id, self.aparencia, shared::item_id::MONTARIA_BASE + 4,
-                prev, 0.18 + (get_time() as f32 * 0.4).sin() * 0.25, solido);
+            crate::render3d::vitrine_de_skin(
+                vox,
+                *id,
+                self.aparencia,
+                shared::item_id::MONTARIA_BASE + 4,
+                prev,
+                0.18 + (get_time() as f32 * 0.4).sin() * 0.25,
+                solido,
+            );
             let tx = prev.x + prev.w + 6.0 * k;
             let tw = r.x + r.w - 10.0 * k - tx;
             let passo = (r.h / 5.0).min(34.0 * k);
@@ -1162,8 +1181,14 @@ impl LojaTp {
                 ts(12.0, k),
                 estilo::alfa(LILAS, 0.95),
             );
-            estilo::texto_ajustado("Tap to view and buy", tx, y0 + passo * 2.0, tw, ts(12.0, k),
-                estilo::TEXTO);
+            estilo::texto_ajustado(
+                "Tap to view and buy",
+                tx,
+                y0 + passo * 2.0,
+                tw,
+                ts(12.0, k),
+                estilo::TEXTO,
+            );
             if let Some(preco) = shared::aparencia::preco_da_skin(*id) {
                 estilo::valor_tp(tx, y0 + passo * 3.1, preco, ts(17.0, k), OURO_CLARO);
             }
@@ -1195,21 +1220,50 @@ impl LojaTp {
             );
             let sobre = !modal && r.toca(m);
             estilo::sombra(r, 18.0 * k, 1.0);
-            estilo::ret_gradiente(r, 18.0 * k, Color::new(0.10, 0.20, 0.30, 0.98), Color::new(0.03, 0.06, 0.12, 0.98));
-            estilo::borda_arredondada(r, 18.0 * k, 1.5 * k.max(0.8), estilo::alfa(if sobre { OURO_CLARO } else { LILAS }, 0.5));
+            estilo::ret_gradiente(
+                r,
+                18.0 * k,
+                Color::new(0.10, 0.20, 0.30, 0.98),
+                Color::new(0.03, 0.06, 0.12, 0.98),
+            );
+            estilo::borda_arredondada(
+                r,
+                18.0 * k,
+                1.5 * k.max(0.8),
+                estilo::alfa(if sobre { OURO_CLARO } else { LILAS }, 0.5),
+            );
             let l = (r.h * 0.42).min(r.w * 0.5);
-            crate::icones::desenha(it.item_id, Rect::new(r.center().x - l * 0.5, r.y + 10.0 * k, l, l), 1.0);
+            crate::icones::desenha(
+                it.item_id,
+                Rect::new(r.center().x - l * 0.5, r.y + 10.0 * k, l, l),
+                1.0,
+            );
             let tw = r.w - 16.0 * k;
             let nw = estilo::medir(it.nome, ts(15.0, k)).min(tw);
-            estilo::texto_ajustado(it.nome, r.center().x - nw * 0.5, r.y + l + 30.0 * k, tw, ts(15.0, k), estilo::TEXTO);
+            estilo::texto_ajustado(
+                it.nome,
+                r.center().x - nw * 0.5,
+                r.y + l + 30.0 * k,
+                tw,
+                ts(15.0, k),
+                estilo::TEXTO,
+            );
             let rotulo = match shared::navio::cosmetico(it.item_id) {
                 Some(shared::navio::Cosmetico::Vela(_)) => "Sail colour",
                 _ => "Figurehead",
             };
             let rw = estilo::medir(rotulo, ts(12.0, k)).min(tw);
-            estilo::texto_ajustado(rotulo, r.center().x - rw * 0.5, r.y + l + 50.0 * k, tw, ts(12.0, k), estilo::alfa(LILAS, 0.95));
+            estilo::texto_ajustado(
+                rotulo,
+                r.center().x - rw * 0.5,
+                r.y + l + 50.0 * k,
+                tw,
+                ts(12.0, k),
+                estilo::alfa(LILAS, 0.95),
+            );
             estilo::valor_tp(
-                r.center().x - estilo::largura_tp_texto(&milhar(it.preco_tp), ts(17.0, k), true) * 0.5,
+                r.center().x
+                    - estilo::largura_tp_texto(&milhar(it.preco_tp), ts(17.0, k), true) * 0.5,
                 r.y + r.h - 14.0 * k,
                 it.preco_tp,
                 ts(17.0, k),
@@ -1419,29 +1473,71 @@ impl LojaTp {
     /// cartao mostra a chance de cada cor, como o de chaves e o de tomos.
     /// The Ward Charm card (`cat::ITENS_DA_LOJA`): what it does in one line,
     /// up to which level, and the price.
-    fn amuleto_de_protecao(&mut self, r: Rect, k: f32, m: Vec2, livre: bool, modal: bool, agora: f64) {
+    fn amuleto_de_protecao(
+        &mut self,
+        r: Rect,
+        k: f32,
+        m: Vec2,
+        livre: bool,
+        modal: bool,
+        agora: f64,
+    ) {
         let it = &cat::ITENS_DA_LOJA[0];
         let azul = Color::from_rgba(120, 180, 255, 255);
         let sobre = !modal && r.toca(m);
         estilo::sombra(r, 22.0 * k, 1.0);
-        estilo::ret_gradiente(r, 22.0 * k, Color::new(0.12, 0.20, 0.40, 0.98), Color::new(0.03, 0.05, 0.13, 0.98));
-        estilo::borda_arredondada(r, 22.0 * k, 1.5 * k.max(0.8),
-            estilo::alfa(if sobre { OURO_CLARO } else { azul }, 0.60));
+        estilo::ret_gradiente(
+            r,
+            22.0 * k,
+            Color::new(0.12, 0.20, 0.40, 0.98),
+            Color::new(0.03, 0.05, 0.13, 0.98),
+        );
+        estilo::borda_arredondada(
+            r,
+            22.0 * k,
+            1.5 * k.max(0.8),
+            estilo::alfa(if sobre { OURO_CLARO } else { azul }, 0.60),
+        );
         faiscas(r, agora, 18, k, 307);
         let arte = vec2(r.center().x, r.y + r.h * 0.27);
         brilho_radial(arte, r.h * 0.20, azul, 0.30);
         let l = r.h * 0.30;
-        crate::icones::desenha(it.item_id, Rect::new(arte.x - l * 0.5, arte.y - l * 0.5, l, l), 1.0);
-        estilo::texto_centro_forte(r.center().x, r.y + r.h * 0.47, it.nome, ts(22.0, k), estilo::TEXTO);
+        crate::icones::desenha(
+            it.item_id,
+            Rect::new(arte.x - l * 0.5, arte.y - l * 0.5, l, l),
+            1.0,
+        );
+        estilo::texto_centro_forte(
+            r.center().x,
+            r.y + r.h * 0.47,
+            it.nome,
+            ts(22.0, k),
+            estilo::TEXTO,
+        );
         // Centred lines, shrunk to the card when it is narrow (phone).
         let linha = |t: &str, y: f32, tam: f32, cor: Color| {
             let largura = r.w - 20.0 * k;
             let w = estilo::medir(t, ts(tam, k)).min(largura);
             estilo::texto_ajustado(t, r.center().x - w * 0.5, y, largura, ts(tam, k), cor);
         };
-        linha("No break up to +7", r.y + r.h * 0.53, 14.0, estilo::alfa(azul, 0.95));
-        linha("A failed +6/+7 refine spends", r.y + r.h * 0.62, 12.0, estilo::TEXTO);
-        linha("the charm, not the piece.", r.y + r.h * 0.62 + 18.0 * k, 12.0, estilo::TEXTO);
+        linha(
+            "No break up to +7",
+            r.y + r.h * 0.53,
+            14.0,
+            estilo::alfa(azul, 0.95),
+        );
+        linha(
+            "A failed +6/+7 refine spends",
+            r.y + r.h * 0.62,
+            12.0,
+            estilo::TEXTO,
+        );
+        linha(
+            "the charm, not the piece.",
+            r.y + r.h * 0.62 + 18.0 * k,
+            12.0,
+            estilo::TEXTO,
+        );
         estilo::valor_tp(
             r.center().x - estilo::largura_tp_texto(&milhar(it.preco_tp), ts(23.0, k), true) * 0.5,
             r.y + r.h - 88.0 * k,
@@ -1451,8 +1547,18 @@ impl LojaTp {
         );
         let bw = (216.0 * k).min(r.w - 16.0 * k);
         let bt = Rect::new(r.center().x - bw * 0.5, r.y + r.h - 62.0 * k, bw, 48.0 * k);
-        botao_ouro(bt, if self.em_voo { "PLEASE WAIT…" } else { "BUY CHARM" }, !self.em_voo,
-            !modal && bt.toca(m), k, agora);
+        botao_ouro(
+            bt,
+            if self.em_voo {
+                "PLEASE WAIT…"
+            } else {
+                "BUY CHARM"
+            },
+            !self.em_voo,
+            !modal && bt.toca(m),
+            k,
+            agora,
+        );
         if !self.em_voo && livre && bt.toca(m) {
             self.confirma = Some(Confirma::Item(Produto::Item(it.id)));
             self.lote = 1;
@@ -1613,7 +1719,11 @@ impl LojaTp {
         let ativo = !self.em_voo;
         botao_ouro(
             bt,
-            if self.em_voo { "PLEASE WAIT…" } else { "COMPRAR" },
+            if self.em_voo {
+                "PLEASE WAIT…"
+            } else {
+                "COMPRAR"
+            },
             ativo,
             !modal && bt.toca(m),
             k,
@@ -2002,16 +2112,34 @@ impl LojaTp {
                     crate::invocacao_ui::icone_pergaminho_de(item_id, prev.center(), prev.w * 0.58);
                 } else if let Produto::Skin(id) = pr {
                     self.giro += get_frame_time().min(0.1) * 0.6;
-                    let r = Rect::new(prev.x + 4.0 * k, prev.y + 4.0 * k,
-                        prev.w - 8.0 * k, prev.h - 8.0 * k);
+                    let r = Rect::new(
+                        prev.x + 4.0 * k,
+                        prev.y + 4.0 * k,
+                        prev.w - 8.0 * k,
+                        prev.h - 8.0 * k,
+                    );
                     let extra = shared::aparencia::skin_de_arma(id).is_some()
                         || shared::aparencia::skin_de_montaria(id).is_some();
                     if extra {
-                        crate::render3d::vitrine_de_skin(vox, id, self.aparencia,
-                            shared::item_id::MONTARIA_BASE + 4, r, self.giro, solido);
+                        crate::render3d::vitrine_de_skin(
+                            vox,
+                            id,
+                            self.aparencia,
+                            shared::item_id::MONTARIA_BASE + 4,
+                            r,
+                            self.giro,
+                            solido,
+                        );
                     } else {
-                        crate::render3d::vitrine_aparencia(vox, self.aparencia_da_skin(id), self.arma, 0,
-                            r, self.giro, solido);
+                        crate::render3d::vitrine_aparencia(
+                            vox,
+                            self.aparencia_da_skin(id),
+                            self.arma,
+                            0,
+                            r,
+                            self.giro,
+                            solido,
+                        );
                     }
                 } else if let Produto::Item(id) = pr {
                     brilho_radial(prev.center(), prev.w * 0.42, OURO_CLARO, 0.32);
@@ -2221,11 +2349,7 @@ impl LojaTp {
         let cancelar = Rect::new(r.x + 26.0 * k, r.y + r.h - 24.0 * k - bh, bw, bh);
         let confirmar = Rect::new(cancelar.x + bw + 26.0 * k, cancelar.y, bw, bh);
         botao_contorno(cancelar, "Cancel", cancelar.toca(m), k);
-        let rotulo = if insuficiente {
-            "BUY TP"
-        } else {
-            "CONFIRMAR"
-        };
+        let rotulo = if insuficiente { "BUY TP" } else { "CONFIRMAR" };
         botao_ouro(confirmar, rotulo, true, confirmar.toca(m), k, agora);
         if !clicou {
             return None;
@@ -2335,11 +2459,21 @@ pub async fn captura_aparencia(vox: &mut VoxCache, solido: &Material, w: u32) {
     let mut loja = LojaTp::default();
     loja.abrir();
     loja.receber(AvisoLoja::Estado(EstadoLoja {
-        ligada: true, simulado: true, tp: 2000, ..Default::default()
+        ligada: true,
+        simulado: true,
+        tp: 2000,
+        ..Default::default()
     }));
-    loja.define_personagem(shared::aparencia::Aparencia {
-        rosto: 2, cabelo: 1, cor_cabelo: 2, pele: 2, ..Default::default()
-    }, shared::item_id::KATANA);
+    loja.define_personagem(
+        shared::aparencia::Aparencia {
+            rosto: 2,
+            cabelo: 1,
+            cor_cabelo: 2,
+            pele: 2,
+            ..Default::default()
+        },
+        shared::item_id::KATANA,
+    );
     loja.aba = 2;
     use shared::aparencia as ap;
     let skin = |id| Some(Confirma::Item(Produto::Skin(id)));
@@ -2360,7 +2494,10 @@ pub async fn captura_aparencia(vox: &mut VoxCache, solido: &Material, w: u32) {
             clear_background(Color::new(0.08, 0.12, 0.16, 1.0));
             loja.desenha(vox, solido);
             unsafe { get_internal_gl().flush() };
-            crate::render3d::alvo().unwrap().texture.get_texture_data()
+            crate::render3d::alvo()
+                .unwrap()
+                .texture
+                .get_texture_data()
                 .export_png(&format!("/tmp/tempest-aparencia-{w}-loja-{nome}.png"));
             next_frame().await;
             vox.atende_um_pendente(crate::render3d::VOXEL).await;
@@ -2524,7 +2661,9 @@ async fn previa_mundo(vox: &VoxCache, solido: &Material, prefixo: &str) {
         ),
     ];
     for (id, tag, kind, p, flags) in elenco {
-        metas.push(EntityMeta { skins: 0, cla: String::new(),
+        metas.push(EntityMeta {
+            skins: 0,
+            cla: String::new(),
             pk: Default::default(),
             auras: 0,
             id: EntityId(id),
@@ -2536,7 +2675,8 @@ async fn previa_mundo(vox: &VoxCache, solido: &Material, prefixo: &str) {
             nivel: 10,
             desafio: None,
             aparencia: 0,
-            poder: 0, renascimentos: 0,
+            poder: 0,
+            renascimentos: 0,
         });
         estados.push(EntityState::quantize(
             EntityId(id),

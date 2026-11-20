@@ -28,23 +28,37 @@ pub const CONVITE_S: f32 = 30.0;
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum PedidoTroca {
     /// Invite the player with this name (must be close by).
-    Convidar { nome: String },
+    Convidar {
+        nome: String,
+    },
     /// Answer the invite from `de`.
-    Responder { de: String, aceita: bool },
+    Responder {
+        de: String,
+        aceita: bool,
+    },
     /// Put exactly `qtd` of the bag slot `slot` on the table (replaces the
     /// amount already there; 0 takes it off).
-    Por { slot: u16, qtd: u32 },
+    Por {
+        slot: u16,
+        qtd: u32,
+    },
     /// Take the table item `indice` back.
-    Tirar { indice: u8 },
+    Tirar {
+        indice: u8,
+    },
     /// Gold offered (replaces the previous amount).
-    Ouro { qtd: u64 },
+    Ouro {
+        qtd: u64,
+    },
     /// Lock my side (I'm done changing it).
     Travar,
     /// Final confirm (both sides locked).
     Confirmar,
     Cancelar,
     /// Energy offered (replaces the previous amount).
-    Energia { qtd: u64 },
+    Energia {
+        qtd: u64,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -111,7 +125,11 @@ mod testes {
     use super::*;
 
     fn s(item_id: u16, qty: u32) -> InventorySlot {
-        InventorySlot { item_id, qty, instance: None }
+        InventorySlot {
+            item_id,
+            qty,
+            instance: None,
+        }
     }
 
     #[test]
@@ -132,7 +150,14 @@ mod testes {
         // This very piece is bound.
         let mut inst = crate::items::ItemInstance::vazia_de_grau(0);
         inst.vinculado = true;
-        assert!(!negociavel(&InventorySlot { item_id: 10, qty: 1, instance: Some(inst) }, false));
+        assert!(!negociavel(
+            &InventorySlot {
+                item_id: 10,
+                qty: 1,
+                instance: Some(inst)
+            },
+            false
+        ));
     }
 
     #[test]

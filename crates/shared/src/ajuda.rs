@@ -21,7 +21,9 @@ pub fn nivel_do_poder(poder: i32) -> u32 {
 /// penalty starts (`combat::XP_JANELA_SEM_PENALIDADE`).
 pub fn faixa_de_caca(nivel: u32, poder: i32) -> (u32, u32) {
     let alto = nivel.min(nivel_do_poder(poder) + 2).max(1);
-    let baixo = alto.saturating_sub(crate::combat::XP_JANELA_SEM_PENALIDADE).max(1);
+    let baixo = alto
+        .saturating_sub(crate::combat::XP_JANELA_SEM_PENALIDADE)
+        .max(1);
     (baixo, alto)
 }
 
@@ -40,7 +42,9 @@ pub fn ilha_para(nivel: u32) -> &'static terreno::DefIlha {
 pub fn dungeon_para(nivel: u32, poder: i32) -> Option<&'static dungeon::Conteudo> {
     dungeon::CONTEUDOS
         .iter()
-        .filter(|c| dungeon::no_jogo(c) && c.nivel_min <= nivel && dungeon::poder_minimo(c, 1) <= poder)
+        .filter(|c| {
+            dungeon::no_jogo(c) && c.nivel_min <= nivel && dungeon::poder_minimo(c, 1) <= poder
+        })
         .max_by_key(|c| c.nivel_min)
 }
 
@@ -66,9 +70,18 @@ impl Comparacao {
 pub fn comparar(nivel: u32, s: &PlayerStats) -> [Comparacao; 3] {
     let (a, d, h) = ladder::row(nivel);
     [
-        Comparacao { tem: s.attack_damage, esperado: a },
-        Comparacao { tem: s.defense, esperado: d },
-        Comparacao { tem: s.hp_max, esperado: h },
+        Comparacao {
+            tem: s.attack_damage,
+            esperado: a,
+        },
+        Comparacao {
+            tem: s.defense,
+            esperado: d,
+        },
+        Comparacao {
+            tem: s.hp_max,
+            esperado: h,
+        },
     ]
 }
 
@@ -77,14 +90,26 @@ pub fn comparar(nivel: u32, s: &PlayerStats) -> [Comparacao; 3] {
 pub enum Peca {
     Vazia,
     /// (item level, refinement, color 1..5).
-    Com { item_level: u16, refino: u8, cor: u8 },
+    Com {
+        item_level: u16,
+        refino: u8,
+        cor: u8,
+    },
 }
 
 /// Slots that make the character's strength, in sheet order.
 pub fn pecas(e: &Equipment) -> Vec<(&'static str, Peca)> {
     let p = |id: Option<u16>, inst: &Option<crate::items::ItemInstance>| match (id, inst) {
-        (Some(_), Some(i)) => Peca::Com { item_level: i.item_level, refino: i.refinement, cor: i.rarity },
-        (Some(_), None) => Peca::Com { item_level: 1, refino: 0, cor: 1 },
+        (Some(_), Some(i)) => Peca::Com {
+            item_level: i.item_level,
+            refino: i.refinement,
+            cor: i.rarity,
+        },
+        (Some(_), None) => Peca::Com {
+            item_level: 1,
+            refino: 0,
+            cor: 1,
+        },
         _ => Peca::Vazia,
     };
     vec![
@@ -120,9 +145,16 @@ pub fn atraso(p: &Peca, nivel: u32) -> u8 {
 pub fn dicas(nivel: u32, e: &Equipment) -> Vec<String> {
     let pecas = pecas(e);
     let mut v = Vec::new();
-    let vazias: Vec<&str> = pecas.iter().filter(|(_, p)| *p == Peca::Vazia).map(|(n, _)| *n).collect();
+    let vazias: Vec<&str> = pecas
+        .iter()
+        .filter(|(_, p)| *p == Peca::Vazia)
+        .map(|(n, _)| *n)
+        .collect();
     if !vazias.is_empty() {
-        v.push(format!("Empty slot: {}. Any piece there adds power.", vazias.join(", ")));
+        v.push(format!(
+            "Empty slot: {}. Any piece there adds power.",
+            vazias.join(", ")
+        ));
     }
     if let Some((nome, Peca::Com { item_level, .. })) = pecas
         .iter()
@@ -143,7 +175,9 @@ pub fn dicas(nivel: u32, e: &Equipment) -> Vec<String> {
         .filter(|(_, p)| matches!(p, Peca::Com { refino: 0, .. }))
         .count();
     if sem_refino >= 3 {
-        v.push(format!("{sem_refino} pieces at +0: refining up to +5 is safe."));
+        v.push(format!(
+            "{sem_refino} pieces at +0: refining up to +5 is safe."
+        ));
     }
     v.truncate(3);
     v
@@ -190,9 +224,39 @@ mod testes {
         let e = Equipment::default();
         assert!(pecas(&e).iter().all(|(_, p)| *p == Peca::Vazia));
         assert_eq!(atraso(&Peca::Vazia, 10), 2);
-        assert_eq!(atraso(&Peca::Com { item_level: 28, refino: 0, cor: 2 }, 30), 0);
-        assert_eq!(atraso(&Peca::Com { item_level: 18, refino: 0, cor: 1 }, 30), 1);
-        assert_eq!(atraso(&Peca::Com { item_level: 5, refino: 0, cor: 1 }, 30), 2);
+        assert_eq!(
+            atraso(
+                &Peca::Com {
+                    item_level: 28,
+                    refino: 0,
+                    cor: 2
+                },
+                30
+            ),
+            0
+        );
+        assert_eq!(
+            atraso(
+                &Peca::Com {
+                    item_level: 18,
+                    refino: 0,
+                    cor: 1
+                },
+                30
+            ),
+            1
+        );
+        assert_eq!(
+            atraso(
+                &Peca::Com {
+                    item_level: 5,
+                    refino: 0,
+                    cor: 1
+                },
+                30
+            ),
+            2
+        );
         assert!(dicas(30, &e)[0].starts_with("Empty slot"));
     }
 }

@@ -36,9 +36,9 @@
 //! (`config_graficos`) halve the particles. The HUD's strings are cached
 //! and rebuilt only when what they show changes.
 
+use crate::relogio::{get_frame_time, get_time};
 use macroquad::models::{Mesh, Vertex};
 use macroquad::prelude::*;
-use crate::relogio::{get_frame_time, get_time};
 
 use crate::hud_estilo as estilo;
 #[allow(unused_imports)]
@@ -55,7 +55,10 @@ fn world_to_screen(cam: &Camera3D, p: Vec3) -> Option<Vec2> {
     }
     let ndc = clip.truncate() / clip.w;
     let (w, h) = crate::render3d::tela();
-    Some(vec2((ndc.x * 0.5 + 0.5) * w, (1.0 - (ndc.y * 0.5 + 0.5)) * h))
+    Some(vec2(
+        (ndc.x * 0.5 + 0.5) * w,
+        (1.0 - (ndc.y * 0.5 + 0.5)) * h,
+    ))
 }
 
 /// Cannonballs in the air at once.
@@ -91,7 +94,10 @@ pub fn efeitos_leves() -> bool {
 
 /// Is this enemy a sea elite (`[ELITE] Dread …`, `tornar_elite_do_mar`)?
 pub fn e_elite(e: &crate::world::Ent) -> bool {
-    e.meta.name.as_deref().is_some_and(|n| n.starts_with("[ELITE]"))
+    e.meta
+        .name
+        .as_deref()
+        .is_some_and(|n| n.starts_with("[ELITE]"))
 }
 
 #[derive(Clone, Copy)]
@@ -109,7 +115,15 @@ struct Bala {
 
 impl Default for Bala {
     fn default() -> Self {
-        Self { ativa: false, de: Vec3::ZERO, para: Vec2::ZERO, inicio: 0.0, voo: 0.0, meu: false, dono: EntityId(0) }
+        Self {
+            ativa: false,
+            de: Vec3::ZERO,
+            para: Vec2::ZERO,
+            inicio: 0.0,
+            voo: 0.0,
+            meu: false,
+            dono: EntityId(0),
+        }
     }
 }
 
@@ -192,7 +206,11 @@ pub struct MarCombate {
 
 impl Default for MarCombate {
     fn default() -> Self {
-        let malha = || Mesh { vertices: Vec::with_capacity(4096), indices: Vec::with_capacity(6144), texture: None };
+        let malha = || Mesh {
+            vertices: Vec::with_capacity(4096),
+            indices: Vec::with_capacity(6144),
+            texture: None,
+        };
         Self {
             balas: [Bala::default(); MAX_BALAS],
             prox_bala: 0,
@@ -223,7 +241,12 @@ fn cor8(c: [f32; 4]) -> [u8; 4] {
 }
 
 fn vtx(p: Vec3, cor: [u8; 4]) -> Vertex {
-    Vertex { position: p, uv: Vec2::ZERO, color: cor, normal: Vec4::ZERO }
+    Vertex {
+        position: p,
+        uv: Vec2::ZERO,
+        color: cor,
+        normal: Vec4::ZERO,
+    }
 }
 
 fn tri(m: &mut Mesh, a: Vec3, b: Vec3, c: Vec3, cor: [f32; 4]) {
@@ -242,7 +265,8 @@ fn quad(m: &mut Mesh, a: Vec3, b: Vec3, c: Vec3, d: Vec3, cor: [f32; 4]) {
     }
     let k = cor8(cor);
     let i = m.vertices.len() as u16;
-    m.vertices.extend([vtx(a, k), vtx(b, k), vtx(c, k), vtx(d, k)]);
+    m.vertices
+        .extend([vtx(a, k), vtx(b, k), vtx(c, k), vtx(d, k)]);
     m.indices.extend([i, i + 1, i + 2, i, i + 2, i + 3]);
 }
 
@@ -275,7 +299,14 @@ fn faixa(m: &mut Mesh, a: Vec2, b: Vec2, largura: f32, cor: [f32; 4]) {
     let y = y_agua() + 0.01;
     let d = (b - a).normalize_or_zero();
     let l = vec2(-d.y, d.x) * largura * 0.5;
-    quad(m, vec3(a.x - l.x, y, a.y - l.y), vec3(a.x + l.x, y, a.y + l.y), vec3(b.x + l.x, y, b.y + l.y), vec3(b.x - l.x, y, b.y - l.y), cor);
+    quad(
+        m,
+        vec3(a.x - l.x, y, a.y - l.y),
+        vec3(a.x + l.x, y, a.y + l.y),
+        vec3(b.x + l.x, y, b.y + l.y),
+        vec3(b.x - l.x, y, b.y - l.y),
+        cor,
+    );
 }
 
 /// A camera-facing hexagon (particles, balls).
@@ -294,7 +325,16 @@ fn disco(m: &mut Mesh, c: Vec3, r: f32, dir: Vec3, cima: Vec3, cor: [f32; 4]) {
 /// opaque in deep water, so this is what tells where the body is). An eel's
 /// is a chain of blobs swaying along its length.
 #[allow(clippy::too_many_arguments)]
-fn sombra_submersa(m: &mut Mesh, c: Vec2, frente: Vec2, lado: Vec2, comprido: f32, largura: f32, fase: f32, enguia: bool) {
+fn sombra_submersa(
+    m: &mut Mesh,
+    c: Vec2,
+    frente: Vec2,
+    lado: Vec2,
+    comprido: f32,
+    largura: f32,
+    fase: f32,
+    enguia: bool,
+) {
     let y = y_agua() + 0.005;
     // A soft blob: dark in the middle, nothing at the rim (one fan).
     let mancha = |m: &mut Mesh, c: Vec2, l: f32, w: f32, alfa: f32| {
@@ -303,20 +343,25 @@ fn sombra_submersa(m: &mut Mesh, c: Vec2, frente: Vec2, lado: Vec2, comprido: f3
             return;
         }
         let i0 = m.vertices.len() as u16;
-        m.vertices.push(vtx(vec3(c.x, y, c.y), cor8([0.01, 0.05, 0.09, alfa])));
+        m.vertices
+            .push(vtx(vec3(c.x, y, c.y), cor8([0.01, 0.05, 0.09, alfa])));
         for k in 0..n {
             let a = k as f32 / n as f32 * std::f32::consts::TAU;
             let q = c + frente * a.cos() * l * 0.5 + lado * a.sin() * w * 0.5;
-            m.vertices.push(vtx(vec3(q.x, y, q.y), cor8([0.01, 0.05, 0.09, 0.0])));
+            m.vertices
+                .push(vtx(vec3(q.x, y, q.y), cor8([0.01, 0.05, 0.09, 0.0])));
         }
         for k in 0..n as u16 {
-            m.indices.extend([i0, i0 + 1 + k, i0 + 1 + (k + 1) % n as u16]);
+            m.indices
+                .extend([i0, i0 + 1 + k, i0 + 1 + (k + 1) % n as u16]);
         }
     };
     if enguia {
         for s in 0..4 {
             let u = s as f32 / 3.0 - 0.5;
-            let q = c + frente * u * comprido * 0.85 + lado * (fase + s as f32 * 1.4).sin() * 0.3 * largura;
+            let q = c
+                + frente * u * comprido * 0.85
+                + lado * (fase + s as f32 * 1.4).sin() * 0.3 * largura;
             mancha(m, q, comprido * 0.4, largura, 0.4);
         }
     } else {
@@ -335,10 +380,26 @@ fn corcova(m: &mut Mesh, c: Vec2, frente: Vec2, lado: Vec2, meio: f32, alto: f32
     };
     for j in 0..n {
         let (u0, u1) = (j as f32 / n as f32, (j + 1) as f32 / n as f32);
-        let listra = if j % 2 == 0 { [0.86, 0.55, 0.16, 1.0] } else { [0.3, 0.2, 0.1, 1.0] };
-        let (a, b, c2, d) = (ponto(u0, -1.0), ponto(u1, -1.0), ponto(u1, 1.0), ponto(u0, 1.0));
+        let listra = if j % 2 == 0 {
+            [0.86, 0.55, 0.16, 1.0]
+        } else {
+            [0.3, 0.2, 0.1, 1.0]
+        };
+        let (a, b, c2, d) = (
+            ponto(u0, -1.0),
+            ponto(u1, -1.0),
+            ponto(u1, 1.0),
+            ponto(u0, 1.0),
+        );
         quad(m, a, b, c2, d, listra);
-        quad(m, d, c2, b, a, [listra[0] * 0.7, listra[1] * 0.7, listra[2] * 0.7, 1.0]);
+        quad(
+            m,
+            d,
+            c2,
+            b,
+            a,
+            [listra[0] * 0.7, listra[1] * 0.7, listra[2] * 0.7, 1.0],
+        );
     }
 }
 
@@ -357,12 +418,29 @@ fn cortina(m: &mut Mesh, a: Vec2, b: Vec2, alto: f32, cor0: [f32; 4], cor1: [f32
         vtx(vec3(b.x, y + alto, b.y), k1),
         vtx(vec3(a.x, y + alto, a.y), k1),
     ]);
-    m.indices.extend([i, i + 1, i + 2, i, i + 2, i + 3, i + 2, i + 1, i, i + 3, i + 2, i]);
+    m.indices.extend([
+        i,
+        i + 1,
+        i + 2,
+        i,
+        i + 2,
+        i + 3,
+        i + 2,
+        i + 1,
+        i,
+        i + 3,
+        i + 2,
+        i,
+    ]);
 }
 
 /// THE PEACEFUL WATERS' toast (17/11/2026): entering them (also out of a
 /// harbour corridor into them) and leaving them. `None` on arrival.
-pub fn aviso_de_aguas(antes: Option<bool>, agora: bool, saiu_do_corredor: bool) -> Option<(&'static str, Color)> {
+pub fn aviso_de_aguas(
+    antes: Option<bool>,
+    agora: bool,
+    saiu_do_corredor: bool,
+) -> Option<(&'static str, Color)> {
     match (antes, agora) {
         (Some(false), true) => Some(("Peaceful waters: no PvP", COR_PAZ)),
         (Some(true), false) => Some(("Leaving peaceful waters: PvP is on", estilo::VERMELHO)),
@@ -410,7 +488,8 @@ impl MarCombate {
                 vida: 1.1 + (s.sin() * 0.5 + 0.5) * 0.6,
                 idade: 0.0,
                 pos: p,
-                vel: dir * (1.6 + (s * 1.3).cos().abs() * 1.2) + vec3(s.cos() * 0.4, 0.7, s.sin() * 0.4),
+                vel: dir * (1.6 + (s * 1.3).cos().abs() * 1.2)
+                    + vec3(s.cos() * 0.4, 0.7, s.sin() * 0.4),
                 tam: 0.35,
                 cresce: 0.9,
                 cor: [0.86, 0.86, 0.84, 0.55],
@@ -420,7 +499,16 @@ impl MarCombate {
     }
 
     fn clarao(&mut self, p: Vec3) {
-        self.particula(Particula { vida: 0.12, idade: 0.0, pos: p, vel: Vec3::ZERO, tam: 0.55, cresce: 2.0, cor: [1.0, 0.78, 0.32, 0.95], peso: 0.0 });
+        self.particula(Particula {
+            vida: 0.12,
+            idade: 0.0,
+            pos: p,
+            vel: Vec3::ZERO,
+            tam: 0.55,
+            cresce: 2.0,
+            cor: [1.0, 0.78, 0.32, 0.95],
+            peso: 0.0,
+        });
     }
 
     fn respingo(&mut self, p: Vec2) {
@@ -440,14 +528,27 @@ impl MarCombate {
             });
         }
         // The foam ring on the water.
-        self.particula(Particula { vida: 0.6, idade: 0.0, pos: vec3(p.x, y + 0.05, p.y), vel: Vec3::ZERO, tam: 0.6, cresce: 3.0, cor: [0.95, 0.98, 1.0, 0.45], peso: 0.0 });
+        self.particula(Particula {
+            vida: 0.6,
+            idade: 0.0,
+            pos: vec3(p.x, y + 0.05, p.y),
+            vel: Vec3::ZERO,
+            tam: 0.6,
+            cresce: 3.0,
+            cor: [0.95, 0.98, 1.0, 0.45],
+            peso: 0.0,
+        });
     }
 
     fn lascas(&mut self, p: Vec3) {
         let n = if efeitos_leves() { 6 } else { 14 };
         for k in 0..n {
             let a = k as f32 * 2.399;
-            let madeira = if k % 3 == 0 { [0.36, 0.22, 0.12, 1.0] } else { [0.58, 0.38, 0.2, 1.0] };
+            let madeira = if k % 3 == 0 {
+                [0.36, 0.22, 0.12, 1.0]
+            } else {
+                [0.58, 0.38, 0.2, 1.0]
+            };
             self.particula(Particula {
                 vida: 0.7,
                 idade: 0.0,
@@ -465,7 +566,15 @@ impl MarCombate {
     /// A SHIP SKILL's FX arrived (`SkillImpactFx` with a ship id). `tier` is
     /// the ball's index in a volley (0 = the first: the flashes and the
     /// sound go once). `false` = not a ship skill.
-    pub fn tiro(&mut self, world: &World, skill_id: u32, dono: EntityId, de: Vec2, mira: Vec2, tier: u8) -> bool {
+    pub fn tiro(
+        &mut self,
+        world: &World,
+        skill_id: u32,
+        dono: EntityId,
+        de: Vec2,
+        mira: Vec2,
+        tier: u8,
+    ) -> bool {
         let Some(h) = nv::habilidade_do_id(skill_id) else {
             return false;
         };
@@ -493,7 +602,15 @@ impl MarCombate {
                             if sem_alvo {
                                 // Into open water: the balls splash at range.
                                 let longe = porta + lado * s * (h.alcance - 1.5 + k.abs());
-                                self.bala(Bala { ativa: true, de: p3(porta), para: longe, inicio: agora, voo: nv::tempo_de_voo(porta.distance(longe)), meu, dono });
+                                self.bala(Bala {
+                                    ativa: true,
+                                    de: p3(porta),
+                                    para: longe,
+                                    inicio: agora,
+                                    voo: nv::tempo_de_voo(porta.distance(longe)),
+                                    meu,
+                                    dono,
+                                });
                             }
                         }
                     }
@@ -503,21 +620,45 @@ impl MarCombate {
                     }
                 }
                 if !sem_alvo {
-                    let s = if (mira - de).perp_dot(frente) >= 0.0 { -1.0 } else { 1.0 };
+                    let s = if (mira - de).perp_dot(frente) >= 0.0 {
+                        -1.0
+                    } else {
+                        1.0
+                    };
                     let porta = de + lado * s * 1.1;
-                    self.bala(Bala { ativa: true, de: p3(porta), para: mira, inicio: agora, voo: nv::tempo_de_voo(de.distance(mira)), meu, dono });
+                    self.bala(Bala {
+                        ativa: true,
+                        de: p3(porta),
+                        para: mira,
+                        inicio: agora,
+                        voo: nv::tempo_de_voo(de.distance(mira)),
+                        meu,
+                        dono,
+                    });
                 }
             }
             Efeito::Canhonaco => {
                 // The long gun fires from the SIDE facing the target (no bow
                 // gun since 16/11/2026).
                 let lado = Vec2::new(-frente.y, frente.x);
-                let sinal = if lado.dot(mira - de) >= 0.0 { 1.0 } else { -1.0 };
+                let sinal = if lado.dot(mira - de) >= 0.0 {
+                    1.0
+                } else {
+                    -1.0
+                };
                 let proa = de + lado * sinal * 1.3;
                 self.clarao(p3(proa));
                 self.fumaca(p3(proa), vec3(lado.x * sinal, 0.0, lado.y * sinal), 4);
                 if mira.distance(de) > 0.01 {
-                    self.bala(Bala { ativa: true, de: p3(proa), para: mira, inicio: agora, voo: nv::tempo_de_voo(de.distance(mira)), meu, dono });
+                    self.bala(Bala {
+                        ativa: true,
+                        de: p3(proa),
+                        para: mira,
+                        inicio: agora,
+                        voo: nv::tempo_de_voo_rapido(de.distance(mira)),
+                        meu,
+                        dono,
+                    });
                 }
                 crate::sons::mundo(crate::sons::Som::CanhaoDisparo, de, ouvinte, meu);
                 if meu {
@@ -527,13 +668,59 @@ impl MarCombate {
             Efeito::Reparo => {
                 for k in 0..10 {
                     let a = k as f32 * 0.63;
-                    self.particula(Particula { vida: 1.1, idade: 0.0, pos: p3(de) + vec3(a.cos() * 1.3, 0.0, a.sin() * 1.3), vel: vec3(0.0, 1.6, 0.0), tam: 0.16, cresce: 0.0, cor: [0.5, 0.96, 0.55, 0.95], peso: 0.0 });
+                    self.particula(Particula {
+                        vida: 1.1,
+                        idade: 0.0,
+                        pos: p3(de) + vec3(a.cos() * 1.3, 0.0, a.sin() * 1.3),
+                        vel: vec3(0.0, 1.6, 0.0),
+                        tam: 0.16,
+                        cresce: 0.0,
+                        cor: [0.5, 0.96, 0.55, 0.95],
+                        peso: 0.0,
+                    });
                 }
             }
             Efeito::Fumaca => {
                 for k in 0..(if efeitos_leves() { 6 } else { 12 }) {
                     let a = k as f32 * 0.52;
-                    self.particula(Particula { vida: nv::FUMACA_S, idade: 0.0, pos: p3(de) + vec3(a.cos() * 1.5, 0.2, a.sin() * 1.5), vel: vec3(a.cos() * 0.8, 0.25, a.sin() * 0.8), tam: 1.0, cresce: 0.35, cor: [0.78, 0.78, 0.8, 0.55], peso: -0.05 });
+                    self.particula(Particula {
+                        vida: nv::FUMACA_S,
+                        idade: 0.0,
+                        pos: p3(de) + vec3(a.cos() * 1.5, 0.2, a.sin() * 1.5),
+                        vel: vec3(a.cos() * 0.8, 0.25, a.sin() * 0.8),
+                        tam: 1.0,
+                        cresce: 0.35,
+                        cor: [0.78, 0.78, 0.8, 0.55],
+                        peso: -0.05,
+                    });
+                }
+            }
+            Efeito::Corrente => {
+                // A colder, heavier side shot; the server applies the slow
+                // only if this ball really lands on an attackable hull.
+                let lado = Vec2::new(-frente.y, frente.x);
+                let sinal = if lado.dot(mira - de) >= 0.0 {
+                    1.0
+                } else {
+                    -1.0
+                };
+                let porta = de + lado * sinal * 1.3;
+                self.clarao(p3(porta));
+                self.fumaca(p3(porta), vec3(lado.x * sinal, 0.0, lado.y * sinal), 3);
+                if mira.distance(de) > 0.01 {
+                    self.bala(Bala {
+                        ativa: true,
+                        de: p3(porta),
+                        para: mira,
+                        inicio: agora,
+                        voo: nv::tempo_de_voo(de.distance(mira)),
+                        meu,
+                        dono,
+                    });
+                }
+                crate::sons::mundo(crate::sons::Som::CanhaoDisparo, de, ouvinte, meu);
+                if meu {
+                    self.tremor = Some(0.12);
                 }
             }
         }
@@ -549,7 +736,10 @@ impl MarCombate {
         for a in lista.iter().filter(|a| a.alvo == eu && a.dano > 0) {
             self.clarao_ate = get_time() + 0.25;
             self.ultima_luta = get_time();
-            let mordida = world.ents.get(&a.atacante).is_some_and(|e| e.meta.tag == EntityTag::Enemy);
+            let mordida = world
+                .ents
+                .get(&a.atacante)
+                .is_some_and(|e| e.meta.tag == EntityTag::Enemy);
             if let (true, Some(p)) = (mordida, world.casco_do_eu().map(|e| e.render_pos)) {
                 let de = vec2(a.de[0] as f32, a.de[1] as f32) / 127.0;
                 let onde = p + de * 1.2;
@@ -588,7 +778,15 @@ impl MarCombate {
                     && e.state.hp > 0
                     && e.morte.is_none()
                     && matches!(e.meta.tag, EntityTag::Enemy | EntityTag::Player)
-                    && nv::acertou(g(b.para), g(e.render_pos), if e.meta.tag == EntityTag::Player { nv::RAIO_DO_CASCO } else { 0.6 })
+                    && nv::acertou(
+                        g(b.para),
+                        g(e.render_pos),
+                        if e.meta.tag == EntityTag::Player {
+                            nv::RAIO_DO_CASCO
+                        } else {
+                            0.6
+                        },
+                    )
             });
             if acertou {
                 self.lascas(vec3(b.para.x, y_agua() + 0.6, b.para.y));
@@ -605,7 +803,13 @@ impl MarCombate {
     /// The water decals (target ring, the bearing gunwale's glow, bite
     /// telegraphs, fins) and the particles, balls and port glints, in two
     /// draw calls.
-    pub fn desenha_3d(&mut self, world: &World, cam: &Camera3D, alvo: Option<EntityId>, prontos: Prontos) {
+    pub fn desenha_3d(
+        &mut self,
+        world: &World,
+        cam: &Camera3D,
+        alvo: Option<EntityId>,
+        prontos: Prontos,
+    ) {
         let agora = get_time();
         let t = agora as f32;
         // The Broadside's ports glinting, when it bears (drawn as quads).
@@ -617,7 +821,9 @@ impl MarCombate {
         // My HULL (the ship I stand on, the walkable deck) and my body.
         let eu = world.casco_do_eu();
         let corpo = world.self_id.and_then(|i| world.ents.get(&i));
-        let alvo_e = alvo.and_then(|i| world.ents.get(&i)).filter(|e| e.state.hp > 0 && e.morte.is_none());
+        let alvo_e = alvo
+            .and_then(|i| world.ents.get(&i))
+            .filter(|e| e.state.hp > 0 && e.morte.is_none());
         // ── the sea mobs: fins, humps, the bite telegraph ──
         for (id, e) in &world.ents {
             if e.meta.tag != EntityTag::Enemy || e.morte.is_some() || e.state.hp == 0 {
@@ -644,7 +850,16 @@ impl MarCombate {
             let some = 1.0 - sobe;
             let comprido = if e.meta.kind == ENGUIA { 4.6 } else { 4.2 } * k;
             let largo = if e.meta.kind == ENGUIA { 0.55 } else { 1.0 } * k;
-            sombra_submersa(&mut self.decais, p - frente * 0.4 * k, frente, lado, comprido, largo, fase, e.meta.kind == ENGUIA);
+            sombra_submersa(
+                &mut self.decais,
+                p - frente * 0.4 * k,
+                frente,
+                lado,
+                comprido,
+                largo,
+                fase,
+                e.meta.kind == ENGUIA,
+            );
             match e.meta.kind {
                 ENGUIA => {
                     // A few humps of the back breaking the surface in arcs
@@ -654,11 +869,32 @@ impl MarCombate {
                         if h < 0.08 || some < 0.05 {
                             continue;
                         }
-                        let c = p - frente * (s as f32 * 1.25 * k) + lado * (fase + s as f32 * 1.4).sin() * 0.3 * k;
-                        corcova(&mut self.decais, c, frente, lado, 0.55 * k, 0.42 * k * h * some, 0.17 * k);
+                        let c = p - frente * (s as f32 * 1.25 * k)
+                            + lado * (fase + s as f32 * 1.4).sin() * 0.3 * k;
+                        corcova(
+                            &mut self.decais,
+                            c,
+                            frente,
+                            lado,
+                            0.55 * k,
+                            0.42 * k * h * some,
+                            0.17 * k,
+                        );
                         // Foam where it breaks the water.
-                        faixa(&mut self.decais, c - frente * 0.62 * k, c - frente * 0.45 * k, 0.3 * k, [0.95, 0.98, 1.0, 0.5 * h]);
-                        faixa(&mut self.decais, c + frente * 0.45 * k, c + frente * 0.62 * k, 0.3 * k, [0.95, 0.98, 1.0, 0.5 * h]);
+                        faixa(
+                            &mut self.decais,
+                            c - frente * 0.62 * k,
+                            c - frente * 0.45 * k,
+                            0.3 * k,
+                            [0.95, 0.98, 1.0, 0.5 * h],
+                        );
+                        faixa(
+                            &mut self.decais,
+                            c + frente * 0.45 * k,
+                            c + frente * 0.62 * k,
+                            0.3 * k,
+                            [0.95, 0.98, 1.0, 0.5 * h],
+                        );
                     }
                 }
                 _ => {
@@ -667,16 +903,52 @@ impl MarCombate {
                     if some > 0.05 {
                         let base = p + frente * 0.25 * k;
                         let a = vec3(base.x + frente.x * 0.5 * k, y, base.y + frente.y * 0.5 * k);
-                        let b = vec3(base.x - frente.x * 0.55 * k, y, base.y - frente.y * 0.55 * k);
-                        let topo = vec3(base.x - frente.x * 0.35 * k, y + (0.95 + 0.06 * fase.sin()) * k * some, base.y - frente.y * 0.35 * k);
-                        let cor = if elite { [0.42, 0.12, 0.12, 1.0] } else { [0.2, 0.24, 0.28, 1.0] };
+                        let b = vec3(
+                            base.x - frente.x * 0.55 * k,
+                            y,
+                            base.y - frente.y * 0.55 * k,
+                        );
+                        let topo = vec3(
+                            base.x - frente.x * 0.35 * k,
+                            y + (0.95 + 0.06 * fase.sin()) * k * some,
+                            base.y - frente.y * 0.35 * k,
+                        );
+                        let cor = if elite {
+                            [0.42, 0.12, 0.12, 1.0]
+                        } else {
+                            [0.2, 0.24, 0.28, 1.0]
+                        };
                         tri(&mut self.decais, a, topo, b, cor);
-                        tri(&mut self.decais, b, topo, a, [cor[0] * 0.7, cor[1] * 0.7, cor[2] * 0.7, 1.0]);
+                        tri(
+                            &mut self.decais,
+                            b,
+                            topo,
+                            a,
+                            [cor[0] * 0.7, cor[1] * 0.7, cor[2] * 0.7, 1.0],
+                        );
                         let proa = base + frente * 0.55 * k;
                         let rabo = p - frente * 1.6 * k;
-                        faixa(&mut self.decais, proa, rabo + lado * 0.7 * k, 0.14, [0.95, 0.98, 1.0, 0.5 * some]);
-                        faixa(&mut self.decais, proa, rabo - lado * 0.7 * k, 0.14, [0.95, 0.98, 1.0, 0.5 * some]);
-                        faixa(&mut self.decais, proa - lado * 0.12 * k, proa + lado * 0.12 * k, 0.22 * k, [1.0, 1.0, 1.0, 0.6 * some]);
+                        faixa(
+                            &mut self.decais,
+                            proa,
+                            rabo + lado * 0.7 * k,
+                            0.14,
+                            [0.95, 0.98, 1.0, 0.5 * some],
+                        );
+                        faixa(
+                            &mut self.decais,
+                            proa,
+                            rabo - lado * 0.7 * k,
+                            0.14,
+                            [0.95, 0.98, 1.0, 0.5 * some],
+                        );
+                        faixa(
+                            &mut self.decais,
+                            proa - lado * 0.12 * k,
+                            proa + lado * 0.12 * k,
+                            0.22 * k,
+                            [1.0, 1.0, 1.0, 0.6 * some],
+                        );
                     }
                 }
             }
@@ -685,8 +957,22 @@ impl MarCombate {
             // frame the wind-up crosses 0.2 s).
             if sobe > 0.05 {
                 let cabeca = p + frente * 1.4 * k;
-                anel(&mut self.decais, cabeca, (0.7 + 0.9 * sobe) * k, 0.22 * k, [0.95, 0.98, 1.0, 0.55 * sobe], 20);
-                anel(&mut self.decais, cabeca, (1.3 + 1.2 * sobe) * k, 0.1 * k, [0.95, 0.98, 1.0, 0.25 * sobe], 20);
+                anel(
+                    &mut self.decais,
+                    cabeca,
+                    (0.7 + 0.9 * sobe) * k,
+                    0.22 * k,
+                    [0.95, 0.98, 1.0, 0.55 * sobe],
+                    20,
+                );
+                anel(
+                    &mut self.decais,
+                    cabeca,
+                    (1.3 + 1.2 * sobe) * k,
+                    0.1 * k,
+                    [0.95, 0.98, 1.0, 0.25 * sobe],
+                    20,
+                );
             }
             if let Some((_, dt, _)) = e.ataque_mob {
                 if dt >= 0.2 && dt - get_frame_time() < 0.2 {
@@ -694,7 +980,14 @@ impl MarCombate {
                 }
             }
             if elite {
-                anel(&mut self.decais, p, 1.8 * k, 0.12, [0.9, 0.25, 0.2, 0.35], 24);
+                anel(
+                    &mut self.decais,
+                    p,
+                    1.8 * k,
+                    0.12,
+                    [0.9, 0.25, 0.2, 0.35],
+                    24,
+                );
             }
             // THE BITE WINDING UP: a red ring that closes on the mob.
             if let Some((quem, dt, impacto)) = e.ataque_mob {
@@ -704,19 +997,47 @@ impl MarCombate {
                     let r = nv::RAIO_DA_MORDIDA * k;
                     let alfa = if em_mim { 0.85 } else { 0.5 };
                     anel(&mut self.decais, p, r, 0.2, [1.0, 0.18, 0.12, alfa], 32);
-                    setor(&mut self.decais, p, 0.0, r * f, 0.0, std::f32::consts::TAU, [1.0, 0.12, 0.08, 0.35 * alfa + 0.2 * f], 20);
+                    setor(
+                        &mut self.decais,
+                        p,
+                        0.0,
+                        r * f,
+                        0.0,
+                        std::f32::consts::TAU,
+                        [1.0, 0.12, 0.08, 0.35 * alfa + 0.2 * f],
+                        20,
+                    );
                     // A wedge from the mob towards its prey: who it bites.
                     if let Some(presa) = quem.and_then(|q| world.ents.get(&q)) {
                         let d = (presa.render_pos - p).normalize_or_zero();
-                        faixa(&mut self.decais, p + d * r, p + d * (r + 1.2 + 1.5 * f), 0.35, [1.0, 0.2, 0.1, alfa]);
+                        faixa(
+                            &mut self.decais,
+                            p + d * r,
+                            p + d * (r + 1.2 + 1.5 * f),
+                            0.35,
+                            [1.0, 0.2, 0.1, alfa],
+                        );
                     }
                 }
             }
         }
         // ── the target: the land's ring, on the water ──
         if let Some(a) = alvo_e {
-            let r = if a.meta.tag == EntityTag::Player { 3.0 } else if e_elite(a) { 2.6 } else { 1.8 };
-            anel(&mut self.decais, a.render_pos, r, 0.14, [0.945, 0.784, 0.44, 0.92], 40);
+            let r = if a.meta.tag == EntityTag::Player {
+                3.0
+            } else if e_elite(a) {
+                2.6
+            } else {
+                1.8
+            };
+            anel(
+                &mut self.decais,
+                a.render_pos,
+                r,
+                0.14,
+                [0.945, 0.784, 0.44, 0.92],
+                40,
+            );
             // THE BROADSIDE BEARS: a soft glow along the gunwale facing the
             // target and a glint at its three ports — only with the gun
             // ready and the target in its reach off that side.
@@ -725,16 +1046,34 @@ impl MarCombate {
                 let rumo = crate::mar_ui::rumo_do_casco(eu.state.vel_f32(), eu.yaw);
                 let rumo = vec2(rumo.x, rumo.y);
                 let d = eu.render_pos.distance(a.render_pos);
-                if d <= bordada.alcance && nv::no_costado(g(eu.render_pos), g(rumo), g(a.render_pos)) {
+                if d <= bordada.alcance
+                    && nv::no_costado(g(eu.render_pos), g(rumo), g(a.render_pos))
+                {
                     let frente = rumo.normalize_or_zero();
                     let lado = vec2(frente.y, -frente.x);
-                    let s = if (a.render_pos - eu.render_pos).dot(lado) >= 0.0 { 1.0 } else { -1.0 };
+                    let s = if (a.render_pos - eu.render_pos).dot(lado) >= 0.0 {
+                        1.0
+                    } else {
+                        -1.0
+                    };
                     let k = prontos.escala.max(0.6);
                     let pulso = 0.75 + 0.25 * (t * 3.2).sin();
                     let borda = eu.render_pos + lado * s * 1.2 * k;
                     let (popa, proa) = (borda - frente * 1.5 * k, borda + frente * 1.5 * k);
-                    faixa(&mut self.decais, popa, proa, 0.5 * k, [1.0, 0.72, 0.32, 0.14 * pulso]);
-                    faixa(&mut self.decais, popa, proa, 0.12 * k, [1.0, 0.82, 0.45, 0.6 * pulso]);
+                    faixa(
+                        &mut self.decais,
+                        popa,
+                        proa,
+                        0.5 * k,
+                        [1.0, 0.72, 0.32, 0.14 * pulso],
+                    );
+                    faixa(
+                        &mut self.decais,
+                        popa,
+                        proa,
+                        0.12 * k,
+                        [1.0, 0.82, 0.45, 0.6 * pulso],
+                    );
                     for (i, q) in [-0.9f32, 0.0, 0.9].into_iter().enumerate() {
                         let porta = eu.render_pos + frente * q * k + lado * s * 1.2 * k;
                         portas[i] = Some((vec3(porta.x, y_agua() + 0.8, porta.y), pulso));
@@ -746,7 +1085,16 @@ impl MarCombate {
         if let Some(eu) = eu {
             if agora < self.clarao_ate {
                 let f = ((self.clarao_ate - agora) / 0.25) as f32;
-                setor(&mut self.decais, eu.render_pos, 0.0, 3.2, 0.0, std::f32::consts::TAU, [1.0, 0.15, 0.1, 0.4 * f], 16);
+                setor(
+                    &mut self.decais,
+                    eu.render_pos,
+                    0.0,
+                    3.2,
+                    0.0,
+                    std::f32::consts::TAU,
+                    [1.0, 0.15, 0.1, 0.4 * f],
+                    16,
+                );
             }
         }
         // ── THE PEACEFUL WATERS (17/11/2026) ──
@@ -757,8 +1105,22 @@ impl MarCombate {
             if shared::mar::aguas_pacificas(aqui) {
                 let r = 3.4 * prontos.escala.max(0.6);
                 let pulso = 0.8 + 0.2 * (t * 1.6).sin();
-                anel(&mut self.decais, eu.render_pos, r, 0.16, [0.62, 0.92, 1.0, 0.3 * pulso], 40);
-                anel(&mut self.decais, eu.render_pos, r + 0.32, 0.06, [1.0, 0.86, 0.5, 0.28 * pulso], 40);
+                anel(
+                    &mut self.decais,
+                    eu.render_pos,
+                    r,
+                    0.16,
+                    [0.62, 0.92, 1.0, 0.3 * pulso],
+                    40,
+                );
+                anel(
+                    &mut self.decais,
+                    eu.render_pos,
+                    r + 0.32,
+                    0.06,
+                    [1.0, 0.86, 0.5, 0.28 * pulso],
+                    40,
+                );
             }
             // The boundary: a faint curtain of light (solid red when closed
             // to me), fading with distance like the sea's other props.
@@ -771,10 +1133,24 @@ impl MarCombate {
                 let f = 1.0 - ((d - 40.0) / 35.0).clamp(0.0, 1.0);
                 let onda = 0.85 + 0.15 * (t * 1.3 + a.x * 0.2 + a.y * 0.13).sin();
                 if barrado {
-                    cortina(&mut self.decais, a, b, 2.6, [1.0, 0.16, 0.1, 0.6 * f * onda], [1.0, 0.2, 0.1, 0.0]);
+                    cortina(
+                        &mut self.decais,
+                        a,
+                        b,
+                        2.6,
+                        [1.0, 0.16, 0.1, 0.6 * f * onda],
+                        [1.0, 0.2, 0.1, 0.0],
+                    );
                     faixa(&mut self.decais, a, b, 0.3, [1.0, 0.25, 0.15, 0.8 * f]);
                 } else {
-                    cortina(&mut self.decais, a, b, 1.4, [0.62, 0.92, 1.0, 0.2 * f * onda], [0.62, 0.92, 1.0, 0.0]);
+                    cortina(
+                        &mut self.decais,
+                        a,
+                        b,
+                        1.4,
+                        [0.62, 0.92, 1.0, 0.2 * f * onda],
+                        [0.62, 0.92, 1.0, 0.0],
+                    );
                     faixa(&mut self.decais, a, b, 0.12, [0.8, 0.96, 1.0, 0.35 * f]);
                 }
             }
@@ -789,8 +1165,22 @@ impl MarCombate {
             disco(&mut self.quads, p.pos, p.tam, dir, cima, cor);
         }
         for (p, pulso) in portas.into_iter().flatten() {
-            disco(&mut self.quads, p, 0.32 * pulso, dir, cima, [1.0, 0.7, 0.28, 0.32]);
-            disco(&mut self.quads, p, 0.13, dir, cima, [1.0, 0.93, 0.72, 0.95 * pulso]);
+            disco(
+                &mut self.quads,
+                p,
+                0.32 * pulso,
+                dir,
+                cima,
+                [1.0, 0.7, 0.28, 0.32],
+            );
+            disco(
+                &mut self.quads,
+                p,
+                0.13,
+                dir,
+                cima,
+                [1.0, 0.93, 0.72, 0.95 * pulso],
+            );
         }
         for b in self.balas.iter().filter(|b| b.ativa) {
             let f = (((agora - b.inicio) as f32) / b.voo.max(0.01)).clamp(0.0, 1.0);
@@ -799,8 +1189,20 @@ impl MarCombate {
             let q = b.de.lerp(fim, f) + vec3(0.0, arco, 0.0);
             disco(&mut self.quads, q, 0.2, dir, cima, [0.08, 0.07, 0.07, 1.0]);
             // A short smoke trail behind it.
-            let atras = b.de.lerp(fim, (f - 0.06).max(0.0)) + vec3(0.0, ((f - 0.06).max(0.0) * std::f32::consts::PI).sin() * (1.0 + b.voo * 2.2), 0.0);
-            disco(&mut self.quads, atras, 0.16, dir, cima, [0.85, 0.85, 0.85, 0.35]);
+            let atras = b.de.lerp(fim, (f - 0.06).max(0.0))
+                + vec3(
+                    0.0,
+                    ((f - 0.06).max(0.0) * std::f32::consts::PI).sin() * (1.0 + b.voo * 2.2),
+                    0.0,
+                );
+            disco(
+                &mut self.quads,
+                atras,
+                0.16,
+                dir,
+                cima,
+                [0.85, 0.85, 0.85, 0.35],
+            );
         }
         if !self.decais.vertices.is_empty() {
             draw_mesh(&self.decais);
@@ -816,22 +1218,34 @@ impl MarCombate {
     /// arcs on the target, while the gun is ready and the target is in its
     /// reach off a side. The target's life is the top-centre frame's
     /// (`hud::draw_alvo`), like on land; no plates, no bars over the water.
-    pub fn desenha_2d(&mut self, world: &World, cam: &Camera3D, alvo: Option<EntityId>, prontos: Prontos) {
+    pub fn desenha_2d(
+        &mut self,
+        world: &World,
+        cam: &Camera3D,
+        alvo: Option<EntityId>,
+        prontos: Prontos,
+    ) {
         if !prontos.canhonaco {
             return;
         }
         let Some(eu) = world.casco_do_eu() else {
             return;
         };
-        let Some(a) = alvo.and_then(|i| world.ents.get(&i)).filter(|e| e.state.hp > 0 && e.morte.is_none()) else {
+        let Some(a) = alvo
+            .and_then(|i| world.ents.get(&i))
+            .filter(|e| e.state.hp > 0 && e.morte.is_none())
+        else {
             return;
         };
         let proa = &nv::HABILIDADES[1];
         let rumo = crate::mar_ui::rumo_do_casco(eu.state.vel_f32(), eu.yaw);
-        if eu.render_pos.distance(a.render_pos) > proa.alcance || !nv::no_costado(g(eu.render_pos), rumo, g(a.render_pos)) {
+        if eu.render_pos.distance(a.render_pos) > proa.alcance
+            || !nv::no_costado(g(eu.render_pos), rumo, g(a.render_pos))
+        {
             return;
         }
-        let Some(c) = world_to_screen(cam, vec3(a.render_pos.x, y_agua() + 0.5, a.render_pos.y)) else {
+        let Some(c) = world_to_screen(cam, vec3(a.render_pos.x, y_agua() + 0.5, a.render_pos.y))
+        else {
             return;
         };
         let s = crate::hud_layout::atual().s;
@@ -853,7 +1267,14 @@ impl MarCombate {
     /// while carrying treasure, the black flag while marked. Nothing else:
     /// the hull is the character frame's (`hud::draw_ficha`), and "Sail to…"
     /// is the minimap's (`mar_rota::desenha_portos`).
-    pub fn hud_do_mar(&mut self, z: &crate::hud_layout::Zonas, eq: &shared::Equipment, eu: Option<Vec2>, marcado: bool, mini: Rect) {
+    pub fn hud_do_mar(
+        &mut self,
+        z: &crate::hud_layout::Zonas,
+        eq: &shared::Equipment,
+        eu: Option<Vec2>,
+        marcado: bool,
+        mini: Rect,
+    ) {
         let agora = get_time();
         let s = z.s;
         let Some(eu) = eu else {
@@ -864,12 +1285,15 @@ impl MarCombate {
             self.aviso = Some((texto, cor, agora));
         }
         let pacifica = shared::mar::aguas_pacificas(g(eu));
-        if let Some((texto, cor)) = aviso_de_aguas(self.pacifica, pacifica, self.zona == Some(0) && zona == 1) {
+        if let Some((texto, cor)) =
+            aviso_de_aguas(self.pacifica, pacifica, self.zona == Some(0) && zona == 1)
+        {
             self.aviso = Some((texto, cor, agora));
         }
         self.pacifica = Some(pacifica);
         self.zona = Some(zona);
-        let baixo = crate::mar_ui::casco_de(eq).is_some_and(|(c, m, _)| m > 0 && (c as f32 / m as f32) <= nv::CRITICO);
+        let baixo = crate::mar_ui::casco_de(eq)
+            .is_some_and(|(c, m, _)| m > 0 && (c as f32 / m as f32) <= nv::CRITICO);
         if baixo && !self.baixo {
             self.aviso = Some(("Low hull — head to a dock!", estilo::VERMELHO, agora));
         }
@@ -887,14 +1311,39 @@ impl MarCombate {
                 // Under the target frame; lower still if it would cross the
                 // character frame (a phone's narrow top).
                 let mut y = z.alvo.y + z.alvo.h + 34.0 * s;
-                let caixa = Rect::new(cx - w * 0.5 - 50.0 * s, y - tam as f32 * 1.6, w + 100.0 * s, tam as f32 * 2.0);
+                let caixa = Rect::new(
+                    cx - w * 0.5 - 50.0 * s,
+                    y - tam as f32 * 1.6,
+                    w + 100.0 * s,
+                    tam as f32 * 2.0,
+                );
                 if caixa.overlaps(&z.ficha) {
                     y = z.ficha.y + z.ficha.h + 34.0 * s;
                 }
                 let fio = Color::new(cor.r, cor.g, cor.b, 0.55 * f);
-                draw_line(cx - w * 0.5 - 46.0 * s, y - tam as f32 * 0.32, cx - w * 0.5 - 12.0 * s, y - tam as f32 * 0.32, 1.5, fio);
-                draw_line(cx + w * 0.5 + 12.0 * s, y - tam as f32 * 0.32, cx + w * 0.5 + 46.0 * s, y - tam as f32 * 0.32, 1.5, fio);
-                estilo::texto_centro_forte(cx + 1.5, y + 1.5, texto, tam, Color::new(0.0, 0.0, 0.0, 0.75 * f));
+                draw_line(
+                    cx - w * 0.5 - 46.0 * s,
+                    y - tam as f32 * 0.32,
+                    cx - w * 0.5 - 12.0 * s,
+                    y - tam as f32 * 0.32,
+                    1.5,
+                    fio,
+                );
+                draw_line(
+                    cx + w * 0.5 + 12.0 * s,
+                    y - tam as f32 * 0.32,
+                    cx + w * 0.5 + 46.0 * s,
+                    y - tam as f32 * 0.32,
+                    1.5,
+                    fio,
+                );
+                estilo::texto_centro_forte(
+                    cx + 1.5,
+                    y + 1.5,
+                    texto,
+                    tam,
+                    Color::new(0.0, 0.0, 0.0, 0.75 * f),
+                );
                 estilo::texto_centro_forte(cx, y, texto, tam, Color::new(cor.r, cor.g, cor.b, f));
             }
         }
@@ -915,9 +1364,18 @@ impl MarCombate {
             let c = r.center();
             let (cor, texto) = match qual {
                 // Why you are a target: the same line the land's warning used.
-                0 => (estilo::VERMELHO, crate::mar_ui::linha_de_perigo(false, false, true).unwrap_or_default()),
-                1 => (estilo::OURO, crate::mar_ui::linha_de_perigo(true, false, false).unwrap_or_default()),
-                _ => (Color::new(0.9, 0.9, 0.92, 1.0), crate::mar_ui::linha_de_perigo(false, true, false).unwrap_or_default()),
+                0 => (
+                    estilo::VERMELHO,
+                    crate::mar_ui::linha_de_perigo(false, false, true).unwrap_or_default(),
+                ),
+                1 => (
+                    estilo::OURO,
+                    crate::mar_ui::linha_de_perigo(true, false, false).unwrap_or_default(),
+                ),
+                _ => (
+                    Color::new(0.9, 0.9, 0.92, 1.0),
+                    crate::mar_ui::linha_de_perigo(false, true, false).unwrap_or_default(),
+                ),
             };
             draw_circle(c.x, c.y, lado * 0.5, Color::new(0.04, 0.05, 0.08, 0.82));
             draw_circle_lines(c.x, c.y, lado * 0.5, 1.5, estilo::alfa(cor, 0.85));
@@ -945,9 +1403,21 @@ pub fn caveira(c: Vec2, r: f32, cor: Color) {
     draw_rectangle(c.x - r * 0.48, c.y + r * 0.3, r * 0.96, r * 0.5, osso);
     draw_circle(c.x - r * 0.32, c.y - r * 0.12, r * 0.24, fundo);
     draw_circle(c.x + r * 0.32, c.y - r * 0.12, r * 0.24, fundo);
-    draw_triangle(vec2(c.x, c.y + r * 0.12), vec2(c.x - r * 0.1, c.y + r * 0.3), vec2(c.x + r * 0.1, c.y + r * 0.3), fundo);
+    draw_triangle(
+        vec2(c.x, c.y + r * 0.12),
+        vec2(c.x - r * 0.1, c.y + r * 0.3),
+        vec2(c.x + r * 0.1, c.y + r * 0.3),
+        fundo,
+    );
     for k in [-0.22f32, 0.0, 0.22] {
-        draw_line(c.x + k * r, c.y + r * 0.5, c.x + k * r, c.y + r * 0.8, (r * 0.09).max(1.0), fundo);
+        draw_line(
+            c.x + k * r,
+            c.y + r * 0.5,
+            c.x + k * r,
+            c.y + r * 0.8,
+            (r * 0.09).max(1.0),
+            fundo,
+        );
     }
 }
 
@@ -955,15 +1425,32 @@ pub fn caveira(c: Vec2, r: f32, cor: Color) {
 pub fn bau_icone(c: Vec2, r: f32, cor: Color) {
     let fundo = Color::new(0.04, 0.05, 0.08, 1.0);
     draw_rectangle(c.x - r * 0.9, c.y - r * 0.15, r * 1.8, r * 0.9, cor);
-    draw_triangle(vec2(c.x - r * 0.9, c.y - r * 0.2), vec2(c.x + r * 0.9, c.y - r * 0.2), vec2(c.x, c.y - r * 0.8), cor);
+    draw_triangle(
+        vec2(c.x - r * 0.9, c.y - r * 0.2),
+        vec2(c.x + r * 0.9, c.y - r * 0.2),
+        vec2(c.x, c.y - r * 0.8),
+        cor,
+    );
     draw_rectangle(c.x - r * 0.9, c.y - r * 0.2, r * 1.8, r * 0.12, fundo);
     draw_rectangle(c.x - r * 0.14, c.y - r * 0.05, r * 0.28, r * 0.36, fundo);
 }
 
 /// A small black flag on a pole, the mark (vector).
 pub fn bandeira_icone(c: Vec2, r: f32, cor: Color) {
-    draw_line(c.x - r * 0.6, c.y - r * 0.9, c.x - r * 0.6, c.y + r * 0.9, (r * 0.14).max(1.2), cor);
-    draw_triangle(vec2(c.x - r * 0.55, c.y - r * 0.85), vec2(c.x + r * 0.85, c.y - r * 0.45), vec2(c.x - r * 0.55, c.y - r * 0.05), cor);
+    draw_line(
+        c.x - r * 0.6,
+        c.y - r * 0.9,
+        c.x - r * 0.6,
+        c.y + r * 0.9,
+        (r * 0.14).max(1.2),
+        cor,
+    );
+    draw_triangle(
+        vec2(c.x - r * 0.55, c.y - r * 0.85),
+        vec2(c.x + r * 0.85, c.y - r * 0.45),
+        vec2(c.x - r * 0.55, c.y - r * 0.05),
+        cor,
+    );
 }
 
 // ─────────────────────────── preview ───────────────────────────
@@ -978,7 +1465,8 @@ fn mundo_da_previa(eu: Vec2, yaw: f32, vel: Vec2, outros: &[CorpoDaPrevia]) -> W
     let mut w = World::default();
     let mut metas = Vec::new();
     let mut estados = Vec::new();
-    let todos = std::iter::once((1u32, EntityTag::Player, 0u16, eu, None)).chain(outros.iter().copied());
+    let todos =
+        std::iter::once((1u32, EntityTag::Player, 0u16, eu, None)).chain(outros.iter().copied());
     for (id, tag, kind, p, nome) in todos {
         metas.push(shared::EntityMeta {
             skins: 0,
@@ -998,11 +1486,21 @@ fn mundo_da_previa(eu: Vec2, yaw: f32, vel: Vec2, outros: &[CorpoDaPrevia]) -> W
             renascimentos: 0,
         });
         let v = if id == 1 { g(vel) } else { ::glam::Vec2::ZERO };
-        estados.push(shared::EntityState::quantize(EntityId(id), g(p), v, if id == 2 { 62 } else { 100 }, if id == 1 { shared::ent_flags::SELF } else { 0 }));
+        estados.push(shared::EntityState::quantize(
+            EntityId(id),
+            g(p),
+            v,
+            if id == 2 { 62 } else { 100 },
+            if id == 1 { shared::ent_flags::SELF } else { 0 },
+        ));
     }
     w.apply(metas, estados, &[]);
     for (id, e) in w.ents.iter_mut() {
-        e.yaw = if id.0 == 1 { yaw } else { yaw + 2.2 + id.0 as f32 };
+        e.yaw = if id.0 == 1 {
+            yaw
+        } else {
+            yaw + 2.2 + id.0 as f32
+        };
     }
     w
 }
@@ -1026,7 +1524,11 @@ pub async fn previa() {
     let ilhas = shared::mar::ilhas();
     let bosque = &ilhas[0];
     let mq = |v: ::glam::Vec2| vec2(v.x, v.y);
-    let (fb, eb, lb) = (mq(bosque.fundeadouro()), mq(bosque.eixo()), mq(bosque.lado()));
+    let (fb, eb, lb) = (
+        mq(bosque.fundeadouro()),
+        mq(bosque.eixo()),
+        mq(bosque.lado()),
+    );
     let aberto = fb + eb * 90.0;
     let yaw_de = |d: Vec2| d.x.atan2(d.y);
     let rumo = lb;
@@ -1046,13 +1548,30 @@ pub async fn previa() {
     // (name, me, my velocity, the others, target, shots, seconds after)
     type Tiro = (u32, Vec2, Vec2, u8);
     let alvo_perto = aberto + lado * 8.0 + rumo * 1.0;
-    let cenas: Vec<(&str, Vec2, Vec2, Vec<CorpoDaPrevia>, Option<u32>, Vec<Tiro>, f64)> = vec![
+    let cenas: Vec<(
+        &str,
+        Vec2,
+        Vec2,
+        Vec<CorpoDaPrevia>,
+        Option<u32>,
+        Vec<Tiro>,
+        f64,
+    )> = vec![
         ("navegando", aberto, rumo * 6.0, vec![], None, vec![], 0.0),
         (
             "combate",
             aberto,
             rumo * 4.0,
-            vec![(2, EntityTag::Enemy, TUBARAO, alvo_perto, Some("Reef Shark")), (3, EntityTag::Enemy, ENGUIA, aberto - lado * 9.0 + rumo * 4.0, None)],
+            vec![
+                (2, EntityTag::Enemy, TUBARAO, alvo_perto, Some("Reef Shark")),
+                (
+                    3,
+                    EntityTag::Enemy,
+                    ENGUIA,
+                    aberto - lado * 9.0 + rumo * 4.0,
+                    None,
+                ),
+            ],
             Some(2),
             vec![],
             0.0,
@@ -1061,33 +1580,136 @@ pub async fn previa() {
             "combate-tiro",
             aberto,
             rumo * 4.0,
-            vec![(2, EntityTag::Enemy, TUBARAO, alvo_perto, Some("Reef Shark")), (3, EntityTag::Enemy, TUBARAO, aberto - lado * 7.0 + rumo * 6.0, Some("[ELITE] Dread Reef Shark"))],
+            vec![
+                (2, EntityTag::Enemy, TUBARAO, alvo_perto, Some("Reef Shark")),
+                (
+                    3,
+                    EntityTag::Enemy,
+                    TUBARAO,
+                    aberto - lado * 7.0 + rumo * 6.0,
+                    Some("[ELITE] Dread Reef Shark"),
+                ),
+            ],
             Some(2),
             vec![(nv::id_de_skill(0), aberto, alvo_perto, 0)],
             0.3,
         ),
         // THE SUBMERGED SEA MOBS (17/11/2026): a fin cruising, an eel's
         // humps, a shark rising to bite at the ship's side, an elite rising.
-        ("combate-barbatana", aberto, rumo * 4.0, vec![(2, EntityTag::Enemy, TUBARAO, aberto + lado * 5.0 + rumo * 2.0, Some("Reef Shark"))], Some(2), vec![], 0.0),
-        ("combate-enguia", aberto, rumo * 4.0, vec![(2, EntityTag::Enemy, ENGUIA, aberto + lado * 5.5 + rumo * 1.0, Some("Tiger Eel"))], Some(2), vec![], 0.0),
-        ("combate-mordida", aberto, rumo * 4.0, vec![(2, EntityTag::Enemy, TUBARAO, aberto + lado * 2.6 + rumo * 0.3, Some("Reef Shark"))], Some(2), vec![], 0.0),
-        ("combate-elite", aberto, rumo * 4.0, vec![(3, EntityTag::Enemy, TUBARAO, aberto - lado * 3.2 + rumo * 0.5, Some("[ELITE] Dread Reef Shark"))], Some(3), vec![], 0.0),
+        (
+            "combate-barbatana",
+            aberto,
+            rumo * 4.0,
+            vec![(
+                2,
+                EntityTag::Enemy,
+                TUBARAO,
+                aberto + lado * 5.0 + rumo * 2.0,
+                Some("Reef Shark"),
+            )],
+            Some(2),
+            vec![],
+            0.0,
+        ),
+        (
+            "combate-enguia",
+            aberto,
+            rumo * 4.0,
+            vec![(
+                2,
+                EntityTag::Enemy,
+                ENGUIA,
+                aberto + lado * 5.5 + rumo * 1.0,
+                Some("Tiger Eel"),
+            )],
+            Some(2),
+            vec![],
+            0.0,
+        ),
+        (
+            "combate-mordida",
+            aberto,
+            rumo * 4.0,
+            vec![(
+                2,
+                EntityTag::Enemy,
+                TUBARAO,
+                aberto + lado * 2.6 + rumo * 0.3,
+                Some("Reef Shark"),
+            )],
+            Some(2),
+            vec![],
+            0.0,
+        ),
+        (
+            "combate-elite",
+            aberto,
+            rumo * 4.0,
+            vec![(
+                3,
+                EntityTag::Enemy,
+                TUBARAO,
+                aberto - lado * 3.2 + rumo * 0.5,
+                Some("[ELITE] Dread Reef Shark"),
+            )],
+            Some(3),
+            vec![],
+            0.0,
+        ),
         ("rota", fb + eb * 30.0, eb * 10.0, vec![], None, vec![], 0.0),
         (
             "mapa",
             aberto,
             rumo * 6.0,
             vec![
-                (2, EntityTag::Enemy, TUBARAO, aberto + lado * 14.0 + rumo * 8.0, None),
-                (3, EntityTag::Enemy, TUBARAO, aberto - lado * 18.0 + rumo * 14.0, Some("[ELITE] Dread Reef Shark")),
-                (4, EntityTag::Player, 0, aberto + rumo * 30.0 - lado * 6.0, Some("Corsair")),
-                (5, EntityTag::Npc, shared::npc_kind(None, shared::dungeon::PAPEL_BAU), aberto - lado * 8.0 - rumo * 20.0, None),
+                (
+                    2,
+                    EntityTag::Enemy,
+                    TUBARAO,
+                    aberto + lado * 14.0 + rumo * 8.0,
+                    None,
+                ),
+                (
+                    3,
+                    EntityTag::Enemy,
+                    TUBARAO,
+                    aberto - lado * 18.0 + rumo * 14.0,
+                    Some("[ELITE] Dread Reef Shark"),
+                ),
+                (
+                    4,
+                    EntityTag::Player,
+                    0,
+                    aberto + rumo * 30.0 - lado * 6.0,
+                    Some("Corsair"),
+                ),
+                (
+                    5,
+                    EntityTag::Npc,
+                    shared::npc_kind(None, shared::dungeon::PAPEL_BAU),
+                    aberto - lado * 8.0 - rumo * 20.0,
+                    None,
+                ),
             ],
             None,
             vec![],
             0.0,
         ),
-        ("sem-lei", sem_lei, rumo * 6.0, vec![(2, EntityTag::Player, 0, sem_lei + lado * 14.0 + rumo * 10.0, Some("Corsair"))], None, vec![], 0.6),
+        (
+            "sem-lei",
+            sem_lei,
+            rumo * 6.0,
+            vec![(
+                2,
+                EntityTag::Player,
+                0,
+                sem_lei + lado * 14.0 + rumo * 10.0,
+                Some("Corsair"),
+            )],
+            None,
+            vec![],
+            0.6,
+        ),
     ];
     // (name, width, height, safe-area margins: top, left, bottom, right)
     let telas: [(&str, u32, u32, [f32; 4]); 3] = [
@@ -1096,16 +1718,30 @@ pub async fn previa() {
         ("retrato", 428, 926, [47.0, 0.0, 34.0, 0.0]),
     ];
     for (tela_nome, w, h, margens) in telas {
-        let rt = render_target_ex(w, h, RenderTargetParams { depth: true, sample_count: 1 });
+        let rt = render_target_ex(
+            w,
+            h,
+            RenderTargetParams {
+                depth: true,
+                sample_count: 1,
+            },
+        );
         crate::render3d::define_alvo(Some(rt.clone()));
         crate::hud_layout::define_margens(margens);
         let tela = vec2(w as f32, h as f32);
         for (nome, eu, vel, outros, alvo, tiros, depois) in &cenas {
             let (nome, eu, vel, alvo, depois) = (*nome, *eu, *vel, *alvo, *depois);
-            if so.as_deref().is_some_and(|s| !nome.contains(s) && !"combate".contains(s)) {
+            if so
+                .as_deref()
+                .is_some_and(|s| !nome.contains(s) && !"combate".contains(s))
+            {
                 continue;
             }
-            let yaw_eu = if vel.length_squared() > 0.01 { yaw_de(vel) } else { yaw_de(rumo) };
+            let yaw_eu = if vel.length_squared() > 0.01 {
+                yaw_de(vel)
+            } else {
+                yaw_de(rumo)
+            };
             let mut world = mundo_da_previa(eu, yaw_eu, vel, outros);
             for (id, e) in world.ents.iter_mut() {
                 if e.meta.tag == EntityTag::Player && id.0 != 1 {
@@ -1130,7 +1766,15 @@ pub async fn previa() {
             if nome == "rota" || nome == "mapa" {
                 let eu = if nome == "mapa" { aberto } else { eu };
                 let meio = eu + eb * 120.0 + lb * 60.0;
-                rastro.define(vec![eu + eb * 40.0 + lb * 10.0, meio, gf + mq(ilhas[1].eixo()) * 30.0, gf], gf);
+                rastro.define(
+                    vec![
+                        eu + eb * 40.0 + lb * 10.0,
+                        meio,
+                        gf + mq(ilhas[1].eixo()) * 30.0,
+                        gf,
+                    ],
+                    gf,
+                );
                 rota.para_ilha(ilhas[1].ilha as u8, get_time());
                 rota.portos_abertos = nome == "rota";
             }
@@ -1140,17 +1784,38 @@ pub async fn previa() {
                 terreno.atualiza(eu, crate::config_graficos::RAIO_PADRAO + 1, 400);
             }
             // THE SAILING CAMERA, settled, a touch off the stern.
-            let alvo_p = alvo.and_then(|a| world.ents.get(&EntityId(a))).map(|e| e.render_pos);
-            let q = crate::mar_camera::enquadramento(eu, vec2(yaw_eu.sin(), yaw_eu.cos()), alvo_p, 0, h > w, 1.0, 0.0);
+            let alvo_p = alvo
+                .and_then(|a| world.ents.get(&EntityId(a)))
+                .map(|e| e.render_pos);
+            let q = crate::mar_camera::enquadramento(
+                eu,
+                vec2(yaw_eu.sin(), yaw_eu.cos()),
+                alvo_p,
+                0,
+                h > w,
+                1.0,
+                0.0,
+            );
             let cam_yaw = crate::mar_camera::yaw_atras(vec2(yaw_eu.sin(), yaw_eu.cos())) + 0.35;
             // The submerged mobs' shots: closer and lower, on the mob.
-            let perto = matches!(nome, "combate-barbatana" | "combate-enguia" | "combate-mordida" | "combate-elite");
+            let perto = matches!(
+                nome,
+                "combate-barbatana" | "combate-enguia" | "combate-mordida" | "combate-elite"
+            );
             let mut cam = match (perto, alvo_p) {
                 (true, Some(b)) => {
-                    let foco = if nome == "combate-enguia" { b - rumo.normalize_or_zero() * 1.4 } else { eu.lerp(b, 0.6) };
+                    let foco = if nome == "combate-enguia" {
+                        b - rumo.normalize_or_zero() * 1.4
+                    } else {
+                        eu.lerp(b, 0.6)
+                    };
                     // The bites from the mob's outer side, looking at the hull.
                     let fora = (b - eu).normalize_or_zero().rotate(vec2(0.88, 0.48));
-                    let yaw = if nome.ends_with("mordida") || nome.ends_with("elite") { (-fora.x).atan2(fora.y) } else { cam_yaw + 0.9 };
+                    let yaw = if nome.ends_with("mordida") || nome.ends_with("elite") {
+                        (-fora.x).atan2(fora.y)
+                    } else {
+                        cam_yaw + 0.9
+                    };
                     crate::render3d::camera_no_mar(foco, 0.0, yaw, 0.38, 0.42)
                 }
                 _ => crate::render3d::camera_no_mar(q.centro, 0.0, cam_yaw, q.fator, q.pitch),
@@ -1225,8 +1890,17 @@ pub async fn previa() {
                 crate::chat_ui::ChatUi::default().caixa(z.chat, "");
                 crate::hud::draw_hud(
                     &z,
-                    &crate::hud::Info { realm: "Tempest".into(), canal: "Canal 1".into(), zona: shared::mar::DEF.zona.into(), jogadores: 42, capacidade: 200 },
-                    &crate::hud::Rede { ms: 32.0, ..Default::default() },
+                    &crate::hud::Info {
+                        realm: "Tempest".into(),
+                        canal: "Canal 1".into(),
+                        zona: shared::mar::DEF.zona.into(),
+                        jogadores: 42,
+                        capacidade: 200,
+                    },
+                    &crate::hud::Rede {
+                        ms: 32.0,
+                        ..Default::default()
+                    },
                     None,
                     0,
                     0,
@@ -1237,23 +1911,66 @@ pub async fn previa() {
                 );
                 mapa.desenha_mini(&world);
                 let casco = crate::mar_ui::casco_de(&eq).map(|(c, m, _)| (c, m));
-                crate::hud::draw_ficha(&z, &mut ficha, 0.016, "Navegante", 70, 1840, 2400, 1000, 240, Some(24850), casco);
+                crate::hud::draw_ficha(
+                    &z,
+                    &mut ficha,
+                    0.016,
+                    "Navegante",
+                    70,
+                    1840,
+                    2400,
+                    1000,
+                    240,
+                    Some(24850),
+                    casco,
+                );
                 crate::hud::draw_modo_pk(&z, Default::default());
                 barra.desenha(&hab);
                 crate::auto_combate::AutoCombate::default().desenha();
                 crate::hud::draw_atacar(&z, alvo.is_some());
-                crate::hud::draw_rapidos(&z, [0; 4], [0; 4], [false; 4], [None; 4], [false; 4], None, &|_| String::new());
+                crate::hud::draw_rapidos(
+                    &z,
+                    [0; 4],
+                    [0; 4],
+                    [false; 4],
+                    [None; 4],
+                    [false; 4],
+                    None,
+                    &|_| String::new(),
+                );
                 if let Some(a) = alvo.and_then(|a| world.ents.get(&EntityId(a))) {
-                    crate::hud::draw_alvo(&z, a.meta.name.as_deref().unwrap_or("?"), 12, a.state.hp, a.meta.hp_max, false);
+                    crate::hud::draw_alvo(
+                        &z,
+                        a.meta.name.as_deref().unwrap_or("?"),
+                        12,
+                        a.state.hp,
+                        a.meta.hp_max,
+                        false,
+                    );
                 }
                 crate::hud::draw_topo(&z, false, false, false, false, false);
                 crate::hud::draw_botao_economia(&z);
                 // The order `main` draws them in: the strip, then the sea HUD.
-                if let Some(t) = rota.faixa(Some(eu), Some(rastro.caminho(eu).windows(2).map(|p| p[0].distance(p[1])).sum::<f32>()), nv::CASCOS[0].velocidade) {
+                if let Some(t) = rota.faixa(
+                    Some(eu),
+                    Some(
+                        rastro
+                            .caminho(eu)
+                            .windows(2)
+                            .map(|p| p[0].distance(p[1]))
+                            .sum::<f32>(),
+                    ),
+                    nv::CASCOS[0].velocidade,
+                ) {
                     crate::hud_layout::desenha_faixa(&z, &t, estilo::AUTO);
                 }
                 vfx.hud_do_mar(&z, &eq, Some(eu), false, crate::mapa::Mapa::mini_rect());
-                rota.desenha_portos(crate::mapa::Mapa::disco_do_minimapa(), z.s, Some(eu), nv::CASCOS[0].velocidade);
+                rota.desenha_portos(
+                    crate::mapa::Mapa::disco_do_minimapa(),
+                    z.s,
+                    Some(eu),
+                    nv::CASCOS[0].velocidade,
+                );
                 crate::hud::draw_exp(&z, &ficha);
                 // The world map at sea, open over it all.
                 if nome == "mapa" {
@@ -1266,7 +1983,9 @@ pub async fn previa() {
                 }
                 next_frame().await;
             }
-            rt.texture.get_texture_data().export_png(&format!("{saida}/mar-hud-{nome}-{tela_nome}.png"));
+            rt.texture
+                .get_texture_data()
+                .export_png(&format!("{saida}/mar-hud-{nome}-{tela_nome}.png"));
             println!("mar-hud-{nome}-{tela_nome}.png");
         }
     }
@@ -1285,8 +2004,16 @@ mod testes {
     fn os_efeitos_vivem_em_piscinas_fixas() {
         let mut m = MarCombate::default();
         for k in 0..1000 {
-            m.particula(Particula { vida: 1.0, tam: k as f32, ..Default::default() });
-            m.bala(Bala { ativa: true, voo: 1.0, ..Default::default() });
+            m.particula(Particula {
+                vida: 1.0,
+                tam: k as f32,
+                ..Default::default()
+            });
+            m.bala(Bala {
+                ativa: true,
+                voo: 1.0,
+                ..Default::default()
+            });
         }
         assert_eq!(m.parts.len(), MAX_PARTICULAS);
         assert_eq!(m.balas.len(), MAX_BALAS);
@@ -1303,13 +2030,26 @@ mod testes {
         assert_eq!(aviso_de_aguas(None, true, false), None);
         assert_eq!(aviso_de_aguas(Some(true), true, false), None);
         assert_eq!(aviso_de_aguas(Some(false), false, false), None);
-        assert_eq!(aviso_de_aguas(Some(false), true, false).map(|a| a.0), Some("Peaceful waters: no PvP"));
-        assert_eq!(aviso_de_aguas(Some(true), false, false).map(|a| a.0), Some("Leaving peaceful waters: PvP is on"));
-        assert_eq!(aviso_de_aguas(Some(true), true, true).map(|a| a.0), Some("Peaceful waters: no PvP"));
+        assert_eq!(
+            aviso_de_aguas(Some(false), true, false).map(|a| a.0),
+            Some("Peaceful waters: no PvP")
+        );
+        assert_eq!(
+            aviso_de_aguas(Some(true), false, false).map(|a| a.0),
+            Some("Leaving peaceful waters: PvP is on")
+        );
+        assert_eq!(
+            aviso_de_aguas(Some(true), true, true).map(|a| a.0),
+            Some("Peaceful waters: no PvP")
+        );
         // The Bosque's dock is in them, the Plateau's is not.
-        let b = shared::mar::vista_da_zona("ilha_inicial").unwrap().fundeadouro();
+        let b = shared::mar::vista_da_zona("ilha_inicial")
+            .unwrap()
+            .fundeadouro();
         assert!(shared::mar::aguas_pacificas(b));
-        let p = shared::mar::vista_da_zona("ilha_planalto").unwrap().fundeadouro();
+        let p = shared::mar::vista_da_zona("ilha_planalto")
+            .unwrap()
+            .fundeadouro();
         assert!(!shared::mar::aguas_pacificas(p));
     }
 
@@ -1319,11 +2059,24 @@ mod testes {
     #[test]
     fn o_aviso_de_zona_so_fala_quando_muda() {
         assert_eq!(aviso_de_zona(Some(1), 1), None);
-        assert_eq!(aviso_de_zona(None, 1), None, "toasted plain open water on arrival");
-        assert_eq!(aviso_de_zona(Some(1), 2).map(|a| a.0), Some("Entering lawless waters"));
-        assert_eq!(aviso_de_zona(None, 2).map(|a| a.0), Some("Entering lawless waters"));
+        assert_eq!(
+            aviso_de_zona(None, 1),
+            None,
+            "toasted plain open water on arrival"
+        );
+        assert_eq!(
+            aviso_de_zona(Some(1), 2).map(|a| a.0),
+            Some("Entering lawless waters")
+        );
+        assert_eq!(
+            aviso_de_zona(None, 2).map(|a| a.0),
+            Some("Entering lawless waters")
+        );
         assert_eq!(aviso_de_zona(Some(1), 0).map(|a| a.0), Some("Safe harbour"));
-        assert_eq!(aviso_de_zona(Some(2), 1).map(|a| a.0), Some("Leaving lawless waters"));
+        assert_eq!(
+            aviso_de_zona(Some(2), 1).map(|a| a.0),
+            Some("Leaving lawless waters")
+        );
         assert_eq!(aviso_de_zona(Some(0), 1), None);
         // The real chart: a lawless centre is lawless, a dock is safe.
         let c = shared::mar::zonas_sem_lei()[0];

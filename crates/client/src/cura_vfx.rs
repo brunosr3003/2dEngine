@@ -36,7 +36,9 @@ impl Cura {
     /// A `PocaoGrupo` from the server. A heal that starts (or lengthens past
     /// what was already running) is a fresh drink: it fires the burst.
     pub fn pocao(&mut self, grupo: u8, cura_s: f32, agora: f64) {
-        let Some(p) = self.pocao.get_mut(grupo as usize) else { return };
+        let Some(p) = self.pocao.get_mut(grupo as usize) else {
+            return;
+        };
         if cura_s <= 0.0 {
             p.0 = p.0.min(agora);
             return;
@@ -61,7 +63,10 @@ impl Cura {
 
     pub fn ativo(&self, agora: f64) -> bool {
         agora < self.regen_ate
-            || self.pocao.iter().any(|&(fim, gole)| agora < fim || agora - gole < GOLE_S as f64)
+            || self
+                .pocao
+                .iter()
+                .any(|&(fim, gole)| agora < fim || agora - gole < GOLE_S as f64)
     }
 
     /// Draws at the player's feet. The caller has set the world material.
@@ -103,18 +108,38 @@ fn regen(pe: Vec3, lado: Vec3, t: f32, a: f32) {
         quad(p, lado, 0.09, cor(VERDE, alfa));
     }
     let pulso = (t * 1.6).sin() * 0.5 + 0.5;
-    anel(pe, 0.7 + 0.15 * pulso, 0.12, cor(VERDE, (a * 70.0 * (0.5 + pulso * 0.5)) as u8));
+    anel(
+        pe,
+        0.7 + 0.15 * pulso,
+        0.12,
+        cor(VERDE, (a * 70.0 * (0.5 + pulso * 0.5)) as u8),
+    );
 }
 
 /// The drink: a ring opening on the ground and a puff of sparks.
 fn gole_burst(pe: Vec3, lado: Vec3, f: f32, c: [f32; 3]) {
     let a = (1.0 - f).powi(2);
-    anel(pe, 0.4 + 1.6 * f, 0.25 * (1.0 - f).max(0.2), cor(c, (220.0 * a) as u8));
+    anel(
+        pe,
+        0.4 + 1.6 * f,
+        0.25 * (1.0 - f).max(0.2),
+        cor(c, (220.0 * a) as u8),
+    );
     for i in 0..14 {
         let ang = i as f32 * 2.399963;
         let r = 0.3 + 1.1 * f;
-        let p = pe + vec3(ang.cos() * r, 0.5 + 1.6 * f + (i % 3) as f32 * 0.25, ang.sin() * r);
-        quad(p, lado, 0.11 * (1.0 - f).max(0.3), cor(BRANCO, (240.0 * a) as u8));
+        let p = pe
+            + vec3(
+                ang.cos() * r,
+                0.5 + 1.6 * f + (i % 3) as f32 * 0.25,
+                ang.sin() * r,
+            );
+        quad(
+            p,
+            lado,
+            0.11 * (1.0 - f).max(0.3),
+            cor(BRANCO, (240.0 * a) as u8),
+        );
     }
 }
 
@@ -139,7 +164,12 @@ fn cor(base: [f32; 3], alfa: u8) -> [u8; 4] {
 }
 
 fn vtx(p: Vec3, c: [u8; 4]) -> Vertex {
-    Vertex { position: p, uv: vec2(0.0, 0.0), color: c, normal: Vec4::ZERO }
+    Vertex {
+        position: p,
+        uv: vec2(0.0, 0.0),
+        color: c,
+        normal: Vec4::ZERO,
+    }
 }
 
 /// A camera-facing square.
@@ -149,7 +179,12 @@ fn quad(p: Vec3, lado: Vec3, s: f32, c: [u8; 4]) {
     }
     let (l, u) = (lado * s, Vec3::Y * s);
     dupla(
-        vec![vtx(p - l - u, c), vtx(p + l - u, c), vtx(p + l + u, c), vtx(p - l + u, c)],
+        vec![
+            vtx(p - l - u, c),
+            vtx(p + l - u, c),
+            vtx(p + l + u, c),
+            vtx(p - l + u, c),
+        ],
         vec![[0, 1, 2], [0, 2, 3]],
     );
 }
@@ -207,7 +242,11 @@ fn dupla(vertices: Vec<Vertex>, tris: Vec<[u16; 3]>) {
     for [a, b, c] in tris {
         indices.extend_from_slice(&[a, b, c, a, c, b]);
     }
-    draw_mesh(&Mesh { vertices, indices, texture: None });
+    draw_mesh(&Mesh {
+        vertices,
+        indices,
+        texture: None,
+    });
 }
 
 #[cfg(test)]

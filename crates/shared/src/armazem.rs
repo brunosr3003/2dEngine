@@ -30,8 +30,11 @@ pub const fn expansoes_max(banco: bool) -> u8 {
 
 /// Slots with `extra` expansions bought.
 pub fn tamanho(banco: bool, extra: u8) -> usize {
-    (INVENTORY_SLOTS + extra.min(expansoes_max(banco)) as usize * PASSO)
-        .min(if banco { BANCO_MAX } else { BOLSA_MAX })
+    (INVENTORY_SLOTS + extra.min(expansoes_max(banco)) as usize * PASSO).min(if banco {
+        BANCO_MAX
+    } else {
+        BOLSA_MAX
+    })
 }
 
 /// Gold for the NEXT expansion, having bought `extra`. `None` = already at the cap.

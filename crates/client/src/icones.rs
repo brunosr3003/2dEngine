@@ -54,7 +54,8 @@ pub fn celula(item_id: u16) -> Option<Rect> {
 /// Draws the atlas icon centered and square inside `r`. Returns `false` if
 /// the item has no icon (the caller draws the substitute).
 /// The item kinds the server marks as bound (`ItemsConfig`), for the seal.
-static VINCULADOS: std::sync::RwLock<Option<std::collections::HashSet<u16>>> = std::sync::RwLock::new(None);
+static VINCULADOS: std::sync::RwLock<Option<std::collections::HashSet<u16>>> =
+    std::sync::RwLock::new(None);
 
 pub fn define_vinculados(ids: impl IntoIterator<Item = u16>) {
     if let Ok(mut g) = VINCULADOS.write() {
@@ -79,7 +80,13 @@ pub fn selo_vinculado(r: Rect) {
     let c = vec2(r.x + raio + r.w * 0.05, r.y + r.h - raio - r.h * 0.05);
     draw_circle(c.x + 1.0, c.y + 1.5, raio, Color::new(0.0, 0.0, 0.0, 0.45));
     draw_circle(c.x, c.y, raio, Color::new(0.62, 0.10, 0.12, 1.0));
-    draw_circle_lines(c.x, c.y, raio, (raio * 0.16).max(1.0), Color::new(0.95, 0.78, 0.42, 1.0));
+    draw_circle_lines(
+        c.x,
+        c.y,
+        raio,
+        (raio * 0.16).max(1.0),
+        Color::new(0.95, 0.78, 0.42, 1.0),
+    );
     // The padlock: a shackle arc over a body.
     let ouro = Color::new(0.98, 0.86, 0.55, 1.0);
     let corpo_w = raio * 0.95;
@@ -93,7 +100,12 @@ pub fn selo_vinculado(r: Rect) {
         draw_circle(p.x, p.y, esp * 0.5, ouro);
     }
     draw_rectangle(corpo.x, corpo.y, corpo.w, corpo.h, ouro);
-    draw_circle(c.x, corpo.y + corpo.h * 0.42, corpo_w * 0.12, Color::new(0.62, 0.10, 0.12, 1.0));
+    draw_circle(
+        c.x,
+        corpo.y + corpo.h * 0.42,
+        corpo_w * 0.12,
+        Color::new(0.62, 0.10, 0.12, 1.0),
+    );
 }
 
 pub fn desenha(item_id: u16, r: Rect, alfa: f32) -> bool {
@@ -188,8 +200,15 @@ pub(crate) fn vitrine_skin(
     };
     // A mount coat shows on the dragon: the coat is the point, and the
     // biggest creature carries it best in a bag slot.
-    crate::render3d::vitrine_de_skin(vox, skin, ap::Aparencia::default(),
-        shared::item_id::MONTARIA_BASE + 4, r, giro, solido)
+    crate::render3d::vitrine_de_skin(
+        vox,
+        skin,
+        ap::Aparencia::default(),
+        shared::item_id::MONTARIA_BASE + 4,
+        r,
+        giro,
+        solido,
+    )
 }
 
 #[cfg(test)]

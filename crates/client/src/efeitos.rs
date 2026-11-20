@@ -6,8 +6,8 @@
 //! projetada de quem apanhou: numero de dano e' leitura, e leitura nao pode
 //! sumir atras de uma arvore.
 
-use macroquad::prelude::*;
 use crate::relogio::get_time;
+use macroquad::prelude::*;
 
 use crate::render3d::{world_to_screen, Vista};
 use crate::ui;
@@ -19,7 +19,9 @@ const VIDA_DO_NUMERO: f32 = 0.95;
 const VIDA_DA_FAISCA: f32 = 0.2;
 
 fn altura_de(e: &crate::world::Ent) -> f32 {
-    if let Some(height)=crate::marinhos::altura_ent(e) {return height;}
+    if let Some(height) = crate::marinhos::altura_ent(e) {
+        return height;
+    }
     let boss = e.state.flags & shared::ent_flags::BOSS != 0;
     if boss && e.meta.tag == shared::EntityTag::Enemy {
         // O chefe e' desenhado em escala: a placa e o numero vao pra cabeca dele.
@@ -88,7 +90,10 @@ fn placas(world: &World, vista: &Vista) {
         let nome = e.meta.name.as_deref().unwrap_or("?");
         let rotulo = shared::social::com_tag(&e.meta.cla, nome);
         let txt = if e.meta.nivel > 0 {
-            format!("Lv {} {rotulo}", shared::progressao::texto_de_nivel(e.meta.nivel as u32))
+            format!(
+                "Lv {} {rotulo}",
+                shared::progressao::texto_de_nivel(e.meta.nivel as u32)
+            )
         } else {
             rotulo
         };
@@ -164,7 +169,9 @@ fn placas_de_jogador(world: &World, vista: &Vista) {
     let minha_faccao = eu.and_then(|e| e.meta.faction);
     for (id, e) in &world.ents {
         // An invisible player (path-tree active) has no plate for the others.
-        if e.meta.tag != shared::EntityTag::Player || crate::invisibilidade::oculto(*id, world.self_id) {
+        if e.meta.tag != shared::EntityTag::Player
+            || crate::invisibilidade::oculto(*id, world.self_id)
+        {
             continue;
         }
         let eu_mesmo = world.self_id == Some(*id);
@@ -235,7 +242,10 @@ fn placas_de_jogador(world: &World, vista: &Vista) {
             rotulo
         };
         let txt = if e.meta.nivel > 0 {
-            format!("Lv {} {rotulo}", shared::progressao::texto_de_nivel(e.meta.nivel as u32))
+            format!(
+                "Lv {} {rotulo}",
+                shared::progressao::texto_de_nivel(e.meta.nivel as u32)
+            )
         } else {
             rotulo
         };
@@ -278,7 +288,11 @@ fn balao(texto: &str, ponta: Vec2, idade: f32) {
     // Up to two lines, cut by words.
     let mut linhas: Vec<String> = vec![String::new()];
     for p in texto.split_whitespace() {
-        let tenta = if linhas.last().unwrap().is_empty() { p.to_string() } else { format!("{} {p}", linhas.last().unwrap()) };
+        let tenta = if linhas.last().unwrap().is_empty() {
+            p.to_string()
+        } else {
+            format!("{} {p}", linhas.last().unwrap())
+        };
         if crate::hud_estilo::medir(&tenta, tam) <= max_w || linhas.last().unwrap().is_empty() {
             *linhas.last_mut().unwrap() = tenta;
         } else if linhas.len() < 2 {
@@ -293,18 +307,38 @@ fn balao(texto: &str, ponta: Vec2, idade: f32) {
             l.pop();
         }
     }
-    let w = linhas.iter().map(|l| crate::hud_estilo::medir(l, tam)).fold(0.0, f32::max) + 16.0;
+    let w = linhas
+        .iter()
+        .map(|l| crate::hud_estilo::medir(l, tam))
+        .fold(0.0, f32::max)
+        + 16.0;
     let h = linhas.len() as f32 * 16.0 + 10.0;
     let r = Rect::new(ponta.x - w * 0.5, ponta.y - 8.0 - h, w, h);
     let fundo = Color::new(0.98, 0.96, 0.90, 0.92 * a);
     draw_rectangle(r.x + 3.0, r.y, r.w - 6.0, r.h, fundo);
     draw_rectangle(r.x, r.y + 3.0, r.w, r.h - 6.0, fundo);
-    for (cx, cy) in [(r.x + 3.0, r.y + 3.0), (r.x + r.w - 3.0, r.y + 3.0), (r.x + 3.0, r.y + r.h - 3.0), (r.x + r.w - 3.0, r.y + r.h - 3.0)] {
+    for (cx, cy) in [
+        (r.x + 3.0, r.y + 3.0),
+        (r.x + r.w - 3.0, r.y + 3.0),
+        (r.x + 3.0, r.y + r.h - 3.0),
+        (r.x + r.w - 3.0, r.y + r.h - 3.0),
+    ] {
         draw_circle(cx, cy, 3.0, fundo);
     }
-    draw_triangle(vec2(ponta.x - 6.0, r.y + r.h), vec2(ponta.x + 6.0, r.y + r.h), vec2(ponta.x, ponta.y - 1.0), fundo);
+    draw_triangle(
+        vec2(ponta.x - 6.0, r.y + r.h),
+        vec2(ponta.x + 6.0, r.y + r.h),
+        vec2(ponta.x, ponta.y - 1.0),
+        fundo,
+    );
     for (i, l) in linhas.iter().enumerate() {
-        crate::hud_estilo::texto(r.x + 8.0, r.y + 18.0 + i as f32 * 16.0, l, tam, Color::new(0.12, 0.09, 0.07, a));
+        crate::hud_estilo::texto(
+            r.x + 8.0,
+            r.y + 18.0 + i as f32 * 16.0,
+            l,
+            tam,
+            Color::new(0.12, 0.09, 0.07, a),
+        );
     }
 }
 

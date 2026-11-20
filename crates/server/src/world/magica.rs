@@ -255,7 +255,12 @@ impl GameWorld {
         if dentro {
             // Extending from inside counts too (owner, 12/11/2026): Anubis did
             // 4 h on the island with only 2 recorded entries.
-            crate::telemetria::conta_de(&nome, "magica_extensao", self.zona.clone(), entradas as i64);
+            crate::telemetria::conta_de(
+                &nome,
+                "magica_extensao",
+                self.zona.clone(),
+                entradas as i64,
+            );
             self.abrir_magica(sid);
             let _ = self
                 .sessions
@@ -270,7 +275,12 @@ impl GameWorld {
             return false;
         }
         let aviso = format!("You enter {} — {minutos} minutes.", alvo.nome);
-        crate::telemetria::conta_de(&s.name, "magica_entrada", self.zona.clone(), entradas as i64);
+        crate::telemetria::conta_de(
+            &s.name,
+            "magica_entrada",
+            self.zona.clone(),
+            entradas as i64,
+        );
         tracing::info!(
             "{nome}: entra na Ilha Mágica por {minutos} min ({de_graca} de graça, {do_item} passe(s))"
         );

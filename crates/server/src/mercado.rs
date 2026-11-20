@@ -22,7 +22,9 @@ use anyhow::Result;
 use once_cell::sync::{Lazy, OnceCell};
 use serde::{Deserialize, Serialize};
 use shared::items::ItemInstance;
-use shared::mercado::{self as regras, AnuncioNet, CartaNet, FiltroNet, PedidoNet, Recusa, VendaNet};
+use shared::mercado::{
+    self as regras, AnuncioNet, CartaNet, FiltroNet, PedidoNet, Recusa, VendaNet,
+};
 use sqlx::postgres::PgPoolOptions;
 use sqlx::{PgPool, Postgres, Row, Transaction};
 use tokio::sync::{mpsc, Notify};
@@ -77,9 +79,7 @@ pub async fn init(realm: &PgPool) -> Result<()> {
     }
     let url = std::env::var("DATABASE_URL_CENTRAL").unwrap_or_default();
     if url.trim().is_empty() {
-        tracing::warn!(
-            "market: DATABASE_URL_CENTRAL not set — global market OFF in this process"
-        );
+        tracing::warn!("market: DATABASE_URL_CENTRAL not set — global market OFF in this process");
         return Ok(());
     }
     match abrir_central(&url).await {
@@ -245,11 +245,23 @@ async fn criar_tabelas_centrais(pool: &PgPool) -> Result<()> {
         let realm: String = row.get("realm");
         let personagem: String = row.get("personagem");
         let qtd = row.get::<i64, _>("qtd_restante").max(0) as u64;
-        carta(&mut tx, &format!("{id}:fim-teleporte"), &realm, &personagem,
-            shared::item_id::COPPER, qtd.saturating_mul(100), None, 0,
-            "Pergaminho de Teleporte retirado: reembolso em cobre").await?;
+        carta(
+            &mut tx,
+            &format!("{id}:fim-teleporte"),
+            &realm,
+            &personagem,
+            shared::item_id::COPPER,
+            qtd.saturating_mul(100),
+            None,
+            0,
+            "Pergaminho de Teleporte retirado: reembolso em cobre",
+        )
+        .await?;
         sqlx::query("UPDATE mercado_anuncios SET estado = $2, qtd_restante = 0 WHERE id = $1")
-            .bind(&id).bind(regras::ESTADO_CANCELADO as i16).execute(&mut *tx).await?;
+            .bind(&id)
+            .bind(regras::ESTADO_CANCELADO as i16)
+            .execute(&mut *tx)
+            .await?;
     }
     sqlx::query("UPDATE mercado_cartas SET item_id = $1, qtd = qtd * 100, instancia = NULL WHERE item_id = 359")
         .bind(shared::item_id::COPPER as i32).execute(&mut *tx).await?;
@@ -447,18 +459,13 @@ pub async fn processar(central: &PgPool, op: &OpCentral) -> Result<Resultado> {
             preco_total,
             preco_unit,
         } => {
-            let total = if *preco_total > 0 { *preco_total } else { qtd.saturating_mul(*preco_unit) };
+            let total = if *preco_total > 0 {
+                *preco_total
+            } else {
+                qtd.saturating_mul(*preco_unit)
+            };
             anunciar_item(
-                &mut tx,
-                id,
-                realm,
-                conta,
-                personagem,
-                *item_id,
-                nome,
-                *categoria,
-                instancia,
-                *qtd,
+                &mut tx, id, realm, conta, personagem, *item_id, nome, *categoria, instancia, *qtd,
                 total,
             )
             .await?
@@ -472,19 +479,7 @@ pub async fn processar(central: &PgPool, op: &OpCentral) -> Result<Resultado> {
             qtd,
             preco_unit: _,
             pago,
-        } => {
-            comprar(
-                &mut tx,
-                id,
-                realm,
-                conta,
-                personagem,
-                anuncio,
-                *qtd,
-                *pago,
-            )
-            .await?
-        }
+        } => comprar(&mut tx, id, realm, conta, personagem, anuncio, *qtd, *pago).await?,
         OpCentral::ComprarVagas {
             id,
             realm,
@@ -585,11 +580,13 @@ pub async fn compras_de_vagas<'e>(
     realm: &str,
     personagem: &str,
 ) -> Result<u8> {
-    let n: Option<i16> = sqlx::query_scalar("SELECT compras FROM mercado_vagas WHERE realm = $1 AND personagem = $2")
-        .bind(realm)
-        .bind(personagem)
-        .fetch_optional(db)
-        .await?;
+    let n: Option<i16> = sqlx::query_scalar(
+        "SELECT compras FROM mercado_vagas WHERE realm = $1 AND personagem = $2",
+    )
+    .bind(realm)
+    .bind(personagem)
+    .fetch_optional(db)
+    .await?;
     Ok(n.unwrap_or(0).clamp(0, u8::MAX as i16) as u8)
 }
 
@@ -612,7 +609,12 @@ async fn proxima_compra(
     })
 }
 
-async fn gravar_compra(tx: &mut Transaction<'_, Postgres>, realm: &str, personagem: &str, compra: u8) -> Result<String> {
+async fn gravar_compra(
+    tx: &mut Transaction<'_, Postgres>,
+    realm: &str,
+    personagem: &str,
+    compra: u8,
+) -> Result<String> {
     sqlx::query(
         "INSERT INTO mercado_vagas (realm, personagem, compras) VALUES ($1, $2, $3)
          ON CONFLICT (realm, personagem) DO UPDATE SET compras = EXCLUDED.compras",
@@ -642,12 +644,34 @@ async fn vagas_com_ouro(
     match proxima_compra(tx, realm, personagem, compra).await? {
         Ok((_, ouro)) if pago >= ouro => {
             if pago > ouro {
-                carta(tx, &format!("{id}:troco"), realm, personagem, 0, 0, None, pago - ouro, "listing slots: change").await?;
+                carta(
+                    tx,
+                    &format!("{id}:troco"),
+                    realm,
+                    personagem,
+                    0,
+                    0,
+                    None,
+                    pago - ouro,
+                    "listing slots: change",
+                )
+                .await?;
             }
             Ok((true, gravar_compra(tx, realm, personagem, compra).await?))
         }
         Ok(_) | Err(_) => {
-            carta(tx, &format!("{id}:devolve"), realm, personagem, 0, 0, None, pago, "listing slots: refund").await?;
+            carta(
+                tx,
+                &format!("{id}:devolve"),
+                realm,
+                personagem,
+                0,
+                0,
+                None,
+                pago,
+                "listing slots: refund",
+            )
+            .await?;
             Ok((false, Recusa::VagaMudou.texto()))
         }
     }
@@ -732,7 +756,10 @@ async fn anunciar_item(
             &format!("Listing refused: {nome}"),
         )
         .await?;
-        return Ok((false, format!("{} {nome} comes back in Deliveries.", r.texto())));
+        return Ok((
+            false,
+            format!("{} {nome} comes back in Deliveries.", r.texto()),
+        ));
     }
     sqlx::query(
         "INSERT INTO mercado_anuncios (id, tipo, realm, conta, personagem, item_id, nome, categoria, instancia, qtd_total, qtd_restante, preco_unit, gold_restante)
@@ -1319,7 +1346,10 @@ async fn pedir_compra(
             )
             .await?;
         }
-        return Ok((false, format!("{} The gold comes back in Deliveries.", r.texto())));
+        return Ok((
+            false,
+            format!("{} The gold comes back in Deliveries.", r.texto()),
+        ));
     }
     sqlx::query(
         "INSERT INTO mercado_pedidos (id, realm, conta, personagem, item_id, nome, categoria, qtd_total, qtd_restante, preco_unit, gold_restante)
@@ -1423,7 +1453,11 @@ async fn vender_ao_pedido(
     let nome: String = l.get("nome");
     let comprador_realm: String = l.get("realm");
     let comprador: String = l.get("personagem");
-    let estado = if p.restante == 0 { regras::PEDIDO_CONCLUIDO } else { regras::PEDIDO_ABERTO };
+    let estado = if p.restante == 0 {
+        regras::PEDIDO_CONCLUIDO
+    } else {
+        regras::PEDIDO_ABERTO
+    };
     sqlx::query(
         "UPDATE mercado_pedidos SET qtd_restante = $2, estado = $3, gold_restante = $4, preco_unit = $5, atualizado = NOW() WHERE id = $1",
     )
@@ -1456,7 +1490,10 @@ async fn vender_ao_pedido(
             0,
             None,
             p.liquido,
-            &format!("Sold to a buy order: {nome} ×{} (fee {})", p.vendida, p.taxa),
+            &format!(
+                "Sold to a buy order: {nome} ×{} (fee {})",
+                p.vendida, p.taxa
+            ),
         )
         .await?;
     }
@@ -1497,7 +1534,10 @@ async fn vender_ao_pedido(
         p.vendida, p.liquido
     );
     if p.devolve > 0 {
-        texto.push_str(&format!(" {} returned (the order wanted fewer).", p.devolve));
+        texto.push_str(&format!(
+            " {} returned (the order wanted fewer).",
+            p.devolve
+        ));
     }
     Ok((true, texto))
 }
@@ -1549,7 +1589,10 @@ pub async fn cancelar_pedido(
         .await?;
     }
     tx.commit().await?;
-    Ok((true, format!("Buy order cancelled: {gold} gold comes back in Deliveries.")))
+    Ok((
+        true,
+        format!("Buy order cancelled: {gold} gold comes back in Deliveries."),
+    ))
 }
 
 fn pedido_de(l: &sqlx::postgres::PgRow, realm: &str, personagem: &str) -> PedidoNet {
@@ -1596,11 +1639,18 @@ pub async fn buscar_pedidos(
     .bind(regras::PEDIDOS_POR_BUSCA as i64)
     .fetch_all(central)
     .await?;
-    Ok(linhas.iter().map(|l| pedido_de(l, realm, personagem)).collect())
+    Ok(linhas
+        .iter()
+        .map(|l| pedido_de(l, realm, personagem))
+        .collect())
 }
 
 /// My open buy orders.
-pub async fn meus_pedidos(central: &PgPool, realm: &str, personagem: &str) -> Result<Vec<PedidoNet>> {
+pub async fn meus_pedidos(
+    central: &PgPool,
+    realm: &str,
+    personagem: &str,
+) -> Result<Vec<PedidoNet>> {
     let linhas = sqlx::query(
         "SELECT id, realm, personagem, item_id, nome, categoria, qtd_total, qtd_restante, gold_restante
            FROM mercado_pedidos WHERE realm = $1 AND personagem = $2 AND estado = 0 ORDER BY criado DESC",
@@ -1609,7 +1659,10 @@ pub async fn meus_pedidos(central: &PgPool, realm: &str, personagem: &str) -> Re
     .bind(personagem)
     .fetch_all(central)
     .await?;
-    Ok(linhas.iter().map(|l| pedido_de(l, realm, personagem)).collect())
+    Ok(linhas
+        .iter()
+        .map(|l| pedido_de(l, realm, personagem))
+        .collect())
 }
 
 // ─────────────────────────────── relay ───────────────────────────────
@@ -1678,19 +1731,23 @@ pub async fn enviar_saida(
             // the one who did it, and on a purchase the seller too.
             let mut quem = vec![op.personagem().to_string()];
             if let OpCentral::Comprar { anuncio, .. } = &op {
-                if let Ok(Some(v)) = sqlx::query_scalar::<_, String>("SELECT personagem FROM mercado_anuncios WHERE id = $1")
-                    .bind(anuncio)
-                    .fetch_optional(central)
-                    .await
+                if let Ok(Some(v)) = sqlx::query_scalar::<_, String>(
+                    "SELECT personagem FROM mercado_anuncios WHERE id = $1",
+                )
+                .bind(anuncio)
+                .fetch_optional(central)
+                .await
                 {
                     quem.push(v);
                 }
             }
             if let OpCentral::VenderAoPedido { pedido, .. } = &op {
-                if let Ok(Some(v)) = sqlx::query_scalar::<_, String>("SELECT personagem FROM mercado_pedidos WHERE id = $1")
-                    .bind(pedido)
-                    .fetch_optional(central)
-                    .await
+                if let Ok(Some(v)) = sqlx::query_scalar::<_, String>(
+                    "SELECT personagem FROM mercado_pedidos WHERE id = $1",
+                )
+                .bind(pedido)
+                .fetch_optional(central)
+                .await
                 {
                     quem.push(v);
                 }
@@ -1809,18 +1866,35 @@ mod testes {
         assert_eq!(devolvido as u64, regras::CUSTO_VAGAS_OURO[0]);
         assert_eq!(compras_de_vagas(&central, "T", &quem).await.unwrap(), 1);
         // TP: none on the account, then enough for purchase 2.
-        let (ok, _) = comprar_vagas_tp(&central, "T", &conta, &quem, 2).await.unwrap();
+        let (ok, _) = comprar_vagas_tp(&central, "T", &conta, &quem, 2)
+            .await
+            .unwrap();
         assert!(!ok);
         let mut tx = central.begin().await.unwrap();
-        razao::mover(&mut tx, &conta, 1_000, "test credit", None).await.unwrap();
+        razao::mover(&mut tx, &conta, 1_000, "test credit", None)
+            .await
+            .unwrap();
         tx.commit().await.unwrap();
-        let (ok, texto) = comprar_vagas_tp(&central, "T", &conta, &quem, 2).await.unwrap();
+        let (ok, texto) = comprar_vagas_tp(&central, "T", &conta, &quem, 2)
+            .await
+            .unwrap();
         assert!(ok, "{texto}");
-        assert_eq!(razao::saldo(&central, &conta).await.unwrap(), 1_000 - regras::CUSTO_VAGAS_TP[1]);
-        assert_eq!(regras::max_anuncios(compras_de_vagas(&central, "T", &quem).await.unwrap()), 30);
-        let (ok, _) = comprar_vagas_tp(&central, "T", &conta, &quem, 2).await.unwrap();
+        assert_eq!(
+            razao::saldo(&central, &conta).await.unwrap(),
+            1_000 - regras::CUSTO_VAGAS_TP[1]
+        );
+        assert_eq!(
+            regras::max_anuncios(compras_de_vagas(&central, "T", &quem).await.unwrap()),
+            30
+        );
+        let (ok, _) = comprar_vagas_tp(&central, "T", &conta, &quem, 2)
+            .await
+            .unwrap();
         assert!(!ok, "purchase 2 twice must not charge again");
-        assert_eq!(razao::saldo(&central, &conta).await.unwrap(), 1_000 - regras::CUSTO_VAGAS_TP[1]);
+        assert_eq!(
+            razao::saldo(&central, &conta).await.unwrap(),
+            1_000 - regras::CUSTO_VAGAS_TP[1]
+        );
     }
 
     /// Buy orders end to end on a throwaway Postgres
@@ -1833,12 +1907,18 @@ mod testes {
             return;
         };
         let central = abrir_central(&url).await.expect("central");
-        criar_tabelas_do_realm(&central).await.expect("tabelas do realm");
+        criar_tabelas_do_realm(&central)
+            .await
+            .expect("tabelas do realm");
         let tag = &novo_id()[..10];
         let (comp, vend) = (format!("pcomp_{tag}"), format!("pvend_{tag}"));
         let gold_de = |cartas: &[CartaNet]| cartas.iter().map(|c| c.gold).sum::<u64>();
         let itens_de = |cartas: &[CartaNet], it: u16| {
-            cartas.iter().filter(|c| c.item_id == it).map(|c| c.qtd).sum::<u64>()
+            cartas
+                .iter()
+                .filter(|c| c.item_id == it)
+                .map(|c| c.qtd)
+                .sum::<u64>()
         };
         let pedido = novo_id();
         let pedir = OpCentral::PedirCompra {
@@ -1855,7 +1935,10 @@ mod testes {
         };
         let r = processar(&central, &pedir).await.unwrap();
         assert!(r.ok, "{}", r.texto);
-        assert!(!processar(&central, &pedir).await.unwrap().novo, "placed once");
+        assert!(
+            !processar(&central, &pedir).await.unwrap().novo,
+            "placed once"
+        );
         // A bad order (no quantity): refused, gold back. (Since lot pricing
         // any whole total is a valid price: 69 for 10 is 6.9 each.)
         let errado = OpCentral::PedirCompra {
@@ -1871,10 +1954,22 @@ mod testes {
             pago: 69,
         };
         assert!(!processar(&central, &errado).await.unwrap().ok);
-        assert_eq!(gold_de(&cartas_pendentes(&central, &central, "T", &comp).await.unwrap()), 69);
-        let lista = buscar_pedidos(&central, Some(345), tag, "T", &vend).await.unwrap();
+        assert_eq!(
+            gold_de(
+                &cartas_pendentes(&central, &central, "T", &comp)
+                    .await
+                    .unwrap()
+            ),
+            69
+        );
+        let lista = buscar_pedidos(&central, Some(345), tag, "T", &vend)
+            .await
+            .unwrap();
         assert_eq!(lista.len(), 1);
-        assert_eq!((lista[0].qtd, lista[0].preco_total, lista[0].meu), (10, 70, false));
+        assert_eq!(
+            (lista[0].qtd, lista[0].preco_total, lista[0].meu),
+            (10, 70, false)
+        );
 
         let vender = |qtd: u64, quem: &str, item_id: u16| OpCentral::VenderAoPedido {
             id: novo_id(),
@@ -1888,42 +1983,93 @@ mod testes {
         // The buyer selling to their own order: refused, items back.
         let proprio = vender(2, &comp, 345);
         assert!(!processar(&central, &proprio).await.unwrap().ok);
-        assert_eq!(itens_de(&cartas_pendentes(&central, &central, "T", &comp).await.unwrap(), 345), 2);
+        assert_eq!(
+            itens_de(
+                &cartas_pendentes(&central, &central, "T", &comp)
+                    .await
+                    .unwrap(),
+                345
+            ),
+            2
+        );
         // Wrong item: refused, the same item goes back.
         assert!(!processar(&central, &vender(3, &vend, 60)).await.unwrap().ok);
-        assert_eq!(itens_de(&cartas_pendentes(&central, &central, "T", &vend).await.unwrap(), 60), 3);
+        assert_eq!(
+            itens_de(
+                &cartas_pendentes(&central, &central, "T", &vend)
+                    .await
+                    .unwrap(),
+                60
+            ),
+            3
+        );
         // 4 sell: 28 gross, 26 to the seller, 4 to the buyer.
         let quatro = vender(4, &vend, 345);
         assert!(processar(&central, &quatro).await.unwrap().ok);
-        assert!(!processar(&central, &quatro).await.unwrap().novo, "sold once");
+        assert!(
+            !processar(&central, &quatro).await.unwrap().novo,
+            "sold once"
+        );
         // 9 offered, 6 wanted: 6 sell (42 gross, 39 net), 3 come back.
-        assert!(processar(&central, &vender(9, &vend, 345)).await.unwrap().ok);
-        let v = cartas_pendentes(&central, &central, "T", &vend).await.unwrap();
+        assert!(
+            processar(&central, &vender(9, &vend, 345))
+                .await
+                .unwrap()
+                .ok
+        );
+        let v = cartas_pendentes(&central, &central, "T", &vend)
+            .await
+            .unwrap();
         assert_eq!(gold_de(&v), 26 + 39);
         assert_eq!(itens_de(&v, 345), 3);
-        let c = cartas_pendentes(&central, &central, "T", &comp).await.unwrap();
+        let c = cartas_pendentes(&central, &central, "T", &comp)
+            .await
+            .unwrap();
         assert_eq!(itens_de(&c, 345), 2 + 4 + 6);
         // Filled: gone from the search, nothing to cancel, one more sale bounces.
-        assert!(buscar_pedidos(&central, Some(345), tag, "T", &vend).await.unwrap().is_empty());
-        assert!(!cancelar_pedido(&central, "T", &comp, &pedido).await.unwrap().0);
-        assert!(!processar(&central, &vender(1, &vend, 345)).await.unwrap().ok);
+        assert!(buscar_pedidos(&central, Some(345), tag, "T", &vend)
+            .await
+            .unwrap()
+            .is_empty());
+        assert!(
+            !cancelar_pedido(&central, "T", &comp, &pedido)
+                .await
+                .unwrap()
+                .0
+        );
+        assert!(
+            !processar(&central, &vender(1, &vend, 345))
+                .await
+                .unwrap()
+                .ok
+        );
         let (_, historico, _, _) = meus(&central, "T", &vend, "x").await.unwrap();
-        assert_eq!(historico.iter().filter(|h| h.vendi).map(|h| h.liquido).sum::<u64>(), 26 + 39);
+        assert_eq!(
+            historico
+                .iter()
+                .filter(|h| h.vendi)
+                .map(|h| h.liquido)
+                .sum::<u64>(),
+            26 + 39
+        );
 
         // Energy order, part filled then cancelled: the rest's gold comes back.
         let energia = novo_id();
-        let r = processar(&central, &OpCentral::PedirCompra {
-            id: energia.clone(),
-            realm: "T".into(),
-            conta: format!("T:{tag}:c"),
-            personagem: comp.clone(),
-            item_id: shared::item_id::ENERGIA_MIL,
-            nome: "Energy ×1,000".into(),
-            categoria: 3,
-            qtd: 5,
-            preco_unit: 40,
-            pago: 200,
-        })
+        let r = processar(
+            &central,
+            &OpCentral::PedirCompra {
+                id: energia.clone(),
+                realm: "T".into(),
+                conta: format!("T:{tag}:c"),
+                personagem: comp.clone(),
+                item_id: shared::item_id::ENERGIA_MIL,
+                nome: "Energy ×1,000".into(),
+                categoria: 3,
+                qtd: 5,
+                preco_unit: 40,
+                pago: 200,
+            },
+        )
         .await
         .unwrap();
         assert!(r.ok, "{}", r.texto);
@@ -1938,11 +2084,34 @@ mod testes {
             qtd: 2,
         };
         assert!(processar(&central, &lote).await.unwrap().ok);
-        let antes = gold_de(&cartas_pendentes(&central, &central, "T", &comp).await.unwrap());
-        assert!(!cancelar_pedido(&central, "T", &vend, &energia).await.unwrap().0, "not theirs");
-        assert!(cancelar_pedido(&central, "T", &comp, &energia).await.unwrap().0);
-        assert!(!cancelar_pedido(&central, "T", &comp, &energia).await.unwrap().0, "once");
-        let c = cartas_pendentes(&central, &central, "T", &comp).await.unwrap();
+        let antes = gold_de(
+            &cartas_pendentes(&central, &central, "T", &comp)
+                .await
+                .unwrap(),
+        );
+        assert!(
+            !cancelar_pedido(&central, "T", &vend, &energia)
+                .await
+                .unwrap()
+                .0,
+            "not theirs"
+        );
+        assert!(
+            cancelar_pedido(&central, "T", &comp, &energia)
+                .await
+                .unwrap()
+                .0
+        );
+        assert!(
+            !cancelar_pedido(&central, "T", &comp, &energia)
+                .await
+                .unwrap()
+                .0,
+            "once"
+        );
+        let c = cartas_pendentes(&central, &central, "T", &comp)
+            .await
+            .unwrap();
         assert_eq!(gold_de(&c) - antes, 3 * 40);
         assert_eq!(itens_de(&c, shared::item_id::ENERGIA_MIL), 2);
         assert!(meus_pedidos(&central, "T", &comp).await.unwrap().is_empty());

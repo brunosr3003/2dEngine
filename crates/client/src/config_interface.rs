@@ -86,7 +86,12 @@ impl ConfigInterface {
             20,
             estilo::OURO,
         );
-        crate::sons::controle(Rect::new(r.x + r.w - 196.0*f, r.y + 6.0*f, 144.0*f, 34.0*f));
+        crate::sons::controle(Rect::new(
+            r.x + r.w - 196.0 * f,
+            r.y + 6.0 * f,
+            144.0 * f,
+            34.0 * f,
+        ));
         let fechar = Rect::new(r.x + r.w - 44.0 * f, r.y + 8.0 * f, 36.0 * f, 36.0 * f);
         estilo::texto_centro(
             fechar.center().x,
@@ -254,7 +259,6 @@ impl ConfigInterface {
             estilo::OURO,
         );
 
-
         estilo::texto(
             r.x + 18.0 * f,
             r.y + r.h - 18.0 * f,
@@ -312,7 +316,12 @@ impl ConfigInterface {
             20,
             estilo::OURO,
         );
-        crate::sons::controle(Rect::new(r.x + r.w - 196.0*f, r.y + 6.0*f, 144.0*f, 34.0*f));
+        crate::sons::controle(Rect::new(
+            r.x + r.w - 196.0 * f,
+            r.y + 6.0 * f,
+            144.0 * f,
+            34.0 * f,
+        ));
         let fechar = Rect::new(r.x + r.w - 43.0 * f, r.y + 5.0 * f, 36.0 * f, 36.0 * f);
         estilo::texto_centro(
             fechar.center().x,
@@ -353,13 +362,7 @@ impl ConfigInterface {
             14,
             estilo::TEXTO,
         );
-        estilo::texto(
-            lx,
-            r.y + 194.0 * f,
-            "Battery saver",
-            14,
-            estilo::SUAVE,
-        );
+        estilo::texto(lx, r.y + 194.0 * f, "Battery saver", 14, estilo::SUAVE);
         let agora = Rect::new(lx, r.y + 204.0 * f, col, 38.0 * f);
         estilo::painel(agora);
         estilo::texto_centro(
@@ -369,13 +372,7 @@ impl ConfigInterface {
             14,
             estilo::TEXTO,
         );
-        estilo::texto(
-            lx,
-            r.y + 263.0 * f,
-            "Auto after idling",
-            12,
-            estilo::SUAVE,
-        );
+        estilo::texto(lx, r.y + 263.0 * f, "Auto after idling", 12, estilo::SUAVE);
         let n = economia::OPCOES_AUTO_MIN.len();
         let cw = (col - 6.0 * f * (n as f32 - 1.0)) / n as f32;
         let chips: Vec<_> = economia::OPCOES_AUTO_MIN
@@ -441,8 +438,20 @@ impl ConfigInterface {
         );
         let editar = Rect::new(rx, r.y + 140.0 * f, col, 52.0 * f);
         estilo::cartao(editar, editar.toca(m), true);
-        estilo::texto_centro(editar.center().x, editar.center().y - 2.0 * f, "Customize HUD", 15, estilo::OURO);
-        estilo::texto_centro(editar.center().x, editar.center().y + 15.0 * f, "move and resize buttons", 11, estilo::SUAVE);
+        estilo::texto_centro(
+            editar.center().x,
+            editar.center().y - 2.0 * f,
+            "Customize HUD",
+            15,
+            estilo::OURO,
+        );
+        estilo::texto_centro(
+            editar.center().x,
+            editar.center().y + 15.0 * f,
+            "move and resize buttons",
+            11,
+            estilo::SUAVE,
+        );
         if !clicou {
             return None;
         }

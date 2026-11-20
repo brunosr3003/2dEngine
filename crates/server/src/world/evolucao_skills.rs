@@ -36,7 +36,10 @@ impl GameWorld {
         let nivel = shared::level_of_xp_with_mult(s.xp, crate::economy::xp_multiplier());
         let precisa = shared::skills::DESTRAVA_EM[(skill.ordem.saturating_sub(1) as usize).min(2)];
         if nivel < precisa {
-            return Err(format!("that skill unlocks at level {}", shared::progressao::texto_de_nivel(precisa)));
+            return Err(format!(
+                "that skill unlocks at level {}",
+                shared::progressao::texto_de_nivel(precisa)
+            ));
         }
         Ok(skill)
     }
@@ -81,17 +84,18 @@ impl GameWorld {
                     s.skill_progress.tomos[i][grau as usize].saturating_add(1);
                 s.inventory_dirty = true;
                 s.skills_dirty = true;
-                Ok(format!(
-                    "Tome {} of {} condensed.",
-                    grau.nome(),
-                    skill.nome
-                ))
+                Ok(format!("Tome {} of {} condensed.", grau.nome(), skill.nome))
             }
         };
         match resultado {
             Ok(texto) => {
                 self.save_pending = true;
-                crate::telemetria::conta_de(&self.nome_de(sid), "tomo_skill", format!("{skill_id}-{grau:?}"), 1);
+                crate::telemetria::conta_de(
+                    &self.nome_de(sid),
+                    "tomo_skill",
+                    format!("{skill_id}-{grau:?}"),
+                    1,
+                );
                 self.resposta_de_evolucao(sid, true, texto);
             }
             Err(texto) => self.resposta_de_evolucao(sid, false, texto),

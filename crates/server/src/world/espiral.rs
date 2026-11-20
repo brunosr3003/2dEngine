@@ -21,12 +21,17 @@ impl GameWorld {
             return false;
         };
         let c = z.origin + z.size * 0.5;
-        shared::kogen::paradas_da_espiral().iter().any(|(p, _, elite)| *elite && p.distance(c) < 0.5)
+        shared::kogen::paradas_da_espiral()
+            .iter()
+            .any(|(p, _, elite)| *elite && p.distance(c) < 0.5)
     }
 
     /// Turns the freshly spawned `eid` into the landing's elite guard.
     pub(super) fn tornar_elite_da_espiral(&mut self, eid: EntityId) {
-        for (_, (n, tag, hp, kind)) in self.ecs.query_mut::<(&NetId, &mut EnemyTag, &mut Health, &EntityKind)>() {
+        for (_, (n, tag, hp, kind)) in self
+            .ecs
+            .query_mut::<(&NetId, &mut EnemyTag, &mut Health, &EntityKind)>()
+        {
             if n.0 != eid {
                 continue;
             }
@@ -34,11 +39,20 @@ impl GameWorld {
             hp.max = vida;
             hp.current = vida;
             tag.stats.hp_max = vida;
-            tag.stats.attack_damage = ((tag.stats.attack_damage as f32) * ELITE_DANO).round().max(1.0) as i32;
+            tag.stats.attack_damage = ((tag.stats.attack_damage as f32) * ELITE_DANO)
+                .round()
+                .max(1.0) as i32;
             tag.xp_reward = (tag.xp_reward as f32 * ELITE_XP).round() as u64;
             tag.elite_da_espiral = true;
-            let k = if let EntityKind::Enemy(k) = kind { *k } else { 0 };
-            tag.boss_name = Some(format!("[ELITE] Spire Sentinel {}", crate::economy::enemy_def(k).name));
+            let k = if let EntityKind::Enemy(k) = kind {
+                *k
+            } else {
+                0
+            };
+            tag.boss_name = Some(format!(
+                "[ELITE] Spire Sentinel {}",
+                crate::economy::enemy_def(k).name
+            ));
             return;
         }
     }
@@ -68,7 +82,10 @@ mod testes {
         crate::economy::init_vazia_para_testes();
         let mut w = GameWorld::new(HashMap::new());
         w.zona = shared::kogen::ZONA.to_string();
-        let (c, nivel, _) = shared::kogen::paradas_da_espiral().into_iter().find(|p| p.2).unwrap();
+        let (c, nivel, _) = shared::kogen::paradas_da_espiral()
+            .into_iter()
+            .find(|p| p.2)
+            .unwrap();
         w.spawn_zones.push(ServerSpawnZone {
             id: 10_777,
             origin: c - Vec2::splat(12.0),
@@ -81,14 +98,26 @@ mod testes {
             level_range: Some((nivel, nivel, 1)),
             level_range_live: 0,
             level_range_queue: Vec::new(),
-            slots: vec![SpawnSlot { pos: c, occupant: None, respawn_at: 0.0 }],
+            slots: vec![SpawnSlot {
+                pos: c,
+                occupant: None,
+                respawn_at: 0.0,
+            }],
             active: true,
             last_player_near_at: 0.0,
             forte: false,
         });
         assert!(w.e_elite_da_espiral(10_777));
         let comum = w.place_enemy_in_zone_with_build(c, 56, 10_777, nivel as u16, false);
-        let vida_comum = w.ecs.query::<(&NetId, &Health)>().iter().find(|(_, (n, _))| n.0 == comum).unwrap().1 .1.max;
+        let vida_comum = w
+            .ecs
+            .query::<(&NetId, &Health)>()
+            .iter()
+            .find(|(_, (n, _))| n.0 == comum)
+            .unwrap()
+            .1
+             .1
+            .max;
         let eid = w.place_enemy_in_zone_with_build(c, 56, 10_777, nivel as u16, false);
         w.tornar_elite_da_espiral(eid);
         let (vida, nome) = w
@@ -101,8 +130,16 @@ mod testes {
         assert_eq!(vida, ((vida_comum as f32) * ELITE_VIDA).round() as i32);
         assert!(nome.is_some_and(|n| n.starts_with("[ELITE]")));
         w.elite_da_espiral_caiu(c, 10_777, 0);
-        let baus: Vec<u8> = w.ecs.query::<&forte::BauDoForte>().iter().map(|(_, b)| b.cor).collect();
+        let baus: Vec<u8> = w
+            .ecs
+            .query::<&forte::BauDoForte>()
+            .iter()
+            .map(|(_, b)| b.cor)
+            .collect();
         assert_eq!(baus, vec![2], "one green chest");
-        assert!(w.spawn_zones[0].slots[0].respawn_at >= w.sim_time_s + 299.0, "came back too soon");
+        assert!(
+            w.spawn_zones[0].slots[0].respawn_at >= w.sim_time_s + 299.0,
+            "came back too soon"
+        );
     }
 }

@@ -1,7 +1,7 @@
 //! Zone14 voxel clouds, with soft lighting and wind displacement.
 use crate::gpu_estatica::{MalhaEstatica, Programa};
-use macroquad::prelude::*;
 use crate::relogio::get_time;
+use macroquad::prelude::*;
 
 pub struct IlhasAereas {
     modelos: Vec<Vec<MalhaEstatica>>,
@@ -55,7 +55,10 @@ impl IlhasAereas {
                 malhas.into_iter().map(MalhaEstatica::nova).collect()
             })
             .collect();
-        Self { modelos, raizes: Vec::new() }
+        Self {
+            modelos,
+            raizes: Vec::new(),
+        }
     }
 
     /// With a rock root under every plateau of Skyreach (`shared::celeste`).
@@ -99,7 +102,10 @@ impl IlhasAereas {
                 continue;
             }
             crate::gpu_estatica::desenha_com_modelo(
-                Programa::Solido { recorte: Vec3::ZERO, recorte_z: 0.0 },
+                Programa::Solido {
+                    recorte: Vec3::ZERO,
+                    recorte_z: 0.0,
+                },
                 malhas,
                 *modelo,
             );
@@ -130,7 +136,12 @@ fn raiz(p: &shared::celeste::Plato) -> (Vec<MalhaEstatica>, Mat4, Vec2) {
                 let rim = shared::celeste::raio_na_direcao(p, ang) * 0.94;
                 // Jagged only further down: at the top the root has to stay
                 // inside the cliff, or its earth layer sticks out as a ledge.
-                let serra = 1.0 + (0.10 * (ang * 7.0 + fundo * 9.0).sin() + 0.06 * (ang * 13.0 - fundo * 5.0).sin()) * fundo.min(0.3) / 0.3 - 0.04;
+                let serra = 1.0
+                    + (0.10 * (ang * 7.0 + fundo * 9.0).sin()
+                        + 0.06 * (ang * 13.0 - fundo * 5.0).sin())
+                        * fundo.min(0.3)
+                        / 0.3
+                    - 0.04;
                 if (wx * wx + wy * wy).sqrt() < rim * afina * serra {
                     cells[vx + vy * n + z * n * n] = if fundo < 0.06 {
                         1
@@ -151,7 +162,11 @@ fn raiz(p: &shared::celeste::Plato) -> (Vec<MalhaEstatica>, Mat4, Vec2) {
     palette[2] = [200, 194, 182, 255];
     palette[3] = [170, 168, 166, 255];
     palette[4] = [142, 146, 156, 255];
-    let model = crate::vox::VoxModel { size: [n, n, nz], cells, palette };
+    let model = crate::vox::VoxModel {
+        size: [n, n, nz],
+        cells,
+        palette,
+    };
     let malhas = crate::vox::mesh_na_origem(&model, S, [meio, meio, 0.0])
         .into_iter()
         .map(MalhaEstatica::nova)

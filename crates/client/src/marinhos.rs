@@ -1,8 +1,8 @@
 //! Marine voxel rigs use the same greedy mesher as the rest of the game.
 use crate::gpu_estatica::{MalhaEstatica, Programa};
+use crate::relogio::get_time;
 use macroquad::models::Mesh;
 use macroquad::prelude::*;
-use crate::relogio::get_time;
 use std::cell::RefCell;
 
 // Coral ornaments also use discrete cubes, matching the creature assets.
@@ -201,7 +201,9 @@ pub fn desenha_ent(e: &crate::world::Ent, p: Vec3) -> bool {
 
 /// A shark or an eel of the open sea (not the Abyssia's, which swim in air).
 fn e_do_mar(kind: u16, e: &crate::world::Ent) -> bool {
-    matches!(kind, 70 | 72) && e.state.flags & shared::ent_flags::BOSS == 0 && crate::mar_ui::no_mar()
+    matches!(kind, 70 | 72)
+        && e.state.flags & shared::ent_flags::BOSS == 0
+        && crate::mar_ui::no_mar()
 }
 
 thread_local! {
@@ -229,7 +231,11 @@ fn avanca_emersao(id: shared::EntityId, ativo: bool) -> f32 {
         }
         let v = m.entry(id).or_insert((0.0, agora));
         let dt = ((agora - v.1) as f32).clamp(0.0, 0.25);
-        v.0 = if ativo { (v.0 + dt / SOBE_S).min(1.0) } else { (v.0 - dt / DESCE_S).max(0.0) };
+        v.0 = if ativo {
+            (v.0 + dt / SOBE_S).min(1.0)
+        } else {
+            (v.0 - dt / DESCE_S).max(0.0)
+        };
         v.1 = agora;
         v.0
     })
@@ -263,12 +269,17 @@ fn desenha_submerso(e: &crate::world::Ent, kind: u16, p: Vec3, scale: f32, elite
         MODELS.with(|cache| {
             let mut cache = cache.borrow_mut();
             let m = cache.entry(kind).or_insert_with(|| model(kind));
-            let program = Programa::Solido { recorte: Vec3::ZERO, recorte_z: 0. };
+            let program = Programa::Solido {
+                recorte: Vec3::ZERO,
+                recorte_z: 0.,
+            };
             crate::gpu_estatica::desenha_com_modelo(program, m.body.iter(), transform);
             crate::gpu_estatica::desenha_com_modelo(
                 program,
                 m.tail.iter(),
-                transform * Mat4::from_translation(m.pivot) * Mat4::from_quat(Quat::from_rotation_y(swing)),
+                transform
+                    * Mat4::from_translation(m.pivot)
+                    * Mat4::from_quat(Quat::from_rotation_y(swing)),
             );
         });
         crate::gpu_estatica::define_linha_dagua(None);
@@ -283,13 +294,17 @@ fn desenha_submerso(e: &crate::world::Ent, kind: u16, p: Vec3, scale: f32, elite
         let y = agua - 0.12 * scale - afunda * 2.4 * scale;
         let transform = Mat4::from_scale_rotation_translation(
             Vec3::splat(scale),
-            Quat::from_rotation_y(yaw) * Quat::from_rotation_z(std::f32::consts::PI * rola) * Quat::from_rotation_x(afunda * 0.5),
+            Quat::from_rotation_y(yaw)
+                * Quat::from_rotation_z(std::f32::consts::PI * rola)
+                * Quat::from_rotation_x(afunda * 0.5),
             vec3(p.x, y, p.z),
         );
         corpo(transform, 0.0);
         return;
     }
-    let ativo = e.ataque_mob.is_some_and(|(_, dt, impacto)| dt < impacto + 0.3);
+    let ativo = e
+        .ataque_mob
+        .is_some_and(|(_, dt, impacto)| dt < impacto + 0.3);
     let sobe = avanca_emersao(e.meta.id, ativo);
     if sobe < 0.02 {
         // Cruising: all of it under the water; the decals tell where.
@@ -310,7 +325,8 @@ fn desenha_submerso(e: &crate::world::Ent, kind: u16, p: Vec3, scale: f32, elite
     let position = vec3(p.x, y, p.z) + forward * (scale * (0.35 * s + pose.strike * 0.3));
     let transform = Mat4::from_scale_rotation_translation(
         Vec3::splat(scale),
-        Quat::from_rotation_y(yaw) * Quat::from_rotation_x(-inclina * s + pose.strike * 0.22 - pose.wind * 0.06),
+        Quat::from_rotation_y(yaw)
+            * Quat::from_rotation_x(-inclina * s + pose.strike * 0.22 - pose.wind * 0.06),
         position,
     );
     corpo(transform, phase.sin() * (0.22 + pose.strike * 0.3));

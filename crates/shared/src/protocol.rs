@@ -633,8 +633,10 @@ impl LayoutDoHud {
     /// What a client may send: short ids, finite numbers in range, bounded.
     pub fn validado(mut self) -> Option<Self> {
         let ok = |v: f32, a: f32, b: f32| v.is_finite() && (a..=b).contains(&v);
-        if self.plataforma.len() > 16 || self.itens.len() > 64
-            || !ok(self.escala_ui, 0.1, 5.0) || !ok(self.botoes, 0.1, 5.0)
+        if self.plataforma.len() > 16
+            || self.itens.len() > 64
+            || !ok(self.escala_ui, 0.1, 5.0)
+            || !ok(self.botoes, 0.1, 5.0)
         {
             return None;
         }
@@ -642,7 +644,8 @@ impl LayoutDoHud {
             i.id.len() <= 32
                 && i.id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
                 && ok(i.tamanho, 0.1, 5.0)
-                && i.centro.is_none_or(|(x, y)| ok(x, 0.0, 1.0) && ok(y, 0.0, 1.0))
+                && i.centro
+                    .is_none_or(|(x, y)| ok(x, 0.0, 1.0) && ok(y, 0.0, 1.0))
         });
         Some(self)
     }
@@ -1567,6 +1570,12 @@ pub enum ServerMessage {
     /// panel with the ship's state. Appended.
     AbrirEstaleiro {
         estado: crate::navio::EstadoNavio,
+    },
+    /// The Naval Quartermaster's shop: prices are Naval Tokens, not copper.
+    /// Appended to preserve every earlier postcard variant index.
+    NavalShopOpen {
+        items: Vec<ShopItem>,
+        vendor_id: u32,
     },
 }
 

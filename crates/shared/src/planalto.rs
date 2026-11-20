@@ -176,18 +176,35 @@ impl Plano {
         // floor level, then runs flat through both gates to the keep.
         let centro_forte = (regioes[1].centro + regioes[3].centro) * 0.5 - lado * FORTE_DESVIO;
         let nivel_forte = regioes[1].nivel_chao + 10.0;
-        let portao = (regioes[1].centro - centro_forte).try_normalize().unwrap_or(Vec2::NEG_Y);
+        let portao = (regioes[1].centro - centro_forte)
+            .try_normalize()
+            .unwrap_or(Vec2::NEG_Y);
         let pe = centro_forte + portao * FORTE_RAIO;
-        estradas.push(Estrada { a: regioes[1].centro, b: pe, ha: regioes[1].nivel_chao, hb: nivel_forte });
+        estradas.push(Estrada {
+            a: regioes[1].centro,
+            b: pe,
+            ha: regioes[1].nivel_chao,
+            hb: nivel_forte,
+        });
         // Only to the curtain's gate: inside is the maze, not a road.
         let portao_ext = centro_forte + portao * (FORTE_MURO_RAIO - 1.0);
-        estradas.push(Estrada { a: pe, b: portao_ext, ha: nivel_forte, hb: nivel_forte });
+        estradas.push(Estrada {
+            a: pe,
+            b: portao_ext,
+            ha: nivel_forte,
+            hb: nivel_forte,
+        });
         let mut plano = Self {
             cidade,
             regioes,
             estradas,
             torres: Vec::new(),
-            forte: Forte { centro: centro_forte, nivel_chao: nivel_forte, portao, torres: Vec::new() },
+            forte: Forte {
+                centro: centro_forte,
+                nivel_chao: nivel_forte,
+                portao,
+                torres: Vec::new(),
+            },
         };
         plano.torres = plano.achar_torres();
         plano.forte.torres = plano.achar_torres_do_forte();
@@ -214,7 +231,11 @@ impl Plano {
     /// The rings, each with its gate's angle from the main gate: curtain at
     /// 0 (the road), middle at pi (the far side), keep at 0 again.
     fn aneis_do_forte() -> [(f32, f32); 3] {
-        [(FORTE_MURO_RAIO, 0.0), (FORTE_MEIO_RAIO, std::f32::consts::PI), (FORTE_PATIO_RAIO, 0.0)]
+        [
+            (FORTE_MURO_RAIO, 0.0),
+            (FORTE_MEIO_RAIO, std::f32::consts::PI),
+            (FORTE_PATIO_RAIO, 0.0),
+        ]
     }
 
     /// Half the angular width of a gate in a ring of `raio`.
@@ -258,7 +279,13 @@ impl Plano {
             let boca = Self::meia_boca(raio) + FORTE_TORRE_RAIO / meio;
             torres.push(polar(g - boca, meio));
             torres.push(polar(g + boca, meio));
-            let passos = if raio == FORTE_MURO_RAIO { 12 } else if raio == FORTE_PATIO_RAIO { 6 } else { 0 };
+            let passos = if raio == FORTE_MURO_RAIO {
+                12
+            } else if raio == FORTE_PATIO_RAIO {
+                6
+            } else {
+                0
+            };
             for k in 0..passos {
                 let a = (k as f32 + 0.5) / passos as f32 * std::f32::consts::TAU;
                 let da = (a - g).rem_euclid(std::f32::consts::TAU);
@@ -284,7 +311,9 @@ impl Plano {
         for t in &self.forte.torres {
             let dt = t.distance(p);
             if dt <= FORTE_TORRE_RAIO {
-                return Some(Muro::Torre { ameia: dt > FORTE_TORRE_RAIO - 1.0 && xadrez });
+                return Some(Muro::Torre {
+                    ameia: dt > FORTE_TORRE_RAIO - 1.0 && xadrez,
+                });
             }
         }
         let ang = self.angulo_no_forte(p);
@@ -295,13 +324,18 @@ impl Plano {
                     return None; // the gate
                 }
                 let meio = raio + FORTE_ESPESSURA * 0.5;
-                return Some(Muro::Cortina { ameia: d > meio + FORTE_ESPESSURA * 0.25 && xadrez });
+                return Some(Muro::Cortina {
+                    ameia: d > meio + FORTE_ESPESSURA * 0.25 && xadrez,
+                });
             }
         }
         // The maze's radial walls.
         for (a, r0, r1) in FORTE_DIVISORIAS {
             let da = ang - a;
-            if (r0..=r1).contains(&d) && da.cos() > 0.0 && (d * da.sin()).abs() <= FORTE_ESPESSURA * 0.5 {
+            if (r0..=r1).contains(&d)
+                && da.cos() > 0.0
+                && (d * da.sin()).abs() <= FORTE_ESPESSURA * 0.5
+            {
                 return Some(Muro::Cortina { ameia: xadrez });
             }
         }
@@ -382,7 +416,10 @@ impl Plano {
         // Stormkeep's plateau, over whatever region is nearest.
         let d = self.d_forte(p);
         if d < FORTE_RAIO {
-            let t = 1.0 - Self::suave(((d - FORTE_RAIO_PLATO) / (FORTE_RAIO - FORTE_RAIO_PLATO)).clamp(0.0, 1.0));
+            let t = 1.0
+                - Self::suave(
+                    ((d - FORTE_RAIO_PLATO) / (FORTE_RAIO - FORTE_RAIO_PLATO)).clamp(0.0, 1.0),
+                );
             h += (self.forte.nivel_chao - h) * t;
         }
         if let Some((d, alvo)) = self
@@ -428,7 +465,9 @@ impl Plano {
     fn parte_da_cidade(&self, p: Vec2) -> Option<Muro> {
         let c = self.cidade.centro();
         let d = c.distance(p);
-        if !(MURO_RAIO - TORRE_RAIO - 1.0..=MURO_RAIO + MURO_ESPESSURA + TORRE_RAIO + 1.0).contains(&d) {
+        if !(MURO_RAIO - TORRE_RAIO - 1.0..=MURO_RAIO + MURO_ESPESSURA + TORRE_RAIO + 1.0)
+            .contains(&d)
+        {
             return None;
         }
         let (bx, bz) = (
@@ -442,7 +481,9 @@ impl Plano {
         for t in &self.torres {
             let dt = t.distance(p);
             if dt <= TORRE_RAIO {
-                return Some(Muro::Torre { ameia: dt > TORRE_RAIO - 1.0 && xadrez });
+                return Some(Muro::Torre {
+                    ameia: dt > TORRE_RAIO - 1.0 && xadrez,
+                });
             }
         }
         // The gates: no wall on a road.
@@ -469,7 +510,8 @@ impl Plano {
             let a = k as f32 / 720.0 * std::f32::consts::TAU;
             let q = no_anel(a);
             let na_estrada = self.distancia_estrada(q) < ESTRADA;
-            let antes = self.distancia_estrada(no_anel(a - std::f32::consts::TAU / 720.0)) < ESTRADA;
+            let antes =
+                self.distancia_estrada(no_anel(a - std::f32::consts::TAU / 720.0)) < ESTRADA;
             if na_estrada && !antes {
                 // Walk to the middle of this crossing.
                 let mut fim = a;
@@ -573,7 +615,11 @@ mod tests {
         let ger = crate::terreno::Gerador::da_ilha(def);
         let pl = ger.planalto().expect("the Planalto has its plan");
         let f = &pl.forte;
-        assert!(f.centro.length() + FORTE_RAIO < def.raio_m(), "Stormkeep off the island: {:?}", f.centro);
+        assert!(
+            f.centro.length() + FORTE_RAIO < def.raio_m(),
+            "Stormkeep off the island: {:?}",
+            f.centro
+        );
         for raio in [FORTE_MURO_RAIO, FORTE_MEIO_RAIO, FORTE_PATIO_RAIO] {
             let meio = raio + FORTE_ESPESSURA * 0.5;
             let mut de_pe = 0;
@@ -584,10 +630,16 @@ mod tests {
                     de_pe += 1;
                 }
             }
-            assert!(de_pe > 300, "ring {raio}: only {de_pe}/360 of it has a wall");
+            assert!(
+                de_pe > 300,
+                "ring {raio}: only {de_pe}/360 of it has a wall"
+            );
         }
         for h in pl.hordas_do_forte() {
-            assert!(pl.parte_da_muralha(h).is_none(), "a horde on the wall at {h:?}");
+            assert!(
+                pl.parte_da_muralha(h).is_none(),
+                "a horde on the wall at {h:?}"
+            );
             assert_eq!(pl.faixa(h), FORTE_NIVEIS);
         }
         assert!(pl.hordas_do_forte().len() >= 8);
@@ -595,13 +647,21 @@ mod tests {
         // From just outside the curtain's gate to the Warlord: through the
         // maze, and it WINDS — the owner asked for a labyrinth.
         let porta = f.centro + f.portao * (FORTE_MURO_RAIO + 8.0);
-        let rota = ilha.caminho(porta, f.centro, 400_000).expect("no walk through Stormkeep's maze");
-        assert!(rota.last().is_some_and(|p| p.distance(f.centro) < 8.0), "the maze does not reach the arena");
+        let rota = ilha
+            .caminho(porta, f.centro, 400_000)
+            .expect("no walk through Stormkeep's maze");
+        assert!(
+            rota.last().is_some_and(|p| p.distance(f.centro) < 8.0),
+            "the maze does not reach the arena"
+        );
         let mut comprimento = porta.distance(rota[0]);
         for w in rota.windows(2) {
             comprimento += w[0].distance(w[1]);
         }
-        assert!(comprimento > 4.0 * (FORTE_MURO_RAIO + 8.0), "the way in is only {comprimento:.0} u: not a maze");
+        assert!(
+            comprimento > 4.0 * (FORTE_MURO_RAIO + 8.0),
+            "the way in is only {comprimento:.0} u: not a maze"
+        );
         let rota = ilha.caminho(pl.regioes[1].centro, porta, 80_000);
         assert!(rota.is_some(), "no road from the Passo to Stormkeep's gate");
     }
@@ -638,7 +698,9 @@ mod tests {
         for (nome, alvo) in destinos {
             let rota = ilha.caminho(praca, alvo, 40_000);
             assert!(
-                rota.as_ref().and_then(|r| r.last()).is_some_and(|f| f.distance(alvo) < 8.0),
+                rota.as_ref()
+                    .and_then(|r| r.last())
+                    .is_some_and(|f| f.distance(alvo) < 8.0),
                 "no walk from the square to {nome}"
             );
         }

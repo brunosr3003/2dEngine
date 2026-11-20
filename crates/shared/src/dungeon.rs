@@ -560,8 +560,14 @@ mod testes_do_alvo {
     fn alvo_fora_do_jogo_aceita_qualquer_dungeon() {
         assert!(alvo_aceita(0, 5));
         assert!(alvo_aceita(5, 5));
-        assert!(!alvo_aceita(5, 4), "a Cellar still in the game is still named");
-        assert!(alvo_aceita(13, 4), "Monastery of the Winds is a Cavern, out of the game");
+        assert!(
+            !alvo_aceita(5, 4),
+            "a Cellar still in the game is still named"
+        );
+        assert!(
+            alvo_aceita(13, 4),
+            "Monastery of the Winds is a Cavern, out of the game"
+        );
         for c in CONTEUDOS.iter().filter(|c| !no_jogo(c)) {
             assert!(alvo_aceita(c.id, 1), "{}", c.nome);
         }
@@ -779,7 +785,11 @@ impl Entradas {
 impl DadosDungeon {
     /// The counter of one combine family and color (created at 0).
     pub fn garantia(&mut self, familia: u8, cor: u8) -> &mut u16 {
-        if let Some(i) = self.garantias.iter().position(|g| g.0 == familia && g.1 == cor) {
+        if let Some(i) = self
+            .garantias
+            .iter()
+            .position(|g| g.0 == familia && g.1 == cor)
+        {
             return &mut self.garantias[i].2;
         }
         self.garantias.push((familia, cor, 0));
@@ -1322,7 +1332,10 @@ pub fn rolar_bau(
     // it into Energy on delivery (`entregar_premio`), never a bag item.
     itens.push(Premio {
         item_id: item_id::ENERGIA_MIL,
-        qtd: escala((crate::skills::energia_do_nivel(nivel) * ENERGIA_POR_BAU) as u32, mult),
+        qtd: escala(
+            (crate::skills::energia_do_nivel(nivel) * ENERGIA_POR_BAU) as u32,
+            mult,
+        ),
         peca: None,
     });
     if po_chance > 0.0 && rng() < po_chance {
@@ -1410,10 +1423,14 @@ pub fn graus_da_primeira(c: &Conteudo, estagio: u8) -> Vec<Grau> {
     let teto = teto_de_grau(nivel);
     let mut graus = Vec::new();
     for (i, peso) in dist.into_iter().enumerate() {
-        if peso == 0 { continue; }
+        if peso == 0 {
+            continue;
+        }
         let g = Grau::TODOS[i].min(teto);
         let g = g.acima().unwrap_or(g).min(teto);
-        if !graus.contains(&g) { graus.push(g); }
+        if !graus.contains(&g) {
+            graus.push(g);
+        }
     }
     graus
 }
@@ -1656,10 +1673,10 @@ mod testes {
     fn previa_da_primeira_cobre_o_sorteio_real_em_todos_os_estagios() {
         for c in CONTEUDOS {
             for e in 1..=estagios(c) {
-                let previstos = graus_da_primeira(c,e);
+                let previstos = graus_da_primeira(c, e);
                 assert!(!previstos.is_empty());
                 for seed in 0..200 {
-                    let premio = peca_garantida(c,e,&mut rng(seed));
+                    let premio = peca_garantida(c, e, &mut rng(seed));
                     assert!(previstos.contains(&premio.peca.unwrap().0));
                     assert!((item_id::ESPADA_E_ESCUDO..=item_id::CINTO).contains(&premio.item_id));
                 }
@@ -1695,8 +1712,15 @@ mod testes {
     fn estagios_sobem_dois_niveis_e_liberam_em_ordem() {
         // The Caverns are out of the game (`no_jogo`): the stage rules are
         // checked on a staged content that is not one.
-        assert_eq!(cadeado(gruta(), 1, 99, 1_000_000, 0, false), Some(Cadeado::EmBreve));
-        let em_estagios = Conteudo { tipo: Tipo::Cacada, disponivel: true, ..*gruta() };
+        assert_eq!(
+            cadeado(gruta(), 1, 99, 1_000_000, 0, false),
+            Some(Cadeado::EmBreve)
+        );
+        let em_estagios = Conteudo {
+            tipo: Tipo::Cacada,
+            disponivel: true,
+            ..*gruta()
+        };
         let c = &em_estagios;
         assert_eq!(estagios(c), 5);
         assert_eq!((nivel_do_estagio(c, 1), nivel_do_estagio(c, 5)), (10, 18));
@@ -1976,7 +2000,10 @@ mod testes {
             let (chance, dist) = tabela_de_peca(Tipo::Gruta, n, 1);
             assert_eq!(dist[0], 0, "no grey");
             assert_eq!(dist[4], 0, "no legendary");
-            assert!((chance - (CHANCE_VERDE + chance_azul(n) + chance_roxo(n))).abs() < 1e-6, "{n}");
+            assert!(
+                (chance - (CHANCE_VERDE + chance_azul(n) + chance_roxo(n))).abs() < 1e-6,
+                "{n}"
+            );
         }
         assert!(tabela_de_peca(Tipo::Gruta, 50, 5).0 > tabela_de_peca(Tipo::Gruta, 50, 1).0);
         assert_eq!(teto_de_grau(37), Grau::Fino);
@@ -2003,11 +2030,21 @@ mod testes {
         let ds = |estagio: u8, seed: u64| {
             let mut r = rng(seed);
             let bau = rolar_bau(c, estagio, false, false, &mut r);
-            bau.itens.iter().filter(|p| p.item_id == item_id::DARKSTEEL).map(|p| p.qtd).sum::<u32>()
+            bau.itens
+                .iter()
+                .filter(|p| p.item_id == item_id::DARKSTEEL)
+                .map(|p| p.qtd)
+                .sum::<u32>()
         };
-        let (verde, roxo) = ((0..200).map(|s| ds(1, s)).sum::<u32>(), (0..200).map(|s| ds(3, s)).sum::<u32>());
+        let (verde, roxo) = (
+            (0..200).map(|s| ds(1, s)).sum::<u32>(),
+            (0..200).map(|s| ds(3, s)).sum::<u32>(),
+        );
         assert!(verde > 0, "every chest has Darksteel again");
-        assert!(roxo as f32 > verde as f32 * 2.0, "purple {roxo} vs green {verde}");
+        assert!(
+            roxo as f32 > verde as f32 * 2.0,
+            "purple {roxo} vs green {verde}"
+        );
     }
 
     #[test]

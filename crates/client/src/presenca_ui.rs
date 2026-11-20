@@ -58,7 +58,10 @@ fn nome_do_premio(p: &Premio, nomes: &HashMap<u16, String>) -> String {
         COPPER => "Copper".into(),
         DARKSTEEL => "Darksteel".into(),
         GLITTERING_POWDER => "Glittering Dust".into(),
-        id => nomes.get(&id).cloned().unwrap_or_else(|| format!("Item {id}")),
+        id => nomes
+            .get(&id)
+            .cloned()
+            .unwrap_or_else(|| format!("Item {id}")),
     }
 }
 
@@ -96,7 +99,12 @@ fn quantia(p: &Premio) -> String {
 /// The prize's icon in `r`. The summon scrolls have no atlas drawing, so
 /// they get a parchment with a coloured seal (green pet, blue mount) instead
 /// of an empty square — the milestone days were blank.
-fn icone_do_premio(p: &Premio, r: Rect, vox: &crate::vox::VoxCache, solido: &macroquad::material::Material) {
+fn icone_do_premio(
+    p: &Premio,
+    r: Rect,
+    vox: &crate::vox::VoxCache,
+    solido: &macroquad::material::Material,
+) {
     use shared::item_id::*;
     match p.item_id {
         pr::ENERGIA => estilo::icone_energia(r.center(), r.w.min(r.h)),
@@ -107,7 +115,12 @@ fn icone_do_premio(p: &Premio, r: Rect, vox: &crate::vox::VoxCache, solido: &mac
                 Color::new(0.38, 0.62, 0.98, 1.0)
             };
             let l = r.w.min(r.h);
-            let papel = Rect::new(r.center().x - l * 0.30, r.center().y - l * 0.38, l * 0.60, l * 0.76);
+            let papel = Rect::new(
+                r.center().x - l * 0.30,
+                r.center().y - l * 0.38,
+                l * 0.60,
+                l * 0.76,
+            );
             estilo::ret_arredondado(papel, l * 0.05, Color::new(0.93, 0.85, 0.66, 1.0));
             for yy in [papel.y - l * 0.04, papel.y + papel.h - l * 0.06] {
                 estilo::ret_arredondado(
@@ -118,15 +131,33 @@ fn icone_do_premio(p: &Premio, r: Rect, vox: &crate::vox::VoxCache, solido: &mac
             }
             for k in 0..3 {
                 let yl = papel.y + papel.h * (0.28 + 0.14 * k as f32);
-                draw_line(papel.x + l * 0.08, yl, papel.x + papel.w - l * 0.08, yl, 1.5, Color::new(0.55, 0.43, 0.27, 0.8));
+                draw_line(
+                    papel.x + l * 0.08,
+                    yl,
+                    papel.x + papel.w - l * 0.08,
+                    yl,
+                    1.5,
+                    Color::new(0.55, 0.43, 0.27, 0.8),
+                );
             }
             draw_circle(papel.center().x, papel.y + papel.h * 0.78, l * 0.12, selo);
-            draw_circle_lines(papel.center().x, papel.y + papel.h * 0.78, l * 0.12, 1.5, Color::new(0.0, 0.0, 0.0, 0.35));
+            draw_circle_lines(
+                papel.center().x,
+                papel.y + papel.h * 0.78,
+                l * 0.12,
+                1.5,
+                Color::new(0.0, 0.0, 0.0, 0.35),
+            );
         }
         // The Magic Island pass: a violet ticket with a star.
         PASSE_MAGICO => {
             let l = r.w.min(r.h);
-            let t = Rect::new(r.center().x - l * 0.42, r.center().y - l * 0.28, l * 0.84, l * 0.56);
+            let t = Rect::new(
+                r.center().x - l * 0.42,
+                r.center().y - l * 0.28,
+                l * 0.84,
+                l * 0.56,
+            );
             estilo::ret_arredondado(t, l * 0.08, Color::new(0.55, 0.32, 0.86, 1.0));
             estilo::borda_arredondada(t, l * 0.08, 1.5, Color::new(0.90, 0.80, 1.0, 0.9));
             draw_circle(t.x, t.center().y, l * 0.07, estilo::FUNDO_BAIXO);
@@ -156,10 +187,25 @@ fn centro_que_cabe(s: &str, cx: f32, y: f32, largura: f32, tam: u16, cor: Color,
 /// `centro_que_cabe` with the smallest size allowed (a card split in three
 /// has columns a third as wide).
 #[allow(clippy::too_many_arguments)]
-fn centro_que_cabe_ate(s: &str, cx: f32, y: f32, largura: f32, tam: u16, minimo: u16, cor: Color, forte: bool) {
+fn centro_que_cabe_ate(
+    s: &str,
+    cx: f32,
+    y: f32,
+    largura: f32,
+    tam: u16,
+    minimo: u16,
+    cor: Color,
+    forte: bool,
+) {
     let t = shared::idioma::tr(s).into_owned();
     let mut tamanho = tam;
-    let medida = |t: &str, z: u16| if forte { estilo::medir_forte(t, z) } else { estilo::medir(t, z) };
+    let medida = |t: &str, z: u16| {
+        if forte {
+            estilo::medir_forte(t, z)
+        } else {
+            estilo::medir(t, z)
+        }
+    };
     while tamanho > minimo && medida(&t, tamanho) > largura {
         tamanho -= 1;
     }
@@ -303,13 +349,7 @@ impl PresencaUi {
         let m = Vec2::from(mouse_position());
         let clicou = crate::foco::clique();
         let x0 = p.x + 20.0 * f;
-        estilo::texto_forte(
-            x0,
-            p.y + 36.0 * f,
-            "Attendance calendar",
-            20,
-            estilo::OURO,
-        );
+        estilo::texto_forte(x0, p.y + 36.0 * f, "Attendance calendar", 20, estilo::OURO);
         let fechar = Rect::new(p.x + p.w - 48.0 * f, p.y + 8.0 * f, 40.0 * f, 40.0 * f);
         estilo::texto_centro(
             fechar.center().x,
@@ -327,13 +367,7 @@ impl PresencaUi {
             return saida;
         };
         if estado.calendarios.is_empty() {
-            estilo::texto(
-                x0,
-                p.y + 80.0 * f,
-                "No active calendar.",
-                15,
-                estilo::SUAVE,
-            );
+            estilo::texto(x0, p.y + 80.0 * f, "No active calendar.", 15, estilo::SUAVE);
             return saida;
         }
         // Tabs: the monthly one and each active event.
@@ -385,10 +419,12 @@ impl PresencaUi {
         let rodape = 128.0 * f;
         // The last column holds the bonus days (7, 14, 21, 28): it is wider,
         // so their longer prizes read whole and they stand out.
-        let cw = (p.w - 40.0 * f - vao * (COLUNAS as f32 - 1.0)) / (COLUNAS as f32 - 1.0 + LARGURA_DO_BONUS);
+        let cw = (p.w - 40.0 * f - vao * (COLUNAS as f32 - 1.0))
+            / (COLUNAS as f32 - 1.0 + LARGURA_DO_BONUS);
         // Taller than wide: the icon, the amount and the name stack, and the
         // rows fill the panel down to the reward box.
-        let ch = ((p.y + p.h - rodape - y - vao * (linhas as f32 - 1.0)) / linhas as f32).min(cw * 1.45);
+        let ch =
+            ((p.y + p.h - rodape - y - vao * (linhas as f32 - 1.0)) / linhas as f32).min(cw * 1.45);
         let proximo = cal.resgatados as usize;
         let verde = Color::new(0.45, 0.85, 0.52, 1.0);
         let mut dica: Option<(Rect, String)> = None;
@@ -398,7 +434,11 @@ impl PresencaUi {
             let r = Rect::new(
                 x0 + coluna_i as f32 * (cw + vao),
                 y + (i / COLUNAS) as f32 * (ch + vao),
-                if coluna_i == COLUNAS - 1 { cw * LARGURA_DO_BONUS } else { cw },
+                if coluna_i == COLUNAS - 1 {
+                    cw * LARGURA_DO_BONUS
+                } else {
+                    cw
+                },
                 ch,
             );
             let sobre = r.toca(m);
@@ -407,7 +447,11 @@ impl PresencaUi {
             let marco = pr::e_marco(n);
             estilo::cartao(r, sobre, hoje);
             if marco {
-                estilo::ret_arredondado(r, estilo::RAIO_PEQUENO, Color::new(0.91, 0.75, 0.46, 0.10));
+                estilo::ret_arredondado(
+                    r,
+                    estilo::RAIO_PEQUENO,
+                    Color::new(0.91, 0.75, 0.46, 0.10),
+                );
                 estilo::borda_arredondada(r, estilo::RAIO_PEQUENO, 2.0, estilo::OURO);
             }
             if hoje {
@@ -418,10 +462,19 @@ impl PresencaUi {
                 r.y + 16.0 * f,
                 &format!("{n}"),
                 13,
-                if marco || hoje { estilo::OURO } else { estilo::SUAVE },
+                if marco || hoje {
+                    estilo::OURO
+                } else {
+                    estilo::SUAVE
+                },
             );
             if hoje {
-                etiqueta(r, "TODAY", estilo::ACENTO, Color::new(0.12, 0.08, 0.04, 1.0));
+                etiqueta(
+                    r,
+                    "TODAY",
+                    estilo::ACENTO,
+                    Color::new(0.12, 0.08, 0.04, 1.0),
+                );
             } else if marco && !resgatado {
                 etiqueta(r, "BONUS", Color::new(0.55, 0.40, 0.18, 1.0), estilo::TEXTO);
             }
@@ -442,11 +495,22 @@ impl PresencaUi {
                 let li = (linha * 0.72).min(21.0 * f);
                 for (j, pp) in premios.iter().enumerate() {
                     let yy = topo + j as f32 * linha;
-                    icone_do_premio(pp, Rect::new(r.x + 6.0 * f, yy + (linha - li) * 0.5, li, li), vox, solido);
+                    icone_do_premio(
+                        pp,
+                        Rect::new(r.x + 6.0 * f, yy + (linha - li) * 0.5, li, li),
+                        vox,
+                        solido,
+                    );
                     let xt = r.x + 8.0 * f + li;
                     let base = yy + linha * 0.5 + 5.0 * f;
                     let q = quantia(pp);
-                    estilo::texto_forte(xt, base, &q, 12, if marco { estilo::OURO } else { estilo::TEXTO });
+                    estilo::texto_forte(
+                        xt,
+                        base,
+                        &q,
+                        12,
+                        if marco { estilo::OURO } else { estilo::TEXTO },
+                    );
                     let xn = xt + estilo::medir_forte(&q, 12) + 3.0 * f;
                     let nome = shared::idioma::tr(&nome_no_cartao(pp, nomes, true)).into_owned();
                     let livre = r.x + r.w - 3.0 * f - xn;
@@ -463,16 +527,48 @@ impl PresencaUi {
                 icone_do_premio(pp, ic, vox, solido);
                 // Two prizes share the width: the amount goes compact ("10k")
                 // so it is never the part that gets cut.
-                let q = if k == 1 { quantia(pp) } else { quantia_curta(pp) };
-                centro_que_cabe_ate(&q, cx, y_qtd, coluna - 4.0 * f, if k == 1 { 17 } else { 14 }, 9, if marco { estilo::OURO } else { estilo::TEXTO }, true);
-                centro_que_cabe_ate(&nome_no_cartao(pp, nomes, k > 1), cx, y_nome, coluna - 2.0 * f, 11, if k > 1 { 7 } else { 8 }, estilo::SUAVE, false);
+                let q = if k == 1 {
+                    quantia(pp)
+                } else {
+                    quantia_curta(pp)
+                };
+                centro_que_cabe_ate(
+                    &q,
+                    cx,
+                    y_qtd,
+                    coluna - 4.0 * f,
+                    if k == 1 { 17 } else { 14 },
+                    9,
+                    if marco { estilo::OURO } else { estilo::TEXTO },
+                    true,
+                );
+                centro_que_cabe_ate(
+                    &nome_no_cartao(pp, nomes, k > 1),
+                    cx,
+                    y_nome,
+                    coluna - 2.0 * f,
+                    11,
+                    if k > 1 { 7 } else { 8 },
+                    estilo::SUAVE,
+                    false,
+                );
             }
             if resgatado {
                 estilo::ret_arredondado(r, estilo::RAIO_PEQUENO, Color::new(0.0, 0.0, 0.0, 0.55));
                 let c = vec2(r.x + r.w - 15.0 * f, r.y + 14.0 * f);
                 draw_circle(c.x, c.y, 10.0 * f, Color::new(0.10, 0.30, 0.14, 1.0));
-                estilo::traco(vec2(c.x - 5.0 * f, c.y), vec2(c.x - 1.5 * f, c.y + 4.0 * f), 2.5, verde);
-                estilo::traco(vec2(c.x - 1.5 * f, c.y + 4.0 * f), vec2(c.x + 5.0 * f, c.y - 4.0 * f), 2.5, verde);
+                estilo::traco(
+                    vec2(c.x - 5.0 * f, c.y),
+                    vec2(c.x - 1.5 * f, c.y + 4.0 * f),
+                    2.5,
+                    verde,
+                );
+                estilo::traco(
+                    vec2(c.x - 1.5 * f, c.y + 4.0 * f),
+                    vec2(c.x + 5.0 * f, c.y - 4.0 * f),
+                    2.5,
+                    verde,
+                );
             }
             if sobre {
                 let t: Vec<String> = premios.iter().map(|p| texto_do_premio(p, nomes)).collect();
@@ -502,9 +598,21 @@ impl PresencaUi {
         } else {
             ("All rewards claimed this month", None)
         };
-        estilo::texto_forte(caixa.x + 12.0 * f, caixa.y + 22.0 * f, titulo_caixa, 14, estilo::OURO);
+        estilo::texto_forte(
+            caixa.x + 12.0 * f,
+            caixa.y + 22.0 * f,
+            titulo_caixa,
+            14,
+            estilo::OURO,
+        );
         let resumo = if cal.pode_hoje {
-            format!("Day {} of {} · claimed {}/{}", proximo + 1, cal.grade.len(), cal.resgatados, cal.grade.len())
+            format!(
+                "Day {} of {} · claimed {}/{}",
+                proximo + 1,
+                cal.grade.len(),
+                cal.resgatados,
+                cal.grade.len()
+            )
         } else {
             format!(
                 "Claimed {}/{} · next claim in {}",
@@ -513,7 +621,13 @@ impl PresencaUi {
                 falta(estado.proximo_reset_unix - agora_unix)
             )
         };
-        estilo::texto(caixa.x + 12.0 * f, caixa.y + caixa.h - 12.0 * f, &resumo, 12, estilo::SUAVE);
+        estilo::texto(
+            caixa.x + 12.0 * f,
+            caixa.y + caixa.h - 12.0 * f,
+            &resumo,
+            12,
+            estilo::SUAVE,
+        );
         if let Some(d) = dia_mostrado.and_then(|d| cal.grade.get(d)) {
             let mut x = caixa.x + 12.0 * f;
             let lado = 40.0 * f;
@@ -522,9 +636,19 @@ impl PresencaUi {
                 icone_do_premio(pp, Rect::new(x, yi, lado, lado), vox, solido);
                 // Translated before the amount joins it: the dictionary knows
                 // "Darksteel", not "Darksteel ×5,000".
-                let texto = format!("{} ×{}", shared::idioma::tr(&nome_do_premio(pp, nomes)), quantia(pp));
+                let texto = format!(
+                    "{} ×{}",
+                    shared::idioma::tr(&nome_do_premio(pp, nomes)),
+                    quantia(pp)
+                );
                 let tw = estilo::medir_forte(&shared::idioma::tr(&texto), 15);
-                estilo::texto_forte(x + lado + 8.0 * f, yi + lado * 0.62, &texto, 15, estilo::TEXTO);
+                estilo::texto_forte(
+                    x + lado + 8.0 * f,
+                    yi + lado * 0.62,
+                    &texto,
+                    15,
+                    estilo::TEXTO,
+                );
                 x += lado + tw + 28.0 * f;
             }
         }
@@ -568,8 +692,8 @@ impl PresencaUi {
 /// hoje e sem. Uma captura so' nao mostra o botao nos dois modos.
 #[cfg(debug_assertions)]
 pub async fn previa() {
-    let saida =
-        std::env::var("MMO_PREVIA_SAIDA").unwrap_or_else(|_| "/tmp/tempest-presenca-preview".into());
+    let saida = std::env::var("MMO_PREVIA_SAIDA")
+        .unwrap_or_else(|_| "/tmp/tempest-presenca-preview".into());
     std::fs::create_dir_all(&saida).unwrap();
     next_frame().await;
     let rt = render_target(screen_width() as u32, screen_height() as u32);
@@ -577,10 +701,12 @@ pub async fn previa() {
     let vox = crate::vox::VoxCache::default();
     let solido = crate::render3d::material_solido();
     let nomes: HashMap<u16, String> = HashMap::new();
-    for (nome, pode) in [("presenca-com-resgate", true), ("presenca-sem-resgate", false)] {
+    for (nome, pode) in [
+        ("presenca-com-resgate", true),
+        ("presenca-sem-resgate", false),
+    ] {
         let mut ui = PresencaUi::default();
-        let mut e = shared::presenca::DadosPresenca::default()
-            .estado(1_789_000_000, pr::EVENTOS);
+        let mut e = shared::presenca::DadosPresenca::default().estado(1_789_000_000, pr::EVENTOS);
         for c in &mut e.calendarios {
             c.pode_hoje = pode;
             // The claimed look too: five days already taken.
@@ -644,10 +770,7 @@ mod tests {
     #[test]
     fn texto_do_resgate_diz_premios_e_correio() {
         let mut nomes = HashMap::new();
-        nomes.insert(
-            shared::item_id::XP_POTION,
-            "Experience Potion".to_string(),
-        );
+        nomes.insert(shared::item_id::XP_POTION, "Experience Potion".to_string());
         let mut ui = PresencaUi::default();
         let t = ui
             .receber(

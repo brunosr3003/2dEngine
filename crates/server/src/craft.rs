@@ -610,13 +610,21 @@ mod testes {
     fn amuleto_de_protecao_salva_a_peca_ate_o_sete() {
         let mut p = ItemInstance::roll_for(item_id::KATANA, 5, || 0.5).unwrap();
         let (ds, cu) = custo_do_refino(&p);
-        let rica = |amuletos| bolsa(&[(item_id::DARKSTEEL, ds * 10), (item_id::COPPER, cu * 10),
-            (item_id::AMULETO_DE_PROTECAO, amuletos)]);
+        let rica = |amuletos| {
+            bolsa(&[
+                (item_id::DARKSTEEL, ds * 10),
+                (item_id::COPPER, cu * 10),
+                (item_id::AMULETO_DE_PROTECAO, amuletos),
+            ])
+        };
         // +6 -> +7 fails (sorte 99): the charm breaks, the piece stays +6.
         p.refinement = 6;
         let mut inv = rica(2);
         assert_eq!(refinar(&mut p, &mut inv, 99), (resultado::PROTEGIDO, 6));
-        assert_eq!((p.refinement, tem(&inv, item_id::AMULETO_DE_PROTECAO)), (6, 1));
+        assert_eq!(
+            (p.refinement, tem(&inv, item_id::AMULETO_DE_PROTECAO)),
+            (6, 1)
+        );
         // A success leaves the charm alone.
         p.refinement = 5;
         assert_eq!(refinar(&mut p, &mut inv, 0), (resultado::SUBIU, 6));
@@ -698,7 +706,10 @@ mod testes {
         inv[7] = peca(1, 4, 9);
         // Verde pede nivel 20.
         let e = aprimorar(&mut inv, 3, 7, 19, &mut rolar_katana).unwrap_err();
-        assert!(e.contains(&format!("level {}", shared::progressao::texto_de_nivel(20))), "{e}");
+        assert!(
+            e.contains(&format!("level {}", shared::progressao::texto_de_nivel(20))),
+            "{e}"
+        );
         assert_eq!(
             aprimorar(&mut inv, 3, 7, 20, &mut rolar_katana),
             Ok((item_id::KATANA, 2, 1))
@@ -815,7 +826,10 @@ mod testes {
         };
         assert_eq!(tem(&inv, cinza), 5, "com instancia, o pet TEM que contar");
 
-        assert_eq!(combinar(&mut inv, &r, 1, 1, &nome, &mut || 0, None), Ok((1, 1)));
+        assert_eq!(
+            combinar(&mut inv, &r, 1, 1, &nome, &mut || 0, None),
+            Ok((1, 1))
+        );
         assert_eq!(tem(&inv, cinza), 0, "os cinco entraram na tentativa");
         // O filho sai da FAMILIA na cor de cima, sorteado — nao e' fixo.
         let saidas = shared::combinar::saidas_possiveis(&r);

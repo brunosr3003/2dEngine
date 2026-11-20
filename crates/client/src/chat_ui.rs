@@ -16,9 +16,9 @@ use std::collections::{HashSet, VecDeque};
 use macroquad::prelude::*;
 use shared::protocol::ClientMessage;
 
+use crate::hud_estilo as estilo;
 #[allow(unused_imports)]
 use crate::ui::Toque as _;
-use crate::hud_estilo as estilo;
 
 const BASE_W: f32 = 900.0;
 const BASE_H: f32 = 420.0;
@@ -93,10 +93,26 @@ impl Geometria {
         let linha_in = Rect::new(r.x, r.y + r.h - ih, r.w, ih);
         let cw = (r.w * 0.22).clamp(64.0, 110.0);
         let canal = Rect::new(linha_in.x, linha_in.y, cw, linha_in.h);
-        let sw = if ativo { (r.w * 0.18).clamp(56.0, 96.0) } else { 0.0 };
+        let sw = if ativo {
+            (r.w * 0.18).clamp(56.0, 96.0)
+        } else {
+            0.0
+        };
         let enviar = Rect::new(linha_in.x + linha_in.w - sw, linha_in.y, sw, linha_in.h);
-        let campo = Rect::new(canal.x + canal.w + 4.0, linha_in.y, linha_in.w - cw - sw - if ativo { 8.0 } else { 4.0 }, linha_in.h);
-        Self { area, canal, campo, enviar, lh, fonte }
+        let campo = Rect::new(
+            canal.x + canal.w + 4.0,
+            linha_in.y,
+            linha_in.w - cw - sw - if ativo { 8.0 } else { 4.0 },
+            linha_in.h,
+        );
+        Self {
+            area,
+            canal,
+            campo,
+            enviar,
+            lh,
+            fonte,
+        }
     }
 }
 
@@ -136,13 +152,23 @@ impl ChatUi {
         self.silenciados.get_or_insert_with(|| {
             arquivo()
                 .and_then(|p| std::fs::read_to_string(p).ok())
-                .map(|t| t.lines().map(|l| l.trim().to_lowercase()).filter(|l| !l.is_empty()).collect())
+                .map(|t| {
+                    t.lines()
+                        .map(|l| l.trim().to_lowercase())
+                        .filter(|l| !l.is_empty())
+                        .collect()
+                })
                 .unwrap_or_default()
         })
     }
 
     fn grava_silenciados(&mut self) {
-        let t = self.silenciados().iter().cloned().collect::<Vec<_>>().join("\n");
+        let t = self
+            .silenciados()
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>()
+            .join("\n");
         if let Some(p) = arquivo() {
             let _ = std::fs::write(p, t);
         }
@@ -216,18 +242,45 @@ impl ChatUi {
 
     /// A global line. `false` = muted here (the caller shows nothing).
     #[allow(clippy::too_many_arguments)]
-    pub fn receber(&mut self, id: i64, canal: u8, para: String, de: String, texto: String, staff: bool, tag: String) -> bool {
+    pub fn receber(
+        &mut self,
+        id: i64,
+        canal: u8,
+        para: String,
+        de: String,
+        texto: String,
+        staff: bool,
+        tag: String,
+    ) -> bool {
         if !staff && self.silenciados().contains(&de.to_lowercase()) {
             return false;
         }
-        self.guarda(Linha { id, canal, para, de, texto, staff, sistema: false, tag });
+        self.guarda(Linha {
+            id,
+            canal,
+            para,
+            de,
+            texto,
+            staff,
+            sistema: false,
+            tag,
+        });
         true
     }
 
     /// A system answer (slow down, muted, report sent…), shown in the panel too.
     pub fn sistema(&mut self, texto: String) {
         let aberto = self.aberto;
-        self.guarda(Linha { id: 0, canal: 0, para: String::new(), de: String::new(), texto, staff: false, sistema: true, tag: String::new() });
+        self.guarda(Linha {
+            id: 0,
+            canal: 0,
+            para: String::new(),
+            de: String::new(),
+            texto,
+            staff: false,
+            sistema: true,
+            tag: String::new(),
+        });
         if !aberto {
             self.nao_lidas = self.nao_lidas.saturating_sub(1);
         }
@@ -242,7 +295,9 @@ impl ChatUi {
                     self.texto.pop();
                 }
                 '\r' | '\n' => manda = true,
-                c if !c.is_control() && self.texto.chars().count() < shared::chat::MAX_CHARS => self.texto.push(c),
+                c if !c.is_control() && self.texto.chars().count() < shared::chat::MAX_CHARS => {
+                    self.texto.push(c)
+                }
                 _ => {}
             }
         }
@@ -265,20 +320,35 @@ impl ChatUi {
                 let t2 = t.trim().trim_start_matches('@');
                 let Some((nome, resto)) = t2.split_once(char::is_whitespace) else {
                     self.texto = t;
-                    self.sistema("Whisper: type the player's name, a space, then the message.".into());
+                    self.sistema(
+                        "Whisper: type the player's name, a space, then the message.".into(),
+                    );
                     return None;
                 };
                 self.alvo = nome.to_string();
-                return Some(ClientMessage::ChatSussurro { para: self.alvo.clone(), text: resto.trim().to_string() });
+                return Some(ClientMessage::ChatSussurro {
+                    para: self.alvo.clone(),
+                    text: resto.trim().to_string(),
+                });
             }
-            return Some(ClientMessage::ChatSussurro { para: self.alvo.clone(), text: t });
+            return Some(ClientMessage::ChatSussurro {
+                para: self.alvo.clone(),
+                text: t,
+            });
         }
-        Some(ClientMessage::ChatCanal { canal: self.canal, text: t })
+        Some(ClientMessage::ChatCanal {
+            canal: self.canal,
+            text: t,
+        })
     }
 
     /// The name on a whisper line that is not me: who to answer.
     fn outro_do_sussurro(l: &Linha, eu: &str) -> String {
-        if l.de.eq_ignore_ascii_case(eu) { l.para.clone() } else { l.de.clone() }
+        if l.de.eq_ignore_ascii_case(eu) {
+            l.para.clone()
+        } else {
+            l.de.clone()
+        }
     }
 
     /// Where the box sits while typing on a phone: at the TOP, bigger and over
@@ -384,7 +454,14 @@ impl ChatUi {
                 let x0 = area.x + 6.0;
                 let largura = area.w - 12.0;
                 if l.sistema {
-                    estilo::texto_sombra(x0, base, &l.texto, fonte, estilo::alfa(estilo::SUAVE, alfa), false);
+                    estilo::texto_sombra(
+                        x0,
+                        base,
+                        &l.texto,
+                        fonte,
+                        estilo::alfa(estilo::SUAVE, alfa),
+                        false,
+                    );
                     continue;
                 }
                 let tag = sigla_do_canal(l.canal);
@@ -419,8 +496,21 @@ impl ChatUi {
             // ── channel button · field · send ──
             let (canal_r, campo, enviar_r) = (g.canal, g.campo, g.enviar);
             let cor = cor_do_canal(self.canal);
-            draw_rectangle(canal_r.x, canal_r.y, canal_r.w, canal_r.h, Color::new(0.05, 0.04, 0.03, if ativo { 0.9 } else { 0.55 }));
-            draw_rectangle_lines(canal_r.x, canal_r.y, canal_r.w, canal_r.h, 1.5, estilo::alfa(cor, 0.9));
+            draw_rectangle(
+                canal_r.x,
+                canal_r.y,
+                canal_r.w,
+                canal_r.h,
+                Color::new(0.05, 0.04, 0.03, if ativo { 0.9 } else { 0.55 }),
+            );
+            draw_rectangle_lines(
+                canal_r.x,
+                canal_r.y,
+                canal_r.w,
+                canal_r.h,
+                1.5,
+                estilo::alfa(cor, 0.9),
+            );
             // Name + a small drawn triangle (the HUD font has no ▾).
             let rotulo_w;
             let nome_c = if self.canal == shared::chat::CANAL_SUSSURRO && !self.alvo.is_empty() {
@@ -432,29 +522,79 @@ impl ChatUi {
             let nw = estilo::medir_forte(nome_c, fonte);
             let tri = fonte as f32 * 0.32;
             let x0c = canal_r.center().x - (nw + tri * 2.6) * 0.5;
-            estilo::texto_forte(x0c, canal_r.center().y + fonte as f32 * 0.38, nome_c, fonte, cor);
+            estilo::texto_forte(
+                x0c,
+                canal_r.center().y + fonte as f32 * 0.38,
+                nome_c,
+                fonte,
+                cor,
+            );
             let tc = vec2(x0c + nw + tri * 1.6, canal_r.center().y + tri * 0.2);
-            draw_triangle(tc + vec2(-tri, -tri * 0.6), tc + vec2(tri, -tri * 0.6), tc + vec2(0.0, tri * 0.6), cor);
-            draw_rectangle(campo.x, campo.y, campo.w, campo.h, Color::new(0.05, 0.04, 0.03, if ativo { 0.9 } else { 0.45 }));
+            draw_triangle(
+                tc + vec2(-tri, -tri * 0.6),
+                tc + vec2(tri, -tri * 0.6),
+                tc + vec2(0.0, tri * 0.6),
+                cor,
+            );
+            draw_rectangle(
+                campo.x,
+                campo.y,
+                campo.w,
+                campo.h,
+                Color::new(0.05, 0.04, 0.03, if ativo { 0.9 } else { 0.45 }),
+            );
             if ativo {
-                draw_rectangle_lines(campo.x, campo.y, campo.w, campo.h, 1.5, estilo::alfa(estilo::OURO, 0.8));
+                draw_rectangle_lines(
+                    campo.x,
+                    campo.y,
+                    campo.w,
+                    campo.h,
+                    1.5,
+                    estilo::alfa(estilo::OURO, 0.8),
+                );
             }
             let ty = campo.center().y + fonte as f32 * 0.38;
-            if self.texto.is_empty() && self.canal == shared::chat::CANAL_SUSSURRO && self.alvo.is_empty() {
-                estilo::texto(campo.x + 8.0, ty, "Name, then the message…", fonte, estilo::alfa(estilo::SUAVE, 0.9));
+            if self.texto.is_empty()
+                && self.canal == shared::chat::CANAL_SUSSURRO
+                && self.alvo.is_empty()
+            {
+                estilo::texto(
+                    campo.x + 8.0,
+                    ty,
+                    "Name, then the message…",
+                    fonte,
+                    estilo::alfa(estilo::SUAVE, 0.9),
+                );
             } else if self.texto.is_empty() && !ativo {
-                estilo::texto(campo.x + 8.0, ty, "Tap to chat…", fonte, estilo::alfa(estilo::SUAVE, 0.9));
+                estilo::texto(
+                    campo.x + 8.0,
+                    ty,
+                    "Tap to chat…",
+                    fonte,
+                    estilo::alfa(estilo::SUAVE, 0.9),
+                );
             } else {
-                let cursor = if ativo && (get_time() * 2.0) as i32 % 2 == 0 { "|" } else { "" };
+                let cursor = if ativo && (get_time() * 2.0) as i32 % 2 == 0 {
+                    "|"
+                } else {
+                    ""
+                };
                 let mut mostrado = format!("{}{cursor}", self.texto);
-                while estilo::medir(&mostrado, fonte) > campo.w - 14.0 && mostrado.chars().count() > 1 {
+                while estilo::medir(&mostrado, fonte) > campo.w - 14.0
+                    && mostrado.chars().count() > 1
+                {
                     mostrado.remove(0);
                 }
                 estilo::texto(campo.x + 8.0, ty, &mostrado, fonte, WHITE);
             }
             if ativo {
                 let pode = !self.texto.trim().is_empty();
-                estilo::botao(enviar_r, "Send", estilo::estado_de(enviar_r, !pode, false), pode);
+                estilo::botao(
+                    enviar_r,
+                    "Send",
+                    estilo::estado_de(enviar_r, !pode, false),
+                    pode,
+                );
             }
         });
     }
@@ -471,16 +611,31 @@ impl ChatUi {
         estilo::no_painel(k, || self.desenha_na_escala(digitado, eu, k, seguro))
     }
 
-    fn desenha_na_escala(&mut self, digitado: &[char], eu: &str, k: f32, seguro: Rect) -> Vec<ClientMessage> {
+    fn desenha_na_escala(
+        &mut self,
+        digitado: &[char],
+        eu: &str,
+        k: f32,
+        seguro: Rect,
+    ) -> Vec<ClientMessage> {
         let mut saida = Vec::new();
-        let o = vec2(seguro.center().x - BASE_W * k * 0.5, seguro.center().y - BASE_H * k * 0.5);
+        let o = vec2(
+            seguro.center().x - BASE_W * k * 0.5,
+            seguro.center().y - BASE_H * k * 0.5,
+        );
         let r = |x: f32, y: f32, w: f32, h: f32| Rect::new(o.x + x * k, o.y + y * k, w * k, h * k);
         crate::hud_layout::escurece(0.45);
         let p = r(0.0, 0.0, BASE_W, BASE_H);
         estilo::painel_destaque(p, estilo::OURO);
         let m = Vec2::from(mouse_position());
         let clicou = crate::foco::clique();
-        estilo::texto_forte(p.x + 22.0 * k, p.y + 36.0 * k, "Global chat", 22, estilo::OURO);
+        estilo::texto_forte(
+            p.x + 22.0 * k,
+            p.y + 36.0 * k,
+            "Global chat",
+            22,
+            estilo::OURO,
+        );
         estilo::texto(
             p.x + 22.0 * k,
             p.y + 58.0 * k,
@@ -501,7 +656,12 @@ impl ChatUi {
             shared::chat::SUSSURRO_NINGUEM => "Whispers: nobody",
             _ => "Whispers: everyone",
         };
-        estilo::botao(modo_r, modo_txt, estilo::estado_de(modo_r, false, false), false);
+        estilo::botao(
+            modo_r,
+            modo_txt,
+            estilo::estado_de(modo_r, false, false),
+            false,
+        );
         if clicou && modo_r.toca(m) {
             self.troca_modo_sussurro();
         }
@@ -522,11 +682,23 @@ impl ChatUi {
         }
         if self.vendo_silenciados {
             let area = r(16.0, 70.0, BASE_W - 32.0, 282.0);
-            draw_rectangle(area.x, area.y, area.w, area.h, Color::new(0.0, 0.0, 0.0, 0.25));
+            draw_rectangle(
+                area.x,
+                area.y,
+                area.w,
+                area.h,
+                Color::new(0.0, 0.0, 0.0, 0.25),
+            );
             let mut nomes: Vec<String> = self.silenciados().iter().cloned().collect();
             nomes.sort();
             if nomes.is_empty() {
-                estilo::texto_centro(area.center().x, area.center().y, "You have not muted anyone.", 15, estilo::SUAVE);
+                estilo::texto_centro(
+                    area.center().x,
+                    area.center().y,
+                    "You have not muted anyone.",
+                    15,
+                    estilo::SUAVE,
+                );
             }
             let passo = 52.0 * k;
             let por_coluna = ((area.h - 8.0 * k) / passo).floor().max(1.0) as usize;
@@ -536,7 +708,14 @@ impl ChatUi {
                 let (c, l) = (i / por_coluna, i % por_coluna);
                 let x = area.x + 8.0 * k + c as f32 * (col_w + 8.0 * k);
                 let y = area.y + 8.0 * k + l as f32 * passo;
-                estilo::texto_ajustado(nome, x + 6.0 * k, y + 30.0 * k, col_w - 150.0 * k, 15, estilo::TEXTO);
+                estilo::texto_ajustado(
+                    nome,
+                    x + 6.0 * k,
+                    y + 30.0 * k,
+                    col_w - 150.0 * k,
+                    15,
+                    estilo::TEXTO,
+                );
                 let b = Rect::new(x + col_w - 136.0 * k, y + 2.0 * k, 130.0 * k, 42.0 * k);
                 estilo::botao(b, "Unmute", estilo::estado_de(b, false, false), false);
                 if clicou && b.toca(m) {
@@ -544,18 +723,38 @@ impl ChatUi {
                 }
             }
             if nomes.len() > por_coluna * 2 {
-                estilo::texto(area.x + 8.0 * k, area.y + area.h - 6.0 * k,
-                    &format!("and {} more: unmute some to see the rest", nomes.len() - por_coluna * 2), 12, estilo::SUAVE);
+                estilo::texto(
+                    area.x + 8.0 * k,
+                    area.y + area.h - 6.0 * k,
+                    &format!(
+                        "and {} more: unmute some to see the rest",
+                        nomes.len() - por_coluna * 2
+                    ),
+                    12,
+                    estilo::SUAVE,
+                );
             }
             if let Some(nome) = tirar {
                 self.silenciados().remove(&nome);
                 self.grava_silenciados();
-                self.sistema(format!("You unmuted {nome}. You will see their new messages."));
+                self.sistema(format!(
+                    "You unmuted {nome}. You will see their new messages."
+                ));
             }
-            estilo::texto(p.x + 22.0 * k, p.y + 394.0 * k,
-                "Muted players: only you stop seeing them, on this device.", 13, estilo::SUAVE);
+            estilo::texto(
+                p.x + 22.0 * k,
+                p.y + 394.0 * k,
+                "Muted players: only you stop seeing them, on this device.",
+                13,
+                estilo::SUAVE,
+            );
             let voltar = r(740.0, 364.0, 144.0, 46.0);
-            estilo::botao(voltar, "Back", estilo::estado_de(voltar, false, false), true);
+            estilo::botao(
+                voltar,
+                "Back",
+                estilo::estado_de(voltar, false, false),
+                true,
+            );
             if clicou && voltar.toca(m) {
                 self.vendo_silenciados = false;
             }
@@ -564,7 +763,13 @@ impl ChatUi {
 
         // ── the conversation ──
         let area = r(16.0, 70.0, BASE_W - 32.0, 282.0);
-        draw_rectangle(area.x, area.y, area.w, area.h, Color::new(0.0, 0.0, 0.0, 0.25));
+        draw_rectangle(
+            area.x,
+            area.y,
+            area.w,
+            area.h,
+            Color::new(0.0, 0.0, 0.0, 0.25),
+        );
         let passo = LINHA * k;
         let total = self.linhas.len() as f32 * passo;
         if self.no_fim {
@@ -581,11 +786,24 @@ impl ChatUi {
             }
             let linha = Rect::new(area.x, y, area.w - 12.0 * k, passo);
             if self.selecionada == Some(i) {
-                draw_rectangle(linha.x, linha.y, linha.w, linha.h, Color::new(0.91, 0.75, 0.46, 0.16));
+                draw_rectangle(
+                    linha.x,
+                    linha.y,
+                    linha.w,
+                    linha.h,
+                    Color::new(0.91, 0.75, 0.46, 0.16),
+                );
             }
             let base = y + passo * 0.5 + 6.0 * k;
             if l.sistema {
-                estilo::texto_ajustado(&l.texto, linha.x + 10.0 * k, base, linha.w - 20.0 * k, 14, estilo::SUAVE);
+                estilo::texto_ajustado(
+                    &l.texto,
+                    linha.x + 10.0 * k,
+                    base,
+                    linha.w - 20.0 * k,
+                    14,
+                    estilo::SUAVE,
+                );
             } else {
                 let tag = sigla_do_canal(l.canal);
                 estilo::texto_forte(linha.x + 10.0 * k, base, tag, 14, cor_do_canal(l.canal));
@@ -606,47 +824,102 @@ impl ChatUi {
                 };
                 estilo::texto_forte(linha.x + 10.0 * k, base, &rotulo, 14, cor);
                 let w = estilo::medir_forte(&rotulo, 14) + 8.0 * k;
-                estilo::texto_ajustado(&l.texto, linha.x + 10.0 * k + w, base, linha.w - 24.0 * k - w, 14, estilo::TEXTO);
+                estilo::texto_ajustado(
+                    &l.texto,
+                    linha.x + 10.0 * k + w,
+                    base,
+                    linha.w - 24.0 * k - w,
+                    14,
+                    estilo::TEXTO,
+                );
             }
-            if toque.is_some_and(|c| linha.contains(c)) && !l.sistema && !l.de.eq_ignore_ascii_case(eu) {
+            if toque.is_some_and(|c| linha.contains(c))
+                && !l.sistema
+                && !l.de.eq_ignore_ascii_case(eu)
+            {
                 tocada = Some(i);
             }
         }
         crate::rolagem::recortar(None);
         self.rolagem.desenha(area, total);
         if self.linhas.is_empty() {
-            estilo::texto_centro(area.center().x, area.center().y, "No messages yet. Say hi!", 15, estilo::SUAVE);
+            estilo::texto_centro(
+                area.center().x,
+                area.center().y,
+                "No messages yet. Say hi!",
+                15,
+                estilo::SUAVE,
+            );
         }
         if let Some(i) = tocada {
-            self.selecionada = if self.selecionada == Some(i) { None } else { Some(i) };
+            self.selecionada = if self.selecionada == Some(i) {
+                None
+            } else {
+                Some(i)
+            };
         }
 
         // ── actions on the tapped line, or the text box ──
         if let Some(l) = self.selecionada.and_then(|i| self.linhas.get(i)).cloned() {
-            estilo::texto_ajustado(&format!("{}:", l.de), p.x + 22.0 * k, p.y + 392.0 * k, 200.0 * k, 15, estilo::TEXTO);
+            estilo::texto_ajustado(
+                &format!("{}:", l.de),
+                p.x + 22.0 * k,
+                p.y + 392.0 * k,
+                200.0 * k,
+                15,
+                estilo::TEXTO,
+            );
             let sussurro = r(240.0, 364.0, 150.0, 46.0);
             let silenciar = r(400.0, 364.0, 170.0, 46.0);
             let denunciar = r(580.0, 364.0, 150.0, 46.0);
             let voltar = r(740.0, 364.0, 144.0, 46.0);
-            estilo::botao(sussurro, "Whisper", estilo::estado_de(sussurro, false, false), false);
+            estilo::botao(
+                sussurro,
+                "Whisper",
+                estilo::estado_de(sussurro, false, false),
+                false,
+            );
             if clicou && sussurro.toca(m) {
-                let outro = if l.canal == shared::chat::CANAL_SUSSURRO { Self::outro_do_sussurro(&l, eu) } else { l.de.clone() };
+                let outro = if l.canal == shared::chat::CANAL_SUSSURRO {
+                    Self::outro_do_sussurro(&l, eu)
+                } else {
+                    l.de.clone()
+                };
                 self.selecionada = None;
                 self.aberto = false;
                 self.sussurrar(&outro);
                 return saida;
             }
-            estilo::botao(silenciar, "Mute player", estilo::estado_de(silenciar, false, false), false);
+            estilo::botao(
+                silenciar,
+                "Mute player",
+                estilo::estado_de(silenciar, false, false),
+                false,
+            );
             let ja = self.denunciadas.contains(&l.id);
-            estilo::botao(denunciar, if ja { "Reported" } else { "Report" }, estilo::estado_de(denunciar, ja, false), false);
-            estilo::botao(voltar, "Back", estilo::estado_de(voltar, false, false), true);
+            estilo::botao(
+                denunciar,
+                if ja { "Reported" } else { "Report" },
+                estilo::estado_de(denunciar, ja, false),
+                false,
+            );
+            estilo::botao(
+                voltar,
+                "Back",
+                estilo::estado_de(voltar, false, false),
+                true,
+            );
             if clicou && silenciar.toca(m) {
                 let nome = l.de.to_lowercase();
                 self.silenciados().insert(nome.clone());
                 self.grava_silenciados();
-                self.linhas.retain(|x| x.sistema || x.staff || x.de.to_lowercase() != nome);
+                self.linhas
+                    .retain(|x| x.sistema || x.staff || x.de.to_lowercase() != nome);
                 self.selecionada = None;
-                self.sistema(format!("You muted {}. You will not see their messages.", l.de));
+                self.sistema(format!(
+                    "You muted {}. You will not see their messages.",
+                    l.de
+                ));
             } else if clicou && denunciar.toca(m) && !ja {
                 self.denunciadas.insert(l.id);
                 saida.push(ClientMessage::DenunciarChat { id: l.id });
@@ -669,7 +942,11 @@ impl ChatUi {
                         self.texto.pop();
                     }
                     '\r' | '\n' => manda = true,
-                    c if !c.is_control() && self.texto.chars().count() < shared::chat::MAX_CHARS => self.texto.push(c),
+                    c if !c.is_control()
+                        && self.texto.chars().count() < shared::chat::MAX_CHARS =>
+                    {
+                        self.texto.push(c)
+                    }
                     _ => {}
                 }
             }
@@ -681,23 +958,51 @@ impl ChatUi {
             }
         }
         estilo::cartao(campo, false, self.foco);
-        let cursor = if self.foco && (get_time() * 2.0) as i32 % 2 == 0 { "|" } else { "" };
+        let cursor = if self.foco && (get_time() * 2.0) as i32 % 2 == 0 {
+            "|"
+        } else {
+            ""
+        };
         if self.texto.is_empty() && !self.foco {
-            estilo::texto(campo.x + 14.0 * k, campo.center().y + 6.0 * k, "Tap to type…", 15, estilo::SUAVE);
+            estilo::texto(
+                campo.x + 14.0 * k,
+                campo.center().y + 6.0 * k,
+                "Tap to type…",
+                15,
+                estilo::SUAVE,
+            );
         } else {
             // The END of what was typed, when it no longer fits.
             let mut mostrado = format!("{}{cursor}", self.texto);
-            while estilo::medir(&mostrado, 15) > campo.w - 28.0 * k && mostrado.chars().count() > 1 {
+            while estilo::medir(&mostrado, 15) > campo.w - 28.0 * k && mostrado.chars().count() > 1
+            {
                 mostrado.remove(0);
             }
-            estilo::texto(campo.x + 14.0 * k, campo.center().y + 6.0 * k, &mostrado, 15, estilo::TEXTO);
+            estilo::texto(
+                campo.x + 14.0 * k,
+                campo.center().y + 6.0 * k,
+                &mostrado,
+                15,
+                estilo::TEXTO,
+            );
         }
         let n = self.texto.chars().count();
         if n > shared::chat::MAX_CHARS - 30 {
-            estilo::texto(campo.x + campo.w - 64.0 * k, campo.y - 4.0 * k, &format!("{n}/{}", shared::chat::MAX_CHARS), 11, estilo::SUAVE);
+            estilo::texto(
+                campo.x + campo.w - 64.0 * k,
+                campo.y - 4.0 * k,
+                &format!("{n}/{}", shared::chat::MAX_CHARS),
+                11,
+                estilo::SUAVE,
+            );
         }
         let pode = !self.texto.trim().is_empty();
-        estilo::botao(enviar, "Send", estilo::estado_de(enviar, !pode, false), pode);
+        estilo::botao(
+            enviar,
+            "Send",
+            estilo::estado_de(enviar, !pode, false),
+            pode,
+        );
         if (manda || (clicou && enviar.toca(m))) && pode {
             saida.extend(self.enviar());
         }
@@ -708,11 +1013,15 @@ impl ChatUi {
 /// `MMO_PREVIA_CHAT=1`: the button and the panel with a few lines.
 #[cfg(debug_assertions)]
 pub async fn previa() {
-    let saida = std::env::var("MMO_PREVIA_SAIDA").unwrap_or_else(|_| "/tmp/tempest-chat-preview".into());
+    let saida =
+        std::env::var("MMO_PREVIA_SAIDA").unwrap_or_else(|_| "/tmp/tempest-chat-preview".into());
     std::fs::create_dir_all(&saida).unwrap();
     next_frame().await;
     let rt = render_target(screen_width() as u32, screen_height() as u32);
-    let mut ui = ChatUi { silenciados: Some(HashSet::new()), ..Default::default() };
+    let mut ui = ChatUi {
+        silenciados: Some(HashSet::new()),
+        ..Default::default()
+    };
     for (i, (de, t, staff)) in [
         ("Lyra", "anyone up for the Frozen Hull?", false),
         ("Navegante", "me! level 24, sword", false),
@@ -723,11 +1032,37 @@ pub async fn previa() {
     .iter()
     .enumerate()
     {
-        ui.receber(i as i64 + 1, (i % 4) as u8, if i % 4 == 3 { "Navegante".into() } else { String::new() }, de.to_string(), t.to_string(), *staff, if i % 3 == 0 { "MAR".into() } else { String::new() });
+        ui.receber(
+            i as i64 + 1,
+            (i % 4) as u8,
+            if i % 4 == 3 {
+                "Navegante".into()
+            } else {
+                String::new()
+            },
+            de.to_string(),
+            t.to_string(),
+            *staff,
+            if i % 3 == 0 {
+                "MAR".into()
+            } else {
+                String::new()
+            },
+        );
     }
-    for (arquivo, aberto) in [("caixa.png", false), ("caixa-ativa.png", false), ("painel.png", true), ("silenciados.png", true)] {
+    for (arquivo, aberto) in [
+        ("caixa.png", false),
+        ("caixa-ativa.png", false),
+        ("painel.png", true),
+        ("silenciados.png", true),
+    ] {
         if arquivo == "silenciados.png" {
-            ui.silenciados = Some(["kael", "trollzinho", "spammer99"].iter().map(|s| s.to_string()).collect());
+            ui.silenciados = Some(
+                ["kael", "trollzinho", "spammer99"]
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect(),
+            );
             ui.vendo_silenciados = true;
         }
         if arquivo == "caixa-ativa.png" {
@@ -745,14 +1080,22 @@ pub async fn previa() {
             clear_background(Color::new(0.30, 0.42, 0.30, 1.0));
             // A bit of "world" behind, to judge the see-through box.
             for i in 0..12 {
-                draw_rectangle(i as f32 * 80.0, 200.0 + (i % 3) as f32 * 30.0, 50.0, 120.0, Color::new(0.45, 0.32, 0.22, 1.0));
+                draw_rectangle(
+                    i as f32 * 80.0,
+                    200.0 + (i % 3) as f32 * 30.0,
+                    50.0,
+                    120.0,
+                    Color::new(0.45, 0.32, 0.22, 1.0),
+                );
             }
             let z = crate::hud_layout::atual();
             ui.caixa(z.chat, "Navegante");
             let _ = ui.entrada(&[], "Navegante");
             let _ = ui.desenha(&[], "Navegante");
             unsafe { get_internal_gl().flush() };
-            rt.texture.get_texture_data().export_png(&format!("{saida}/{arquivo}"));
+            rt.texture
+                .get_texture_data()
+                .export_png(&format!("{saida}/{arquivo}"));
             set_default_camera();
             next_frame().await;
         }

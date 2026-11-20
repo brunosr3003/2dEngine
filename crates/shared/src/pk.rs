@@ -128,7 +128,12 @@ pub fn pode_atacar_no_mar(att: &Lado, alvo: &Lado, revide: bool, alvo_marcado: b
 /// PK points for sinking or killing someone AT SEA: as on land, and none
 /// for a MARKED carrier (carrying treasure is consenting to the fight) nor
 /// in lawless waters (`area_aberta`).
-pub fn pontos_por_abate_no_mar(vitima: &Lado, revide: bool, area_aberta: bool, marcado: bool) -> u32 {
+pub fn pontos_por_abate_no_mar(
+    vitima: &Lado,
+    revide: bool,
+    area_aberta: bool,
+    marcado: bool,
+) -> u32 {
     pontos_por_abate(vitima, revide, area_aberta || marcado)
 }
 
@@ -186,7 +191,14 @@ pub fn decair(pontos: u32, acumulado: u32, dt: u32) -> (u32, u32) {
     let total = acumulado.saturating_add(dt);
     let saem = (total / SEGUNDOS_POR_PONTO).min(pontos);
     let pontos = pontos - saem;
-    (pontos, if pontos == 0 { 0 } else { total - saem * SEGUNDOS_POR_PONTO })
+    (
+        pontos,
+        if pontos == 0 {
+            0
+        } else {
+            total - saem * SEGUNDOS_POR_PONTO
+        },
+    )
 }
 
 /// Gold to pardon ONE PK point, per character level.
@@ -259,7 +271,11 @@ pub fn pvp_mult_nivel(atacante: u32, alvo: u32, livre: u32, por_nivel: f32, piso
 /// A mitigated player-vs-player hit, with the live rules. `atacante` and
 /// `alvo` are POWERS (since 14/11/2026; it was levels).
 pub fn pvp_dano(mitigado: i32, skill: bool, atacante: i32, alvo: i32) -> i32 {
-    let m = if skill { PVP_MULT_SKILL } else { PVP_MULT_BASICO } * pvp_mult_poder(atacante, alvo);
+    let m = if skill {
+        PVP_MULT_SKILL
+    } else {
+        PVP_MULT_BASICO
+    } * pvp_mult_poder(atacante, alvo);
     if m == 1.0 {
         mitigado
     } else {
@@ -351,7 +367,10 @@ pub fn carta_de_abate(
     area_aberta: bool,
 ) -> (String, String) {
     let assunto = format!("You were killed by {quem}");
-    let ficha = format!("R{renasc} · Lv {}", crate::progressao::texto_de_nivel(nivel));
+    let ficha = format!(
+        "R{renasc} · Lv {}",
+        crate::progressao::texto_de_nivel(nivel)
+    );
     let mut texto = format!(
         "{quem} [{ficha}] killed you at {onde} on {} (Brasília time).",
         data_brasilia(quando_unix)
@@ -381,8 +400,20 @@ mod testes {
         // 2026-11-17 00:04 UTC = 2026-11-16 21:04 in Brasília.
         assert_eq!(data_brasilia(1_794_873_840), "2026-11-16 21:04");
         assert_eq!(data_brasilia(0), "1969-12-31 21:00");
-        assert_eq!(data_brasilia(951_782_400 + 3 * 3600), "2000-02-29 00:00", "leap day");
-        let (a, t) = carta_de_abate("Brunji", 1, 40, "Sunny Grove (10, 20)", 1_794_873_840, true, false);
+        assert_eq!(
+            data_brasilia(951_782_400 + 3 * 3600),
+            "2000-02-29 00:00",
+            "leap day"
+        );
+        let (a, t) = carta_de_abate(
+            "Brunji",
+            1,
+            40,
+            "Sunny Grove (10, 20)",
+            1_794_873_840,
+            true,
+            false,
+        );
         assert_eq!(a, "You were killed by Brunji");
         let esperado = format!(
             "Brunji [R1 · Lv {}] killed you at Sunny Grove (10, 20) on 2026-11-16 21:04 (Brasília time).",
@@ -394,12 +425,21 @@ mod testes {
         assert!(!t.contains("The killer has PK") && t.contains("open PvP area"));
         assert!(crate::social::corpo_de_carta_valido(&t, 1, 1000));
         let l = lugar("ilha_inicial", Vec2::new(10.4, -20.6));
-        assert!(l.ends_with("(10, -21)") && !l.starts_with("ilha_inicial"), "{l}");
+        assert!(
+            l.ends_with("(10, -21)") && !l.starts_with("ilha_inicial"),
+            "{l}"
+        );
         assert!(lugar(crate::mar::ZONA, Vec2::ZERO).starts_with("the open sea"));
     }
 
     fn lado(modo: u8, grupo: Option<u32>, cla: i64) -> Lado {
-        Lado { modo, pontos: 0, grupo, cla, poder: 0 }
+        Lado {
+            modo,
+            pontos: 0,
+            grupo,
+            cla,
+            poder: 0,
+        }
     }
 
     /// THE MARK at sea: a Peaceful carrier is fair game for a Peaceful
@@ -411,13 +451,31 @@ mod testes {
         let paz = lado(PACIFICO, None, 0);
         assert!(!pode_atacar_no_mar(&paz, &paz, false, false));
         assert!(pode_atacar_no_mar(&paz, &paz, false, true));
-        let forte = Lado { poder: 10_000, ..paz };
-        let fraco = Lado { poder: 1_000, ..paz };
-        assert!(!pode_atacar_no_mar(&forte, &fraco, false, false), "power protection off the mark");
-        assert!(pode_atacar_no_mar(&forte, &fraco, false, true), "the mark beats power protection");
+        let forte = Lado {
+            poder: 10_000,
+            ..paz
+        };
+        let fraco = Lado {
+            poder: 1_000,
+            ..paz
+        };
+        assert!(
+            !pode_atacar_no_mar(&forte, &fraco, false, false),
+            "power protection off the mark"
+        );
+        assert!(
+            pode_atacar_no_mar(&forte, &fraco, false, true),
+            "the mark beats power protection"
+        );
         let amigo = lado(PACIFICO, Some(3), 9);
-        assert!(!pode_atacar_no_mar(&amigo, &lado(PACIFICO, Some(3), 0), false, true), "own party");
-        assert!(!pode_atacar_no_mar(&amigo, &lado(PACIFICO, None, 9), false, true), "own clan");
+        assert!(
+            !pode_atacar_no_mar(&amigo, &lado(PACIFICO, Some(3), 0), false, true),
+            "own party"
+        );
+        assert!(
+            !pode_atacar_no_mar(&amigo, &lado(PACIFICO, None, 9), false, true),
+            "own clan"
+        );
         assert_eq!(pontos_por_abate_no_mar(&paz, false, false, false), 1);
         assert_eq!(pontos_por_abate_no_mar(&paz, false, false, true), 0);
         assert_eq!(pontos_por_abate_no_mar(&paz, false, true, false), 0);
@@ -442,40 +500,96 @@ mod testes {
         for (modo, grupo, cla, ambos, nada) in casos {
             let att = lado(modo, Some(7), 3);
             let alvo = |g: bool, c: bool| lado(PACIFICO, g.then_some(7), if c { 3 } else { 9 });
-            assert_eq!(pode_atacar(&att, &alvo(true, false), false), grupo, "{} same party", nome(modo));
-            assert_eq!(pode_atacar(&att, &alvo(false, true), false), cla, "{} same clan", nome(modo));
-            assert_eq!(pode_atacar(&att, &alvo(true, true), false), ambos, "{} both", nome(modo));
-            assert_eq!(pode_atacar(&att, &alvo(false, false), false), nada, "{} none", nome(modo));
+            assert_eq!(
+                pode_atacar(&att, &alvo(true, false), false),
+                grupo,
+                "{} same party",
+                nome(modo)
+            );
+            assert_eq!(
+                pode_atacar(&att, &alvo(false, true), false),
+                cla,
+                "{} same clan",
+                nome(modo)
+            );
+            assert_eq!(
+                pode_atacar(&att, &alvo(true, true), false),
+                ambos,
+                "{} both",
+                nome(modo)
+            );
+            assert_eq!(
+                pode_atacar(&att, &alvo(false, false), false),
+                nada,
+                "{} none",
+                nome(modo)
+            );
         }
         // No clan / no party is never "the same".
-        assert!(pode_atacar(&lado(CLA, None, 0), &lado(PACIFICO, None, 0), false));
-        assert!(pode_atacar(&lado(GRUPO, None, 0), &lado(PACIFICO, None, 0), false));
+        assert!(pode_atacar(
+            &lado(CLA, None, 0),
+            &lado(PACIFICO, None, 0),
+            false
+        ));
+        assert!(pode_atacar(
+            &lado(GRUPO, None, 0),
+            &lado(PACIFICO, None, 0),
+            false
+        ));
     }
 
     #[test]
     fn revide_vale_em_qualquer_modo() {
         for modo in MODOS {
             let att = lado(modo, Some(1), 1);
-            assert!(pode_atacar(&att, &lado(PACIFICO, Some(1), 1), true), "{}", nome(modo));
+            assert!(
+                pode_atacar(&att, &lado(PACIFICO, Some(1), 1), true),
+                "{}",
+                nome(modo)
+            );
         }
     }
 
     #[test]
     fn pacifico_bate_em_hostil_e_vermelho_sem_pontos() {
         let paz = lado(PACIFICO, None, 0);
-        assert!(!pode_atacar(&paz, &lado(PACIFICO, None, 0), false), "peaceful vs peaceful");
+        assert!(
+            !pode_atacar(&paz, &lado(PACIFICO, None, 0), false),
+            "peaceful vs peaceful"
+        );
         for m in [LIVRE, GRUPO, CLA] {
             let alvo = lado(m, None, 0);
             assert!(pode_atacar(&paz, &alvo, false), "peaceful vs {}", nome(m));
             assert_eq!(pontos_por_abate(&alvo, false, false), 0);
         }
-        let vermelho = Lado { pontos: 2, ..lado(PACIFICO, None, 0) };
-        assert!(pode_atacar(&paz, &vermelho, false), "red name is free to hit");
+        let vermelho = Lado {
+            pontos: 2,
+            ..lado(PACIFICO, None, 0)
+        };
+        assert!(
+            pode_atacar(&paz, &vermelho, false),
+            "red name is free to hit"
+        );
         assert_eq!(pontos_por_abate(&vermelho, false, false), 0);
         // Own party/clan stays off-limits for a Peaceful attacker even when hostile.
-        assert!(!pode_atacar(&lado(PACIFICO, Some(4), 0), &lado(LIVRE, Some(4), 0), false));
-        assert!(!pode_atacar(&lado(CLA, None, 5), &Lado { pontos: 3, ..lado(LIVRE, None, 5) }, false));
-        assert!(pode_atacar(&lado(LIVRE, None, 5), &lado(PACIFICO, None, 5), false));
+        assert!(!pode_atacar(
+            &lado(PACIFICO, Some(4), 0),
+            &lado(LIVRE, Some(4), 0),
+            false
+        ));
+        assert!(!pode_atacar(
+            &lado(CLA, None, 5),
+            &Lado {
+                pontos: 3,
+                ..lado(LIVRE, None, 5)
+            },
+            false
+        ));
+        assert!(pode_atacar(
+            &lado(LIVRE, None, 5),
+            &lado(PACIFICO, None, 5),
+            false
+        ));
         // The only kill that costs: a clean Peaceful victim, no revenge, outside open PvP.
         assert_eq!(pontos_por_abate(&lado(PACIFICO, None, 0), false, false), 1);
         assert_eq!(pontos_por_abate(&lado(PACIFICO, None, 0), true, false), 0);
@@ -537,14 +651,39 @@ mod testes {
     /// unless the target chose PK or is red; hitting back always works.
     #[test]
     fn forte_nao_caca_quem_tem_menos_da_metade_do_poder() {
-        let forte = Lado { poder: 12_000, ..lado(LIVRE, None, 0) };
-        let fraco = Lado { poder: 5_000, ..lado(PACIFICO, None, 0) };
-        let parelho = Lado { poder: 7_000, ..lado(PACIFICO, None, 0) };
+        let forte = Lado {
+            poder: 12_000,
+            ..lado(LIVRE, None, 0)
+        };
+        let fraco = Lado {
+            poder: 5_000,
+            ..lado(PACIFICO, None, 0)
+        };
+        let parelho = Lado {
+            poder: 7_000,
+            ..lado(PACIFICO, None, 0)
+        };
         assert!(!pode_atacar(&forte, &fraco, false), "under half: protected");
         assert!(pode_atacar(&forte, &parelho, false));
         assert!(pode_atacar(&forte, &fraco, true), "hitting back");
-        assert!(pode_atacar(&forte, &Lado { modo: LIVRE, ..fraco }, false), "the weak one chose PK");
-        assert!(pode_atacar(&forte, &Lado { pontos: 1, ..fraco }, false), "red name");
-        assert!(pode_atacar(&fraco, &forte, false) == pode_atacar(&lado(PACIFICO, None, 0), &lado(LIVRE, None, 0), false));
+        assert!(
+            pode_atacar(
+                &forte,
+                &Lado {
+                    modo: LIVRE,
+                    ..fraco
+                },
+                false
+            ),
+            "the weak one chose PK"
+        );
+        assert!(
+            pode_atacar(&forte, &Lado { pontos: 1, ..fraco }, false),
+            "red name"
+        );
+        assert!(
+            pode_atacar(&fraco, &forte, false)
+                == pode_atacar(&lado(PACIFICO, None, 0), &lado(LIVRE, None, 0), false)
+        );
     }
 }

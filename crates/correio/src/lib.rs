@@ -55,7 +55,9 @@ pub async fn enviar(pool: &PgPool, autor: &str, conta: i64, pedido: &Pedido) -> 
         bail!("Texto: de 1 a 1000 caracteres (quebras de linha podem; outros caracteres de controle não).");
     }
     if !anexos_validos(anexos) {
-        bail!("Anexos: até 8 itens distintos, de 1 a 100.000 unidades cada (com cor, 1 por linha).");
+        bail!(
+            "Anexos: até 8 itens distintos, de 1 a 100.000 unidades cada (com cor, 1 por linha)."
+        );
     }
     let mut tx = pool.begin().await?;
     // Serialises sends per account (idempotency across channels too).
@@ -101,10 +103,14 @@ pub async fn enviar(pool: &PgPool, autor: &str, conta: i64, pedido: &Pedido) -> 
             .await?;
         let nomes: Vec<String> = match exato {
             Some(n) => vec![n],
-            None => sqlx::query_scalar("SELECT name FROM characters WHERE lower(name)=lower($1) LIMIT 2")
+            None => {
+                sqlx::query_scalar(
+                    "SELECT name FROM characters WHERE lower(name)=lower($1) LIMIT 2",
+                )
                 .bind(nome.trim())
                 .fetch_all(&mut *tx)
-                .await?,
+                .await?
+            }
         };
         match nomes.as_slice() {
             [n] => Some(n.clone()),
@@ -126,4 +132,3 @@ pub async fn enviar(pool: &PgPool, autor: &str, conta: i64, pedido: &Pedido) -> 
     tracing::info!("correio oficial campanha={id} autor={autor} destinatarios={n}");
     Ok(n as u32)
 }
-

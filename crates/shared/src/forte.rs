@@ -34,7 +34,12 @@ pub fn conteudo_do_chefe(kind: u16) -> u16 {
 /// Chance by the CHEST's color — green 10%, blue 25%, purple 50% — and the
 /// key's own color is the place's band (`chaves::faixa`), never above purple:
 /// a legendary key is meant to be rare luck or a long combine.
-pub fn chave_do_bau(cor_do_bau: u8, nivel_do_lugar: u32, r_chance: f32, r_qual: f32) -> Option<u16> {
+pub fn chave_do_bau(
+    cor_do_bau: u8,
+    nivel_do_lugar: u32,
+    r_chance: f32,
+    r_qual: f32,
+) -> Option<u16> {
     let chance = match cor_do_bau {
         4 => 0.50,
         3 => 0.25,
@@ -154,13 +159,21 @@ mod testes {
         assert_eq!(cor_do_papel(crate::dungeon::PAPEL_BAU), None);
         let c = crate::dungeon::conteudo(CONTEUDO_DO_BAU).expect("the Tempest Spire");
         assert_eq!(c.nivel_min, 56, "the castle's chests roll a level 56 table");
-        assert!(crate::bosses::chefe(SENHOR_DO_FORTE).is_some_and(|b| b.nivel == 60 && b.zona == crate::planalto::ZONA));
+        assert!(crate::bosses::chefe(SENHOR_DO_FORTE)
+            .is_some_and(|b| b.nivel == 60 && b.zona == crate::planalto::ZONA));
         // Every field boss rolls a dungeon at or below his level (or the
         // lowest, below them all).
         for b in crate::bosses::CHEFES.iter() {
             let c = crate::dungeon::conteudo(conteudo_do_chefe(b.kind)).expect("a dungeon");
             assert!(c.disponivel, "{} rolls a locked dungeon", b.nome);
-            assert!(c.nivel_min <= b.nivel.max(6), "{} ({}) rolls {} ({})", b.nome, b.nivel, c.nome, c.nivel_min);
+            assert!(
+                c.nivel_min <= b.nivel.max(6),
+                "{} ({}) rolls {} ({})",
+                b.nome,
+                b.nivel,
+                c.nome,
+                c.nivel_min
+            );
         }
     }
 }

@@ -1,3 +1,14 @@
+Nov 20, 2026 — New ships and naval PvP
+
+- Choose from nine ship designs across three sizes and three roles, then improve your ship from T1 to T4 and spend points on speed, hull, cannons and turning.
+- The Shipyard now has a ship gallery, stat previews, point allocation, respec and upgrades.
+- New Chain Shot: slow an enemy ship's hull for a few seconds. Broadsides now fire a spread of cannonballs, and Long Gun shots fly faster.
+- A defeated ship remains as a burning wreck for a while. Repair its sails to return to the fight, or board and loot an enemy wreck.
+- Earn Naval Tokens and naval fragments from wreck loot and sea creatures, then spend them at the Naval Quartermaster.
+- Boarding an enemy no longer makes your own ship disappear: it defends itself and returns to dock if you stay away.
+- Form alliances through your party, sail in separate ships without friendly fire and share wreck loot with nearby allies.
+- Naval combat now has progressive respawn delays, with a return to your deck while your ship survives.
+
 Nov 13, 2026 — Clans, PK modes and the Prime Merchant
 
 - New: every city now has an Island Portal for travel between islands; the dock is for your ship. Step into the portal to see every island the story has opened, with the price on the button. The story's own trips stay free, and you arrive at the other city's portal.

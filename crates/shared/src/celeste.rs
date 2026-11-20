@@ -46,8 +46,21 @@ pub struct Plato {
     pub nivel: (u16, u16),
 }
 
-const fn plato(nome: &'static str, x: f32, y: f32, raio: f32, altura: f32, nivel: (u16, u16)) -> Plato {
-    Plato { nome, centro: Vec2::new(x, y), raio, altura, nivel }
+const fn plato(
+    nome: &'static str,
+    x: f32,
+    y: f32,
+    raio: f32,
+    altura: f32,
+    nivel: (u16, u16),
+) -> Plato {
+    Plato {
+        nome,
+        centro: Vec2::new(x, y),
+        raio,
+        altura,
+        nivel,
+    }
 }
 
 /// The islands. Index 0 is the arrival with the town. ORDER IS THE ID:
@@ -80,9 +93,26 @@ pub const PLATOS: [Plato; 15] = [
 /// The cloud paths. A main road climbs the bands (0-1-2-4-5-7-8-10-11) and
 /// side paths reach the small islands and close a few loops.
 pub const PONTES: [(usize, usize); 20] = [
-    (0, 1), (1, 2), (2, 4), (4, 5), (5, 7), (7, 8), (8, 10), (10, 11),
-    (2, 3), (3, 6), (5, 6), (6, 9), (8, 9), (9, 10),
-    (0, 13), (13, 1), (0, 14), (14, 12), (12, 11), (12, 10),
+    (0, 1),
+    (1, 2),
+    (2, 4),
+    (4, 5),
+    (5, 7),
+    (7, 8),
+    (8, 10),
+    (10, 11),
+    (2, 3),
+    (3, 6),
+    (5, 6),
+    (6, 9),
+    (8, 9),
+    (9, 10),
+    (0, 13),
+    (13, 1),
+    (0, 14),
+    (14, 12),
+    (12, 11),
+    (12, 10),
 ];
 
 /// The rim radius of `p` in direction `ang`: three harmonics, the same recipe
@@ -147,7 +177,8 @@ fn caminhos() -> &'static [Caminho] {
                 let pontos: Vec<(Vec2, f32)> = (0..=AMOSTRAS)
                     .map(|n| {
                         let t = n as f32 / AMOSTRAS as f32;
-                        let q = pa * (1.0 - t) * (1.0 - t) + ctrl * 2.0 * t * (1.0 - t) + pb * t * t;
+                        let q =
+                            pa * (1.0 - t) * (1.0 - t) + ctrl * 2.0 * t * (1.0 - t) + pb * t * t;
                         let s = t * t * (3.0 - 2.0 * t);
                         (q, a.altura + (b.altura - a.altura) * s)
                     })
@@ -157,7 +188,11 @@ fn caminhos() -> &'static [Caminho] {
                     min = min.min(*q);
                     max = max.max(*q);
                 }
-                Caminho { pontos, min: min - Vec2::splat(LARGURA_MAX), max: max + Vec2::splat(LARGURA_MAX) }
+                Caminho {
+                    pontos,
+                    min: min - Vec2::splat(LARGURA_MAX),
+                    max: max + Vec2::splat(LARGURA_MAX),
+                }
             })
             .collect()
     })
@@ -166,7 +201,9 @@ fn caminhos() -> &'static [Caminho] {
 /// The puffy half width of a path at `q`: the base plus slow bulges, so the
 /// edge reads as cloud and not as a kerb.
 fn meia_largura(q: Vec2) -> f32 {
-    MEIA_PONTE + 1.6 * (q.x * 0.11 + 0.7).sin() * (q.y * 0.13 - 0.3).cos() + 0.9 * (q.x * 0.31 - q.y * 0.27).sin()
+    MEIA_PONTE
+        + 1.6 * (q.x * 0.11 + 0.7).sin() * (q.y * 0.13 - 0.3).cos()
+        + 0.9 * (q.x * 0.31 - q.y * 0.27).sin()
 }
 
 /// Distance to the nearest cloud path and the deck height there, in units.
@@ -208,7 +245,8 @@ pub fn e_chao(q: Vec2) -> bool {
 
 /// Small deterministic hash in 0..1, for the ruins' layout.
 fn hash(x: i32, y: i32) -> f32 {
-    let mut h = (x as u32).wrapping_mul(0x8DA6_B343) ^ (y as u32).wrapping_mul(0xD816_3841) ^ 0x5C1E_A7E0;
+    let mut h =
+        (x as u32).wrapping_mul(0x8DA6_B343) ^ (y as u32).wrapping_mul(0xD816_3841) ^ 0x5C1E_A7E0;
     h ^= h >> 13;
     h = h.wrapping_mul(0x85EB_CA6B);
     h ^= h >> 16;
@@ -249,7 +287,10 @@ fn pilar(q: Vec2, p: &Plato) -> i32 {
     if hash(cx, cy) > 0.2 {
         return 0;
     }
-    let base = Vec2::new(cx as f32 + 0.25 + hash(cy, cx) * 0.5, cy as f32 + 0.25 + hash(cx + 7, cy - 3) * 0.5) * CELULA;
+    let base = Vec2::new(
+        cx as f32 + 0.25 + hash(cy, cx) * 0.5,
+        cy as f32 + 0.25 + hash(cx + 7, cy - 3) * 0.5,
+    ) * CELULA;
     let d = base - p.centro;
     let rel = d.length() / p.raio;
     if !(0.42..=0.82).contains(&rel) {
@@ -315,7 +356,9 @@ pub const PONTO_BASE: u16 = 60;
 
 /// The world position of story place `p`, if it is one of Skyreach's.
 pub fn ponto(p: u16) -> Option<Vec2> {
-    p.checked_sub(PONTO_BASE).and_then(|i| PLATOS.get(i as usize)).map(|pl| pl.centro)
+    p.checked_sub(PONTO_BASE)
+        .and_then(|i| PLATOS.get(i as usize))
+        .map(|pl| pl.centro)
 }
 
 pub fn e_celeste(zona: &str) -> bool {
@@ -374,9 +417,18 @@ mod testes {
     fn platos_cabem_e_nao_se_tocam() {
         let lim = RAIO_BLOCOS as f32 * BLOCO - 40.0;
         for (i, a) in PLATOS.iter().enumerate() {
-            assert!(a.centro.length() + a.raio * 1.2 < lim, "{} outside the zone", a.nome);
+            assert!(
+                a.centro.length() + a.raio * 1.2 < lim,
+                "{} outside the zone",
+                a.nome
+            );
             for b in &PLATOS[i + 1..] {
-                assert!(a.centro.distance(b.centro) > (a.raio + b.raio) * 1.2 + 20.0, "{} touches {}", a.nome, b.nome);
+                assert!(
+                    a.centro.distance(b.centro) > (a.raio + b.raio) * 1.2 + 20.0,
+                    "{} touches {}",
+                    a.nome,
+                    b.nome
+                );
             }
         }
     }

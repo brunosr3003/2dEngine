@@ -21,20 +21,33 @@ pub fn comprar_lote(
     qtd: u32,
     cap: u32,
 ) -> Result<u64, String> {
+    comprar_lote_com(inv, item_id::COPPER, "copper", item, preco, qtd, cap)
+}
+
+/// The same all-or-nothing batch paid with another stackable currency.
+pub fn comprar_lote_com(
+    inv: &mut [InventorySlot],
+    moeda: u16,
+    nome_moeda: &str,
+    item: u16,
+    preco: u32,
+    qtd: u32,
+    cap: u32,
+) -> Result<u64, String> {
     if qtd == 0 || qtd > MAX_LOTE {
         return Err(format!("choose from 1 to {MAX_LOTE}"));
     }
     let total = preco as u64 * qtd as u64;
-    let tem = crate::craft::tem(inv, item_id::COPPER) as u64;
+    let tem = crate::craft::tem(inv, moeda) as u64;
     if tem < total {
         return Err(format!(
-            "{} copper short ({} per unit)",
+            "{} {nome_moeda} short ({} per unit)",
             total - tem,
             preco
         ));
     }
     let mut sim = inv.to_vec();
-    crate::craft::consumir(&mut sim, item_id::COPPER, total as u32);
+    crate::craft::consumir(&mut sim, moeda, total as u32);
     if !crate::craft::por_empilhavel(&mut sim, item, qtd, cap) {
         return Err("bag too full for that batch".into());
     }
@@ -97,5 +110,23 @@ mod testes {
         let mut inv = bolsa(&[(item_id::COPPER, 10)], 1);
         assert!(comprar_lote(&mut inv, POCAO, 1, 0, 99).is_err());
         assert!(comprar_lote(&mut inv, POCAO, 1, MAX_LOTE + 1, 99).is_err());
+    }
+
+    #[test]
+    fn loja_naval_cobra_tokens_e_nao_cobre() {
+        let mut inv = bolsa(&[(item_id::COPPER, 10_000), (item_id::NAVAL_TOKEN, 30)], 1);
+        let total = comprar_lote_com(
+            &mut inv,
+            item_id::NAVAL_TOKEN,
+            "Naval Tokens",
+            POCAO,
+            15,
+            2,
+            99,
+        );
+        assert_eq!(total, Ok(30));
+        assert_eq!(crate::craft::tem(&inv, item_id::NAVAL_TOKEN), 0);
+        assert_eq!(crate::craft::tem(&inv, item_id::COPPER), 10_000);
+        assert_eq!(crate::craft::tem(&inv, POCAO), 2);
     }
 }

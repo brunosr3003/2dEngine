@@ -126,7 +126,6 @@ pub fn loot_de_chefe(kind: u16, seed: u64) -> Vec<(u16, u32)> {
     v
 }
 
-
 /// Cor do material bom do chefe pelo nivel dele.
 fn cor_da_faixa(nivel: u32) -> u8 {
     match nivel {
@@ -249,7 +248,9 @@ pub fn ilhas_dos_bichos(comuns: &[u16], praia: &[u16]) -> std::collections::Hash
     for &k in praia {
         m.insert(
             k,
-            (0..ilhas.len() as u8).filter(|i| shared::terreno::tem_porto(ilhas[*i as usize].zona)).collect(),
+            (0..ilhas.len() as u8)
+                .filter(|i| shared::terreno::tem_porto(ilhas[*i as usize].zona))
+                .collect(),
         );
     }
     m
@@ -333,17 +334,28 @@ impl GameWorld {
                 .collect()
         } else if shared::abissal::e_abissal(&self.zona) {
             // Abyssia: each sea boss in its cleared arena, weakest first.
-            shared::abissal::arenas().into_iter().take(chefes.len()).collect()
+            shared::abissal::arenas()
+                .into_iter()
+                .take(chefes.len())
+                .collect()
         } else if let Some(pl) = self.ilha.as_ref().and_then(|i| i.planalto()) {
-            [2usize, 3, 4].iter().filter_map(|i| {
-                let alvo = pl.regioes[*i].centro + Vec2::new(-38.0,25.0);
-                candidatos.iter().copied().filter(|p| pl.regiao(*p) == *i && pl.distancia_estrada(*p) > 28.0)
-                    .min_by(|a,b| a.distance_squared(alvo).total_cmp(&b.distance_squared(alvo)))
-            })
-            // Then Stormkeep's Warlord (60, last in `da_zona`): in the keep's
-            // arena, a little past its middle from the gate.
-            .chain(std::iter::once(pl.forte.centro - pl.forte.portao * 8.0))
-            .collect()
+            [2usize, 3, 4]
+                .iter()
+                .filter_map(|i| {
+                    let alvo = pl.regioes[*i].centro + Vec2::new(-38.0, 25.0);
+                    candidatos
+                        .iter()
+                        .copied()
+                        .filter(|p| pl.regiao(*p) == *i && pl.distancia_estrada(*p) > 28.0)
+                        .min_by(|a, b| {
+                            a.distance_squared(alvo)
+                                .total_cmp(&b.distance_squared(alvo))
+                        })
+                })
+                // Then Stormkeep's Warlord (60, last in `da_zona`): in the keep's
+                // arena, a little past its middle from the gate.
+                .chain(std::iter::once(pl.forte.centro - pl.forte.portao * 8.0))
+                .collect()
         } else {
             sitios_de_chefe(&candidatos, self.porto_da_ilha, &seguras, chefes.len())
         };
@@ -713,8 +725,21 @@ mod testes {
         w.safe_zones.clear();
         let origin = Vec2::splat(40.);
         let target = origin + Vec2::X * 18.;
-        w.ecs.spawn((NetId(EntityId(901)), Position(target), EntityKind::Player,
-            PlayerTag { name: "hydra-target".into(), player_id: PlayerId(901), attack_anim_pending: None, combo_step_pending: None }, Health { current: 10000, max: 10000 }));
+        w.ecs.spawn((
+            NetId(EntityId(901)),
+            Position(target),
+            EntityKind::Player,
+            PlayerTag {
+                name: "hydra-target".into(),
+                player_id: PlayerId(901),
+                attack_anim_pending: None,
+                combo_step_pending: None,
+            },
+            Health {
+                current: 10000,
+                max: 10000,
+            },
+        ));
         let hydra = w.nascer_chefe(93, origin).unwrap();
         {
             let mut tag = w.ecs.get::<&mut EnemyTag>(hydra).unwrap();
@@ -722,20 +747,34 @@ mod testes {
             assert!(tag.locomotor_speed > 2.);
         }
         w.ecs.get::<&mut ChefeVivo>(hydra).unwrap().livre_em = 10.;
-        for _ in 0..30 { w.step(shared::TICK_DT); }
+        for _ in 0..30 {
+            w.step(shared::TICK_DT);
+        }
         let moved = w.ecs.get::<&Position>(hydra).unwrap().0;
-        assert!(moved.distance(origin) > 1., "Hydra must walk toward its target");
+        assert!(
+            moved.distance(origin) > 1.,
+            "Hydra must walk toward its target"
+        );
         assert!(moved.distance(target) < origin.distance(target));
         w.ecs.get::<&mut ChefeVivo>(hydra).unwrap().livre_em = 0.;
         w.step(shared::TICK_DT);
         assert!(w.ecs.get::<&ChefeVivo>(hydra).unwrap().carga.is_some());
         let charging = w.ecs.get::<&Position>(hydra).unwrap().0;
-        for _ in 0..10 { w.step(shared::TICK_DT); }
-        assert_eq!(w.ecs.get::<&Position>(hydra).unwrap().0, charging,
-            "telegraph remains planted so its hit area is honest");
-        for _ in 0..100 { w.step(shared::TICK_DT); }
-        assert!(w.ecs.get::<&Position>(hydra).unwrap().0.distance(charging) > 1.,
-            "Hydra must resume moving after the charge");
+        for _ in 0..10 {
+            w.step(shared::TICK_DT);
+        }
+        assert_eq!(
+            w.ecs.get::<&Position>(hydra).unwrap().0,
+            charging,
+            "telegraph remains planted so its hit area is honest"
+        );
+        for _ in 0..100 {
+            w.step(shared::TICK_DT);
+        }
+        assert!(
+            w.ecs.get::<&Position>(hydra).unwrap().0.distance(charging) > 1.,
+            "Hydra must resume moving after the charge"
+        );
     }
 
     #[test]

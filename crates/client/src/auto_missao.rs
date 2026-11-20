@@ -353,7 +353,8 @@ impl AutoMissao {
             }
             Etapa::SaindoDaColeta => {
                 if self.destino.is_none_or(|d| c.eu.distance(d.pos) >= 6.0)
-                    || c.agora - self.desde > 4.0 {
+                    || c.agora - self.desde > 4.0
+                {
                     self.pedir_de_novo(c.agora);
                 }
             }
@@ -410,7 +411,9 @@ impl AutoMissao {
 pub fn ilha_da_missao(quest: u16, aqui: &str) -> Option<u8> {
     // A story "Bound for…" step: the island it sends you to (the step lives on
     // the island you leave from). The Island Portal's menu boards there.
-    if let Some(d) = shared::quests::quest_by_id(quest).filter(|d| d.obj_kind == shared::quests::objective_kind::VIAGEM) {
+    if let Some(d) = shared::quests::quest_by_id(quest)
+        .filter(|d| d.obj_kind == shared::quests::objective_kind::VIAGEM)
+    {
         let alvo = shared::terreno::ARQUIPELAGO.get(d.obj_target as usize)?;
         return (alvo.zona != aqui).then_some(d.obj_target as u8);
     }
@@ -443,9 +446,10 @@ pub fn rumo(destinos: &[shared::viagem::Destino], ilha: Option<u8>) -> Rumo {
     };
     match destinos.iter().find(|d| d.ilha == ilha) {
         Some(d) if d.estado == estado::LIBERADA => Rumo::Embarcar(ilha),
-        Some(d) if d.estado == estado::FORA_DO_AR => {
-            Rumo::Parar(format!("{} está fora do ar: a auto missão para aqui.", d.nome))
-        }
+        Some(d) if d.estado == estado::FORA_DO_AR => Rumo::Parar(format!(
+            "{} está fora do ar: a auto missão para aqui.",
+            d.nome
+        )),
         Some(d) if d.estado == estado::BLOQUEADA => {
             let falta = if d.requisito.is_empty() {
                 String::new()
@@ -473,11 +477,25 @@ mod tests {
     fn todo_passo_de_viagem_embarca_pelo_portal() {
         use shared::quests::objective_kind;
         let no_ar = |_: &str| true;
-        for (i, d) in shared::historia::PASSOS.iter().enumerate().filter(|(_, d)| d.obj_kind == objective_kind::VIAGEM) {
+        for (i, d) in shared::historia::PASSOS
+            .iter()
+            .enumerate()
+            .filter(|(_, d)| d.obj_kind == objective_kind::VIAGEM)
+        {
             let aqui = shared::historia::zona_do_passo(d.id).unwrap();
-            assert_eq!(ilha_da_missao(d.id, aqui), Some(d.obj_target as u8), "{}", d.id);
+            assert_eq!(
+                ilha_da_missao(d.id, aqui),
+                Some(d.obj_target as u8),
+                "{}",
+                d.id
+            );
             let menu = shared::viagem::destinos_do_portal(aqui, Some(i as u32), &no_ar);
-            assert_eq!(rumo(&menu, ilha_da_missao(d.id, aqui)), Rumo::Embarcar(d.obj_target as u8), "{}: the auto quest does not board", d.id);
+            assert_eq!(
+                rumo(&menu, ilha_da_missao(d.id, aqui)),
+                Rumo::Embarcar(d.obj_target as u8),
+                "{}: the auto quest does not board",
+                d.id
+            );
             // Already there: nothing to board.
             let la = shared::terreno::ARQUIPELAGO[d.obj_target as usize].zona;
             assert_eq!(ilha_da_missao(d.id, la), None);
@@ -507,8 +525,14 @@ mod tests {
             destino(3, estado::BLOQUEADA),
         ];
         assert_eq!(rumo(&ds, Some(1)), Rumo::Embarcar(1));
-        assert!(matches!(rumo(&ds, Some(2)), Rumo::Parar(_)), "fora do ar para");
-        assert!(matches!(rumo(&ds, Some(3)), Rumo::Parar(_)), "bloqueada para");
+        assert!(
+            matches!(rumo(&ds, Some(2)), Rumo::Parar(_)),
+            "fora do ar para"
+        );
+        assert!(
+            matches!(rumo(&ds, Some(3)), Rumo::Parar(_)),
+            "bloqueada para"
+        );
         // With no quest on another island the menu belongs to the player.
         assert_eq!(rumo(&ds, None), Rumo::Menu);
         // The island we are already on is not "travelled" to.
@@ -736,7 +760,10 @@ mod tests {
         c.agora = 16.0;
         assert_eq!(a.passo(c), vec![Acao::PararAutos]);
         assert_eq!(a.etapa(), Some(Etapa::PedirDestino));
-        assert_eq!(a.passo(ctx(Vec2::ZERO, 17.0)), vec![Acao::PedirDestino(502)]);
+        assert_eq!(
+            a.passo(ctx(Vec2::ZERO, 17.0)),
+            vec![Acao::PedirDestino(502)]
+        );
     }
 
     #[test]
@@ -877,7 +904,9 @@ mod tests {
         a.iniciar(501, "x".into(), 0.0);
         pede(&mut a, 0.0);
         a.destino_recebido(501, destino_tipo::COLETA, Vec2::ZERO, 8.0, None, 0.1);
-        assert!(a.passo(ctx(Vec2::ZERO, 0.2)).contains(&Acao::LigarColeta(Vec2::ZERO)));
+        assert!(a
+            .passo(ctx(Vec2::ZERO, 0.2))
+            .contains(&Acao::LigarColeta(Vec2::ZERO)));
         for t in [7.0, 30.0, 120.0] {
             let mut c = ctx(Vec2::ZERO, t);
             c.coleta_ativa = true;
@@ -900,7 +929,9 @@ mod tests {
         a.recurso_parou();
         let acoes = a.passo(ctx(Vec2::ZERO, 0.3));
         assert!(acoes.contains(&Acao::PararAutos));
-        assert!(acoes.iter().any(|acao| matches!(acao, Acao::Viajar(p) if p.length() >= 6.9)));
+        assert!(acoes
+            .iter()
+            .any(|acao| matches!(acao, Acao::Viajar(p) if p.length() >= 6.9)));
         assert_eq!(a.etapa(), Some(Etapa::SaindoDaColeta));
     }
 

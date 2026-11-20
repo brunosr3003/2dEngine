@@ -63,7 +63,12 @@ pub fn posso_atacar(eu: &shared::EntityMeta, ele: &shared::EntityMeta, mesmo_gru
         poder: m.poder,
     };
     // At sea a MARKED ship (treasure on deck, naval phase 4) is fair game.
-    pk::pode_atacar_no_mar(&lado(eu, 1), &lado(ele, if mesmo_cla { 1 } else { 2 }), false, ele.pk.marcado)
+    pk::pode_atacar_no_mar(
+        &lado(eu, 1),
+        &lado(ele, if mesmo_cla { 1 } else { 2 }),
+        false,
+        ele.pk.marcado,
+    )
 }
 
 /// "+15% XP lost on death" for `pontos` points (empty with none).
@@ -72,7 +77,10 @@ pub fn texto_da_perda(pontos: u32) -> String {
     if extra <= 0.0 {
         String::new()
     } else {
-        format!("+{}% XP lost on death (not recoverable)", (extra * 100.0).round() as u32)
+        format!(
+            "+{}% XP lost on death (not recoverable)",
+            (extra * 100.0).round() as u32
+        )
     }
 }
 
@@ -82,14 +90,26 @@ impl PkUi {
         self.confirmar_perdao = false;
     }
 
-    pub fn desenha(&mut self, pk_estado: shared::PkState, nivel: u32, ouro: u64) -> Option<ClientMessage> {
+    pub fn desenha(
+        &mut self,
+        pk_estado: shared::PkState,
+        nivel: u32,
+        ouro: u64,
+    ) -> Option<ClientMessage> {
         if !self.aberto {
             return None;
         }
-        estilo::no_painel(estilo::escala_do_painel(520.0, 470.0), || self.desenha_na_escala(pk_estado, nivel, ouro))
+        estilo::no_painel(estilo::escala_do_painel(520.0, 470.0), || {
+            self.desenha_na_escala(pk_estado, nivel, ouro)
+        })
     }
 
-    fn desenha_na_escala(&mut self, pk_estado: shared::PkState, nivel: u32, ouro: u64) -> Option<ClientMessage> {
+    fn desenha_na_escala(
+        &mut self,
+        pk_estado: shared::PkState,
+        nivel: u32,
+        ouro: u64,
+    ) -> Option<ClientMessage> {
         crate::hud_layout::escurece(0.5);
         let f = estilo::fator_texto();
         let t = crate::hud_layout::tela_segura();
@@ -97,7 +117,11 @@ impl PkUi {
         let p = Rect::new(t.center().x - w * 0.5, t.center().y - h * 0.5, w, h);
         estilo::painel(p);
         estilo::texto(p.x + 18.0 * f, p.y + 34.0 * f, "PK mode", 22, estilo::OURO);
-        if crate::ui::botao(Rect::new(p.x + p.w - 48.0 * f, p.y + 10.0 * f, 38.0 * f, 34.0 * f), "x", true) {
+        if crate::ui::botao(
+            Rect::new(p.x + p.w - 48.0 * f, p.y + 10.0 * f, 38.0 * f, 34.0 * f),
+            "x",
+            true,
+        ) {
             self.aberto = false;
             return None;
         }
@@ -115,10 +139,18 @@ impl PkUi {
             );
             let bw = 150.0 * f;
             let by = p.y + p.h - 70.0 * f;
-            if crate::ui::botao(Rect::new(p.center().x - bw - 8.0, by, bw, 44.0 * f), "Cancel", true) {
+            if crate::ui::botao(
+                Rect::new(p.center().x - bw - 8.0, by, bw, 44.0 * f),
+                "Cancel",
+                true,
+            ) {
                 self.confirmar_perdao = false;
             }
-            if crate::ui::botao(Rect::new(p.center().x + 8.0, by, bw, 44.0 * f), "Pay", ouro >= custo) {
+            if crate::ui::botao(
+                Rect::new(p.center().x + 8.0, by, bw, 44.0 * f),
+                "Pay",
+                ouro >= custo,
+            ) {
                 self.confirmar_perdao = false;
                 saida = Some(ClientMessage::PerdoarPk);
             }
@@ -133,10 +165,32 @@ impl PkUi {
             let ativo = modo == atual;
             let livre = !pk_estado.travado;
             estilo::cartao(r, livre && r.toca(m), ativo);
-            let c = if modo == pk::PACIFICO { estilo::AUTO } else { ROXO_PK };
-            draw_circle(r.x + 16.0 * f, r.center().y, 6.0 * f, if ativo { c } else { estilo::alfa(c, 0.35) });
-            estilo::texto_forte(r.x + 32.0 * f, r.y + 22.0 * f, pk::nome(modo), 17, if ativo { c } else { estilo::TEXTO });
-            estilo::texto_ajustado(pk::explicacao(modo), r.x + 32.0 * f, r.y + 42.0 * f, r.w - 44.0 * f, 13, estilo::SUAVE);
+            let c = if modo == pk::PACIFICO {
+                estilo::AUTO
+            } else {
+                ROXO_PK
+            };
+            draw_circle(
+                r.x + 16.0 * f,
+                r.center().y,
+                6.0 * f,
+                if ativo { c } else { estilo::alfa(c, 0.35) },
+            );
+            estilo::texto_forte(
+                r.x + 32.0 * f,
+                r.y + 22.0 * f,
+                pk::nome(modo),
+                17,
+                if ativo { c } else { estilo::TEXTO },
+            );
+            estilo::texto_ajustado(
+                pk::explicacao(modo),
+                r.x + 32.0 * f,
+                r.y + 42.0 * f,
+                r.w - 44.0 * f,
+                13,
+                estilo::SUAVE,
+            );
             if livre && !ativo && r.toca(m) && crate::foco::clique() {
                 crate::sons::tocar(crate::sons::Som::Clique);
                 saida = Some(ClientMessage::DefinirModoPk { modo });
@@ -156,8 +210,18 @@ impl PkUi {
         // Points.
         let y = p.y + p.h - 112.0 * f;
         estilo::separador(p.x + 18.0 * f, y - 10.0 * f, p.w - 36.0 * f);
-        let cor_pontos = if pk_estado.pontos > 0 { VERMELHO_PK } else { estilo::TEXTO };
-        estilo::texto_forte(p.x + 18.0 * f, y + 10.0 * f, &format!("PK points: {}", pk_estado.pontos), 17, cor_pontos);
+        let cor_pontos = if pk_estado.pontos > 0 {
+            VERMELHO_PK
+        } else {
+            estilo::TEXTO
+        };
+        estilo::texto_forte(
+            p.x + 18.0 * f,
+            y + 10.0 * f,
+            &format!("PK points: {}", pk_estado.pontos),
+            17,
+            cor_pontos,
+        );
         let linha = if pk_estado.pontos > 0 {
             format!(
                 "Red name: anyone may attack you. {}. 1 point fades per hour online.",
@@ -166,15 +230,33 @@ impl PkUi {
         } else {
             "Killing a Peaceful player with a clean name gives a PK point.".to_string()
         };
-        estilo::texto_ajustado(&linha, p.x + 18.0 * f, y + 32.0 * f, p.w - 36.0 * f, 12, estilo::SUAVE);
+        estilo::texto_ajustado(
+            &linha,
+            p.x + 18.0 * f,
+            y + 32.0 * f,
+            p.w - 36.0 * f,
+            12,
+            estilo::SUAVE,
+        );
         if pk_estado.pontos > 0 {
             let custo = pk::custo_perdao(nivel);
             let r = Rect::new(p.x + p.w - 250.0 * f, y + 48.0 * f, 232.0 * f, 42.0 * f);
-            if crate::ui::botao(r, &format!("Pardon 1 point · {} gold", milhar(custo)), ouro >= custo) {
+            if crate::ui::botao(
+                r,
+                &format!("Pardon 1 point · {} gold", milhar(custo)),
+                ouro >= custo,
+            ) {
                 self.confirmar_perdao = true;
             }
             if ouro < custo {
-                estilo::texto_ajustado("Not enough gold.", p.x + 18.0 * f, y + 74.0 * f, r.x - p.x - 26.0 * f, 13, estilo::VERMELHO);
+                estilo::texto_ajustado(
+                    "Not enough gold.",
+                    p.x + 18.0 * f,
+                    y + 74.0 * f,
+                    r.x - p.x - 26.0 * f,
+                    13,
+                    estilo::VERMELHO,
+                );
             }
         }
         saida
@@ -195,14 +277,35 @@ impl PkUi {
             let (w, h) = ((520.0 * f).min(t.w - 16.0), (260.0 * f).min(t.h - 16.0));
             let p = Rect::new(t.center().x - w * 0.5, t.center().y - h * 0.5, w, h);
             estilo::painel(p);
-            estilo::texto_forte(p.x + 22.0 * f, p.y + 38.0 * f, "Leave the game?", 21, VERMELHO_PK);
-            estilo::texto_ajustado(pk::AVISO_DE_SAIDA, p.x + 22.0 * f, p.y + 76.0 * f, p.w - 44.0 * f, 16, estilo::TEXTO);
+            estilo::texto_forte(
+                p.x + 22.0 * f,
+                p.y + 38.0 * f,
+                "Leave the game?",
+                21,
+                VERMELHO_PK,
+            );
+            estilo::texto_ajustado(
+                pk::AVISO_DE_SAIDA,
+                p.x + 22.0 * f,
+                p.y + 76.0 * f,
+                p.w - 44.0 * f,
+                16,
+                estilo::TEXTO,
+            );
             let bw = 170.0 * f;
             let by = p.y + p.h - 64.0 * f;
-            if crate::ui::botao(Rect::new(p.center().x - bw - 8.0, by, bw, 44.0 * f), "Stay", true) {
+            if crate::ui::botao(
+                Rect::new(p.center().x - bw - 8.0, by, bw, 44.0 * f),
+                "Stay",
+                true,
+            ) {
                 return Some(false);
             }
-            if crate::ui::botao(Rect::new(p.center().x + 8.0, by, bw, 44.0 * f), "Leave anyway", true) {
+            if crate::ui::botao(
+                Rect::new(p.center().x + 8.0, by, bw, 44.0 * f),
+                "Leave anyway",
+                true,
+            ) {
                 return Some(true);
             }
             None
@@ -224,17 +327,44 @@ mod testes {
 
     #[test]
     fn cor_e_modo_do_cartao() {
-        let pk = |modo, pontos, hostil| shared::PkState { hostil, pontos, modo, travado: false, marcado: false, combate: false };
+        let pk = |modo, pontos, hostil| shared::PkState {
+            hostil,
+            pontos,
+            modo,
+            travado: false,
+            marcado: false,
+            combate: false,
+        };
         assert_eq!(cor(pk(pk::PACIFICO, 0, false)), estilo::AUTO);
         assert_eq!(cor(pk(pk::GRUPO, 0, true)), ROXO_PK);
-        assert_eq!(cor(pk(pk::PACIFICO, 2, false)), VERMELHO_PK, "red name wins, even with PK off");
-        assert_eq!(modo_de(pk(pk::PACIFICO, 0, true)), pk::LIVRE, "old Hostile flag");
+        assert_eq!(
+            cor(pk(pk::PACIFICO, 2, false)),
+            VERMELHO_PK,
+            "red name wins, even with PK off"
+        );
+        assert_eq!(
+            modo_de(pk(pk::PACIFICO, 0, true)),
+            pk::LIVRE,
+            "old Hostile flag"
+        );
         assert_eq!(modo_de(pk(pk::CLA, 0, true)), pk::CLA);
         assert_eq!(texto_da_perda(0), "");
         assert_eq!(texto_da_perda(3), "+15% XP lost on death (not recoverable)");
-        assert_eq!(texto_da_perda(20), "+40% XP lost on death (not recoverable)");
-        assert!(!saida_fica(pk(pk::LIVRE, 0, true)), "a PK mode alone leaves at once");
+        assert_eq!(
+            texto_da_perda(20),
+            "+40% XP lost on death (not recoverable)"
+        );
+        assert!(
+            !saida_fica(pk(pk::LIVRE, 0, true)),
+            "a PK mode alone leaves at once"
+        );
         assert!(saida_fica(pk(pk::PACIFICO, 1, false)), "red name");
-        assert!(saida_fica(shared::PkState { combate: true, ..pk(pk::PACIFICO, 0, false) }), "PK combat");
+        assert!(
+            saida_fica(shared::PkState {
+                combate: true,
+                ..pk(pk::PACIFICO, 0, false)
+            }),
+            "PK combat"
+        );
     }
 }

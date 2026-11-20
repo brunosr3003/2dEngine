@@ -44,7 +44,9 @@ pub fn registrar(conta: i64, personagem: String, layout: LayoutDoHud) {
         }
         m.insert(conta, agora);
     }
-    let Some(pool) = crate::chat_global::pool() else { return };
+    let Some(pool) = crate::chat_global::pool() else {
+        return;
+    };
     let personalizado = (l.botoes - 1.0).abs() > 1e-3 || !l.itens.is_empty();
     let itens = serde_json::json!(l
         .itens

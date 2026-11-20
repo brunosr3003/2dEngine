@@ -57,13 +57,18 @@ const RAIO_MAX: f32 = 40.0;
 /// The portal of the island this generator makes, and the arrival point next
 /// to it. `None`: no town (the colony, the arena, the sea).
 pub fn sitio(ger: &Gerador) -> Option<(Vec2, Vec2)> {
-    let def = crate::terreno::ARQUIPELAGO.iter().find(|d| d.semente == ger.semente)?;
+    let def = crate::terreno::ARQUIPELAGO
+        .iter()
+        .find(|d| d.semente == ger.semente)?;
     let cidade = ger.cidade()?;
     let centro = cidade.centro();
     let chao = cidade.altura();
     let vila = ger.vila();
     let caixas = caixas_de_tudo(vila);
-    let portas: Vec<Vec2> = crate::porao::portas_da_zona(def.zona, ger).into_iter().map(|(_, p)| p).collect();
+    let portas: Vec<Vec2> = crate::porao::portas_da_zona(def.zona, ger)
+        .into_iter()
+        .map(|(_, p)| p)
+        .collect();
     let rumo = rumo_do_cais(ger, vila, centro);
     let a0 = rumo.y.atan2(rumo.x);
     // Candidates by preference: near the dock road's heading first, then
@@ -81,7 +86,9 @@ pub fn sitio(ger: &Gerador) -> Option<(Vec2, Vec2)> {
     }
     candidatos.sort_by(|a, b| a.0.total_cmp(&b.0));
     for (_, q) in candidatos {
-        if !livre(ger, vila, &caixas, &portas, q, chao, PEGADA + FOLGA, true) || !sem_arvore(ger, def.bioma, q, PEGADA + FOLGA) {
+        if !livre(ger, vila, &caixas, &portas, q, chao, PEGADA + FOLGA, true)
+            || !sem_arvore(ger, def.bioma, q, PEGADA + FOLGA)
+        {
             continue;
         }
         // The ring faces open ground: the arrival point and a clear view
@@ -117,7 +124,9 @@ pub fn da_zona(zona: &str) -> Option<(Vec2, Vec2)> {
     if let Some(v) = cache.lock().ok().and_then(|c| c.get(zona).copied()) {
         return v;
     }
-    let def = crate::terreno::ARQUIPELAGO.iter().find(|d| d.zona == zona)?;
+    let def = crate::terreno::ARQUIPELAGO
+        .iter()
+        .find(|d| d.zona == zona)?;
     let v = sitio(&Gerador::da_ilha(def));
     if let Ok(mut c) = cache.lock() {
         c.insert(zona.to_string(), v);
@@ -145,7 +154,12 @@ fn rumo_do_cais(ger: &Gerador, vila: &Vila, centro: Vec2) -> Vec2 {
     use crate::construcao::Papel;
     vila.npcs
         .iter()
-        .filter(|n| matches!(n.papel, Papel::Estaleiro | Papel::Motorista | Papel::Submarino))
+        .filter(|n| {
+            matches!(
+                n.papel,
+                Papel::Estaleiro | Papel::Motorista | Papel::Submarino
+            )
+        })
         .min_by(|a, b| a.pos.distance(centro).total_cmp(&b.pos.distance(centro)))
         .and_then(|n| (n.pos - centro).try_normalize())
         .unwrap_or(Vec2::Y)
@@ -157,12 +171,18 @@ fn caixas_de_tudo(vila: &Vila) -> Vec<vila::Caixa2> {
     let mut v = vila::caixas_solidas(vila);
     for pr in &vila.props {
         for (mn, mx) in pr.construcao().caixas_mundo(pr.pos, pr.yaw_q) {
-            v.push(vila::Caixa2 { min: Vec2::new(mn.x, mn.z), max: Vec2::new(mx.x, mx.z) });
+            v.push(vila::Caixa2 {
+                min: Vec2::new(mn.x, mn.z),
+                max: Vec2::new(mx.x, mx.z),
+            });
         }
     }
     for p in &vila.predios {
         for (mn, mx) in p.construcao().caixas_mundo(p.pos, p.yaw_q) {
-            v.push(vila::Caixa2 { min: Vec2::new(mn.x, mn.z), max: Vec2::new(mx.x, mx.z) });
+            v.push(vila::Caixa2 {
+                min: Vec2::new(mn.x, mn.z),
+                max: Vec2::new(mx.x, mx.z),
+            });
         }
     }
     v
@@ -176,7 +196,11 @@ fn dist_caixa(c: &vila::Caixa2, p: Vec2) -> f32 {
 
 fn dist_seg(p: Vec2, a: Vec2, b: Vec2) -> f32 {
     let ab = b - a;
-    let t = if ab.length_squared() < 1e-6 { 0.0 } else { ((p - a).dot(ab) / ab.length_squared()).clamp(0.0, 1.0) };
+    let t = if ab.length_squared() < 1e-6 {
+        0.0
+    } else {
+        ((p - a).dot(ab) / ab.length_squared()).clamp(0.0, 1.0)
+    };
     p.distance(a + ab * t)
 }
 
@@ -217,13 +241,19 @@ fn livre(
     if vila.npcs.iter().any(|n| n.pos.distance(q) < raio + 2.0) {
         return false;
     }
-    if vila.caminhos.iter().any(|(a, b)| dist_seg(q, *a, *b) < raio + vila::CAMINHO_MEIA) {
+    if vila
+        .caminhos
+        .iter()
+        .any(|(a, b)| dist_seg(q, *a, *b) < raio + vila::CAMINHO_MEIA)
+    {
         return false;
     }
     if vila::atrapalha_porta(vila, q, raio + 2.0) {
         return false;
     }
-    !portas.iter().any(|p| p.distance(q) < LONGE_DA_PORTA_DO_PORAO)
+    !portas
+        .iter()
+        .any(|p| p.distance(q) < LONGE_DA_PORTA_DO_PORAO)
 }
 
 /// No tree trunk, boulder or stump in the circle (`terreno::estorvos_da_coluna`,
@@ -241,9 +271,19 @@ fn sem_arvore(ger: &Gerador, bioma: crate::terreno::Bioma, q: Vec2, raio: f32) -
                 .max()
                 .unwrap_or(0);
             achados.clear();
-            crate::terreno::estorvos_da_coluna(bioma, bx, bz, topo, declive, ger, false, &mut achados);
+            crate::terreno::estorvos_da_coluna(
+                bioma,
+                bx,
+                bz,
+                topo,
+                declive,
+                ger,
+                false,
+                &mut achados,
+            );
             if achados.iter().any(|e| {
-                !matches!(e.tipo, crate::terreno::TipoDeEstorvo::Forracao) && e.centro.distance(q) < raio + e.raio
+                !matches!(e.tipo, crate::terreno::TipoDeEstorvo::Forracao)
+                    && e.centro.distance(q) < raio + e.raio
             }) {
                 return false;
             }
@@ -263,46 +303,92 @@ mod testes {
     fn toda_ilha_tem_um_portal_em_chao_livre_e_se_chega_andando() {
         for def in ARQUIPELAGO {
             let ger = Gerador::da_ilha(&def);
-            let (p, chegada) = sitio(&ger).unwrap_or_else(|| panic!("{}: no Island Portal", def.zona));
-            assert_eq!(da_zona(def.zona), Some((p, chegada)), "{}: the cache disagrees", def.zona);
+            let (p, chegada) =
+                sitio(&ger).unwrap_or_else(|| panic!("{}: no Island Portal", def.zona));
+            assert_eq!(
+                da_zona(def.zona),
+                Some((p, chegada)),
+                "{}: the cache disagrees",
+                def.zona
+            );
             let cidade = ger.cidade().unwrap();
             let ilha = Ilha::da_ilha(&def);
             // Open ground: nothing the server collides with in the footprint
             // or on the arrival point.
-            assert!(ilha.sem_estorvo(p, PEGADA), "{}: the portal stands in something", def.zona);
-            assert!(ilha.sem_estorvo(chegada, 0.6), "{}: the arrival is blocked", def.zona);
+            assert!(
+                ilha.sem_estorvo(p, PEGADA),
+                "{}: the portal stands in something",
+                def.zona
+            );
+            assert!(
+                ilha.sem_estorvo(chegada, 0.6),
+                "{}: the arrival is blocked",
+                def.zona
+            );
             assert!(!ilha.agua(p.x, p.y) && !ilha.agua(chegada.x, chegada.y));
-            assert!(chegada.distance(p) > ALCANCE + 1.0, "{}: arriving would open it again", def.zona);
+            assert!(
+                chegada.distance(p) > ALCANCE + 1.0,
+                "{}: arriving would open it again",
+                def.zona
+            );
             // Not on top of anyone, and not on a road.
             let vila = ger.vila();
             for n in &vila.npcs {
-                assert!(n.pos.distance(p) >= PEGADA + 2.0, "{}: on top of {}", def.zona, n.nome);
+                assert!(
+                    n.pos.distance(p) >= PEGADA + 2.0,
+                    "{}: on top of {}",
+                    def.zona,
+                    n.nome
+                );
             }
             for (a, b) in &vila.caminhos {
                 assert!(dist_seg(p, *a, *b) >= PEGADA, "{}: blocks a path", def.zona);
             }
             for (_, d) in crate::porao::portas_da_zona(def.zona, &ger) {
-                assert!(d.distance(p) >= LONGE_DA_PORTA_DO_PORAO, "{}: beside a Porão portal", def.zona);
+                assert!(
+                    d.distance(p) >= LONGE_DA_PORTA_DO_PORAO,
+                    "{}: beside a Porão portal",
+                    def.zona
+                );
             }
             // In town: a few steps from the square.
-            assert!(cidade.distancia(p) <= RAIO_MAX + 0.5, "{}: out of town", def.zona);
+            assert!(
+                cidade.distancia(p) <= RAIO_MAX + 0.5,
+                "{}: out of town",
+                def.zona
+            );
             // Walkable from the square, and back.
             let inicio = ilha.ponto_livre_perto(cidade.centro() + Vec2::new(0.0, 6.0), 0.6);
             let rota = ilha.caminho(inicio, chegada, 60_000);
             assert!(
-                rota.as_ref().and_then(|r| r.last()).is_some_and(|f| f.distance(chegada) < 2.0),
+                rota.as_ref()
+                    .and_then(|r| r.last())
+                    .is_some_and(|f| f.distance(chegada) < 2.0),
                 "{}: no walk from the square to the portal at {p:?}",
                 def.zona
             );
             let ate = ilha.caminho(chegada, p, 20_000);
             assert!(
-                ate.as_ref().and_then(|r| r.last()).is_some_and(|f| f.distance(p) < ALCANCE),
+                ate.as_ref()
+                    .and_then(|r| r.last())
+                    .is_some_and(|f| f.distance(p) < ALCANCE),
                 "{}: the portal cannot be stepped into",
                 def.zona
             );
-            println!("{}: portal at ({:.1}, {:.1}), {:.0} u from the square, arrival ({:.1}, {:.1})", def.zona, p.x, p.y, cidade.distancia(p), chegada.x, chegada.y);
+            println!(
+                "{}: portal at ({:.1}, {:.1}), {:.0} u from the square, arrival ({:.1}, {:.1})",
+                def.zona,
+                p.x,
+                p.y,
+                cidade.distancia(p),
+                chegada.x,
+                chegada.y
+            );
         }
-        assert!(da_zona("ilha_magica").is_none(), "the Magic Island is reached through the menu only");
+        assert!(
+            da_zona("ilha_magica").is_none(),
+            "the Magic Island is reached through the menu only"
+        );
         assert!(da_zona(crate::mar::ZONA).is_none());
     }
 }

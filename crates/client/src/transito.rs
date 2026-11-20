@@ -53,7 +53,10 @@ impl Caminho {
 
     /// The point and direction at distance `s` along the path.
     fn em(&self, s: f32) -> (Vec2, Vec2) {
-        let i = self.acumulado.partition_point(|&a| a <= s).clamp(1, self.pontos.len() - 1);
+        let i = self
+            .acumulado
+            .partition_point(|&a| a <= s)
+            .clamp(1, self.pontos.len() - 1);
         let (a, b) = (self.pontos[i - 1], self.pontos[i]);
         let l = (self.acumulado[i] - self.acumulado[i - 1]).max(1e-4);
         let t = ((s - self.acumulado[i - 1]) / l).clamp(0.0, 1.0);
@@ -92,7 +95,10 @@ fn le_caminhos() -> Vec<Caminho> {
             if elevado {
                 return shared::kogen::deck_em(g).is_some();
             }
-            !matches!(shared::kogen::chao_em(g), shared::kogen::Chao::Predio { .. } | shared::kogen::Chao::Mar)
+            !matches!(
+                shared::kogen::chao_em(g),
+                shared::kogen::Chao::Predio { .. } | shared::kogen::Chao::Mar
+            )
         };
         let mut trecho: Vec<Vec2> = Vec::new();
         let fecha = |trecho: &mut Vec<Vec2>, caminhos: &mut Vec<Caminho>| {
@@ -102,7 +108,13 @@ fn le_caminhos() -> Vec<Caminho> {
                 acumulado.push(acumulado.last().unwrap() + w[0].distance(w[1]));
             }
             if pts.len() >= 2 && *acumulado.last().unwrap() > 6.0 {
-                caminhos.push(Caminho { elevado, faixa, pontos: pts, acumulado, seguintes: [Vec::new(), Vec::new()] });
+                caminhos.push(Caminho {
+                    elevado,
+                    faixa,
+                    pontos: pts,
+                    acumulado,
+                    seguintes: [Vec::new(), Vec::new()],
+                });
             }
         };
         for w in pontos.windows(2) {
@@ -125,7 +137,10 @@ fn le_caminhos() -> Vec<Caminho> {
     }
     // Join the ends: each end lists the paths of the same level that start
     // or end within `EMENDA` of it.
-    let pontas: Vec<[Vec2; 2]> = caminhos.iter().map(|c| [c.pontos[0], *c.pontos.last().unwrap()]).collect();
+    let pontas: Vec<[Vec2; 2]> = caminhos
+        .iter()
+        .map(|c| [c.pontos[0], *c.pontos.last().unwrap()])
+        .collect();
     for i in 0..caminhos.len() {
         for lado in 0..2 {
             let p = pontas[i][lado];
@@ -155,20 +170,60 @@ fn malha_do_carro(cor: [u8; 4]) -> Mesh {
         let tons = [1.0f32, 0.55, 0.8, 0.7, 0.9, 0.75];
         let faces: [[Vec3; 4]; 6] = [
             // top, bottom
-            [vec3(min.x, max.y, min.z), vec3(min.x, max.y, max.z), vec3(max.x, max.y, max.z), vec3(max.x, max.y, min.z)],
-            [vec3(min.x, min.y, min.z), vec3(max.x, min.y, min.z), vec3(max.x, min.y, max.z), vec3(min.x, min.y, max.z)],
+            [
+                vec3(min.x, max.y, min.z),
+                vec3(min.x, max.y, max.z),
+                vec3(max.x, max.y, max.z),
+                vec3(max.x, max.y, min.z),
+            ],
+            [
+                vec3(min.x, min.y, min.z),
+                vec3(max.x, min.y, min.z),
+                vec3(max.x, min.y, max.z),
+                vec3(min.x, min.y, max.z),
+            ],
             // +x, -x
-            [vec3(max.x, min.y, min.z), vec3(max.x, max.y, min.z), vec3(max.x, max.y, max.z), vec3(max.x, min.y, max.z)],
-            [vec3(min.x, min.y, min.z), vec3(min.x, min.y, max.z), vec3(min.x, max.y, max.z), vec3(min.x, max.y, min.z)],
+            [
+                vec3(max.x, min.y, min.z),
+                vec3(max.x, max.y, min.z),
+                vec3(max.x, max.y, max.z),
+                vec3(max.x, min.y, max.z),
+            ],
+            [
+                vec3(min.x, min.y, min.z),
+                vec3(min.x, min.y, max.z),
+                vec3(min.x, max.y, max.z),
+                vec3(min.x, max.y, min.z),
+            ],
             // +z, -z
-            [vec3(min.x, min.y, max.z), vec3(max.x, min.y, max.z), vec3(max.x, max.y, max.z), vec3(min.x, max.y, max.z)],
-            [vec3(min.x, min.y, min.z), vec3(min.x, max.y, min.z), vec3(max.x, max.y, min.z), vec3(max.x, min.y, min.z)],
+            [
+                vec3(min.x, min.y, max.z),
+                vec3(max.x, min.y, max.z),
+                vec3(max.x, max.y, max.z),
+                vec3(min.x, max.y, max.z),
+            ],
+            [
+                vec3(min.x, min.y, min.z),
+                vec3(min.x, max.y, min.z),
+                vec3(max.x, max.y, min.z),
+                vec3(max.x, min.y, min.z),
+            ],
         ];
         for (f, t) in faces.iter().zip(tons) {
             let b = verts.len() as u16;
-            let cc = [(c[0] as f32 * t) as u8, (c[1] as f32 * t) as u8, (c[2] as f32 * t) as u8, 255];
+            let cc = [
+                (c[0] as f32 * t) as u8,
+                (c[1] as f32 * t) as u8,
+                (c[2] as f32 * t) as u8,
+                255,
+            ];
             for p in f {
-                verts.push(Vertex { position: *p, uv: vec2(0.0, 0.0), color: cc, normal: Vec4::ZERO });
+                verts.push(Vertex {
+                    position: *p,
+                    uv: vec2(0.0, 0.0),
+                    color: cc,
+                    normal: Vec4::ZERO,
+                });
             }
             idx.extend_from_slice(&[b, b + 1, b + 2, b, b + 2, b + 3]);
         }
@@ -177,19 +232,39 @@ fn malha_do_carro(cor: [u8; 4]) -> Mesh {
     // as two and a half characters are tall, a cabin at shoulder height.
     let (c, l, a) = (2.1f32, 0.9f32, 0.75f32); // half length, half width, body height
     caixa(vec3(-c, 0.22, -l), vec3(c, a, l), cor);
-    caixa(vec3(-c * 0.45, a, -l * 0.85), vec3(c * 0.5, a + 0.55, l * 0.85), [40, 52, 76, 255]);
+    caixa(
+        vec3(-c * 0.45, a, -l * 0.85),
+        vec3(c * 0.5, a + 0.55, l * 0.85),
+        [40, 52, 76, 255],
+    );
     // Headlights (pale yellow, saturated enough to glow) and taillights (red).
     for z in [-l * 0.75, l * 0.45] {
-        caixa(vec3(c, 0.4, z), vec3(c + 0.08, 0.58, z + 0.28), [255, 232, 120, 255]);
-        caixa(vec3(-c - 0.08, 0.4, z), vec3(-c, 0.58, z + 0.28), [255, 40, 40, 255]);
+        caixa(
+            vec3(c, 0.4, z),
+            vec3(c + 0.08, 0.58, z + 0.28),
+            [255, 232, 120, 255],
+        );
+        caixa(
+            vec3(-c - 0.08, 0.4, z),
+            vec3(-c, 0.58, z + 0.28),
+            [255, 40, 40, 255],
+        );
     }
     // Wheels.
     for x in [-c * 0.62, c * 0.62] {
         for z in [-l - 0.03, l - 0.17] {
-            caixa(vec3(x - 0.32, 0.0, z), vec3(x + 0.32, 0.42, z + 0.2), [20, 20, 24, 255]);
+            caixa(
+                vec3(x - 0.32, 0.0, z),
+                vec3(x + 0.32, 0.42, z + 0.2),
+                [20, 20, 24, 255],
+            );
         }
     }
-    Mesh { vertices: verts, indices: idx, texture: None }
+    Mesh {
+        vertices: verts,
+        indices: idx,
+        texture: None,
+    }
 }
 
 impl Transito {
@@ -203,8 +278,16 @@ impl Transito {
             [120, 124, 132, 255],
             [60, 200, 220, 255],
         ];
-        let modelos = cores.iter().map(|c| vec![MalhaEstatica::nova(malha_do_carro(*c))]).collect();
-        let mut t = Self { caminhos: le_caminhos(), carros: Vec::new(), modelos, semente: 0x5EED_CA25 };
+        let modelos = cores
+            .iter()
+            .map(|c| vec![MalhaEstatica::nova(malha_do_carro(*c))])
+            .collect();
+        let mut t = Self {
+            caminhos: le_caminhos(),
+            carros: Vec::new(),
+            modelos,
+            semente: 0x5EED_CA25,
+        };
         // The fleet, spread over the whole network, weighted by length.
         if !t.caminhos.is_empty() {
             for _ in 0..CARROS {
@@ -213,7 +296,15 @@ impl Transito {
                 let sentido = if t.sorteio() < 0.5 { 1.0 } else { -1.0 };
                 let velocidade = VELOCIDADE.0 + (VELOCIDADE.1 - VELOCIDADE.0) * t.sorteio();
                 let modelo = (t.sorteio() * t.modelos.len() as f32) as usize % t.modelos.len();
-                t.carros.push(Carro { caminho: k, s, sentido, velocidade, modelo, yaw: 0.0, pos: None });
+                t.carros.push(Carro {
+                    caminho: k,
+                    s,
+                    sentido,
+                    velocidade,
+                    modelo,
+                    yaw: 0.0,
+                    pos: None,
+                });
             }
         }
         t
@@ -221,7 +312,11 @@ impl Transito {
 
     /// The middle of the longest ground avenue (for the previews).
     pub fn meio_de_avenida(&self) -> Option<Vec2> {
-        let c = self.caminhos.iter().filter(|c| !c.elevado).max_by(|a, b| a.comprimento().total_cmp(&b.comprimento()))?;
+        let c = self
+            .caminhos
+            .iter()
+            .filter(|c| !c.elevado)
+            .max_by(|a, b| a.comprimento().total_cmp(&b.comprimento()))?;
         Some(c.em(c.comprimento() * 0.5).0)
     }
 
@@ -260,7 +355,13 @@ impl Transito {
             for _ in 0..4 {
                 let cam = &self.caminhos[c.caminho];
                 let fim = cam.comprimento();
-                let lado = if c.s > fim { 1 } else if c.s < 0.0 { 0 } else { break };
+                let lado = if c.s > fim {
+                    1
+                } else if c.s < 0.0 {
+                    0
+                } else {
+                    break;
+                };
                 let sobra = if lado == 1 { c.s - fim } else { -c.s };
                 let rumo = cam.em(if lado == 1 { fim } else { 0.0 }).1 * c.sentido;
                 let opcoes = &cam.seguintes[lado];
@@ -271,11 +372,23 @@ impl Transito {
                 }
                 let saida = |&(j, no_inicio): &(usize, bool)| {
                     let o = &self.caminhos[j];
-                    let d = if no_inicio { o.em(0.0).1 } else { -o.em(o.comprimento()).1 };
+                    let d = if no_inicio {
+                        o.em(0.0).1
+                    } else {
+                        -o.em(o.comprimento()).1
+                    };
                     d.dot(rumo)
                 };
-                let reta = opcoes.iter().copied().max_by(|a, b| saida(a).total_cmp(&saida(b))).unwrap();
-                let (j, no_inicio) = if sorte < 0.75 { reta } else { opcoes[(sorte * 97.0) as usize % opcoes.len()] };
+                let reta = opcoes
+                    .iter()
+                    .copied()
+                    .max_by(|a, b| saida(a).total_cmp(&saida(b)))
+                    .unwrap();
+                let (j, no_inicio) = if sorte < 0.75 {
+                    reta
+                } else {
+                    opcoes[(sorte * 97.0) as usize % opcoes.len()]
+                };
                 c.caminho = j;
                 if no_inicio {
                     c.sentido = 1.0;
@@ -293,7 +406,9 @@ impl Transito {
             let alvo = p + vec2(dir.y, -dir.x) * cam.faixa;
             // Ease the body round bends, and the lane across junctions.
             let yaw_alvo = (-dir.y).atan2(dir.x);
-            let mut dy = (yaw_alvo - c.yaw + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU) - std::f32::consts::PI;
+            let mut dy = (yaw_alvo - c.yaw + std::f32::consts::PI)
+                .rem_euclid(std::f32::consts::TAU)
+                - std::f32::consts::PI;
             if c.pos.is_none() {
                 dy = yaw_alvo - c.yaw;
             }
@@ -317,13 +432,18 @@ impl Transito {
             // On the deck the height comes from the CENTRE line: the lane
             // offset can fall past a narrow deck's edge.
             let y = if cam.elevado {
-                crate::terreno::deck_altura(p.x, p.y).or_else(|| crate::terreno::deck_altura(q.x, q.y)).unwrap_or_else(|| chao(p.x, p.y))
+                crate::terreno::deck_altura(p.x, p.y)
+                    .or_else(|| crate::terreno::deck_altura(q.x, q.y))
+                    .unwrap_or_else(|| chao(p.x, p.y))
             } else {
                 chao(p.x, p.y)
             };
             let modelo = Mat4::from_translation(vec3(q.x, y, q.y)) * Mat4::from_rotation_y(c.yaw);
             crate::gpu_estatica::desenha_com_modelo(
-                Programa::Solido { recorte: Vec3::ZERO, recorte_z: 0.0 },
+                Programa::Solido {
+                    recorte: Vec3::ZERO,
+                    recorte_z: 0.0,
+                },
                 self.modelos[c.modelo].iter(),
                 modelo,
             );

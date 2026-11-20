@@ -141,8 +141,16 @@ fn desenha_itens_resultado(c: &Contexto, caixa: Rect, y: f32, itens: &[(u16, u32
     for (i, (id, qtd)) in itens.iter().enumerate() {
         let x = caixa.x + 16.0 * f + (i % 5) as f32 * cw;
         let iy = y + (i / 5) as f32 * 76.0 * f;
-        if iy + 70.0 * f > caixa.y + caixa.h - 90.0 * f { break; }
-        crate::icones::icone_com_3d(*id, Rect::new(x + (cw - 46.0 * f) * 0.5, iy, 46.0 * f, 46.0 * f), None, Some(*qtd), c.palco);
+        if iy + 70.0 * f > caixa.y + caixa.h - 90.0 * f {
+            break;
+        }
+        crate::icones::icone_com_3d(
+            *id,
+            Rect::new(x + (cw - 46.0 * f) * 0.5, iy, 46.0 * f, 46.0 * f),
+            None,
+            Some(*qtd),
+            c.palco,
+        );
         // A chest's Energy travels as `ENERGIA_MIL` with the raw amount
         // (15/11/2026): it reads "Energy", not "Energy ×1,000".
         let nome = if *id == shared::item_id::ENERGIA_MIL {
@@ -150,7 +158,11 @@ fn desenha_itens_resultado(c: &Contexto, caixa: Rect, y: f32, itens: &[(u16, u32
         } else {
             c.nomes.get(id).map(String::as_str).unwrap_or("Item")
         };
-        let curto = if nome.chars().count() > 15 { format!("{}…", nome.chars().take(14).collect::<String>()) } else { nome.to_string() };
+        let curto = if nome.chars().count() > 15 {
+            format!("{}…", nome.chars().take(14).collect::<String>())
+        } else {
+            nome.to_string()
+        };
         estilo::texto_centro(x + cw * 0.5, iy + 62.0 * f, &curto, 11, estilo::TEXTO);
     }
 }
@@ -208,8 +220,11 @@ impl DungeonUi {
         let m = Vec2::from(mouse_position());
         let caido = self.inst.as_ref().is_some_and(|i| i.reviver_em_s.is_some());
         let (faixa, porta, reviver) = Self::rects_da_instancia();
-        if self.mostrar_saida_arena && self.na_arena == Some(true)
-            && self.inst.is_none() && Self::saida_arena_rect().toca(m) {
+        if self.mostrar_saida_arena
+            && self.na_arena == Some(true)
+            && self.inst.is_none()
+            && Self::saida_arena_rect().toca(m)
+        {
             return true;
         }
         self.inst.is_some()
@@ -353,7 +368,9 @@ impl DungeonUi {
             Aviso::Correio { .. } => {}
             Aviso::NaArena { dentro } => {
                 self.na_arena = Some(dentro);
-                if !dentro { self.mostrar_saida_arena = false; }
+                if !dentro {
+                    self.mostrar_saida_arena = false;
+                }
                 if dentro {
                     if let Some(pedido) = self.entrada_pendente.take() {
                         return vec![pedir(pedido)];
@@ -372,11 +389,15 @@ impl DungeonUi {
     /// The run in progress, if any: (content, step). The Porão floor plan is
     /// drawn from this — its gates open with the step.
     pub fn cenario(&self) -> Option<(u16, u8, Vec2)> {
-        self.inst.as_ref().map(|i| (i.conteudo, i.andar, vec2(i.centro[0], i.centro[1])))
+        self.inst
+            .as_ref()
+            .map(|i| (i.conteudo, i.andar, vec2(i.centro[0], i.centro[1])))
     }
 
     pub fn em_curso(&self) -> Option<(u16, u8)> {
-        self.inst.as_ref().map(|i| (i.conteudo, if i.concluida { u8::MAX } else { i.andar }))
+        self.inst
+            .as_ref()
+            .map(|i| (i.conteudo, if i.concluida { u8::MAX } else { i.andar }))
     }
 
     /// Texto curto pro chat (o que acabou de acontecer), se houver.
@@ -427,12 +448,18 @@ impl DungeonUi {
         let f = estilo::fator_texto();
         let w = (300.0 * f).min(seguro.w - 24.0);
         let h = (58.0 * f).max(48.0);
-        Rect::new(seguro.center().x - w * 0.5,
-            seguro.y + seguro.h - h - 92.0 * f, w, h)
+        Rect::new(
+            seguro.center().x - w * 0.5,
+            seguro.y + seguro.h - h - 92.0 * f,
+            w,
+            h,
+        )
     }
 
     fn desenha_saida_arena(&mut self, saida: &mut Vec<ClientMessage>) {
-        if !self.mostrar_saida_arena || self.na_arena != Some(true) { return; }
+        if !self.mostrar_saida_arena || self.na_arena != Some(true) {
+            return;
+        }
         let r = Self::saida_arena_rect();
         if botao(r, "LEAVE THE ARENA", true, true) {
             self.mostrar_saida_arena = false;
@@ -526,13 +553,7 @@ impl DungeonUi {
                 continue;
             }
             if let Some(t) = titulo {
-                estilo::texto(
-                    esq.x + 4.0 * f,
-                    y + alt * 0.66,
-                    t,
-                    11,
-                    estilo::SUAVE,
-                );
+                estilo::texto(esq.x + 4.0 * f, y + alt * 0.66, t, 11, estilo::SUAVE);
                 continue;
             }
             let ce = ce.unwrap();
@@ -558,7 +579,12 @@ impl DungeonUi {
             );
             let ilha = shared::terreno::def_da_zona(def.zona).map_or("New island", |d| d.nome);
             let sub = if def.disponivel {
-                format!("{} · level {} · {}", def.tipo.nome(), shared::progressao::texto_de_nivel(def.nivel_min), ilha)
+                format!(
+                    "{} · level {} · {}",
+                    def.tipo.nome(),
+                    shared::progressao::texto_de_nivel(def.nivel_min),
+                    ilha
+                )
             } else {
                 format!("{} · Coming soon", def.tipo.nome())
             };
@@ -662,17 +688,38 @@ impl DungeonUi {
             y += 60.0 * f;
         }
         let estagio = self.estagio.clamp(1, n);
-        let largura_abas = (p.x+p.w - if self.na_arena == Some(true) {202.0*f} else {60.0*f} - dir.x).max(100.0*f);
-        for (i, (titulo, recompensas)) in [("Entry", false), ("Rewards", true)].into_iter().enumerate() {
-            let r = Rect::new(dir.x + i as f32*largura_abas*0.5, p.y + 10.0*f, largura_abas*0.5-8.0*f, 34.0*f);
+        let largura_abas = (p.x + p.w
+            - if self.na_arena == Some(true) {
+                202.0 * f
+            } else {
+                60.0 * f
+            }
+            - dir.x)
+            .max(100.0 * f);
+        for (i, (titulo, recompensas)) in [("Entry", false), ("Rewards", true)]
+            .into_iter()
+            .enumerate()
+        {
+            let r = Rect::new(
+                dir.x + i as f32 * largura_abas * 0.5,
+                p.y + 10.0 * f,
+                largura_abas * 0.5 - 8.0 * f,
+                34.0 * f,
+            );
             if botao(r, titulo, true, self.ver_recompensas == recompensas) {
                 self.ver_recompensas = recompensas;
                 self.rolagem_recompensas.zera();
             }
         }
         if self.ver_recompensas {
-            crate::dungeon_recompensas::desenha(c, def, ce, estagio,
-                Rect::new(dir.x,y,dir.w,dir.y+dir.h-y), &mut self.rolagem_recompensas);
+            crate::dungeon_recompensas::desenha(
+                c,
+                def,
+                ce,
+                estagio,
+                Rect::new(dir.x, y, dir.w, dir.y + dir.h - y),
+                &mut self.rolagem_recompensas,
+            );
             return;
         }
         let nivel = dg::nivel_do_estagio(def, estagio);
@@ -727,7 +774,13 @@ impl DungeonUi {
             // precisa saber pra onde ele foi, senão o conteúdo simplesmente
             // desapareceu do jogo do ponto de vista de quem joga.
             Tipo::Porao => {
-                estilo::texto(dir.x, y, "Entered through its portal, on the island.", 14, estilo::TEXTO);
+                estilo::texto(
+                    dir.x,
+                    y,
+                    "Entered through its portal, on the island.",
+                    14,
+                    estilo::TEXTO,
+                );
                 y += 18.0 * f;
                 estilo::texto(
                     dir.x,
@@ -821,7 +874,13 @@ impl DungeonUi {
             // A Magic Island tier's own dungeon opens only from that tier.
             let so_de = exclusiva_de(def, c.zona);
             if let Some(ilha) = so_de {
-                estilo::texto(dir.x, y + 170.0 * f, &format!("Only from {ilha}."), 14, estilo::SUAVE);
+                estilo::texto(
+                    dir.x,
+                    y + 170.0 * f,
+                    &format!("Only from {ilha}."),
+                    14,
+                    estilo::SUAVE,
+                );
             }
             let aberto = cadeado.is_none() && def.disponivel && so_de.is_none();
             // Só a Gruta chega aqui (o Porão saiu no `if` acima, a Caçada
@@ -859,9 +918,17 @@ impl DungeonUi {
             // have a go to, because you need to go to where the dungeun is".
             Tipo::Porao => {
                 let aqui = def.zona == c.zona;
-                let rotulo = if aqui { "Go to the portal" } else { "On another island" };
-                if botao(Rect::new(dir.x, y, bw * 1.4, 40.0 * f), rotulo, aberto && aqui, true)
-                    && aqui
+                let rotulo = if aqui {
+                    "Go to the portal"
+                } else {
+                    "On another island"
+                };
+                if botao(
+                    Rect::new(dir.x, y, bw * 1.4, 40.0 * f),
+                    rotulo,
+                    aberto && aqui,
+                    true,
+                ) && aqui
                 {
                     if let Some((_, pos)) = crate::porao_ui::portas_da_zona(def.zona)
                         .into_iter()
@@ -871,8 +938,7 @@ impl DungeonUi {
                     }
                 }
                 if !aqui {
-                    let onde = shared::terreno::def_da_zona(def.zona)
-                        .map_or(def.zona, |d| d.nome);
+                    let onde = shared::terreno::def_da_zona(def.zona).map_or(def.zona, |d| d.nome);
                     estilo::texto(
                         dir.x,
                         y + 56.0 * f,
@@ -1514,11 +1580,7 @@ impl DungeonUi {
                 estilo::VERMELHO
             },
         );
-        let titulo = if r.vitoria {
-            "VICTORY"
-        } else {
-            "OUT OF TIME"
-        };
+        let titulo = if r.vitoria { "VICTORY" } else { "OUT OF TIME" };
         estilo::texto_centro_forte(
             caixa.center().x,
             caixa.y + 32.0 * f,
@@ -1554,7 +1616,9 @@ impl DungeonUi {
             );
             y += 18.0 * f;
         }
-        if r.primeira { y += 4.0 * f; }
+        if r.primeira {
+            y += 4.0 * f;
+        }
         match &r.bau {
             Some((itens, marcas, no_correio)) => {
                 estilo::texto(caixa.x + 22.0 * f, y, "COMPLETION CHEST", 14, estilo::OURO);
@@ -1562,7 +1626,13 @@ impl DungeonUi {
                 desenha_itens_resultado(c, caixa, y, itens);
                 y += itens.len().div_ceil(5) as f32 * 76.0 * f + 6.0 * f;
                 if *no_correio > 0 {
-                    estilo::texto(caixa.x + 22.0 * f, y, &format!("{} item(s) in your Mail: bag full", no_correio), 12, estilo::SUAVE);
+                    estilo::texto(
+                        caixa.x + 22.0 * f,
+                        y,
+                        &format!("{} item(s) in your Mail: bag full", no_correio),
+                        12,
+                        estilo::SUAVE,
+                    );
                     y += 17.0 * f;
                 }
                 let _ = marcas;
@@ -1639,7 +1709,12 @@ mod testes {
         let pedidos = d.aviso(Aviso::Saiu, 1.0);
         assert!(!d.aberto);
         assert!(d.mostrar_saida_arena);
-        assert!(matches!(pedidos.as_slice(), [ClientMessage::Dungeon { pedido: Pedido::Estado }]));
+        assert!(matches!(
+            pedidos.as_slice(),
+            [ClientMessage::Dungeon {
+                pedido: Pedido::Estado
+            }]
+        ));
     }
 
     #[test]
@@ -1649,7 +1724,12 @@ mod testes {
         d.voltar_apos_instancia = true;
         let pedidos = d.aviso(Aviso::Saiu, 1.0);
         assert!(!d.mostrar_saida_arena);
-        assert!(matches!(pedidos.as_slice(), [ClientMessage::Dungeon { pedido: Pedido::SairDaArena }]));
+        assert!(matches!(
+            pedidos.as_slice(),
+            [ClientMessage::Dungeon {
+                pedido: Pedido::SairDaArena
+            }]
+        ));
     }
 
     #[test]
@@ -1839,25 +1919,53 @@ fn exclusiva_de(def: &dg::Conteudo, zona: &str) -> Option<&'static str> {
 /// Some(true)` e por isso nunca mostrou o defeito.
 #[cfg(debug_assertions)]
 pub async fn previa_painel() {
-    let saida = std::env::var("MMO_PREVIA_SAIDA").unwrap_or_else(|_| "/tmp/tempest-dungeon-painel".into());
+    let saida =
+        std::env::var("MMO_PREVIA_SAIDA").unwrap_or_else(|_| "/tmp/tempest-dungeon-painel".into());
     std::fs::create_dir_all(&saida).unwrap();
     let nomes: HashMap<u16, String> = HashMap::new();
     let rt = render_target(1920, 1080);
     crate::render3d::define_alvo(Some(rt.clone()));
     crate::hud_layout::define_escala_ui(1.6);
     let estado = || Estado {
-        conteudos: dg::CONTEUDOS.iter().map(|c| dg::ConteudoEstado {
-            id: c.id, liberado: 3, cadeados: vec![None; dg::estagios(c) as usize], vitorias: 0,
-            primeiras_concluidas: vec![false; dg::estagios(c) as usize],
-            semanais_recebidas: vec![false; dg::estagios(c) as usize],
-            drops_chefe: vec![shared::item_id::GOLD],
-        }).collect(),
-        entradas: dg::EntradasNet { gruta: 2, gruta_preco: Some(500), porao: 0 }, fila: None, sala: None,
+        conteudos: dg::CONTEUDOS
+            .iter()
+            .map(|c| dg::ConteudoEstado {
+                id: c.id,
+                liberado: 3,
+                cadeados: vec![None; dg::estagios(c) as usize],
+                vitorias: 0,
+                primeiras_concluidas: vec![false; dg::estagios(c) as usize],
+                semanais_recebidas: vec![false; dg::estagios(c) as usize],
+                drops_chefe: vec![shared::item_id::GOLD],
+            })
+            .collect(),
+        entradas: dg::EntradasNet {
+            gruta: 2,
+            gruta_preco: Some(500),
+            porao: 0,
+        },
+        fila: None,
+        sala: None,
     };
     // (nome, selecionado, zona do jogador): Porão na própria ilha, Porão de
     // outra ilha, e Gruta — pra provar que o caminho da Gruta não mudou.
-    for (nome, sel, zona) in [("porao-na-ilha", 1u16, "ilha_inicial"), ("porao-outra-ilha", 3, "ilha_inicial"), ("gruta", 10, "ilha_inicial"), ("celeste-porao", 6, "ilha_celeste"), ("celeste-gruta", 16, "ilha_celeste"), ("planalto-pinaculo", 18, "ilha_planalto"), ("magica4-aqui", 33, "ilha_magica_4"), ("magica4-fora", 33, "ilha_planalto")] {
-        let contexto = Contexto { nomes: &nomes, palco: None, ouro: 1000, eu: "brunji", zona };
+    for (nome, sel, zona) in [
+        ("porao-na-ilha", 1u16, "ilha_inicial"),
+        ("porao-outra-ilha", 3, "ilha_inicial"),
+        ("gruta", 10, "ilha_inicial"),
+        ("celeste-porao", 6, "ilha_celeste"),
+        ("celeste-gruta", 16, "ilha_celeste"),
+        ("planalto-pinaculo", 18, "ilha_planalto"),
+        ("magica4-aqui", 33, "ilha_magica_4"),
+        ("magica4-fora", 33, "ilha_planalto"),
+    ] {
+        let contexto = Contexto {
+            nomes: &nomes,
+            palco: None,
+            ouro: 1000,
+            eu: "brunji",
+            zona,
+        };
         let mut d = DungeonUi::default();
         d.aberto = true;
         d.sel = sel;
@@ -1869,20 +1977,32 @@ pub async fn previa_painel() {
             clear_background(Color::new(0.08, 0.12, 0.16, 1.));
             d.desenha(&contexto, get_time(), false);
             unsafe { get_internal_gl().flush() };
-            rt.texture.get_texture_data().export_png(&format!("{saida}/{nome}.png"));
+            rt.texture
+                .get_texture_data()
+                .export_png(&format!("{saida}/{nome}.png"));
             next_frame().await;
         }
     }
 }
 
 pub async fn previa_recompensas() {
-    let saida = std::env::var("MMO_PREVIA_SAIDA").unwrap_or_else(|_| "/tmp/tempest-dungeon-preview".into());
+    let saida =
+        std::env::var("MMO_PREVIA_SAIDA").unwrap_or_else(|_| "/tmp/tempest-dungeon-preview".into());
     std::fs::create_dir_all(&saida).unwrap();
-    let nomes: HashMap<u16,String> = std::fs::read_to_string("/tmp/tempest-dungeon-item-names.json").ok()
-        .and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default();
-    let contexto = Contexto { nomes: &nomes, palco: None, ouro: 100000, eu: "brunji", zona: "ilha_inicial" };
-    for (w,h) in [(1280,720),(1920,1080)] {
-        let rt = render_target(w,h);
+    let nomes: HashMap<u16, String> =
+        std::fs::read_to_string("/tmp/tempest-dungeon-item-names.json")
+            .ok()
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or_default();
+    let contexto = Contexto {
+        nomes: &nomes,
+        palco: None,
+        ouro: 100000,
+        eu: "brunji",
+        zona: "ilha_inicial",
+    };
+    for (w, h) in [(1280, 720), (1920, 1080)] {
+        let rt = render_target(w, h);
         crate::render3d::define_alvo(Some(rt.clone()));
         crate::hud_layout::define_escala_ui(1.6);
         let mut d = DungeonUi::default();
@@ -1892,24 +2012,52 @@ pub async fn previa_recompensas() {
         d.ver_recompensas = true;
         d.na_arena = Some(true);
         d.estado = Some(Estado {
-            conteudos: dg::CONTEUDOS.iter().map(|c| dg::ConteudoEstado {
-                id:c.id, liberado:3, cadeados:vec![None;dg::estagios(c) as usize],vitorias:2,
-                primeiras_concluidas:(1..=dg::estagios(c)).map(|e|e==1).collect(),
-                semanais_recebidas:(1..=dg::estagios(c)).map(|e|e==1).collect(),
-                drops_chefe:vec![shared::item_id::GOLD,shared::item_id::COPPER,shared::item_id::DARKSTEEL,
-                    shared::item_id::STEEL,shared::item_id::PLATINUM,shared::item_id::GREATER_HEAL,
-                    shared::item_id::GLITTERING_POWDER,shared::item_id::SCALE],
-            }).collect(),
-            entradas:dg::EntradasNet {gruta:3,gruta_preco:Some(500),porao:2},fila:None,sala:None,
+            conteudos: dg::CONTEUDOS
+                .iter()
+                .map(|c| dg::ConteudoEstado {
+                    id: c.id,
+                    liberado: 3,
+                    cadeados: vec![None; dg::estagios(c) as usize],
+                    vitorias: 2,
+                    primeiras_concluidas: (1..=dg::estagios(c)).map(|e| e == 1).collect(),
+                    semanais_recebidas: (1..=dg::estagios(c)).map(|e| e == 1).collect(),
+                    drops_chefe: vec![
+                        shared::item_id::GOLD,
+                        shared::item_id::COPPER,
+                        shared::item_id::DARKSTEEL,
+                        shared::item_id::STEEL,
+                        shared::item_id::PLATINUM,
+                        shared::item_id::GREATER_HEAL,
+                        shared::item_id::GLITTERING_POWDER,
+                        shared::item_id::SCALE,
+                    ],
+                })
+                .collect(),
+            entradas: dg::EntradasNet {
+                gruta: 3,
+                gruta_preco: Some(500),
+                porao: 2,
+            },
+            fila: None,
+            sala: None,
         });
-        for (nome,estagio,scroll,recompensas) in [("recebida",1,0.,true),("disponivel",2,0.,true),("boss",2,260.,true),("entrada",2,0.,false)] {
-            d.estagio=estagio; d.rolagem_recompensas.pos=scroll; d.ver_recompensas=recompensas;
+        for (nome, estagio, scroll, recompensas) in [
+            ("recebida", 1, 0., true),
+            ("disponivel", 2, 0., true),
+            ("boss", 2, 260., true),
+            ("entrada", 2, 0., false),
+        ] {
+            d.estagio = estagio;
+            d.rolagem_recompensas.pos = scroll;
+            d.ver_recompensas = recompensas;
             for _ in 0..3 {
                 crate::render3d::camera_padrao();
-                clear_background(Color::new(0.08,0.12,0.16,1.));
-                d.desenha(&contexto,get_time(), false);
+                clear_background(Color::new(0.08, 0.12, 0.16, 1.));
+                d.desenha(&contexto, get_time(), false);
                 unsafe { get_internal_gl().flush() };
-                rt.texture.get_texture_data().export_png(&format!("{saida}/{nome}-{w}.png"));
+                rt.texture
+                    .get_texture_data()
+                    .export_png(&format!("{saida}/{nome}-{w}.png"));
                 next_frame().await;
             }
         }

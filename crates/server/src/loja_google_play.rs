@@ -135,9 +135,8 @@ async fn obter_token_acesso() -> Result<String, Erro> {
         iat: agora,
         exp: agora + 3600,
     };
-    let chave_de_assinatura =
-        jsonwebtoken::EncodingKey::from_rsa_pem(chave.private_key.as_bytes())
-            .map_err(|e| Erro::RespostaInvalida(format!("private key: {e}")))?;
+    let chave_de_assinatura = jsonwebtoken::EncodingKey::from_rsa_pem(chave.private_key.as_bytes())
+        .map_err(|e| Erro::RespostaInvalida(format!("private key: {e}")))?;
     let jwt = jsonwebtoken::encode(
         &jsonwebtoken::Header::new(jsonwebtoken::Algorithm::RS256),
         &claims,
@@ -240,8 +239,14 @@ fn estado_da_resposta(corpo: &str, purchase_token: &str) -> Result<String, Erro>
         .map_err(|e| Erro::RespostaInvalida(format!("purchase response: {e} ({corpo})")))?;
     match compra.purchase_state {
         Some(0) => {
-            let id = compra.order_id.unwrap_or_else(|| format!("gp-{purchase_token}"));
-            Ok(if compra.purchase_type == Some(0) { format!("{PREFIXO_TESTE}{id}") } else { id })
+            let id = compra
+                .order_id
+                .unwrap_or_else(|| format!("gp-{purchase_token}"));
+            Ok(if compra.purchase_type == Some(0) {
+                format!("{PREFIXO_TESTE}{id}")
+            } else {
+                id
+            })
         }
         Some(1) => Err(Erro::Recusado("Purchase was canceled.".into())),
         Some(2) => Err(Erro::Recusado("Purchase is still pending.".into())),
@@ -271,13 +276,20 @@ pub async fn pedido_bruto(order_id: &str) -> Result<String, Erro> {
         .map_err(|e| Erro::Rede(e.to_string()))?;
     let ok = resp.status().is_success();
     let corpo = resp.text().await.map_err(|e| Erro::Rede(e.to_string()))?;
-    if ok { Ok(corpo) } else { Err(Erro::Recusado(format!("order lookup failed: {corpo}"))) }
+    if ok {
+        Ok(corpo)
+    } else {
+        Err(Erro::Recusado(format!("order lookup failed: {corpo}")))
+    }
 }
 
 /// Purchase tokens and product ids go into a URL path: only the characters
 /// Google actually uses (letters, digits, `.`, `_`, `-`).
 fn token_seguro(t: &str) -> bool {
-    !t.is_empty() && t.len() <= 4096 && t.bytes().all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b))
+    !t.is_empty()
+        && t.len() <= 4096
+        && t.bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b))
 }
 
 /// CONSUMES the purchase on Google, AFTER it was credited. Consuming also

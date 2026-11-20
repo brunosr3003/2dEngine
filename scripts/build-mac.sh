@@ -6,8 +6,10 @@ python3 scripts/check-release-notes.py
 export PATH="$HOME/.cargo/bin:$PATH"
 export MMO_API_PADRAO="${MMO_API_PADRAO:-mmo.brunji.com.br:80}"
 cargo build --release --bin client
-out="$PWD/target/mac"
-app="$out/Tempest.app"
+out="$PWD/${MAC_SAI:-target/mac}"
+app_nome="${APP_NOME:-Tempest}"
+bundle_id="${APP_BUNDLE_ID:-com.brunji.tempest}"
+app="$out/$app_nome.app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 cp target/release/client "$app/Contents/MacOS/Tempest"
 ditto assets "$app/Contents/Resources/assets"

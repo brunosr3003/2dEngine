@@ -96,7 +96,15 @@ pub struct Enquadramento {
 /// THE FRAME a settled camera wants: `zoom` and `ajuste` are the player's
 /// own (wheel/pinch and the hand's tilt), `classe` the hull class (0 = the
 /// Sloop), `alvo` the selected target.
-pub fn enquadramento(eu: Vec2, rumo: Vec2, alvo: Option<Vec2>, classe: usize, retrato: bool, zoom: f32, ajuste: f32) -> Enquadramento {
+pub fn enquadramento(
+    eu: Vec2,
+    rumo: Vec2,
+    alvo: Option<Vec2>,
+    classe: usize,
+    retrato: bool,
+    zoom: f32,
+    ajuste: f32,
+) -> Enquadramento {
     let mut fator = zoom * RECUO_MAR * recuo_da_classe(classe);
     if retrato {
         fator *= RETRATO;
@@ -116,7 +124,11 @@ pub fn enquadramento(eu: Vec2, rumo: Vec2, alvo: Option<Vec2>, classe: usize, re
         }
     }
     let pitch = (PITCH_MAR + ajuste).clamp(PITCH_MIN_MAR, crate::render3d::PITCH_MAX);
-    Enquadramento { centro, fator, pitch }
+    Enquadramento {
+        centro,
+        fator,
+        pitch,
+    }
 }
 
 /// THE FIGHT, as the camera sees it this frame (`segue`).
@@ -131,7 +143,14 @@ pub struct Luta {
 /// Is this a fight for the camera? A live target within `alcance`, AUTO
 /// COMBAT on with a target, or one of my shots in the last `recente_s`
 /// seconds (`desde_o_tiro`).
-pub fn em_luta(eu: Vec2, alvo: Option<Vec2>, alcance: f32, auto: bool, desde_o_tiro: f32, recente_s: f32) -> Option<Luta> {
+pub fn em_luta(
+    eu: Vec2,
+    alvo: Option<Vec2>,
+    alcance: f32,
+    auto: bool,
+    desde_o_tiro: f32,
+    recente_s: f32,
+) -> Option<Luta> {
     let perto = alvo.is_some_and(|a| a.distance(eu) <= alcance);
     (perto || (auto && alvo.is_some()) || desde_o_tiro < recente_s).then_some(Luta { eu, alvo })
 }
@@ -150,7 +169,12 @@ pub struct CameraDoMar {
 
 impl Default for CameraDoMar {
     fn default() -> Self {
-        Self { quadro: None, ocioso: 0.0, desde_a_luta: 1e3, deriva: 0.0 }
+        Self {
+            quadro: None,
+            ocioso: 0.0,
+            desde_a_luta: 1e3,
+            deriva: 0.0,
+        }
     }
 }
 
@@ -164,7 +188,15 @@ impl CameraDoMar {
     /// the hand moved the camera this frame; `velocidade` the hull's;
     /// `luta` the fight, if this frame is one (`em_luta`): then the yaw
     /// holds (see the module's notes).
-    pub fn segue(&mut self, yaw: f32, rumo: Vec2, mexeu: bool, velocidade: f32, dt: f32, luta: Option<Luta>) -> f32 {
+    pub fn segue(
+        &mut self,
+        yaw: f32,
+        rumo: Vec2,
+        mexeu: bool,
+        velocidade: f32,
+        dt: f32,
+        luta: Option<Luta>,
+    ) -> f32 {
         if luta.is_some() {
             self.desde_a_luta = 0.0;
         } else {
@@ -222,10 +254,17 @@ impl CameraDoMar {
 
     /// The frame this frame: `alvo` eased in, never a jump.
     pub fn quadro(&mut self, alvo: Enquadramento, dt: f32) -> Enquadramento {
-        let k = if self.lutando() { K_QUADRO_LUTA } else { K_QUADRO };
+        let k = if self.lutando() {
+            K_QUADRO_LUTA
+        } else {
+            K_QUADRO
+        };
         let q = match self.quadro {
             Some(q) if q.centro.distance(alvo.centro) < 60.0 => Enquadramento {
-                centro: vec2(suaviza(q.centro.x, alvo.centro.x, dt, k), suaviza(q.centro.y, alvo.centro.y, dt, k)),
+                centro: vec2(
+                    suaviza(q.centro.x, alvo.centro.x, dt, k),
+                    suaviza(q.centro.y, alvo.centro.y, dt, k),
+                ),
                 fator: suaviza(q.fator, alvo.fator, dt, k),
                 pitch: alvo.pitch,
             },
@@ -247,9 +286,13 @@ mod testes {
         for a in 0..12 {
             let ang = a as f32 * 0.52;
             let rumo = vec2(ang.sin(), ang.cos());
-            let cam = crate::render3d::camera_no_mar(Vec2::ZERO, 0.0, yaw_atras(rumo), 1.0, PITCH_MAR);
+            let cam =
+                crate::render3d::camera_no_mar(Vec2::ZERO, 0.0, yaw_atras(rumo), 1.0, PITCH_MAR);
             let olho = vec2(cam.position.x, cam.position.z);
-            assert!(olho.normalize().dot(rumo) < -0.99, "the eye is not astern at {ang}");
+            assert!(
+                olho.normalize().dot(rumo) < -0.99,
+                "the eye is not astern at {ang}"
+            );
         }
     }
 
@@ -259,7 +302,10 @@ mod testes {
     fn o_enquadramento_do_mar() {
         let rumo = vec2(0.0, 1.0);
         let base = enquadramento(Vec2::ZERO, rumo, None, 0, false, 1.0, 0.0);
-        assert!(base.pitch < crate::render3d::pitch_padrao() - 0.3, "as steep as the land's");
+        assert!(
+            base.pitch < crate::render3d::pitch_padrao() - 0.3,
+            "as steep as the land's"
+        );
         assert!(base.fator > 1.0);
         assert!(base.centro.y > 0.0, "does not look ahead of the bow");
         let galeao = enquadramento(Vec2::ZERO, rumo, None, 3, false, 1.0, 0.0);
@@ -272,7 +318,10 @@ mod testes {
         assert!(luta.centro.distance(alvo) < base.centro.distance(alvo));
         // The hand's tilt still counts, inside the band.
         assert!(enquadramento(Vec2::ZERO, rumo, None, 0, false, 1.0, 0.3).pitch > base.pitch);
-        assert_eq!(enquadramento(Vec2::ZERO, rumo, None, 0, false, 1.0, -1.0).pitch, PITCH_MIN_MAR);
+        assert_eq!(
+            enquadramento(Vec2::ZERO, rumo, None, 0, false, 1.0, -1.0).pitch,
+            PITCH_MIN_MAR
+        );
     }
 
     /// The heading follow waits for the hand to rest, swings slowly, and
@@ -282,13 +331,20 @@ mod testes {
         let mut c = CameraDoMar::default();
         let rumo = vec2(1.0, 0.0);
         assert_eq!(c.segue(0.0, rumo, true, 8.0, 0.1, None), 0.0);
-        assert_eq!(c.segue(0.0, rumo, false, 8.0, 0.5, None), 0.0, "swung before the hand rested");
+        assert_eq!(
+            c.segue(0.0, rumo, false, 8.0, 0.5, None),
+            0.0,
+            "swung before the hand rested"
+        );
         let mut yaw = 0.0;
         for _ in 0..10 {
             yaw = c.segue(yaw, rumo, false, 8.0, 0.1, None);
         }
         let alvo = yaw_atras(rumo);
-        assert!(yaw.abs() > 0.05 && crate::camera_suave::diferenca_angular(yaw, alvo).abs() > 0.3, "not a slow swing: {yaw}");
+        assert!(
+            yaw.abs() > 0.05 && crate::camera_suave::diferenca_angular(yaw, alvo).abs() > 0.3,
+            "not a slow swing: {yaw}"
+        );
         for _ in 0..200 {
             yaw = c.segue(yaw, rumo, false, 8.0, 0.1, None);
         }
@@ -319,7 +375,9 @@ mod testes {
             }
             let luta = em_luta(eu, Some(alvo), 45.0, true, 99.0, 3.0);
             let novo = c.segue(yaw, rumo, false, v, dt, luta);
-            let passo = crate::camera_suave::diferenca_angular(yaw, novo).abs().to_degrees();
+            let passo = crate::camera_suave::diferenca_angular(yaw, novo)
+                .abs()
+                .to_degrees();
             caminho += passo;
             passo_max = passo_max.max(passo);
             yaw = novo;
@@ -336,8 +394,14 @@ mod testes {
         for (r, v) in [(9.0f32, 7.0f32), (14.0, 9.0), (20.0, 11.0)] {
             let (caminho, passo_max, _, _) = circula(r, v, 10.0);
             println!("circle {r} u at {v} u/s: the camera turned {caminho:.1}° in 10 s, largest step {passo_max:.3}°");
-            assert!(caminho < 20.0, "circling at {r} u, {v} u/s: the camera turned {caminho:.1}° in 10 s");
-            assert!(passo_max <= DERIVA_MAX.to_degrees() / 60.0 + 1e-3, "a step of {passo_max:.3}° in one frame");
+            assert!(
+                caminho < 20.0,
+                "circling at {r} u, {v} u/s: the camera turned {caminho:.1}° in 10 s"
+            );
+            assert!(
+                passo_max <= DERIVA_MAX.to_degrees() / 60.0 + 1e-3,
+                "a step of {passo_max:.3}° in one frame"
+            );
         }
         // The heading follow alone, the same circle: it spins.
         let mut c = CameraDoMar::default();
@@ -349,11 +413,16 @@ mod testes {
             let rumo = vec2(-a.sin(), a.cos());
             let _ = alvo + vec2(a.cos(), a.sin()) * r;
             let novo = c.segue(yaw, rumo, false, v, dt, None);
-            caminho += crate::camera_suave::diferenca_angular(yaw, novo).abs().to_degrees();
+            caminho += crate::camera_suave::diferenca_angular(yaw, novo)
+                .abs()
+                .to_degrees();
             yaw = novo;
         }
         println!("the heading follow alone: {caminho:.0}°");
-        assert!(caminho > 150.0, "the heading follow only turned {caminho:.0}°");
+        assert!(
+            caminho > 150.0,
+            "the heading follow only turned {caminho:.0}°"
+        );
     }
 
     /// After the fight: the yaw holds for `DEPOIS_DA_LUTA_S`, then eases
@@ -371,7 +440,10 @@ mod testes {
             yaw = c.segue(yaw, rumo, false, 9.0, dt, None);
         }
         // (Only the fight's own slow drift dying out: a few degrees at most.)
-        assert!(crate::camera_suave::diferenca_angular(inicio, yaw).abs() < 0.1, "moved during the hold");
+        assert!(
+            crate::camera_suave::diferenca_angular(inicio, yaw).abs() < 0.1,
+            "moved during the hold"
+        );
         // Then back, gently, all the way.
         let mut passo_max = 0.0f32;
         for _ in 0..(12.0 / dt) as i32 {
@@ -379,7 +451,10 @@ mod testes {
             passo_max = passo_max.max(crate::camera_suave::diferenca_angular(yaw, novo).abs());
             yaw = novo;
         }
-        assert!(crate::camera_suave::diferenca_angular(yaw, alvo).abs() < 0.02, "did not come back behind the heading");
+        assert!(
+            crate::camera_suave::diferenca_angular(yaw, alvo).abs() < 0.02,
+            "did not come back behind the heading"
+        );
         assert!(passo_max < 0.03, "a jump of {passo_max} rad in one frame");
         // The hand, mid-fight: its yaw stands.
         let luta = em_luta(Vec2::ZERO, Some(vec2(10.0, 0.0)), 45.0, false, 99.0, 3.0);

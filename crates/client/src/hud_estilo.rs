@@ -150,7 +150,12 @@ fn filete(c: Color) -> Color {
     if !em_pergaminho() {
         return c;
     }
-    Color::new(TINTA_LINHA.r, TINTA_LINHA.g, TINTA_LINHA.b, (c.a * 0.9).max(0.25))
+    Color::new(
+        TINTA_LINHA.r,
+        TINTA_LINHA.g,
+        TINTA_LINHA.b,
+        (c.a * 0.9).max(0.25),
+    )
 }
 
 /// A sheet of parchment: warm page, edges browned with age, faint fibres,
@@ -160,7 +165,12 @@ pub fn pergaminho(r: Rect) {
     // Rollers first, wider than the page.
     for y in [r.y - 5.0, r.y + r.h - 5.0] {
         let rolo = Rect::new(r.x - 8.0, y, r.w + 16.0, 10.0);
-        ret_gradiente(rolo, 4.0, Color::new(0.36, 0.23, 0.12, 1.0), Color::new(0.18, 0.11, 0.06, 1.0));
+        ret_gradiente(
+            rolo,
+            4.0,
+            Color::new(0.36, 0.23, 0.12, 1.0),
+            Color::new(0.18, 0.11, 0.06, 1.0),
+        );
         for x in [rolo.x + 3.0, rolo.x + rolo.w - 3.0] {
             draw_circle(x, y + 5.0, 5.5, Color::new(0.52, 0.36, 0.18, 1.0));
             draw_circle(x, y + 5.0, 3.5, BORDA_FORTE);
@@ -172,7 +182,12 @@ pub fn pergaminho(r: Rect) {
     for k in 0..5 {
         let d = k as f32 * 3.0;
         borda_arredondada_cru(
-            Rect::new(pagina.x + d, pagina.y + d, pagina.w - d * 2.0, pagina.h - d * 2.0),
+            Rect::new(
+                pagina.x + d,
+                pagina.y + d,
+                pagina.w - d * 2.0,
+                pagina.h - d * 2.0,
+            ),
             RAIO_PEQUENO,
             3.0,
             Color::new(0.45, 0.30, 0.14, 0.16 - k as f32 * 0.03),
@@ -188,7 +203,14 @@ pub fn pergaminho(r: Rect) {
         let x = pagina.x + 8.0 + fx * (pagina.w - 16.0);
         let y = pagina.y + 8.0 + fy * (pagina.h - 16.0);
         let l = 3.0 + (semente & 7) as f32;
-        draw_line(x, y, x + l, y + 0.6, 1.0, Color::new(0.45, 0.32, 0.18, 0.07));
+        draw_line(
+            x,
+            y,
+            x + l,
+            y + 0.6,
+            1.0,
+            Color::new(0.45, 0.32, 0.18, 0.07),
+        );
     }
     borda_arredondada_cru(pagina, RAIO_PEQUENO, 1.0, Color::new(0.36, 0.24, 0.12, 0.6));
 }
@@ -300,9 +322,8 @@ fn titulo_fonte<T>(f: impl FnOnce(&Font) -> T) -> T {
 /// heads, the boss's name. Decided here, in one place, so every panel's
 /// heading takes the display face without touching 700 call sites.
 fn usa_titulo(tamanho: u16, cor: Color) -> bool {
-    let perto = |a: Color, b: Color| {
-        (a.r - b.r).abs() + (a.g - b.g).abs() + (a.b - b.b).abs() < 0.08
-    };
+    let perto =
+        |a: Color, b: Color| (a.r - b.r).abs() + (a.g - b.g).abs() + (a.b - b.b).abs() < 0.08;
     tamanho >= 18 && (perto(cor, OURO) || perto(cor, ACENTO))
 }
 
@@ -454,7 +475,13 @@ pub fn texto_forte(x: f32, y: f32, s: &str, tamanho: u16, cor: Color) {
     desenha_texto(true, x, y, s, tamanho, cor);
 }
 pub fn texto_centro(x: f32, y: f32, s: &str, tamanho: u16, cor: Color) {
-    texto(x - largura(s, tamanho, false, cor) * 0.5, y, s, tamanho, cor);
+    texto(
+        x - largura(s, tamanho, false, cor) * 0.5,
+        y,
+        s,
+        tamanho,
+        cor,
+    );
 }
 pub fn texto_centro_forte(x: f32, y: f32, s: &str, tamanho: u16, cor: Color) {
     texto_forte(x - largura(s, tamanho, true, cor) * 0.5, y, s, tamanho, cor);
@@ -837,7 +864,12 @@ pub fn painel(r: Rect) {
     }
     brilho_topo(r, RAIO);
     if r.w > 140.0 && r.h > 70.0 {
-        for (x, y) in [(r.x, r.y), (r.x + r.w, r.y), (r.x, r.y + r.h), (r.x + r.w, r.y + r.h)] {
+        for (x, y) in [
+            (r.x, r.y),
+            (r.x + r.w, r.y),
+            (r.x, r.y + r.h),
+            (r.x + r.w, r.y + r.h),
+        ] {
             tacha(vec2(x, y));
         }
     }
@@ -883,15 +915,41 @@ pub fn placa(r: Rect, sobre: bool) {
         misturar(clarear(FUNDO_ALTO, 0.05), clarear(FUNDO_ALTO, 0.13), h),
         FUNDO,
     );
-    draw_line(r.x + 2.0, r.y + 1.5, r.x + r.w - 2.0, r.y + 1.5, 1.0, Color::new(1.0, 0.86, 0.62, 0.14));
-    draw_line(r.x + 2.0, r.y + r.h - 1.0, r.x + r.w - 2.0, r.y + r.h - 1.0, 1.5, Color::new(0.0, 0.0, 0.0, 0.45));
-    borda_arredondada(r, RAIO_PEQUENO, 1.5, misturar(alfa(BORDA_FORTE, 0.7), BORDA_FORTE, h));
+    draw_line(
+        r.x + 2.0,
+        r.y + 1.5,
+        r.x + r.w - 2.0,
+        r.y + 1.5,
+        1.0,
+        Color::new(1.0, 0.86, 0.62, 0.14),
+    );
+    draw_line(
+        r.x + 2.0,
+        r.y + r.h - 1.0,
+        r.x + r.w - 2.0,
+        r.y + r.h - 1.0,
+        1.5,
+        Color::new(0.0, 0.0, 0.0, 0.45),
+    );
+    borda_arredondada(
+        r,
+        RAIO_PEQUENO,
+        1.5,
+        misturar(alfa(BORDA_FORTE, 0.7), BORDA_FORTE, h),
+    );
 }
 
 /// A bronze stud on a frame's corner: a small diamond with a lit face.
 pub fn tacha(c: Vec2) {
     let r = 5.0;
-    draw_poly(c.x, c.y + 1.0, 4, r + 1.0, 0.0, Color::new(0.0, 0.0, 0.0, 0.45));
+    draw_poly(
+        c.x,
+        c.y + 1.0,
+        4,
+        r + 1.0,
+        0.0,
+        Color::new(0.0, 0.0, 0.0, 0.45),
+    );
     draw_poly(c.x, c.y, 4, r, 0.0, Color::new(0.52, 0.36, 0.18, 1.0));
     draw_poly(c.x, c.y, 4, r - 1.5, 0.0, BORDA_FORTE);
     draw_circle(c.x - 1.0, c.y - 1.0, 1.2, Color::new(1.0, 0.9, 0.7, 0.8));
@@ -901,8 +959,14 @@ pub fn tacha(c: Vec2) {
 pub fn painel_destaque(r: Rect, cor: Color) {
     painel(r);
     // Quiet inset accent: follows the frame instead of floating above it.
-    draw_line(r.x + RAIO, r.y + 1.0, r.x + r.w - RAIO, r.y + 1.0,
-        1.0, alfa(cor, 0.38));
+    draw_line(
+        r.x + RAIO,
+        r.y + 1.0,
+        r.x + r.w - RAIO,
+        r.y + 1.0,
+        1.0,
+        alfa(cor, 0.38),
+    );
 }
 
 /// A tile set INTO the board (list row, menu tile, option): recessed — dark
@@ -912,9 +976,24 @@ pub fn cartao(r: Rect, sobre: bool, ativo: bool) {
     let h = anima(chave(r, 1), if sobre || ativo { 1.0 } else { 0.0 });
     if em_pergaminho() {
         // On the page: a pressed-in patch, a rubric rim when chosen.
-        ret_arredondado(r, RAIO_PEQUENO, alfa(misturar(PERGAMINHO_ESCURO, PERGAMINHO_COR, h * 0.5), 0.75));
-        draw_line(r.x + 2.0, r.y + 1.0, r.x + r.w - 2.0, r.y + 1.0, 1.0, Color::new(0.30, 0.20, 0.10, 0.25));
-        let borda = if ativo { TINTA_TITULO } else { alfa(TINTA_LINHA, 0.35 + 0.4 * h) };
+        ret_arredondado(
+            r,
+            RAIO_PEQUENO,
+            alfa(misturar(PERGAMINHO_ESCURO, PERGAMINHO_COR, h * 0.5), 0.75),
+        );
+        draw_line(
+            r.x + 2.0,
+            r.y + 1.0,
+            r.x + r.w - 2.0,
+            r.y + 1.0,
+            1.0,
+            Color::new(0.30, 0.20, 0.10, 0.25),
+        );
+        let borda = if ativo {
+            TINTA_TITULO
+        } else {
+            alfa(TINTA_LINHA, 0.35 + 0.4 * h)
+        };
         borda_arredondada_cru(r, RAIO_PEQUENO, if ativo { 2.0 } else { 1.0 }, borda);
         return;
     }
@@ -925,8 +1004,22 @@ pub fn cartao(r: Rect, sobre: bool, ativo: bool) {
         misturar(FUNDO, clarear(FUNDO_ALTO, 0.06), h),
     );
     // The lip's shadow on top, the catch-light at the bottom: inset.
-    draw_line(r.x + 2.0, r.y + 1.0, r.x + r.w - 2.0, r.y + 1.0, 1.5, Color::new(0.0, 0.0, 0.0, 0.45));
-    draw_line(r.x + 2.0, r.y + r.h - 1.0, r.x + r.w - 2.0, r.y + r.h - 1.0, 1.0, BRILHO);
+    draw_line(
+        r.x + 2.0,
+        r.y + 1.0,
+        r.x + r.w - 2.0,
+        r.y + 1.0,
+        1.5,
+        Color::new(0.0, 0.0, 0.0, 0.45),
+    );
+    draw_line(
+        r.x + 2.0,
+        r.y + r.h - 1.0,
+        r.x + r.w - 2.0,
+        r.y + r.h - 1.0,
+        1.0,
+        BRILHO,
+    );
     if ativo {
         borda_arredondada(r, RAIO_PEQUENO, 2.0, alfa(ACENTO, 0.9));
         borda_arredondada(
@@ -944,7 +1037,9 @@ pub fn cartao(r: Rect, sobre: bool, ativo: bool) {
 // typography only: the click/touch region remains owned by the caller.
 fn fonte_do_controle(r: Rect, rotulo: &str, preferido: u16) -> u16 {
     let mut t = preferido.min((r.h * 0.46 / fator_texto()).max(8.0) as u16);
-    while t > 8 && medir_forte(rotulo, t) > (r.w - 12.0).max(0.0) { t -= 1; }
+    while t > 8 && medir_forte(rotulo, t) > (r.w - 12.0).max(0.0) {
+        t -= 1;
+    }
     t
 }
 
@@ -984,8 +1079,22 @@ pub fn botao(r: Rect, rotulo: &str, e: Estado, primario: bool) {
     }
     ret_gradiente(rr, RAIO_PEQUENO, clarear(base, 0.05), clarear(base, -0.04));
     // Raised: light along the top edge, shade along the bottom.
-    draw_line(rr.x + 2.0, rr.y + 1.5, rr.x + rr.w - 2.0, rr.y + 1.5, 1.0, Color::new(1.0, 0.86, 0.62, 0.16));
-    draw_line(rr.x + 2.0, rr.y + rr.h - 1.0, rr.x + rr.w - 2.0, rr.y + rr.h - 1.0, 1.5, Color::new(0.0, 0.0, 0.0, 0.4));
+    draw_line(
+        rr.x + 2.0,
+        rr.y + 1.5,
+        rr.x + rr.w - 2.0,
+        rr.y + 1.5,
+        1.0,
+        Color::new(1.0, 0.86, 0.62, 0.16),
+    );
+    draw_line(
+        rr.x + 2.0,
+        rr.y + rr.h - 1.0,
+        rr.x + rr.w - 2.0,
+        rr.y + rr.h - 1.0,
+        1.5,
+        Color::new(0.0, 0.0, 0.0, 0.4),
+    );
     borda_arredondada(
         rr,
         RAIO_PEQUENO,
@@ -1025,8 +1134,19 @@ pub fn botao_redondo(c: Vec2, raio: f32, cor: Color, e: Estado, halo: bool) {
     };
     draw_circle(c.x, c.y + 3.0, r + 2.0, alfa(SOMBRA, 0.25));
     draw_circle(c.x, c.y, r, FUNDO);
-    draw_circle(c.x, c.y, r - 2.0, misturar(FUNDO_ALTO, alfa(cor, 0.22), h * 0.35));
-    draw_circle_lines(c.x, c.y, r - 0.5, 1.0, alfa(cor, if halo { 0.85 } else { 0.36 + 0.34 * h }));
+    draw_circle(
+        c.x,
+        c.y,
+        r - 2.0,
+        misturar(FUNDO_ALTO, alfa(cor, 0.22), h * 0.35),
+    );
+    draw_circle_lines(
+        c.x,
+        c.y,
+        r - 0.5,
+        1.0,
+        alfa(cor, if halo { 0.85 } else { 0.36 + 0.34 * h }),
+    );
     if halo {
         arco(c, r - 4.0, -PI * 0.5, 0.18, 2.0, cor);
     }
@@ -1054,7 +1174,13 @@ pub fn aba(r: Rect, rotulo: &str, ativa: bool, sobre: bool) {
     } else {
         misturar(SUAVE, TEXTO, h)
     };
-    texto_centro_forte(r.center().x, r.center().y + tam(t) as f32 * 0.36, rotulo, t, cor);
+    texto_centro_forte(
+        r.center().x,
+        r.center().y + tam(t) as f32 * 0.36,
+        rotulo,
+        t,
+        cor,
+    );
     if ativa {
         let w = (r.w * 0.45).min(56.0);
         ret_arredondado(
@@ -1103,7 +1229,6 @@ pub fn barra(r: Rect, f: f32, fantasma: f32, cor: Color, rotulo: Option<&str>) {
         let w = (r.w * f).max(raio * 2.0).min(r.w);
         let cheio = Rect::new(r.x, r.y, w, r.h);
         ret_gradiente(cheio, raio, clarear(cor, 0.07), clarear(cor, -0.08));
-
     }
     if let Some(t) = rotulo {
         let tamanho = (r.h * 0.82).clamp(10.0, 15.0) as u16;
@@ -1129,8 +1254,20 @@ pub fn slot(r: Rect, raridade: Option<Color>, sobre: bool, selecionado: bool) {
         cru(|| slot(r, raridade, sobre, selecionado));
         return;
     }
-    ret_gradiente(r, RAIO_PEQUENO, FUNDO_BAIXO, alfa(clarear(FUNDO_BAIXO, 0.05), 0.95));
-    draw_line(r.x + 2.0, r.y + 1.0, r.x + r.w - 2.0, r.y + 1.0, 1.5, Color::new(0.0, 0.0, 0.0, 0.5));
+    ret_gradiente(
+        r,
+        RAIO_PEQUENO,
+        FUNDO_BAIXO,
+        alfa(clarear(FUNDO_BAIXO, 0.05), 0.95),
+    );
+    draw_line(
+        r.x + 2.0,
+        r.y + 1.0,
+        r.x + r.w - 2.0,
+        r.y + 1.0,
+        1.5,
+        Color::new(0.0, 0.0, 0.0, 0.5),
+    );
     if let Some(c) = raridade {
         ret_gradiente(
             Rect::new(r.x, r.y + r.h * 0.35, r.w, r.h * 0.65),
@@ -1163,12 +1300,7 @@ pub fn tooltip(ancora: Rect, t: &str, acima: bool) {
     };
     let c = Rect::new(x, y, w, 26.0);
     sombra(c, RAIO_PEQUENO + 1.0, 1.0);
-    ret_gradiente(
-        c,
-        RAIO_PEQUENO + 1.0,
-        FUNDO_ALTO,
-        FUNDO,
-    );
+    ret_gradiente(c, RAIO_PEQUENO + 1.0, FUNDO_ALTO, FUNDO);
     borda_arredondada(c, RAIO_PEQUENO + 1.0, 1.0, BORDA_FORTE);
     texto(c.x + 10.0, c.y + 18.0, t, tam::LEGENDA + 1, TEXTO);
 }

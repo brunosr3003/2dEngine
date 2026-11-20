@@ -26,7 +26,14 @@ fn g(v: Vec2) -> ::glam::Vec2 {
     ::glam::Vec2::new(v.x, v.y)
 }
 
-fn meta(id: u32, tag: EntityTag, kind: u16, nome: Option<&str>, skins: u64, hp_max: u32) -> EntityMeta {
+fn meta(
+    id: u32,
+    tag: EntityTag,
+    kind: u16,
+    nome: Option<&str>,
+    skins: u64,
+    hp_max: u32,
+) -> EntityMeta {
     EntityMeta {
         skins,
         cla: String::new(),
@@ -71,17 +78,52 @@ fn mundo(item: u16, visual: Visual, p: Vec2, corpos: &[Corpo]) -> World {
     NAVIO_ID.with(|c| c.set(c.get() + 1));
     let navio = navio_id();
     let mut w = World::default();
-    let mut metas = vec![meta(navio, EntityTag::Navio, item, Some("Brunji"), visual.no_fio(), nv::casco_max(item) as u32)];
-    let mut estados = vec![EntityState::quantize(EntityId(navio), g(p), ::glam::Vec2::ZERO, nv::casco_max(item) as i32, 0)];
+    let mut metas = vec![meta(
+        navio,
+        EntityTag::Navio,
+        item,
+        Some("Brunji"),
+        visual.no_fio(),
+        nv::casco_max(item) as u32,
+    )];
+    let mut estados = vec![EntityState::quantize(
+        EntityId(navio),
+        g(p),
+        ::glam::Vec2::ZERO,
+        nv::casco_max(item) as i32,
+        0,
+    )];
     for c in corpos {
         let nome = if c.leme { "Brunji" } else { "Crew" };
         metas.push(meta(c.id, EntityTag::Player, 0, Some(nome), 0, 100));
-        let mut st = EntityState::quantize(EntityId(c.id), g(p), ::glam::Vec2::ZERO, 100, if c.id == 1 { shared::ent_flags::SELF } else { 0 });
-        st.acao = shared::components::acao::monta(c.conjunto, true, if c.golpe { shared::components::acao::GOLPE } else { 0 }, 0);
+        let mut st = EntityState::quantize(
+            EntityId(c.id),
+            g(p),
+            ::glam::Vec2::ZERO,
+            100,
+            if c.id == 1 {
+                shared::ent_flags::SELF
+            } else {
+                0
+            },
+        );
+        st.acao = shared::components::acao::monta(
+            c.conjunto,
+            true,
+            if c.golpe {
+                shared::components::acao::GOLPE
+            } else {
+                0
+            },
+            0,
+        );
         estados.push(st);
     }
     w.apply(metas, estados, &[]);
-    let lista: Vec<NoConves> = corpos.iter().map(|c| NoConves::novo(EntityId(c.id), EntityId(navio), g(c.local), c.leme)).collect();
+    let lista: Vec<NoConves> = corpos
+        .iter()
+        .map(|c| NoConves::novo(EntityId(c.id), EntityId(navio), g(c.local), c.leme))
+        .collect();
     w.aplica_conves(&lista);
     for e in w.ents.values_mut() {
         e.sacada = 1.0;
@@ -103,7 +145,15 @@ fn passo(w: &mut World, p: Vec2, yaw: f32, vel: f32, dt: f32) {
 }
 
 fn camera_em(rt: &RenderTarget, de: Vec3, para: Vec3, fovy: f32, aspect: f32) -> Camera3D {
-    Camera3D { position: de, target: para, up: Vec3::Y, fovy, aspect: Some(aspect), render_target: Some(rt.clone()), ..Default::default() }
+    Camera3D {
+        position: de,
+        target: para,
+        up: Vec3::Y,
+        fovy,
+        aspect: Some(aspect),
+        render_target: Some(rt.clone()),
+        ..Default::default()
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -147,13 +197,24 @@ pub async fn previa(vox: &crate::vox::VoxCache) {
     crate::config_graficos::define_para_previa(crate::config_graficos::RAIO_PADRAO, 100);
     let (wd, ht) = (1280u32, 800u32);
     let aspect = wd as f32 / ht as f32;
-    let rt = render_target_ex(wd, ht, RenderTargetParams { depth: true, sample_count: 1 });
+    let rt = render_target_ex(
+        wd,
+        ht,
+        RenderTargetParams {
+            depth: true,
+            sample_count: 1,
+        },
+    );
     crate::render3d::define_alvo(Some(rt.clone()));
     let solido = crate::render3d::material_solido();
     let mut terreno = crate::terreno::Terreno::novo(&shared::mar::DEF);
     let bosque = shared::mar::vista_da_zona("ilha_inicial").unwrap();
     let mq = |v: ::glam::Vec2| vec2(v.x, v.y);
-    let (fb, eb, lb) = (mq(bosque.fundeadouro()), mq(bosque.eixo()), mq(bosque.lado()));
+    let (fb, eb, lb) = (
+        mq(bosque.fundeadouro()),
+        mq(bosque.eixo()),
+        mq(bosque.lado()),
+    );
     let aberto = fb + eb * 110.0;
     for _ in 0..120 {
         terreno.atualiza(aberto, crate::config_graficos::RAIO_PADRAO + 1, 400);
@@ -164,13 +225,41 @@ pub async fn previa(vox: &crate::vox::VoxCache) {
     let frente = vec2(yaw.sin(), yaw.cos());
     let lado = vec2(frente.y, -frente.x);
     let dt = 1.0 / 60.0;
-    let grava = |nome: &str| rt.texture.get_texture_data().export_png(&format!("{saida}/{nome}.png"));
-    let itens = [nv::CASCOS[0].item, nv::CASCOS[1].item, nv::CASCOS[2].item, nv::CASCOS[3].item];
+    let grava = |nome: &str| {
+        rt.texture
+            .get_texture_data()
+            .export_png(&format!("{saida}/{nome}.png"))
+    };
+    let itens = [
+        nv::CASCOS[0].item,
+        nv::CASCOS[1].item,
+        nv::CASCOS[2].item,
+        nv::CASCOS[3].item,
+    ];
     let visuais = [
-        Visual { classe: 0, vela: 0, ..Default::default() },
-        Visual { classe: 1, vela: 2, figura: 1, estrelas: 4 },
-        Visual { classe: 2, vela: 3, figura: 3, estrelas: 9 },
-        Visual { classe: 3, vela: 5, figura: 2, estrelas: 15 },
+        Visual {
+            classe: 0,
+            vela: 0,
+            ..Default::default()
+        },
+        Visual {
+            classe: 1,
+            vela: 2,
+            figura: 1,
+            estrelas: 4,
+        },
+        Visual {
+            classe: 2,
+            vela: 3,
+            figura: 3,
+            estrelas: 9,
+        },
+        Visual {
+            classe: 3,
+            vela: 5,
+            figura: 2,
+            estrelas: 15,
+        },
     ];
 
     // ── 1. Walking on each hull's deck ──
@@ -182,13 +271,43 @@ pub async fn previa(vox: &crate::vox::VoxCache) {
         let leme = shared::conves::leme(classe);
         let meio = shared::conves::meia_largura_andavel(classe, 0.0).unwrap_or(0.8);
         let mut corpos = vec![
-            Corpo { id: 1, local: vec2(0.0, -0.6), leme: false, conjunto: 1, golpe: false },
-            Corpo { id: 2, local: vec2(leme.x, leme.y), leme: true, conjunto: 0, golpe: false },
-            Corpo { id: 3, local: vec2(meio * 0.8, 0.8), leme: false, conjunto: 2, golpe: false },
+            Corpo {
+                id: 1,
+                local: vec2(0.0, -0.6),
+                leme: false,
+                conjunto: 1,
+                golpe: false,
+            },
+            Corpo {
+                id: 2,
+                local: vec2(leme.x, leme.y),
+                leme: true,
+                conjunto: 0,
+                golpe: false,
+            },
+            Corpo {
+                id: 3,
+                local: vec2(meio * 0.8, 0.8),
+                leme: false,
+                conjunto: 2,
+                golpe: false,
+            },
         ];
         if classe >= 2 {
-            corpos.push(Corpo { id: 4, local: vec2(-meio * 0.7, -2.0), leme: false, conjunto: 3, golpe: false });
-            corpos.push(Corpo { id: 5, local: vec2(-meio * 0.3, 3.2), leme: false, conjunto: 0, golpe: false });
+            corpos.push(Corpo {
+                id: 4,
+                local: vec2(-meio * 0.7, -2.0),
+                leme: false,
+                conjunto: 3,
+                golpe: false,
+            });
+            corpos.push(Corpo {
+                id: 5,
+                local: vec2(-meio * 0.3, 3.2),
+                leme: false,
+                conjunto: 0,
+                golpe: false,
+            });
         }
         let mut w = mundo(itens[classe], visuais[classe], aberto, &corpos);
         let mut p = aberto;
@@ -200,17 +319,27 @@ pub async fn previa(vox: &crate::vox::VoxCache) {
             let t = k as f32 * dt;
             let y = -0.6 + (t * 0.9).sin() * mc * 0.35;
             let walker = shared::conves::ponto_livre(classe, ::glam::Vec2::new(0.25, y));
-            w.aplica_conves(&[NoConves::novo(EntityId(1), EntityId(navio_id()), walker, false)]);
+            w.aplica_conves(&[NoConves::novo(
+                EntityId(1),
+                EntityId(navio_id()),
+                walker,
+                false,
+            )]);
             passo(&mut w, p, yaw, 6.0, dt);
             let alvo3 = vec3(p.x, 1.2, p.y);
-            let de = alvo3 - vec3(frente.x, 0.0, frente.y) * mc * 1.3 + vec3(lado.x, 0.0, lado.y) * mc * 1.1 + vec3(0.0, mc * 0.95 + 3.0, 0.0);
+            let de = alvo3 - vec3(frente.x, 0.0, frente.y) * mc * 1.3
+                + vec3(lado.x, 0.0, lado.y) * mc * 1.1
+                + vec3(0.0, mc * 0.95 + 3.0, 0.0);
             let cam = camera_em(&rt, de, alvo3, 0.85, aspect);
             conta = desenha(&mut w, vox, &terreno, &solido, &cam, p, None);
             next_frame().await;
         }
         grava(&nome);
         let n = crate::mar_casco::modelo(visuais[classe]);
-        println!("{nome}: frame {} draws / {} indices (entities pass), model {} vertices", conta.0, conta.1, n.vertices);
+        println!(
+            "{nome}: frame {} draws / {} indices (entities pass), model {} vertices",
+            conta.0, conta.1, n.vertices
+        );
     }
 
     // ── 2. The captain at the helm, through the sailing camera ──
@@ -218,8 +347,20 @@ pub async fn previa(vox: &crate::vox::VoxCache) {
         let classe = 2;
         let leme = shared::conves::leme(classe);
         let corpos = [
-            Corpo { id: 1, local: vec2(leme.x, leme.y), leme: true, conjunto: 0, golpe: false },
-            Corpo { id: 2, local: vec2(0.9, 1.0), leme: false, conjunto: 2, golpe: false },
+            Corpo {
+                id: 1,
+                local: vec2(leme.x, leme.y),
+                leme: true,
+                conjunto: 0,
+                golpe: false,
+            },
+            Corpo {
+                id: 2,
+                local: vec2(0.9, 1.0),
+                leme: false,
+                conjunto: 2,
+                golpe: false,
+            },
         ];
         let mut w = mundo(itens[classe], visuais[classe], aberto, &corpos);
         let mut p = aberto;
@@ -227,7 +368,13 @@ pub async fn previa(vox: &crate::vox::VoxCache) {
             p += frente * 8.0 * dt;
             passo(&mut w, p, yaw, 8.0, dt);
             let q = crate::mar_camera::enquadramento(p, frente, None, classe, false, 1.0, 0.0);
-            let mut cam = crate::render3d::camera_no_mar(q.centro, 0.0, crate::mar_camera::yaw_atras(frente) + 0.3, q.fator, q.pitch);
+            let mut cam = crate::render3d::camera_no_mar(
+                q.centro,
+                0.0,
+                crate::mar_camera::yaw_atras(frente) + 0.3,
+                q.fator,
+                q.pitch,
+            );
             cam.render_target = Some(rt.clone());
             cam.aspect = Some(aspect);
             desenha(&mut w, vox, &terreno, &solido, &cam, p, None);
@@ -247,15 +394,50 @@ pub async fn previa(vox: &crate::vox::VoxCache) {
         let classe = 1;
         let hw = shared::conves::meia_largura_andavel(classe, 0.0).unwrap_or(1.2);
         let corpos = [
-            Corpo { id: 1, local: vec2(hw, 0.4), leme: false, conjunto: 1, golpe: true },
-            Corpo { id: 2, local: vec2(hw - 0.2, -1.3), leme: false, conjunto: 0, golpe: true },
-            Corpo { id: 3, local: vec2(hw * 0.1, -0.4), leme: false, conjunto: 2, golpe: true },
+            Corpo {
+                id: 1,
+                local: vec2(hw, 0.4),
+                leme: false,
+                conjunto: 1,
+                golpe: true,
+            },
+            Corpo {
+                id: 2,
+                local: vec2(hw - 0.2, -1.3),
+                leme: false,
+                conjunto: 0,
+                golpe: true,
+            },
+            Corpo {
+                id: 3,
+                local: vec2(hw * 0.1, -0.4),
+                leme: false,
+                conjunto: 2,
+                golpe: true,
+            },
         ];
         let mut w = mundo(itens[classe], visuais[classe], aberto, &corpos);
         let tubarao = 600u32;
         let mut vfx = crate::mar_combate_ui::MarCombate::default();
         let bicho = aberto + lado * (shared::conves::meia_boca(classe) + 1.0) + frente * (-0.4);
-        w.apply(vec![meta(tubarao, EntityTag::Enemy, 70, Some("Reef Shark"), 0, 900)], vec![EntityState::quantize(EntityId(tubarao), g(bicho), ::glam::Vec2::ZERO, 540, 0)], &[]);
+        w.apply(
+            vec![meta(
+                tubarao,
+                EntityTag::Enemy,
+                70,
+                Some("Reef Shark"),
+                0,
+                900,
+            )],
+            vec![EntityState::quantize(
+                EntityId(tubarao),
+                g(bicho),
+                ::glam::Vec2::ZERO,
+                540,
+                0,
+            )],
+            &[],
+        );
         for k in 0..120 {
             passo(&mut w, aberto, yaw, 0.0, dt);
             if let Some(e) = w.ents.get_mut(&EntityId(tubarao)) {
@@ -275,13 +457,31 @@ pub async fn previa(vox: &crate::vox::VoxCache) {
             }
             let foco = aberto.lerp(bicho, 0.6);
             let alvo3 = vec3(foco.x, 0.9, foco.y);
-            let de = alvo3 + vec3(lado.x, 0.0, lado.y) * 6.0 - vec3(frente.x, 0.0, frente.y) * 4.0 + vec3(0.0, 2.6, 0.0);
+            let de = alvo3 + vec3(lado.x, 0.0, lado.y) * 6.0 - vec3(frente.x, 0.0, frente.y) * 4.0
+                + vec3(0.0, 2.6, 0.0);
             let cam = camera_em(&rt, de, alvo3, 0.85, aspect);
-            desenha(&mut w, vox, &terreno, &solido, &cam, aberto, Some(EntityId(tubarao)));
+            desenha(
+                &mut w,
+                vox,
+                &terreno,
+                &solido,
+                &cam,
+                aberto,
+                Some(EntityId(tubarao)),
+            );
             // The sea fight's decals: the fin, the bite's red ring, the target.
             set_camera(&cam);
             vfx.atualiza(&w);
-            vfx.desenha_3d(&w, &cam, Some(EntityId(tubarao)), crate::mar_combate_ui::Prontos { bordada: false, canhonaco: false, escala: 1.0 });
+            vfx.desenha_3d(
+                &w,
+                &cam,
+                Some(EntityId(tubarao)),
+                crate::mar_combate_ui::Prontos {
+                    bordada: false,
+                    canhonaco: false,
+                    escala: 1.0,
+                },
+            );
             next_frame().await;
         }
         grava("conves-grupo-tubarao");
@@ -290,7 +490,13 @@ pub async fn previa(vox: &crate::vox::VoxCache) {
     // ── 4. The cloth rippling: a frame sequence of a Galleon's sails ──
     if quer("conves-vela") {
         let classe = 2;
-        let corpos = [Corpo { id: 1, local: vec2(0.0, -1.0), leme: false, conjunto: 0, golpe: false }];
+        let corpos = [Corpo {
+            id: 1,
+            local: vec2(0.0, -1.0),
+            leme: false,
+            conjunto: 0,
+            golpe: false,
+        }];
         let mut w = mundo(itens[classe], visuais[classe], aberto, &corpos);
         let mut p = aberto;
         let mut quadro = 0;
@@ -300,7 +506,10 @@ pub async fn previa(vox: &crate::vox::VoxCache) {
             p += frente * 12.0 * dt;
             passo(&mut w, p, yaw, 12.0, dt);
             let alvo3 = vec3(p.x, 6.5, p.y);
-            let de = alvo3 + vec3(lado.x, 0.0, lado.y) * 15.0 + vec3(frente.x, 0.0, frente.y) * 6.0 + vec3(0.0, 1.5, 0.0);
+            let de = alvo3
+                + vec3(lado.x, 0.0, lado.y) * 15.0
+                + vec3(frente.x, 0.0, frente.y) * 6.0
+                + vec3(0.0, 1.5, 0.0);
             let cam = camera_em(&rt, de, alvo3, 0.9, aspect);
             desenha(&mut w, vox, &terreno, &solido, &cam, p, None);
             let agora = crate::relogio::get_time() - inicio;
@@ -324,7 +533,13 @@ pub async fn previa(vox: &crate::vox::VoxCache) {
         if !quer("conves-desfralda") {
             break;
         }
-        let corpos = [Corpo { id: 1, local: vec2(0.0, -1.0), leme: false, conjunto: 0, golpe: false }];
+        let corpos = [Corpo {
+            id: 1,
+            local: vec2(0.0, -1.0),
+            leme: false,
+            conjunto: 0,
+            golpe: false,
+        }];
         let mut w = mundo(itens[classe], visuais[classe], aberto, &corpos);
         let mut p = aberto;
         let mut quadro = 0;
@@ -332,12 +547,18 @@ pub async fn previa(vox: &crate::vox::VoxCache) {
         let mut proximo = 1.2f32;
         for _ in 0..900 {
             // At rest for a second, then the ship gathers way.
-            let vel = if t < 1.0 { 0.0 } else { ((t - 1.0) * 6.0).min(8.0) };
+            let vel = if t < 1.0 {
+                0.0
+            } else {
+                ((t - 1.0) * 6.0).min(8.0)
+            };
             p += frente * vel * dt;
             passo(&mut w, p, yaw, vel, dt);
             let mc = shared::conves::meio_comp(classe);
             let alvo3 = vec3(p.x, 0.5 + mc * 0.55, p.y);
-            let de = alvo3 + vec3(lado.x, 0.0, lado.y) * mc * 2.6 - vec3(frente.x, 0.0, frente.y) * mc * 0.6 + vec3(0.0, 1.5, 0.0);
+            let de = alvo3 + vec3(lado.x, 0.0, lado.y) * mc * 2.6
+                - vec3(frente.x, 0.0, frente.y) * mc * 0.6
+                + vec3(0.0, 1.5, 0.0);
             let cam = camera_em(&rt, de, alvo3, 0.9, aspect);
             desenha(&mut w, vox, &terreno, &solido, &cam, p, None);
             if t >= proximo || (quadro == 0 && t >= 0.9) {
@@ -359,7 +580,14 @@ pub async fn previa(vox: &crate::vox::VoxCache) {
 /// to…", the helm toggle, chat, AUTO) and on deck (the land HUD, the helm
 /// toggle near the wheel and the route strip), in landscape, a phone in
 /// landscape and in portrait: `conves-hud-<leme|conves>-<screen>.png`.
-async fn hud_previa(vox: &crate::vox::VoxCache, terreno: &crate::terreno::Terreno, solido: &Material, aberto: Vec2, frente: Vec2, saida: &str) {
+async fn hud_previa(
+    vox: &crate::vox::VoxCache,
+    terreno: &crate::terreno::Terreno,
+    solido: &Material,
+    aberto: Vec2,
+    frente: Vec2,
+    saida: &str,
+) {
     crate::hud_layout::define_escala_ui(crate::hud_layout::escala_ui_padrao());
     let mut mapa = crate::mapa::Mapa::para(Some(&shared::mar::DEF));
     for _ in 0..900 {
@@ -377,14 +605,36 @@ async fn hud_previa(vox: &crate::vox::VoxCache, terreno: &crate::terreno::Terren
     let yaw = frente.x.atan2(frente.y);
     let classe = 2usize;
     let item = nv::CASCOS[classe].item;
-    let visual = Visual { classe: 2, vela: 3, figura: 3, estrelas: 9 };
+    let visual = Visual {
+        classe: 2,
+        vela: 3,
+        figura: 3,
+        estrelas: 9,
+    };
     for (tela, wd, ht, margens) in telas {
-        let rt = render_target_ex(wd, ht, RenderTargetParams { depth: true, sample_count: 1 });
+        let rt = render_target_ex(
+            wd,
+            ht,
+            RenderTargetParams {
+                depth: true,
+                sample_count: 1,
+            },
+        );
         crate::render3d::define_alvo(Some(rt.clone()));
         crate::hud_layout::define_margens(margens);
         for leme in [true, false] {
-            let local = if leme { shared::conves::leme(classe) } else { shared::conves::roda(classe) - ::glam::Vec2::new(0.9, 0.8) };
-            let corpos = [Corpo { id: 1, local: vec2(local.x, local.y), leme, conjunto: 1, golpe: false }];
+            let local = if leme {
+                shared::conves::leme(classe)
+            } else {
+                shared::conves::roda(classe) - ::glam::Vec2::new(0.9, 0.8)
+            };
+            let corpos = [Corpo {
+                id: 1,
+                local: vec2(local.x, local.y),
+                leme,
+                conjunto: 1,
+                golpe: false,
+            }];
             let mut w = mundo(item, visual, aberto, &corpos);
             // I am the captain (the ship carries my name).
             if let Some(e) = w.ents.get_mut(&EntityId(1)) {
@@ -395,8 +645,26 @@ async fn hud_previa(vox: &crate::vox::VoxCache, terreno: &crate::terreno::Terren
                 let lado = vec2(frente.y, -frente.x);
                 let q = aberto + lado * 11.0 + frente * (40.0 * 8.0 / 60.0);
                 w.apply(
-                    vec![meta(700, EntityTag::Navio, nv::CASCOS[1].item, Some("Mate"), Visual { classe: 1, vela: 2, ..Default::default() }.no_fio(), 3600)],
-                    vec![EntityState::quantize(EntityId(700), g(q), ::glam::Vec2::ZERO, 3600, 0)],
+                    vec![meta(
+                        700,
+                        EntityTag::Navio,
+                        nv::CASCOS[1].item,
+                        Some("Mate"),
+                        Visual {
+                            classe: 1,
+                            vela: 2,
+                            ..Default::default()
+                        }
+                        .no_fio(),
+                        3600,
+                    )],
+                    vec![EntityState::quantize(
+                        EntityId(700),
+                        g(q),
+                        ::glam::Vec2::ZERO,
+                        3600,
+                        0,
+                    )],
                     &[],
                 );
             }
@@ -407,14 +675,27 @@ async fn hud_previa(vox: &crate::vox::VoxCache, terreno: &crate::terreno::Terren
             }
             crate::mar_ui::define_no_leme(leme);
             let mut cam = if leme {
-                let q = crate::mar_camera::enquadramento(p, frente, None, classe, ht > wd, 1.0, 0.0);
-                crate::render3d::camera_no_mar(q.centro, 0.0, crate::mar_camera::yaw_atras(frente) + 0.3, q.fator, q.pitch)
+                let q =
+                    crate::mar_camera::enquadramento(p, frente, None, classe, ht > wd, 1.0, 0.0);
+                crate::render3d::camera_no_mar(
+                    q.centro,
+                    0.0,
+                    crate::mar_camera::yaw_atras(frente) + 0.3,
+                    q.fator,
+                    q.pitch,
+                )
             } else {
                 let e = &w.ents[&EntityId(1)];
                 let alvo3 = vec3(e.render_pos.x, e.render_y + 1.0, e.render_pos.y);
                 let atras = crate::mar_camera::yaw_atras(frente) + 0.5;
                 let de = alvo3 + vec3(-atras.sin(), 0.0, atras.cos()) * 9.0 + vec3(0.0, 8.0, 0.0);
-                Camera3D { position: de, target: alvo3, up: Vec3::Y, fovy: 0.9, ..Default::default() }
+                Camera3D {
+                    position: de,
+                    target: alvo3,
+                    up: Vec3::Y,
+                    fovy: 0.9,
+                    ..Default::default()
+                }
             };
             cam.render_target = Some(rt.clone());
             cam.aspect = Some(wd as f32 / ht as f32);
@@ -423,18 +704,33 @@ async fn hud_previa(vox: &crate::vox::VoxCache, terreno: &crate::terreno::Terren
             let barra = crate::mar_ui::BarraDoNavio::default();
             let mut ficha = crate::hud::Ficha::default();
             let mut eq = shared::Equipment::default();
-            eq.set(shared::EquipSlot::Navio, Some(item), Some(nv::instancia_nova(item)));
+            eq.set(
+                shared::EquipSlot::Navio,
+                Some(item),
+                Some(nv::instancia_nova(item)),
+            );
             let mut vfx = crate::mar_combate_ui::MarCombate::default();
             let mut rota = crate::mar_rota::RotaDoMar::default();
             for _ in 0..6 {
-                crate::mar_casco::sem_surgir(|| desenha(&mut w, vox, terreno, solido, &cam, p, None));
+                crate::mar_casco::sem_surgir(|| {
+                    desenha(&mut w, vox, terreno, solido, &cam, p, None)
+                });
                 crate::render3d::camera_padrao();
                 let z = crate::hud_layout::atual();
                 crate::chat_ui::ChatUi::default().caixa(z.chat, "");
                 crate::hud::draw_hud(
                     &z,
-                    &crate::hud::Info { realm: "Tempest".into(), canal: "Canal 1".into(), zona: shared::mar::DEF.zona.into(), jogadores: 42, capacidade: 200 },
-                    &crate::hud::Rede { ms: 32.0, ..Default::default() },
+                    &crate::hud::Info {
+                        realm: "Tempest".into(),
+                        canal: "Canal 1".into(),
+                        zona: shared::mar::DEF.zona.into(),
+                        jogadores: 42,
+                        capacidade: 200,
+                    },
+                    &crate::hud::Rede {
+                        ms: 32.0,
+                        ..Default::default()
+                    },
                     None,
                     0,
                     0,
@@ -444,25 +740,64 @@ async fn hud_previa(vox: &crate::vox::VoxCache, terreno: &crate::terreno::Terren
                     &[],
                 );
                 mapa.desenha_mini(&w);
-                let casco = if leme { crate::mar_ui::casco_de(&eq).map(|(c, m, _)| (c, m)) } else { None };
-                crate::hud::draw_ficha(&z, &mut ficha, 0.016, "Navegante", 70, 1840, 2400, 1000, 240, Some(24850), casco);
+                let casco = if leme {
+                    crate::mar_ui::casco_de(&eq).map(|(c, m, _)| (c, m))
+                } else {
+                    None
+                };
+                crate::hud::draw_ficha(
+                    &z,
+                    &mut ficha,
+                    0.016,
+                    "Navegante",
+                    70,
+                    1840,
+                    2400,
+                    1000,
+                    240,
+                    Some(24850),
+                    casco,
+                );
                 crate::hud::draw_modo_pk(&z, Default::default());
                 if leme {
                     barra.desenha(&hab);
                 } else {
-                    hab.barra(shared::skills::Conjunto::Katana, 70, 240, &Default::default());
+                    hab.barra(
+                        shared::skills::Conjunto::Katana,
+                        70,
+                        240,
+                        &Default::default(),
+                    );
                     crate::hud::draw_atacar(&z, false);
-                    crate::hud::draw_rapidos(&z, [0; 4], [0; 4], [false; 4], [None; 4], [false; 4], None, &|_| String::new());
+                    crate::hud::draw_rapidos(
+                        &z,
+                        [0; 4],
+                        [0; 4],
+                        [false; 4],
+                        [None; 4],
+                        [false; 4],
+                        None,
+                        &|_| String::new(),
+                    );
                     crate::hud::draw_sprint(&z, false);
                     crate::hud::draw_pulo(&z, false);
-                    crate::hud_layout::desenha_faixa(&z, "Sailing to Glacier · 320 m · 32 s", crate::hud_estilo::AUTO);
+                    crate::hud_layout::desenha_faixa(
+                        &z,
+                        "Sailing to Glacier · 320 m · 32 s",
+                        crate::hud_estilo::AUTO,
+                    );
                 }
                 crate::auto_combate::AutoCombate::default().desenha();
                 crate::hud::draw_topo(&z, false, false, false, false, false);
                 crate::hud::draw_botao_economia(&z);
                 if leme {
                     vfx.hud_do_mar(&z, &eq, Some(p), false, crate::mapa::Mapa::mini_rect());
-                    rota.desenha_portos(crate::mapa::Mapa::disco_do_minimapa(), z.s, Some(p), nv::CASCOS[classe].velocidade);
+                    rota.desenha_portos(
+                        crate::mapa::Mapa::disco_do_minimapa(),
+                        z.s,
+                        Some(p),
+                        nv::CASCOS[classe].velocidade,
+                    );
                 }
                 crate::mar_ui::botao_do_leme(&z, &w, &["Mate".to_string()], true);
                 crate::hud::draw_exp(&z, &ficha);
@@ -472,7 +807,9 @@ async fn hud_previa(vox: &crate::vox::VoxCache, terreno: &crate::terreno::Terren
                 next_frame().await;
             }
             let nome = format!("conves-hud-{}-{tela}", if leme { "leme" } else { "conves" });
-            rt.texture.get_texture_data().export_png(&format!("{saida}/{nome}.png"));
+            rt.texture
+                .get_texture_data()
+                .export_png(&format!("{saida}/{nome}.png"));
             println!("{nome}");
         }
     }

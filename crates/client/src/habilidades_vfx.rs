@@ -344,8 +344,16 @@ fn desenha_luz(c: &Cena, frente: Vec3, lado: Vec3, u: f32) {
         // gold sparks at tier 10.
         let g = shared::skills::grau_do_efeito(c.tier) as f32;
         for &mao in &c.maos {
-            halo(mao, (0.32 + u * 0.55) * (1.0 + 0.25 * g), alfa(cor, 0.3 + u * 0.5));
-            brilho(mao, (0.18 + u * 0.22) * (1.0 + 0.2 * g), alfa(WHITE, u * 0.75));
+            halo(
+                mao,
+                (0.32 + u * 0.55) * (1.0 + 0.25 * g),
+                alfa(cor, 0.3 + u * 0.5),
+            );
+            brilho(
+                mao,
+                (0.18 + u * 0.22) * (1.0 + 0.2 * g),
+                alfa(WHITE, u * 0.75),
+            );
             if g >= 3.0 {
                 faiscas(mao, (u * 0.3) % 0.2, OURO_DO_DESPERTAR, 0.5, 6);
             }
@@ -591,7 +599,12 @@ fn desenha_luz(c: &Cena, frente: Vec3, lado: Vec3, u: f32) {
                 brilho(peito.lerp(eu, u), 0.18 * fade, alfa(carmesim, fade));
             }
             halo(eu, 1.2, alfa(verde, fade * 0.5));
-            selo(c.de + Vec3::Y * 0.09, 0.8, t * 0.35, alfa(verde, fade * 0.8));
+            selo(
+                c.de + Vec3::Y * 0.09,
+                0.8,
+                t * 0.35,
+                alfa(verde, fade * 0.8),
+            );
         }
         11 => {
             let r = c.raio.max(3.0);
@@ -684,7 +697,12 @@ fn despertar(c: &Cena, peito: Vec3, cor: Color, t: f32, fade: f32) {
         if vida > 0.0 {
             for i in 0..6 {
                 let a = i as f32 * TAU / 6.0 + t * 4.0;
-                let p = c.alvo + vec3(a.cos() * 0.9, 2.15 + (t * 6.0 + i as f32).sin() * 0.08, a.sin() * 0.9);
+                let p = c.alvo
+                    + vec3(
+                        a.cos() * 0.9,
+                        2.15 + (t * 6.0 + i as f32).sin() * 0.08,
+                        a.sin() * 0.9,
+                    );
                 brilho(p, 0.17 * vida, alfa(YELLOW, vida));
                 halo(p, 0.28, alfa(OURO_DO_DESPERTAR, vida * 0.6));
             }
@@ -716,16 +734,30 @@ fn despertar(c: &Cena, peito: Vec3, cor: Color, t: f32, fade: f32) {
     }
     // 10: the gold crown.
     if g >= 3.0 {
-        selo(c.alvo + Vec3::Y * 0.11, raio * 1.15, t * 0.6, alfa(OURO_DO_DESPERTAR, fade));
+        selo(
+            c.alvo + Vec3::Y * 0.11,
+            raio * 1.15,
+            t * 0.6,
+            alfa(OURO_DO_DESPERTAR, fade),
+        );
         let coluna = (1.0 - t / 0.7).clamp(0.0, 1.0);
         energia(
-            &[c.alvo + Vec3::Y * 0.2, c.alvo + Vec3::Y * 2.5, c.alvo + Vec3::Y * 5.5],
+            &[
+                c.alvo + Vec3::Y * 0.2,
+                c.alvo + Vec3::Y * 2.5,
+                c.alvo + Vec3::Y * 5.5,
+            ],
             0.32 * coluna,
             alfa(OURO_DO_DESPERTAR, coluna),
         );
         for i in 0..8 {
             let a = i as f32 * TAU / 8.0 + t * 2.4;
-            let p = peito + vec3(a.cos() * 1.4, (t * 3.0 + i as f32).sin() * 0.35, a.sin() * 1.4);
+            let p = peito
+                + vec3(
+                    a.cos() * 1.4,
+                    (t * 3.0 + i as f32).sin() * 0.35,
+                    a.sin() * 1.4,
+                );
             brilho(p, 0.2 * fade, alfa(OURO_DO_DESPERTAR, fade));
         }
         faiscas(peito, t, OURO_DO_DESPERTAR, 2.4, 24);

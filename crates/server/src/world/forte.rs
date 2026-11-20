@@ -31,7 +31,9 @@ impl GameWorld {
     /// A field boss fell at `onde`: one to three chests round the spot, of
     /// the table of dungeon `conteudo`.
     pub(super) fn forte_largar_baus(&mut self, onde: Vec2, conteudo: u16) {
-        let cores: Vec<u8> = (0..forte::quantos(fastrand::f32())).map(|_| forte::cor(fastrand::f32())).collect();
+        let cores: Vec<u8> = (0..forte::quantos(fastrand::f32()))
+            .map(|_| forte::cor(fastrand::f32()))
+            .collect();
         self.forte_largar_n_baus(onde, conteudo, &cores);
     }
 
@@ -83,10 +85,19 @@ impl GameWorld {
             return true;
         }
         let agora = self.sim_time_s;
-        let cor = self.ecs.query::<(&NetId, &BauDoForte)>().iter().find(|(_, (n, _))| n.0 == eid).map_or(2, |(_, (_, b))| b.cor);
+        let cor = self
+            .ecs
+            .query::<(&NetId, &BauDoForte)>()
+            .iter()
+            .find(|(_, (n, _))| n.0 == eid)
+            .map_or(2, |(_, (_, b))| b.cor);
         if let Some(s) = self.sessions.get_mut(&sid) {
             s.coleta_no = None;
-            s.abrindo_bau = Some(AberturaDeBau { bau: eid, desde: agora, de: eu });
+            s.abrindo_bau = Some(AberturaDeBau {
+                bau: eid,
+                desde: agora,
+                de: eu,
+            });
             let _ = s.handle.to_client.send(ServerMessage::ColetaEstado {
                 tipo: forte::TIPO_COLETA + cor,
                 intervalo_s: forte::ABRIR_S,
@@ -147,7 +158,8 @@ impl GameWorld {
                 self.forte_parar(sid);
                 continue;
             };
-            let quebrou = eu.is_none_or(|eu| eu.distance(a.de) > 1.0 || eu.distance(p) > forte::ALCANCE);
+            let quebrou =
+                eu.is_none_or(|eu| eu.distance(a.de) > 1.0 || eu.distance(p) > forte::ALCANCE);
             if quebrou {
                 self.forte_parar(sid);
                 continue;
@@ -178,7 +190,8 @@ impl GameWorld {
             .filter(|p| !chaves.contains(&p.item_id))
             .map(|p| (p.item_id, p.qtd, GameWorld::dg_rolar_peca(p)))
             .collect();
-        if let Some(chave) = forte::chave_do_bau(cor, c.nivel_min, fastrand::f32(), fastrand::f32()) {
+        if let Some(chave) = forte::chave_do_bau(cor, c.nivel_min, fastrand::f32(), fastrand::f32())
+        {
             premios.push((chave, 1, None));
         }
         if bau.marcas > 0 {
@@ -198,7 +211,13 @@ impl GameWorld {
         }
         s.inventory_dirty = true;
         self.save_pending = true;
-        tracing::info!("[forte] {} opened a {}: {:?} + {} marks", s.name, forte::nome_da_cor(cor), itens, bau.marcas);
+        tracing::info!(
+            "[forte] {} opened a {}: {:?} + {} marks",
+            s.name,
+            forte::nome_da_cor(cor),
+            itens,
+            bau.marcas
+        );
         self.dg_texto(sid, true, format!("{} opened.", forte::nome_da_cor(cor)));
     }
 }
@@ -210,11 +229,23 @@ mod testes {
     fn sessao_em(w: &mut GameWorld, porta: u16, p: Vec2) -> SessionId {
         let sid = SessionId(format!("127.0.0.1:{porta}").parse().unwrap());
         let (tx, _) = mpsc::unbounded_channel();
-        w.on_connect(SessionHandle { id: sid, to_client: tx });
+        w.on_connect(SessionHandle {
+            id: sid,
+            to_client: tx,
+        });
         let s = w.sessions.get_mut(&sid).unwrap();
         s.logged_in = true;
         let id = s.entity_id;
-        let e = w.ecs.spawn((NetId(id), Position(p), Velocity(Vec2::ZERO), EntityKind::Player, Health { current: 100, max: 100 }));
+        let e = w.ecs.spawn((
+            NetId(id),
+            Position(p),
+            Velocity(Vec2::ZERO),
+            EntityKind::Player,
+            Health {
+                current: 100,
+                max: 100,
+            },
+        ));
         w.sessions.get_mut(&sid).unwrap().entity = Some(e);
         sid
     }
@@ -246,16 +277,25 @@ mod testes {
         assert!(w.forte_tocar_bau(b, eid));
         w.sim_time_s += forte::ABRIR_S * 0.5;
         w.tick_forte();
-        assert!(w.sessions[&a].abrindo_bau.is_some(), "stopped before ten seconds");
+        assert!(
+            w.sessions[&a].abrindo_bau.is_some(),
+            "stopped before ten seconds"
+        );
         // B walks away: the bar stops.
         mover(&mut w, b, p + Vec2::new(-6.0, 0.0));
         w.tick_forte();
-        assert!(w.sessions[&b].abrindo_bau.is_none(), "walking away did not stop it");
+        assert!(
+            w.sessions[&b].abrindo_bau.is_none(),
+            "walking away did not stop it"
+        );
         w.sim_time_s += forte::ABRIR_S * 0.5 + 0.1;
         w.tick_forte();
         assert!(w.sessions[&a].abrindo_bau.is_none());
         assert!(
-            w.ecs.query::<(&NetId, &BauDoForte)>().iter().all(|(_, (n, _))| n.0 != eid),
+            w.ecs
+                .query::<(&NetId, &BauDoForte)>()
+                .iter()
+                .all(|(_, (n, _))| n.0 != eid),
             "the opened chest is still there"
         );
         let s = &w.sessions[&a];
@@ -264,6 +304,9 @@ mod testes {
             "the opener got nothing"
         );
         let s = &w.sessions[&b];
-        assert!(s.inventory.iter().all(|x| x.qty == 0) && s.dungeon.correio.is_empty(), "the one who walked away got loot");
+        assert!(
+            s.inventory.iter().all(|x| x.qty == 0) && s.dungeon.correio.is_empty(),
+            "the one who walked away got loot"
+        );
     }
 }

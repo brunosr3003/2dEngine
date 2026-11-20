@@ -1697,11 +1697,14 @@ O dono: "não quero isso, mantém como tava antes o drop de chefe normal; se tiv
 
 ---
 
-## Próxima Evolução: Redesign Completo (18/11/2026)
+## Evolução: Redesign Completo (18–19/11/2026)
 
-**Status:** Proposta documentada, aguardando implementação
+**Status:** Barcos/tier/pontos/Estaleiro, combate por projéteis, estado
+derrotado, abordagem hostil, respawn, Naval Tokens, IA do barco abandonado e
+alianças implementados na versão de teste. Estado detalhado em
+`docs/BARCOS-IMPLEMENTACAO.md`.
 
-Este documento descreve o sistema naval **atual** (fases 1, 2 e 4 implementadas). Uma **evolução completa** do sistema está especificada em:
+Este documento descreve o sistema naval atual e a evolução especificada em:
 
 - **`docs/BARCOS.md`** — Redesign do sistema de barcos
   - 9 barcos base (3 tamanhos × 3 variantes)

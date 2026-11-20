@@ -187,7 +187,12 @@ pub(super) fn entregar_premio(
 
 /// Adds `qtd` of `item` to the bag only if ALL of it fits; else the bag is
 /// untouched (the caller mails it).
-pub(super) fn bolsa_tudo_ou_nada(s: &mut Session, item: u16, qtd: u32, inst: Option<shared::ItemInstance>) -> bool {
+pub(super) fn bolsa_tudo_ou_nada(
+    s: &mut Session,
+    item: u16,
+    qtd: u32,
+    inst: Option<shared::ItemInstance>,
+) -> bool {
     let mut tentativa = s.inventory.clone();
     if add_to_inventory(&mut tentativa, item, qtd, inst) {
         s.inventory = tentativa;
@@ -290,7 +295,11 @@ impl GameWorld {
         // A Magic Island tier's dungeon is ITS OWN: only entered from that
         // tier. In the Arena (entering solo or from the queue) it is the
         // island the player came from (`arena_volta`).
-        let de_onde = if shared::arena::e_arena(&self.zona) { s.dungeon.arena_volta.as_str() } else { self.zona.as_str() };
+        let de_onde = if shared::arena::e_arena(&self.zona) {
+            s.dungeon.arena_volta.as_str()
+        } else {
+            self.zona.as_str()
+        };
         if shared::magica::e_magica(c.zona) && c.zona != de_onde {
             let ilha = shared::magica::nivel_da_zona(c.zona).map_or("its Magic Island", |n| n.nome);
             return Some(format!("{} is only entered from {ilha}.", c.nome));
@@ -366,7 +375,11 @@ impl GameWorld {
                 if let Some(s) = self.sessions.get_mut(&sid) {
                     s.dungeon.porao_pendente = 0;
                 }
-                self.dg_texto(sid, false, "The cellar can't be reached right now. Try again in a moment.");
+                self.dg_texto(
+                    sid,
+                    false,
+                    "The cellar can't be reached right now. Try again in a moment.",
+                );
                 return;
             }
         }
@@ -420,12 +433,16 @@ impl GameWorld {
 
     /// Back up the stairs: to the island of the Porão, in front of its door.
     fn dg_voltar_pra_porta(&mut self, sid: SessionId, aviso: &str) {
-        let Some(conteudo) = self.sessions.get_mut(&sid).and_then(|s| s.porao_de_volta.take()) else {
+        let Some(conteudo) = self
+            .sessions
+            .get_mut(&sid)
+            .and_then(|s| s.porao_de_volta.take())
+        else {
             self.sair_da_arena(sid, aviso);
             return;
         };
-        let Some((c, def)) = dg::conteudo(conteudo)
-            .and_then(|c| Some((c, shared::terreno::def_da_zona(c.zona)?)))
+        let Some((c, def)) =
+            dg::conteudo(conteudo).and_then(|c| Some((c, shared::terreno::def_da_zona(c.zona)?)))
         else {
             self.sair_da_arena(sid, aviso);
             return;
@@ -630,7 +647,11 @@ impl GameWorld {
             .dungeon
             .arena_volta_pos
             .map(|[x, z]| Vec2::new(x, z))
-            .or_else(|| shared::terreno::Gerador::da_ilha(def).cidade().map(|c| c.centro()))
+            .or_else(|| {
+                shared::terreno::Gerador::da_ilha(def)
+                    .cidade()
+                    .map(|c| c.centro())
+            })
             .unwrap_or(Vec2::ZERO);
         if self.mandar_para_zona(sid, def.zona, chegada, Some(aviso), Some(def.nome)) {
             if let Some(s) = self.sessions.get_mut(&sid) {
@@ -708,7 +729,12 @@ impl GameWorld {
             Pedido::EntrarSolo { conteudo } => {
                 let onde = dg::conteudo(conteudo)
                     .filter(|c| c.tipo == Tipo::Porao)
-                    .map(|c| format!("{} is now entered through its portal, on the island.", c.nome))
+                    .map(|c| {
+                        format!(
+                            "{} is now entered through its portal, on the island.",
+                            c.nome
+                        )
+                    })
                     .unwrap_or_else(|| "This cellar is now entered through its portal.".into());
                 self.dg_texto(sid, false, onde);
                 return;
@@ -924,13 +950,22 @@ impl GameWorld {
             _ => None,
         };
         // Antes do empréstimo da sessão: o catálogo acompanha o hot-reload.
-        let drops: std::collections::HashMap<u16, Vec<u16>> = dg::CONTEUDOS.iter().map(|c| {
-            let mut itens = crate::economy::com_config(|cfg| cfg.itens_possiveis_do_mob(c.chefe));
-            itens.extend(super::chefes::itens_do_chefe(c.chefe).into_iter().filter(|(_, chance)| *chance > 0.0).map(|(id, _)| id));
-            itens.sort_unstable();
-            itens.dedup();
-            (c.id, itens)
-        }).collect();
+        let drops: std::collections::HashMap<u16, Vec<u16>> = dg::CONTEUDOS
+            .iter()
+            .map(|c| {
+                let mut itens =
+                    crate::economy::com_config(|cfg| cfg.itens_possiveis_do_mob(c.chefe));
+                itens.extend(
+                    super::chefes::itens_do_chefe(c.chefe)
+                        .into_iter()
+                        .filter(|(_, chance)| *chance > 0.0)
+                        .map(|(id, _)| id),
+                );
+                itens.sort_unstable();
+                itens.dedup();
+                (c.id, itens)
+            })
+            .collect();
         let Some(s) = self.sessions.get_mut(&sid) else {
             return;
         };
@@ -948,9 +983,15 @@ impl GameWorld {
                     cadeados: (1..=dg::estagios(c))
                         .map(|e| dg::cadeado(c, e, nivel, poder, liberado, tem_selo))
                         .collect(),
-                    primeiras_concluidas: (1..=dg::estagios(c)).map(|e| s.dungeon.vitorias(c.id,e) > 0).collect(),
-                    semanais_recebidas: (1..=dg::estagios(c)).map(|e|
-                        s.conta_dungeon.semana == dg::semana(unix_agora()) && s.conta_dungeon.primeiras.contains(&(c.id,e))).collect(),
+                    primeiras_concluidas: (1..=dg::estagios(c))
+                        .map(|e| s.dungeon.vitorias(c.id, e) > 0)
+                        .collect(),
+                    semanais_recebidas: (1..=dg::estagios(c))
+                        .map(|e| {
+                            s.conta_dungeon.semana == dg::semana(unix_agora())
+                                && s.conta_dungeon.primeiras.contains(&(c.id, e))
+                        })
+                        .collect(),
                     drops_chefe: drops.get(&c.id).cloned().unwrap_or_default(),
                     vitorias: (1..=dg::estagios(c))
                         .map(|e| s.dungeon.vitorias(c.id, e))
@@ -1136,7 +1177,8 @@ impl GameWorld {
                 entradas.atualizar(c.tipo, hoje);
                 !entradas.consumir()
             };
-            crate::telemetria::conta_de(&s.name, 
+            crate::telemetria::conta_de(
+                &s.name,
                 "dungeon_entrada",
                 format!(
                     "{conteudo}:{estagio}:{}",
@@ -1145,7 +1187,12 @@ impl GameWorld {
                 1,
             );
             if dg::exige_selo(c, estagio) {
-                crate::telemetria::conta_de(&s.name, "selo_usado", format!("{conteudo}:{estagio}"), 1);
+                crate::telemetria::conta_de(
+                    &s.name,
+                    "selo_usado",
+                    format!("{conteudo}:{estagio}"),
+                    1,
+                );
                 tirar_item(&mut s.inventory, shared::item_id::SELO_TEMPESTADE, 1);
                 s.inventory_dirty = true;
             }
@@ -1267,7 +1314,11 @@ impl GameWorld {
                 let (v, d) = dg::escala_do_chefe(c, n);
                 (v * mult_vida_teste(), d * dano)
             };
-            let quer = if com_planta { centro } else { centro + Vec2::new(0.0, 14.0) };
+            let quer = if com_planta {
+                centro
+            } else {
+                centro + Vec2::new(0.0, 14.0)
+            };
             let corpo = ENTITY_RADIUS * shared::bosses::chefe(c.chefe).map_or(1.0, |b| b.escala);
             let pos = self.dg_chao_do_mob(quer, centro, corpo, chao);
             if let Some(e) = self.nascer_chefe_nivel(c.chefe, pos, nivel) {
@@ -1299,7 +1350,11 @@ impl GameWorld {
                     let t = (i as f32 / n_mobs.max(1) as f32).sqrt();
                     (
                         i as f32 * 2.399_963,
-                        if i == 0 { 0.0 } else { raio_da_sala * (0.25 + 0.5 * t) },
+                        if i == 0 {
+                            0.0
+                        } else {
+                            raio_da_sala * (0.25 + 0.5 * t)
+                        },
                     )
                 } else {
                     (
@@ -1323,7 +1378,11 @@ impl GameWorld {
                 } else {
                     Elite::Nao
                 };
-                let coleira = if com_planta { raio_da_sala + 4.0 } else { RAIO_DO_ANDAR * 0.7 };
+                let coleira = if com_planta {
+                    raio_da_sala + 4.0
+                } else {
+                    RAIO_DO_ANDAR * 0.7
+                };
                 let escala = match elite {
                     Elite::SemiChefe => 1.4,
                     Elite::Guardiao => 1.25,
@@ -1331,7 +1390,9 @@ impl GameWorld {
                 };
                 let corpo = ENTITY_RADIUS * crate::economy::enemy_size_scale(kind) * escala;
                 let pos = self.dg_chao_do_mob(pos, centro, corpo, chao);
-                vivos.push(self.dg_nascer_mob(id, kind, pos, centro, coleira, nivel, vida, dano, elite));
+                vivos.push(
+                    self.dg_nascer_mob(id, kind, pos, centro, coleira, nivel, vida, dano, elite),
+                );
             }
         }
         self.instancias[idx].vivos = vivos;
@@ -1355,7 +1416,11 @@ impl GameWorld {
         planta: Option<(&'static shared::planta::Planta, u8)>,
     ) -> Vec2 {
         if let Some((p, andar)) = planta {
-            return if p.livre(quer, corpo, andar) { quer } else { p.mais_perto(quer, corpo, andar) };
+            return if p.livre(quer, corpo, andar) {
+                quer
+            } else {
+                p.mais_perto(quer, corpo, andar)
+            };
         }
         let Some(ilha) = self.ilha.as_ref() else {
             return quer;
@@ -1528,7 +1593,12 @@ impl GameWorld {
             let _ = self.ecs.remove_one::<Instancia>(e);
         }
         // Came in through a Porão door: out the same door, on its island.
-        if self.na_arena() && self.sessions.get(&sid).is_some_and(|s| s.porao_de_volta.is_some()) {
+        if self.na_arena()
+            && self
+                .sessions
+                .get(&sid)
+                .is_some_and(|s| s.porao_de_volta.is_some())
+        {
             self.dg_avisar(sid, Aviso::Saiu);
             self.dg_voltar_pra_porta(sid, "You climb back out of the cellar.");
             self.save_pending = true;
@@ -1630,11 +1700,16 @@ impl GameWorld {
         if !self.na_arena() {
             return;
         }
-        let Some(s) = self.sessions.get(&sid) else { return };
+        let Some(s) = self.sessions.get(&sid) else {
+            return;
+        };
         if s.instancia != 0 || !matches!(self.mesa.onde(chave(sid)), mesa::Onde::Livre) {
             return;
         }
-        let Some(pos) = s.entity.and_then(|e| self.ecs.get::<&Position>(e).ok().map(|p| p.0)) else {
+        let Some(pos) = s
+            .entity
+            .and_then(|e| self.ecs.get::<&Position>(e).ok().map(|p| p.0))
+        else {
             return;
         };
         if pos.distance(self.chegada_da_arena()) < Self::LONGE_DO_SAGUAO {
@@ -1962,7 +2037,9 @@ impl GameWorld {
                 !matches!(i.estado, EstadoDg::Andando),
             );
             let centro = match self.instancias[idx].planta {
-                Some(p) => p.sala_da_etapa(andar).map_or(p.ponto_de_volta(andar), |s| p.centro(s)),
+                Some(p) => p
+                    .sala_da_etapa(andar)
+                    .map_or(p.ponto_de_volta(andar), |s| p.centro(s)),
                 None => self.dg_arena()[(andar as usize).min(3)],
             };
             for sid in presentes {
@@ -2106,14 +2183,15 @@ impl GameWorld {
         // aviso"). Only what does not fit is posted to the Mail.
         let mut no_correio = 0u32;
         if let Some(s) = self.sessions.get_mut(&sid) {
-            let mut entregar = |s: &mut Session, item: u16, inst: Option<shared::ItemInstance>, tipo: u8| {
-                if bolsa_tudo_ou_nada(s, item, 1, inst) {
-                    s.inventory_dirty = true;
-                } else {
-                    s.dungeon.postar(item, 1, inst, tipo, quando);
-                    no_correio += 1;
-                }
-            };
+            let mut entregar =
+                |s: &mut Session, item: u16, inst: Option<shared::ItemInstance>, tipo: u8| {
+                    if bolsa_tudo_ou_nada(s, item, 1, inst) {
+                        s.inventory_dirty = true;
+                    } else {
+                        s.dungeon.postar(item, 1, inst, tipo, quando);
+                        no_correio += 1;
+                    }
+                };
             let de_todas = s.dungeon.registrar_vitoria(conteudo, estagio);
             s.conta_dungeon.virar(semana);
             let semanal = !ajudante && s.conta_dungeon.primeira_da_semana(conteudo, estagio);
@@ -2240,8 +2318,12 @@ impl GameWorld {
         }
         m.abriu_bau = true;
         let ajudante = m.ajudante;
-        let (pocoes0, dashes0, vida_min, mortes) =
-            (m.pocoes_na_entrada, m.dashes_na_entrada, m.vida_min, m.mortes);
+        let (pocoes0, dashes0, vida_min, mortes) = (
+            m.pocoes_na_entrada,
+            m.dashes_na_entrada,
+            m.vida_min,
+            m.mortes,
+        );
         let tempo_s = (em - inicio).max(0.0) as u32;
         let bonus = dg::bonus_tempo(tempo_s, (limite - inicio).max(1.0) as u32);
         let quando = unix_agora();
@@ -2266,8 +2348,10 @@ impl GameWorld {
             dashes: s.dashes_feitos.saturating_sub(dashes0),
         };
         let desafios = self.instancias[idx].desafios.clone();
-        let feitos: Vec<(shared::desafio::Desafio, bool)> =
-            desafios.iter().map(|d| (*d, d.cumpriu(c, &placar))).collect();
+        let feitos: Vec<(shared::desafio::Desafio, bool)> = desafios
+            .iter()
+            .map(|d| (*d, d.cumpriu(c, &placar)))
+            .collect();
         let n_ok = feitos.iter().filter(|(_, ok)| *ok).count();
         let mult = shared::desafio::multiplicador(n_ok);
         if n_ok > 0 {
@@ -2293,7 +2377,12 @@ impl GameWorld {
         for (item, qtd, inst) in premios {
             crate::telemetria::conta_de(&s.name, "dungeon_bau_item", item, qtd as i64);
             if shared::item_id::todas_as_chaves().contains(&item) {
-                crate::telemetria::conta_de(&s.name, "chave_drop", format!("dungeon:{item}"), qtd as i64);
+                crate::telemetria::conta_de(
+                    &s.name,
+                    "chave_drop",
+                    format!("dungeon:{item}"),
+                    qtd as i64,
+                );
             }
             itens.push((item, qtd));
             if !entregar_premio(s, item, qtd, inst) {
@@ -2322,8 +2411,17 @@ impl GameWorld {
             } else {
                 String::new()
             };
-            self.dg_texto(sid, n_ok > 0, format!("Challenges: {}{bonus}", linhas.join(" · ")));
-            crate::telemetria::conta_de(&self.nome_de(sid), "porao_desafios", format!("{conteudo}:{n_ok}"), 1);
+            self.dg_texto(
+                sid,
+                n_ok > 0,
+                format!("Challenges: {}{bonus}", linhas.join(" · ")),
+            );
+            crate::telemetria::conta_de(
+                &self.nome_de(sid),
+                "porao_desafios",
+                format!("{conteudo}:{n_ok}"),
+                1,
+            );
         }
         self.dg_avisar(
             sid,
@@ -2475,7 +2573,9 @@ impl GameWorld {
         let Some(i) = self.instancias.iter().position(|i| i.id == inst) else {
             return;
         };
-        let onde = s.entity.and_then(|e| self.ecs.get::<&Position>(e).ok().map(|p| p.0));
+        let onde = s
+            .entity
+            .and_then(|e| self.ecs.get::<&Position>(e).ok().map(|p| p.0));
         let queda = Queda {
             em: self.sim_time_s,
             onde,
@@ -2502,7 +2602,12 @@ impl GameWorld {
     /// Left the game ON PURPOSE (or was thrown out): no reconnect window,
     /// the seat is gone now — what dropping used to mean for everyone.
     pub(crate) fn dg_largar_de_vez(&mut self, sid: SessionId) {
-        let Some(inst) = self.sessions.get(&sid).map(|s| s.instancia).filter(|i| *i != 0) else {
+        let Some(inst) = self
+            .sessions
+            .get(&sid)
+            .map(|s| s.instancia)
+            .filter(|i| *i != 0)
+        else {
             return;
         };
         if let Some(m) = self
@@ -2617,9 +2722,7 @@ impl GameWorld {
             let _ = self.ecs.insert_one(e, Untargetable);
         }
         self.dg_teleportar(sid, destino);
-        tracing::info!(
-            "[dungeon] instancia {id}: {nome} voltou depois de {fora_s:.0} s fora"
-        );
+        tracing::info!("[dungeon] instancia {id}: {nome} voltou depois de {fora_s:.0} s fora");
         // Won while they were away: the victory is theirs too.
         if let EstadoDg::Concluida { em } = self.instancias[idx].estado {
             let i = &self.instancias[idx];
@@ -2711,7 +2814,10 @@ mod testes {
                     a_pe(ilha, centro, p, ENTITY_RADIUS * 1.4),
                     "{p:?} (asked {q:?}, floor {centro:?}) is not walkable"
                 );
-                assert!(p.distance(centro) <= RAIO_DO_ANDAR * 0.7, "outside the leash");
+                assert!(
+                    p.distance(centro) <= RAIO_DO_ANDAR * 0.7,
+                    "outside the leash"
+                );
             }
         }
         println!("raw ring slots off walkable ground: {antes_ruins} of {total}");
@@ -2727,9 +2833,13 @@ mod testes {
         w.ilha = Some(shared::terreno::Ilha::da_ilha(&shared::arena::DEF));
         let (mut fora, mut antigo_fora, mut total) = (0, 0, 0);
         for c in dg::CONTEUDOS.iter().filter(|c| c.tipo == Tipo::Porao) {
-            let Some(p) = shared::planta::da(c.id) else { continue };
+            let Some(p) = shared::planta::da(c.id) else {
+                continue;
+            };
             for andar in 0..=c.andares {
-                let Some(sala) = p.sala_da_etapa(andar) else { continue };
+                let Some(sala) = p.sala_da_etapa(andar) else {
+                    continue;
+                };
                 let (centro, raio) = (p.centro(sala), p.salas[sala].raio);
                 let n = dg::inimigos_do_andar(c, andar).max(12);
                 for i in 0..n {
@@ -2747,33 +2857,49 @@ mod testes {
                         antigo_fora += 1;
                     }
                     let pos = w.dg_chao_do_mob(q, centro, corpo, Some((p, andar)));
-                    assert!(p.livre(pos, corpo, andar), "{}: floor {andar}, {pos:?} in the wall", c.nome);
+                    assert!(
+                        p.livre(pos, corpo, andar),
+                        "{}: floor {andar}, {pos:?} in the wall",
+                        c.nome
+                    );
                 }
             }
         }
-        println!("of {total} slots: {fora} raw in the wall, {antigo_fora} in the wall after chao_livre");
+        println!(
+            "of {total} slots: {fora} raw in the wall, {antigo_fora} in the wall after chao_livre"
+        );
     }
 
     #[test]
     fn menu_recompensas_preserva_estagio_e_reseta_apenas_a_semana() {
         crate::economy::init_vazia_para_testes();
         let mut w = GameWorld::new(HashMap::new());
-        let sid = SessionId(([127,0,0,1],19882).into());
+        let sid = SessionId(([127, 0, 0, 1], 19882).into());
         let (tx, mut rx) = mpsc::unbounded_channel();
-        w.on_connect(SessionHandle { id: sid, to_client: tx });
+        w.on_connect(SessionHandle {
+            id: sid,
+            to_client: tx,
+        });
         let s = w.sessions.get_mut(&sid).unwrap();
         s.logged_in = true;
-        s.dungeon.registrar_vitoria(10,1);
+        s.dungeon.registrar_vitoria(10, 1);
         // O estado deve continuar correto depois de salvar e recarregar.
         s.dungeon = serde_json::from_str(&serde_json::to_string(&s.dungeon).unwrap()).unwrap();
         s.conta_dungeon.virar(dg::semana(unix_agora()));
-        s.conta_dungeon.primeira_da_semana(10,2);
-        for nova_semana in [false,true] {
-            if nova_semana { w.sessions.get_mut(&sid).unwrap().conta_dungeon.semana -= 1; }
+        s.conta_dungeon.primeira_da_semana(10, 2);
+        for nova_semana in [false, true] {
+            if nova_semana {
+                w.sessions.get_mut(&sid).unwrap().conta_dungeon.semana -= 1;
+            }
             w.dg_enviar_estado(sid);
             let mut conteudos = None;
             while let Ok(msg) = rx.try_recv() {
-                if let ServerMessage::Dungeon { aviso: Aviso::Estado { conteudos: c, .. } } = msg { conteudos = Some(c); }
+                if let ServerMessage::Dungeon {
+                    aviso: Aviso::Estado { conteudos: c, .. },
+                } = msg
+                {
+                    conteudos = Some(c);
+                }
             }
             // The Caverns are out of the game (11/11/2026): content 10 is
             // not in the menu any more, whatever the saved progress says.
@@ -2812,13 +2938,19 @@ mod testes {
             .expect("a ilha tem cidade, logo o porão tem porta");
         let sid = SessionId(([127, 0, 0, 1], 19883).into());
         let (tx, mut rx) = mpsc::unbounded_channel();
-        w.on_connect(SessionHandle { id: sid, to_client: tx });
+        w.on_connect(SessionHandle {
+            id: sid,
+            to_client: tx,
+        });
         let e = w.ecs.spawn((
             NetId(EntityId(950)),
             Position(porta + Vec2::new(400.0, 0.0)),
             Velocity(Vec2::ZERO),
             EntityKind::Player,
-            Health { current: 100, max: 100 },
+            Health {
+                current: 100,
+                max: 100,
+            },
         ));
         {
             let s = w.sessions.get_mut(&sid).unwrap();
@@ -2842,7 +2974,10 @@ mod testes {
         let recado = |rx: &mut mpsc::UnboundedReceiver<ServerMessage>| -> String {
             let mut t = String::new();
             while let Ok(m) = rx.try_recv() {
-                if let ServerMessage::Dungeon { aviso: Aviso::Texto { texto, .. } } = m {
+                if let ServerMessage::Dungeon {
+                    aviso: Aviso::Texto { texto, .. },
+                } = m
+                {
                     t = texto;
                 }
             }
@@ -2881,7 +3016,10 @@ mod testes {
         );
         let s = &w.sessions[&sid];
         assert_eq!(s.instancia, 0);
-        assert_eq!(s.dungeon.porao_pendente, 0, "left a run pending that will never start");
+        assert_eq!(
+            s.dungeon.porao_pendente, 0,
+            "left a run pending that will never start"
+        );
         assert!(
             s.inventory.iter().any(|i| i.item_id == chave && i.qty == 1),
             "the key was spent on a trip that didn't happen"
@@ -2900,16 +3038,25 @@ mod testes {
         let porta = Vec2::new(123.0, -45.0);
         let mut w = GameWorld::new(HashMap::new());
         w.zona = bosque.to_string();
-        w.diretorio = Some(crate::canais::Diretorio::para_teste(&[shared::arena::ZONA, bosque]));
+        w.diretorio = Some(crate::canais::Diretorio::para_teste(&[
+            shared::arena::ZONA,
+            bosque,
+        ]));
         let sid = SessionId(([127, 0, 0, 1], 19885).into());
         let (tx, _rx) = mpsc::unbounded_channel();
-        w.on_connect(SessionHandle { id: sid, to_client: tx });
+        w.on_connect(SessionHandle {
+            id: sid,
+            to_client: tx,
+        });
         let e = w.ecs.spawn((
             NetId(EntityId(952)),
             Position(porta),
             Velocity(Vec2::ZERO),
             EntityKind::Player,
-            Health { current: 100, max: 100 },
+            Health {
+                current: 100,
+                max: 100,
+            },
         ));
         {
             let s = w.sessions.get_mut(&sid).unwrap();
@@ -2920,7 +3067,11 @@ mod testes {
         assert!(w.entrar_na_arena_com(sid, "down"));
         let d = &w.sessions[&sid].dungeon;
         assert_eq!(d.arena_volta, bosque);
-        assert_eq!(d.arena_volta_pos, Some([porta.x, porta.y]), "the door spot was not remembered");
+        assert_eq!(
+            d.arena_volta_pos,
+            Some([porta.x, porta.y]),
+            "the door spot was not remembered"
+        );
 
         // The same character, now on the Arena process (what the handoff
         // carries is the saved dungeon data).
@@ -2929,12 +3080,19 @@ mod testes {
         w.ecs.get::<&mut Position>(e).unwrap().0 = shared::arena::CHEGADA;
         w.sair_da_arena(sid, "up");
         let onde = w.ecs.get::<&Position>(e).unwrap().0;
-        assert_eq!(onde, porta, "came out somewhere else than where they went in");
-        let cidade = shared::terreno::Gerador::da_ilha(shared::terreno::def_da_zona(bosque).unwrap())
-            .cidade()
-            .map(|c| c.centro());
+        assert_eq!(
+            onde, porta,
+            "came out somewhere else than where they went in"
+        );
+        let cidade =
+            shared::terreno::Gerador::da_ilha(shared::terreno::def_da_zona(bosque).unwrap())
+                .cidade()
+                .map(|c| c.centro());
         assert_ne!(Some(onde), cidade, "landed in the city");
-        assert!(w.sessions[&sid].dungeon.arena_volta_pos.is_none(), "the spot must be used once");
+        assert!(
+            w.sessions[&sid].dungeon.arena_volta_pos.is_none(),
+            "the spot must be used once"
+        );
         // Already on the way out: a second trip is refused, so it can't
         // overwrite the first (the Leave button's double send).
         assert!(w.ja_de_saida(sid));
@@ -2947,19 +3105,28 @@ mod testes {
     #[test]
     fn auto_sem_ninguem_a_vista_vai_ao_inimigo_mais_perto_da_instancia() {
         crate::economy::init_vazia_para_testes();
-        let porao = dg::CONTEUDOS.iter().find(|c| c.tipo == Tipo::Porao).expect("a Porão");
+        let porao = dg::CONTEUDOS
+            .iter()
+            .find(|c| c.tipo == Tipo::Porao)
+            .expect("a Porão");
         let mut w = GameWorld::new(HashMap::new());
         w.zona = shared::arena::ZONA.to_string();
         w.ilha = Some(shared::terreno::Ilha::da_ilha(&shared::arena::DEF));
         let sid = SessionId(([127, 0, 0, 1], 19891).into());
         let (tx, _rx) = mpsc::unbounded_channel();
-        w.on_connect(SessionHandle { id: sid, to_client: tx });
+        w.on_connect(SessionHandle {
+            id: sid,
+            to_client: tx,
+        });
         let e = w.ecs.spawn((
             NetId(EntityId(961)),
             Position(shared::arena::CHEGADA),
             Velocity(Vec2::ZERO),
             EntityKind::Player,
-            Health { current: 100, max: 100 },
+            Health {
+                current: 100,
+                max: 100,
+            },
         ));
         {
             let s = w.sessions.get_mut(&sid).unwrap();
@@ -3016,13 +3183,19 @@ mod testes {
         w.ilha = Some(shared::terreno::Ilha::da_ilha(&shared::arena::DEF));
         let sid = SessionId(([127, 0, 0, 1], 19884).into());
         let (tx, _rx) = mpsc::unbounded_channel();
-        w.on_connect(SessionHandle { id: sid, to_client: tx });
+        w.on_connect(SessionHandle {
+            id: sid,
+            to_client: tx,
+        });
         let e = w.ecs.spawn((
             NetId(EntityId(951)),
             Position(shared::arena::CHEGADA),
             Velocity(Vec2::ZERO),
             EntityKind::Player,
-            Health { current: 100, max: 100 },
+            Health {
+                current: 100,
+                max: 100,
+            },
         ));
         {
             let s = w.sessions.get_mut(&sid).unwrap();
@@ -3038,9 +3211,19 @@ mod testes {
         w.poroes_a_comecar.push((sid, porao.id));
         w.dg_poroes_que_chegaram();
         let s = &w.sessions[&sid];
-        assert!(s.instancia != 0, "landed with a Porão pending and no run started");
-        assert_eq!(s.dungeon.porao_pendente, 0, "the pending run would start again");
-        assert_eq!(s.porao_de_volta, Some(porao.id), "wouldn't know which door to leave by");
+        assert!(
+            s.instancia != 0,
+            "landed with a Porão pending and no run started"
+        );
+        assert_eq!(
+            s.dungeon.porao_pendente, 0,
+            "the pending run would start again"
+        );
+        assert_eq!(
+            s.porao_de_volta,
+            Some(porao.id),
+            "wouldn't know which door to leave by"
+        );
         let i = &w.instancias[0];
         assert!(i.planta.is_some(), "a Porão on the Arena runs on its plan");
         let onde = w.ecs.get::<&Position>(e).unwrap().0;
@@ -3064,7 +3247,10 @@ mod testes {
         let pack: Vec<Entity> = i.vivos.clone();
         w.ecs.get::<&mut EnemyTag>(pack[0]).unwrap().dead = true;
         w.dg_tick_instancia(0);
-        assert_eq!(w.instancias[0].andar, 0, "the gate opened with the pack still alive");
+        assert_eq!(
+            w.instancias[0].andar, 0,
+            "the gate opened with the pack still alive"
+        );
         // The whole pack down: now it opens.
         for m in &pack {
             w.ecs.get::<&mut EnemyTag>(*m).unwrap().dead = true;
@@ -3072,7 +3258,10 @@ mod testes {
         w.dg_tick_instancia(0);
         let i = &w.instancias[0];
         assert_eq!(i.andar, 1, "the room was cleared and the gate didn't open");
-        assert!(i.restos.is_empty(), "nothing should be left behind in a cleared room");
+        assert!(
+            i.restos.is_empty(),
+            "nothing should be left behind in a cleared room"
+        );
         let sala = planta.sala_da_etapa(1).unwrap();
         for m in &i.vivos {
             let p = w.ecs.get::<&Position>(*m).unwrap().0;
@@ -3136,13 +3325,19 @@ mod testes {
             w.ilha = Some(shared::terreno::Ilha::da_ilha(&shared::arena::DEF));
             let sid = SessionId(([127, 0, 0, 1], 19890).into());
             let (tx, _rx) = mpsc::unbounded_channel();
-            w.on_connect(SessionHandle { id: sid, to_client: tx });
+            w.on_connect(SessionHandle {
+                id: sid,
+                to_client: tx,
+            });
             let e = w.ecs.spawn((
                 NetId(EntityId(960)),
                 Position(shared::arena::CHEGADA),
                 Velocity(Vec2::ZERO),
                 EntityKind::Player,
-                Health { current: 100_000, max: 100_000 },
+                Health {
+                    current: 100_000,
+                    max: 100_000,
+                },
                 shared::Solido,
             ));
             {
@@ -3199,15 +3394,12 @@ mod testes {
                 }
                 if t - ultimo_pedido >= 1.0 {
                     ultimo_pedido = t;
-                    let alvo = vistos
-                        .first()
-                        .map(|v| v.1)
-                        .or_else(|| {
-                            planta
-                                .sala_da_etapa(andar)
-                                .map(|s| planta.centro(s))
-                                .filter(|c| c.distance(eu) > 3.0)
-                        });
+                    let alvo = vistos.first().map(|v| v.1).or_else(|| {
+                        planta
+                            .sala_da_etapa(andar)
+                            .map(|s| planta.centro(s))
+                            .filter(|c| c.distance(eu) > 3.0)
+                    });
                     if let Some(a) = alvo {
                         w.sessions.get_mut(&sid).unwrap().rota_pedida_em = -100.0;
                         w.handle_mover_para(sid, a);
@@ -3217,30 +3409,51 @@ mod testes {
                 // The client sends a frame every tick; with no stick input,
                 // the server walks the route (`rota`).
                 let seq = (t / dt) as u32 + 1;
-                w.sessions.get_mut(&sid).unwrap().pending_input = Some(shared::protocol::InputFrame {
-                    seq,
-                    tick: seq,
-                    move_dir: Vec2::ZERO,
-                    aim: Vec2::X,
-                    buttons: 0,
-                });
+                w.sessions.get_mut(&sid).unwrap().pending_input =
+                    Some(shared::protocol::InputFrame {
+                        seq,
+                        tick: seq,
+                        move_dir: Vec2::ZERO,
+                        aim: Vec2::X,
+                        buttons: 0,
+                    });
                 w.step(dt);
                 t += dt;
             }
             if !venceu {
                 for r in rastro.iter().rev().take(12) {
-                    eprintln!("{}: t={:.0} andar={} eu={:?} vistos={}", porao.nome, r.0, r.1, r.2, r.3);
+                    eprintln!(
+                        "{}: t={:.0} andar={} eu={:?} vistos={}",
+                        porao.nome, r.0, r.1, r.2, r.3
+                    );
                 }
                 {
                     let eu = w.ecs.get::<&Position>(e).unwrap().0;
                     let s = &w.sessions[&sid];
                     let pts: Vec<Vec2> = s.rota.pontos().collect();
-                    eprintln!("rota {:?} destino {:?} travado={}", pts, s.rota.destino(), s.rota.travado());
+                    eprintln!(
+                        "rota {:?} destino {:?} travado={}",
+                        pts,
+                        s.rota.destino(),
+                        s.rota.travado()
+                    );
                     let ilha = w.ilha.as_ref().unwrap();
                     for (dx, dz) in [(1.0, 0.0), (-1.0, 0.0), (0.0, 1.0), (0.0, -1.0)] {
                         let v = Vec2::new(dx, dz) * 5.0;
-                        let q = ilha.mover_com_degrau(eu, v, 1.0 / 30.0, ENTITY_RADIUS, shared::terreno::DEGRAU_BLOCOS);
-                        eprintln!("terreno {dx},{dz}: {:?} -> {:?} (altura aqui {:.2}, la' {:.2})", eu, q, ilha.altura(eu.x, eu.y), ilha.altura(eu.x + dx * 0.6, eu.y + dz * 0.6));
+                        let q = ilha.mover_com_degrau(
+                            eu,
+                            v,
+                            1.0 / 30.0,
+                            ENTITY_RADIUS,
+                            shared::terreno::DEGRAU_BLOCOS,
+                        );
+                        eprintln!(
+                            "terreno {dx},{dz}: {:?} -> {:?} (altura aqui {:.2}, la' {:.2})",
+                            eu,
+                            q,
+                            ilha.altura(eu.x, eu.y),
+                            ilha.altura(eu.x + dx * 0.6, eu.y + dz * 0.6)
+                        );
                     }
                 }
                 let i = &w.instancias[0];
@@ -3264,7 +3477,10 @@ mod testes {
     /// as the door and the landing start it. Returns the sessions.
     fn corrida_no_porao(nomes: &[&str]) -> (GameWorld, Vec<SessionId>) {
         crate::economy::init_vazia_para_testes();
-        let porao = dg::CONTEUDOS.iter().find(|c| c.tipo == Tipo::Porao).expect("a Porão");
+        let porao = dg::CONTEUDOS
+            .iter()
+            .find(|c| c.tipo == Tipo::Porao)
+            .expect("a Porão");
         let mut w = GameWorld::new(HashMap::new());
         w.zona = shared::arena::ZONA.to_string();
         w.ilha = Some(shared::terreno::Ilha::da_ilha(&shared::arena::DEF));
@@ -3272,14 +3488,20 @@ mod testes {
         for (k, nome) in nomes.iter().enumerate() {
             let sid = SessionId(([127, 0, 0, 1], 19900 + k as u16).into());
             let (tx, _rx) = mpsc::unbounded_channel();
-            w.on_connect(SessionHandle { id: sid, to_client: tx });
+            w.on_connect(SessionHandle {
+                id: sid,
+                to_client: tx,
+            });
             let eid = w.sessions[&sid].entity_id;
             let e = w.ecs.spawn((
                 NetId(eid),
                 Position(shared::arena::CHEGADA + Vec2::new(k as f32, 0.0)),
                 Velocity(Vec2::ZERO),
                 EntityKind::Player,
-                Health { current: 100, max: 100 },
+                Health {
+                    current: 100,
+                    max: 100,
+                },
             ));
             let s = w.sessions.get_mut(&sid).unwrap();
             s.logged_in = true;
@@ -3294,7 +3516,9 @@ mod testes {
         }
         w.dg_comecar(porao.id, 1, sids.clone());
         assert_eq!(w.instancias.len(), 1, "the run did not start");
-        assert!(sids.iter().all(|s| w.sessions[s].instancia == w.instancias[0].id));
+        assert!(sids
+            .iter()
+            .all(|s| w.sessions[s].instancia == w.instancias[0].id));
         (w, sids)
     }
 
@@ -3311,7 +3535,10 @@ mod testes {
     fn volta(w: &mut GameWorld, porta: u16, row: crate::persistence::CharacterRow) -> SessionId {
         let sid = SessionId(([127, 0, 0, 1], porta).into());
         let (tx, _rx) = mpsc::unbounded_channel();
-        w.on_connect(SessionHandle { id: sid, to_client: tx });
+        w.on_connect(SessionHandle {
+            id: sid,
+            to_client: tx,
+        });
         let success = crate::auth::AuthSuccess {
             account_id: row.account_id.unwrap_or(0),
             username: row.name.clone(),
@@ -3334,7 +3561,11 @@ mod testes {
         let (limite, vivos) = (w.instancias[0].limite, w.instancias[0].vivos.len());
         w.instancias[0].membros[0].mortes = 2;
         let row = cai(&mut w, a);
-        assert_eq!(row.zona.as_deref(), Some(shared::arena::ZONA), "saved where the run is");
+        assert_eq!(
+            row.zona.as_deref(),
+            Some(shared::arena::ZONA),
+            "saved where the run is"
+        );
         for _ in 0..30 {
             w.sim_time_s += 1.0;
             w.dg_tick_instancia(0);
@@ -3345,7 +3576,11 @@ mod testes {
         let s = &w.sessions[&a2];
         assert_eq!(s.instancia, id, "not back in the run");
         let e = s.entity.unwrap();
-        assert_eq!(w.ecs.get::<&Instancia>(e).map(|i| i.0).ok(), Some(id), "entity outside the run");
+        assert_eq!(
+            w.ecs.get::<&Instancia>(e).map(|i| i.0).ok(),
+            Some(id),
+            "entity outside the run"
+        );
         let i = &w.instancias[0];
         let m = &i.membros[0];
         assert_eq!(m.sid, a2);
@@ -3353,11 +3588,20 @@ mod testes {
         assert_eq!(m.mortes, 2, "deaths reset by dropping");
         assert_eq!(i.limite, limite, "the clock moved");
         assert_eq!(i.vivos.len(), vivos);
-        assert!(i.vivos.iter().all(|e| w.dg_vivo(*e)), "the login killed mobs of the run");
+        assert!(
+            i.vivos.iter().all(|e| w.dg_vivo(*e)),
+            "the login killed mobs of the run"
+        );
         let onde = w.ecs.get::<&Position>(e).unwrap().0;
         let p = i.planta.expect("the Porão runs on its plan");
-        assert!(p.livre(onde, ENTITY_RADIUS, i.andar), "came back in a wall: {onde:?}");
-        assert!(s.retorno_da_dungeon.is_some(), "would save the run's floor as their spot");
+        assert!(
+            p.livre(onde, ENTITY_RADIUS, i.andar),
+            "came back in a wall: {onde:?}"
+        );
+        assert!(
+            s.retorno_da_dungeon.is_some(),
+            "would save the run's floor as their spot"
+        );
         // And it holds: the next ticks keep them in.
         for _ in 0..5 {
             w.sim_time_s += 1.0;
@@ -3379,7 +3623,10 @@ mod testes {
         }
         assert!(w.instancias[0].membros[0].saiu, "the window did not end");
         let a2 = volta(&mut w, 19951, row);
-        assert_eq!(w.sessions[&a2].instancia, 0, "went back into a run after the window");
+        assert_eq!(
+            w.sessions[&a2].instancia, 0,
+            "went back into a run after the window"
+        );
         assert_eq!(w.instancias[0].membros[0].sid, sids[0], "took the old seat");
         let e = w.sessions[&a2].entity.unwrap();
         assert!(w.ecs.get::<&Instancia>(e).is_err());
@@ -3399,7 +3646,10 @@ mod testes {
             assert_eq!(w.instancias.len(), 1, "closed with the seat still kept");
         }
         assert_eq!(w.instancias[0].andar, andar);
-        assert_eq!(w.instancias[0].wipes, wipes, "an empty party counted as a wipe");
+        assert_eq!(
+            w.instancias[0].wipes, wipes,
+            "an empty party counted as a wipe"
+        );
         w.sim_time_s += 2.0;
         w.dg_tick_instancia(0);
         assert!(w.instancias.is_empty(), "the run outlived the window");
@@ -3418,7 +3668,10 @@ mod testes {
         assert!(!m[0].vitoria_creditada && m[1].vitoria_creditada);
         w.sim_time_s += 20.0;
         let a2 = volta(&mut w, 19952, row);
-        assert!(w.instancias[0].membros[0].vitoria_creditada, "no victory for the one who came back");
+        assert!(
+            w.instancias[0].membros[0].vitoria_creditada,
+            "no victory for the one who came back"
+        );
         // The auto chest goes to the one online; then the other drops
         // again before opening theirs.
         w.sim_time_s = em + BAU_ABRE_SOZINHO_S - 1.0;
@@ -3426,18 +3679,28 @@ mod testes {
         let row = cai(&mut w, a2);
         w.sim_time_s = em + BAU_ABRE_SOZINHO_S + 1.0;
         w.dg_tick_instancia(0);
-        assert!(w.instancias[0].membros[1].abriu_bau, "the one online got the auto chest");
+        assert!(
+            w.instancias[0].membros[1].abriu_bau,
+            "the one online got the auto chest"
+        );
         assert!(!w.instancias[0].membros[0].abriu_bau);
         // Past the closing time: still open, someone's chest is pending.
         w.sim_time_s = em + FECHA_DEPOIS_DE_VENCER_S + 1.0;
         w.dg_tick_instancia(0);
-        assert_eq!(w.instancias.len(), 1, "closed without the offline member's chest");
+        assert_eq!(
+            w.instancias.len(),
+            1,
+            "closed without the offline member's chest"
+        );
         let a3 = volta(&mut w, 19953, row);
         let uid = w.instancias[0].uid;
         // Opens it by hand; a second time gives nothing.
         w.dg_dar_bau(0, a3);
         assert!(w.instancias[0].membros[0].abriu_bau);
-        assert!(!w.sessions.get_mut(&a3).unwrap().dungeon.abrir_bau(uid), "the chest is not on record");
+        assert!(
+            !w.sessions.get_mut(&a3).unwrap().dungeon.abrir_bau(uid),
+            "the chest is not on record"
+        );
         let antes = w.sessions[&a3].inventory.clone();
         w.dg_dar_bau(0, a3);
         assert_eq!(w.sessions[&a3].inventory, antes, "a second chest");

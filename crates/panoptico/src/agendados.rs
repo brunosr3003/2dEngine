@@ -87,7 +87,11 @@ pub fn iniciar(pool: std::sync::Arc<sqlx::PgPool>) {
 }
 
 fn resposta(ok: bool, extra: serde_json::Value) -> axum::response::Response {
-    let status = if ok { axum::http::StatusCode::OK } else { axum::http::StatusCode::BAD_REQUEST };
+    let status = if ok {
+        axum::http::StatusCode::OK
+    } else {
+        axum::http::StatusCode::BAD_REQUEST
+    };
     let mut v = extra;
     v["ok"] = ok.into();
     (status, axum::Json(v)).into_response()
@@ -101,7 +105,9 @@ fn erro(msg: impl Into<String>) -> axum::response::Response {
 pub fn normaliza_horarios(lista: &[String]) -> Result<Vec<String>, String> {
     let mut v = Vec::new();
     for h in lista.iter().map(|h| h.trim()).filter(|h| !h.is_empty()) {
-        let (a, b) = h.split_once(':').ok_or_else(|| format!("horário inválido: {h} (use HH:MM)"))?;
+        let (a, b) = h
+            .split_once(':')
+            .ok_or_else(|| format!("horário inválido: {h} (use HH:MM)"))?;
         let (a, b): (u32, u32) = match (a.parse(), b.parse()) {
             (Ok(a), Ok(b)) if a < 24 && b < 60 => (a, b),
             _ => return Err(format!("horário inválido: {h} (use HH:MM)")),
@@ -139,7 +145,10 @@ fn data_local(s: &str) -> Option<String> {
     (!s.is_empty()).then(|| s.to_string())
 }
 
-pub async fn salvar(State(st): State<Estado>, axum::Json(p): axum::Json<Pedido>) -> impl IntoResponse {
+pub async fn salvar(
+    State(st): State<Estado>,
+    axum::Json(p): axum::Json<Pedido>,
+) -> impl IntoResponse {
     let texto = p.texto.trim().replace(['\n', '\r'], " ");
     if texto.is_empty() || texto.chars().count() > 200 {
         return erro("texto vazio ou com mais de 200 caracteres");
@@ -214,7 +223,8 @@ pub async fn acao(State(st): State<Estado>, axum::Json(a): axum::Json<Acao>) -> 
 
 pub fn sql_lista() -> String {
     let fmt = |c: &str| format!("to_char(({c}) AT TIME ZONE '{FUSO}', 'DD/MM HH24:MI')");
-    let fmt_campo = |c: &str| format!("to_char({c} AT TIME ZONE '{FUSO}', 'YYYY-MM-DD\"T\"HH24:MI')");
+    let fmt_campo =
+        |c: &str| format!("to_char({c} AT TIME ZONE '{FUSO}', 'YYYY-MM-DD\"T\"HH24:MI')");
     format!(
         "SELECT a.id, a.texto, a.autor, a.horarios, a.a_cada_min, a.ativo, a.envios, \
            {ultimo}, {prox}, {ini}, {fim}, ({fim_passou}) \
@@ -231,8 +241,18 @@ pub async fn lista(State(st): State<Estado>) -> impl IntoResponse {
     let _ = sqlx::query(CRIAR).execute(&*st.pool).await;
     let sql = sql_lista();
     type Linha = (
-        i64, String, String, Vec<String>, Option<i32>, bool, i32,
-        Option<String>, Option<String>, Option<String>, Option<String>, bool,
+        i64,
+        String,
+        String,
+        Vec<String>,
+        Option<i32>,
+        bool,
+        i32,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        bool,
     );
     match sqlx::query_as::<_, Linha>(&sql).fetch_all(&*st.pool).await {
         Ok(v) => resposta(
@@ -259,7 +279,10 @@ mod testes {
     #[test]
     fn horarios_normalizados() {
         let v = |s: &[&str]| s.iter().map(|x| x.to_string()).collect::<Vec<_>>();
-        assert_eq!(normaliza_horarios(&v(&["13:00", "9:5", " ", "13:00"])).unwrap(), v(&["09:05", "13:00"]));
+        assert_eq!(
+            normaliza_horarios(&v(&["13:00", "9:5", " ", "13:00"])).unwrap(),
+            v(&["09:05", "13:00"])
+        );
         assert!(normaliza_horarios(&v(&["24:00"])).is_err());
         assert!(normaliza_horarios(&v(&["12h"])).is_err());
     }
@@ -274,7 +297,10 @@ pub async fn layouts_hud(State(st): State<Estado>) -> impl IntoResponse {
         .await
         .unwrap_or(false);
     if !existe {
-        return resposta(true, serde_json::json!({ "plataformas": [], "itens": [], "recentes": [] }));
+        return resposta(
+            true,
+            serde_json::json!({ "plataformas": [], "itens": [], "recentes": [] }),
+        );
     }
     let plataformas: Vec<(String, i64, i64, f64, f64)> = sqlx::query_as(
         "SELECT plataforma, COUNT(*), COUNT(*) FILTER (WHERE personalizado), \
@@ -284,7 +310,15 @@ pub async fn layouts_hud(State(st): State<Estado>) -> impl IntoResponse {
     .fetch_all(&*st.pool)
     .await
     .unwrap_or_default();
-    let itens: Vec<(String, String, i64, Option<f64>, i64, Option<f64>, Option<f64>)> = sqlx::query_as(
+    let itens: Vec<(
+        String,
+        String,
+        i64,
+        Option<f64>,
+        i64,
+        Option<f64>,
+        Option<f64>,
+    )> = sqlx::query_as(
         "SELECT h.plataforma, i->>'id', \
            COUNT(*) FILTER (WHERE (i->>'tamanho')::float8 <> 1), \
            AVG((i->>'tamanho')::float8) FILTER (WHERE (i->>'tamanho')::float8 <> 1), \
@@ -361,9 +395,11 @@ pub async fn latencias(State(st): State<Estado>) -> impl IntoResponse {
 /// (`PANOPTICO_GEOIP`, default /opt/tempest-prod/geoip/pais.mmdb). No file or
 /// no match = "". Attribution required by the licence: "IP Geolocation by DB-IP".
 pub fn pais_do_ip(ip: &str) -> String {
-    static LEITOR: std::sync::OnceLock<Option<maxminddb::Reader<Vec<u8>>>> = std::sync::OnceLock::new();
+    static LEITOR: std::sync::OnceLock<Option<maxminddb::Reader<Vec<u8>>>> =
+        std::sync::OnceLock::new();
     let leitor = LEITOR.get_or_init(|| {
-        let caminho = std::env::var("PANOPTICO_GEOIP").unwrap_or_else(|_| "/opt/tempest-prod/geoip/pais.mmdb".into());
+        let caminho = std::env::var("PANOPTICO_GEOIP")
+            .unwrap_or_else(|_| "/opt/tempest-prod/geoip/pais.mmdb".into());
         match maxminddb::Reader::open_readfile(&caminho) {
             Ok(r) => Some(r),
             Err(e) => {

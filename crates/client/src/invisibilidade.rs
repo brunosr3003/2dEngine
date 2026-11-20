@@ -10,8 +10,8 @@
 //! has no per-body alpha), and that flicker read as a glitch (owner,
 //! 15/11/2026: "invisibilidade tá muito estranho o efeito").
 
-use macroquad::prelude::*;
 use crate::relogio::get_time;
+use macroquad::prelude::*;
 use shared::EntityId;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -115,7 +115,12 @@ pub fn desenha_fantasma(pe: Vec3, olho: Vec3, t: f32) {
         let c = [120, 80, 170, a];
         let (l, up) = (lado * s, Vec3::Y * s);
         dupla(
-            vec![vtx(p - l - up, c), vtx(p + l - up, c), vtx(p + l + up, c), vtx(p - l + up, c)],
+            vec![
+                vtx(p - l - up, c),
+                vtx(p + l - up, c),
+                vtx(p + l + up, c),
+                vtx(p - l + up, c),
+            ],
             vec![[0, 1, 2], [0, 2, 3]],
         );
     }
@@ -144,7 +149,12 @@ pub fn desenha_fantasma(pe: Vec3, olho: Vec3, t: f32) {
 }
 
 fn vtx(p: Vec3, c: [u8; 4]) -> Vertex {
-    Vertex { position: p, uv: vec2(0.0, 0.0), color: c, normal: Vec4::ZERO }
+    Vertex {
+        position: p,
+        uv: vec2(0.0, 0.0),
+        color: c,
+        normal: Vec4::ZERO,
+    }
 }
 
 fn dupla(vertices: Vec<Vertex>, tris: Vec<[u16; 3]>) {
@@ -152,7 +162,11 @@ fn dupla(vertices: Vec<Vertex>, tris: Vec<[u16; 3]>) {
     for [a, b, c] in tris {
         indices.extend_from_slice(&[a, b, c, a, c, b]);
     }
-    draw_mesh(&Mesh { vertices, indices, texture: None });
+    draw_mesh(&Mesh {
+        vertices,
+        indices,
+        texture: None,
+    });
 }
 
 /// Forget everything (logout, zone change).

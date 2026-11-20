@@ -151,7 +151,9 @@ async fn migrar_montarias_para_item(pool: &PgPool) -> Result<()> {
     sqlx::query("DELETE FROM loja_posses WHERE produto LIKE 'montaria:%' OR produto LIKE 'skin:%'")
         .execute(pool)
         .await?;
-    sqlx::query("DELETE FROM loja_montarias").execute(pool).await?;
+    sqlx::query("DELETE FROM loja_montarias")
+        .execute(pool)
+        .await?;
     // O marcador e' um pedido proprio: a tabela ja' tem chave primaria por id.
     sqlx::query(
         "INSERT INTO loja_pedidos (id, conta, produto, tipo, valor, moeda, status, provedor)          VALUES ('montarias_viraram_item_v1', '', 'migracao', 'item', 0, 'TP', 'entregue', '')          ON CONFLICT (id) DO NOTHING",
@@ -370,7 +372,9 @@ pub async fn comprar_tp(
         (provedor, google_play, &resposta)
     {
         let produto = crate::loja_google_play::id_do_produto(pacote.id);
-        if let Err(e) = crate::loja_google_play::consumir_best_effort(&produto, gp.purchase_token).await {
+        if let Err(e) =
+            crate::loja_google_play::consumir_best_effort(&produto, gp.purchase_token).await
+        {
             tracing::warn!("loja: consume da compra Google Play falhou (TP ja' creditada): {e}");
         }
     }
@@ -604,7 +608,6 @@ async fn recusar_pedido(
     Ok(())
 }
 
-
 /// Saldo, posses e as ultimas compras.
 pub async fn estado(central: &PgPool, conta: &str) -> Result<EstadoLoja> {
     let historico = sqlx::query(
@@ -642,7 +645,6 @@ pub async fn estado(central: &PgPool, conta: &str) -> Result<EstadoLoja> {
     })
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -665,7 +667,9 @@ mod tests {
         // Sem o purchase_token do cliente nem bate na rede: recusa de cara.
         let p = cat::pacote(1).unwrap();
         assert!(matches!(
-            Provedor::GooglePlay.iniciar("pedido-teste-1", p, None).await,
+            Provedor::GooglePlay
+                .iniciar("pedido-teste-1", p, None)
+                .await,
             Aprovacao::Recusado { .. }
         ));
     }
@@ -724,37 +728,60 @@ mod tests {
 
         // Pergaminho de montaria (500): a compra e' idempotente, mas novos
         // pergaminhos sao repetiveis. A montaria so' vira posse ao abrir.
-        let r = comprar_item(&central, &conta, Produto::PergaminhoMontaria(1), 1, &id("m1"))
-            .await
-            .unwrap();
+        let r = comprar_item(
+            &central,
+            &conta,
+            Produto::PergaminhoMontaria(1),
+            1,
+            &id("m1"),
+        )
+        .await
+        .unwrap();
         assert!(matches!(r, Resposta::Feito { saldo: 1250, .. }), "{r:?}");
-        let r = comprar_item(&central, &conta, Produto::PergaminhoMontaria(1), 1, &id("m1"))
-            .await
-            .unwrap();
+        let r = comprar_item(
+            &central,
+            &conta,
+            Produto::PergaminhoMontaria(1),
+            1,
+            &id("m1"),
+        )
+        .await
+        .unwrap();
         assert!(matches!(r, Resposta::JaFeito { saldo: 1250, .. }), "{r:?}");
-        let r = comprar_item(&central, &conta, Produto::PergaminhoMontaria(1), 1, &id("m1b"))
-            .await
-            .unwrap();
+        let r = comprar_item(
+            &central,
+            &conta,
+            Produto::PergaminhoMontaria(1),
+            1,
+            &id("m1b"),
+        )
+        .await
+        .unwrap();
         assert!(matches!(r, Resposta::Feito { saldo: 750, .. }), "{r:?}");
         // Montaria e skin sairam da loja: os codigos antigos nao existem mais.
         assert_eq!(shared::loja::Produto::de_codigo("montaria:2"), None);
         assert_eq!(shared::loja::Produto::de_codigo("skin:102"), None);
         // Nada mais vira posse de conta: tudo no catalogo e' repetivel.
-        let posses: i64 =
-            sqlx::query_scalar("SELECT COUNT(*) FROM loja_posses WHERE conta = $1")
-                .bind(&conta)
-                .fetch_one(&central)
-                .await
-                .unwrap();
+        let posses: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM loja_posses WHERE conta = $1")
+            .bind(&conta)
+            .fetch_one(&central)
+            .await
+            .unwrap();
         assert_eq!(posses, 0, "pergaminho nao vira posse");
         let r = comprar_item(&central, &conta, Produto::ItemDePet(1), 1, &id("racao"))
             .await
             .unwrap();
         assert!(matches!(r, Resposta::Feito { saldo: 720, .. }), "{r:?}");
         // Saldo insuficiente: nada muda.
-        let r = comprar_item(&central, &conta, Produto::PergaminhoMontaria(1), 1, &id("m3"))
-            .await
-            .unwrap();
+        let r = comprar_item(
+            &central,
+            &conta,
+            Produto::PergaminhoMontaria(1),
+            1,
+            &id("m3"),
+        )
+        .await
+        .unwrap();
         assert_eq!(
             r,
             Resposta::Recusado {

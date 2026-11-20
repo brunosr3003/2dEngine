@@ -37,7 +37,8 @@ pub fn retangulo(slot: usize) -> Rect {
     let z = crate::hud_layout::atual();
     let s = z.s;
     let c3 = z.skills[2].center();
-    let d = [vec2(0.0, -100.0), vec2(-100.0, -100.0), vec2(-200.0, -80.0)][slot.min(SLOTS_EXTRAS - 1)];
+    let d =
+        [vec2(0.0, -100.0), vec2(-100.0, -100.0), vec2(-200.0, -80.0)][slot.min(SLOTS_EXTRAS - 1)];
     let c = c3 + d * s;
     let rs = 36.0 * s;
     Rect::new(c.x - rs, c.y - rs, rs * 2.0, rs * 2.0)
@@ -126,17 +127,27 @@ impl Ativas {
     /// The server refused (`SkillRejected` with an active's id).
     pub fn rejeitada(&mut self, id: u32) {
         self.pendente_ate = 0.0;
-        if let Some(i) = av::ativa_do_id(id).and_then(|a| self.slots.iter().position(|s| *s == Some(a))) {
+        if let Some(i) =
+            av::ativa_do_id(id).and_then(|a| self.slots.iter().position(|s| *s == Some(a)))
+        {
             self.tentar_apos[i] = get_time() + 2.5;
         }
     }
 
     fn ativa(&self, slot: usize) -> Option<u8> {
-        (slot < self.abertos as usize).then(|| self.slots[slot]).flatten()
+        (slot < self.abertos as usize)
+            .then(|| self.slots[slot])
+            .flatten()
     }
 
     /// Why active `a` cannot go now (English, the HUD translates), or `None`.
-    fn impedimento(&self, a: u8, hab: &Habilidades, c: Contexto, agora: f64) -> Option<&'static str> {
+    fn impedimento(
+        &self,
+        a: u8,
+        hab: &Habilidades,
+        c: Contexto,
+        agora: f64,
+    ) -> Option<&'static str> {
         let d = av::def(a)?;
         if !c.vivo {
             Some("Character incapacitated")
@@ -154,7 +165,12 @@ impl Ativas {
     /// The slot to use this frame (`ClientMessage::UsarAtiva`), from a tap,
     /// a key or AUTO. With the input blocked (power saving, a panel), AUTO
     /// only — the same rule as the weapon skills.
-    pub fn pedido(&mut self, hab: &mut Habilidades, c: Contexto, entrada_bloqueada: bool) -> Option<u8> {
+    pub fn pedido(
+        &mut self,
+        hab: &mut Habilidades,
+        c: Contexto,
+        entrada_bloqueada: bool,
+    ) -> Option<u8> {
         let agora = get_time();
         let n = self.abertos as usize;
         if n == 0 {
@@ -198,7 +214,12 @@ impl Ativas {
                                 hab.automaticas.remove(&id);
                             }
                             hab.aviso(
-                                if ligar { "Automatic use switched on" } else { "Automatic use switched off" }.into(),
+                                if ligar {
+                                    "Automatic use switched on"
+                                } else {
+                                    "Automatic use switched off"
+                                }
+                                .into(),
                             );
                         }
                     }
@@ -257,7 +278,13 @@ impl Ativas {
             let sobre = r.toca(Vec2::from(mouse_position()));
             let Some(a) = self.ativa(i) else {
                 // An empty open slot: a faint ring and its number.
-                estilo::botao_redondo(c, raio, estilo::SUAVE, estilo::estado(sobre, false, true, false), false);
+                estilo::botao_redondo(
+                    c,
+                    raio,
+                    estilo::SUAVE,
+                    estilo::estado(sobre, false, true, false),
+                    false,
+                );
                 estilo::texto_centro(c.x, c.y + 6.0, "+", 20, estilo::SUAVE);
                 crate::hud_layout::chip(r, &(i + 4).to_string());
                 continue;
@@ -269,7 +296,13 @@ impl Ativas {
             let pronto = cd == 0.0 && mp >= d.custo_mp && hab.recarga_ate(id) <= agora;
             let auto = hab.automaticas.contains(&id);
             let e = estilo::estado(sobre, is_mouse_button_down(MouseButton::Left), false, false);
-            estilo::botao_redondo(c, raio, if auto { estilo::AUTO } else { cor }, e, pronto && auto);
+            estilo::botao_redondo(
+                c,
+                raio,
+                if auto { estilo::AUTO } else { cor },
+                e,
+                pronto && auto,
+            );
             let alfa = if pronto { 1.0 } else { 0.40 };
             let icone = icone_da_ativa(a);
             if !crate::icones_ui::skill(icone, c, raio * 1.4, alfa) {
@@ -284,14 +317,28 @@ impl Ativas {
             if let Some((ef, ini, fim)) = self.efeito.filter(|e| e.0 == a && agora < e.2) {
                 let _ = ef;
                 let f = ((fim - agora) / (fim - ini).max(0.01)) as f32;
-                estilo::arco(c, raio + 8.0, -std::f32::consts::FRAC_PI_2, f, 3.0, estilo::AUTO);
+                estilo::arco(
+                    c,
+                    raio + 8.0,
+                    -std::f32::consts::FRAC_PI_2,
+                    f,
+                    3.0,
+                    estilo::AUTO,
+                );
             }
             if cd > 0.0 {
                 let espera = shared::skills::espera_efetiva(d.espera_s, hab.wis);
                 let f = (cd as f32 / espera.max(0.01)).min(1.0);
                 estilo::setor(c, raio - 3.0, f, Color::new(0.0, 0.0, 0.0, 0.62));
                 let t = format!("{cd:.0}");
-                estilo::texto_sombra(c.x - estilo::medir_forte(&t, 20) * 0.5, c.y + 7.0, &t, 20, WHITE, true);
+                estilo::texto_sombra(
+                    c.x - estilo::medir_forte(&t, 20) * 0.5,
+                    c.y + 7.0,
+                    &t,
+                    20,
+                    WHITE,
+                    true,
+                );
             }
             crate::hud_layout::chip(r, &(i + 4).to_string());
             if auto {
@@ -303,7 +350,14 @@ impl Ativas {
                 let y = (r.y - 104.0).max(8.0);
                 estilo::painel(Rect::new(x, y, w, 92.0));
                 estilo::texto(x + 12.0, y + 24.0, av::nome_da_ativa(a), 19, cor);
-                estilo::texto_ajustado(d.descricao, x + 12.0, y + 45.0, w - 24.0, 13, estilo::TEXTO);
+                estilo::texto_ajustado(
+                    d.descricao,
+                    x + 12.0,
+                    y + 45.0,
+                    w - 24.0,
+                    13,
+                    estilo::TEXTO,
+                );
                 estilo::texto(
                     x + 12.0,
                     y + 82.0,
@@ -323,7 +377,10 @@ impl Ativas {
 /// Can AUTO run this active at all? The movement and the vanish are the
 /// player's call.
 fn auto_faz_sentido(a: u8) -> bool {
-    !matches!(av::def(a).map(|d| d.tipo), Some(TipoAtiva::Passo | TipoAtiva::Invisibilidade) | None)
+    !matches!(
+        av::def(a).map(|d| d.tipo),
+        Some(TipoAtiva::Passo | TipoAtiva::Invisibilidade) | None
+    )
 }
 
 /// AUTO's rule for each active (the cooldown and mana are checked apart).
@@ -363,7 +420,11 @@ mod tests {
         e.slots = [Some(3), Some(4), Some(5)];
         a.receber(&e);
         assert_eq!(a.abertos, 2);
-        assert_eq!((a.ativa(0), a.ativa(1), a.ativa(2)), (Some(3), Some(4), None), "slot 6 opens at rebirth 5");
+        assert_eq!(
+            (a.ativa(0), a.ativa(1), a.ativa(2)),
+            (Some(3), Some(4), None),
+            "slot 6 opens at rebirth 5"
+        );
     }
 
     #[test]
@@ -376,7 +437,10 @@ mod tests {
         assert!(!auto_agora(7, c), "Bulwark Shield waits for low health");
         c.vida_baixa = true;
         assert!(auto_agora(7, c));
-        assert!(!auto_faz_sentido(1) && !auto_faz_sentido(0), "Invisibility and Shadowstep are manual");
+        assert!(
+            !auto_faz_sentido(1) && !auto_faz_sentido(0),
+            "Invisibility and Shadowstep are manual"
+        );
         assert!(auto_faz_sentido(9));
         c.distancia_alvo = None;
         assert!(!auto_agora(9, c), "the Corsair buff waits for a fight");
@@ -393,9 +457,16 @@ mod tests {
         c.mp = 100;
         c.distancia_alvo = None;
         // Meteor (4) needs a target; Lethal Fury (2) is a buff and does not.
-        assert_eq!(a.impedimento(4, &h, c, 10.0), Some("Select an enemy to use this skill"));
+        assert_eq!(
+            a.impedimento(4, &h, c, 10.0),
+            Some("Select an enemy to use this skill")
+        );
         assert_eq!(a.impedimento(2, &h, c, 10.0), None);
-        assert_eq!(a.impedimento(7, &h, c, 10.0), None, "a buff needs no target");
+        assert_eq!(
+            a.impedimento(7, &h, c, 10.0),
+            None,
+            "a buff needs no target"
+        );
         c.vivo = false;
         assert!(a.impedimento(7, &h, c, 10.0).is_some());
         assert!(fx_da_ativa(1).is_none() && fx_da_ativa(4) == Some(12));

@@ -116,8 +116,7 @@ impl Trilha {
             *r.por_acao.entry(e.acao.to_string()).or_default() += 1;
             if !e.ok {
                 r.falhas += 1;
-                r.ultima_falha
-                    .insert(e.acao.to_string(), e.detalhe.clone());
+                r.ultima_falha.insert(e.acao.to_string(), e.detalhe.clone());
             }
             if e.acao == "subiu_de_nivel" {
                 r.nivel_em_s.entry(e.nivel).or_default().push(desde);
@@ -195,7 +194,10 @@ mod testes {
     /// quotes — that is, the defect would appear exactly when the file matters most.
     #[test]
     fn detalhe_com_aspas_nao_quebra_a_linha() {
-        assert_eq!(json_str(r#"erro: "x" não achado"#), r#""erro: \"x\" não achado""#);
+        assert_eq!(
+            json_str(r#"erro: "x" não achado"#),
+            r#""erro: \"x\" não achado""#
+        );
         assert_eq!(json_str("linha\nnova"), r#""linha\nnova""#);
         assert!(!json_str("a\nb").contains('\n'), "quebra literal no JSONL");
     }

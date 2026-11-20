@@ -166,7 +166,10 @@ async fn main() -> anyhow::Result<()> {
         .route(&p("/api/chat/palavras"), post(chat_palavra))
         .route(&p("/api/chat/acao"), post(chat_acao))
         .route(&p("/api/avaliacao"), post(pedir_avaliacao))
-        .route(&p("/api/agendados"), get(agendados::lista).post(agendados::salvar))
+        .route(
+            &p("/api/agendados"),
+            get(agendados::lista).post(agendados::salvar),
+        )
         .route(&p("/api/agendados/acao"), post(agendados::acao))
         .route(&p("/api/hud"), get(agendados::layouts_hud))
         .route(&p("/api/latencias"), get(agendados::latencias))
@@ -310,7 +313,10 @@ async fn pagina() -> Html<&'static str> {
 }
 
 async fn camera_js() -> impl IntoResponse {
-    ([(header::CONTENT_TYPE, "text/javascript; charset=utf-8")], include_str!("../estatico/camera.js"))
+    (
+        [(header::CONTENT_TYPE, "text/javascript; charset=utf-8")],
+        include_str!("../estatico/camera.js"),
+    )
 }
 
 // ─────────────────────────────── canais ───────────────────────────────
@@ -524,16 +530,15 @@ async fn correio(
     State(st): State<Estado>,
     axum::Json(c): axum::Json<CorreioPedido>,
 ) -> impl IntoResponse {
-    let conta: Option<i64> = match sqlx::query_scalar(
-        "SELECT account_id FROM characters WHERE lower(name) = lower($1)",
-    )
-    .bind(&c.autor)
-    .fetch_optional(&*st.pool)
-    .await
-    {
-        Ok(v) => v.flatten(),
-        Err(e) => return erro_do_correio(format!("banco: {e}")),
-    };
+    let conta: Option<i64> =
+        match sqlx::query_scalar("SELECT account_id FROM characters WHERE lower(name) = lower($1)")
+            .bind(&c.autor)
+            .fetch_optional(&*st.pool)
+            .await
+        {
+            Ok(v) => v.flatten(),
+            Err(e) => return erro_do_correio(format!("banco: {e}")),
+        };
     let Some(conta) = conta else {
         return erro_do_correio(format!("personagem '{}' nao encontrado", c.autor));
     };
@@ -601,20 +606,27 @@ async fn aviso_enviar(
     if texto.is_empty() || texto.chars().count() > 200 {
         return (
             axum::http::StatusCode::BAD_REQUEST,
-            axum::Json(serde_json::json!({ "ok": false, "erro": "texto vazio ou com mais de 200 caracteres" })),
+            axum::Json(
+                serde_json::json!({ "ok": false, "erro": "texto vazio ou com mais de 200 caracteres" }),
+            ),
         );
     }
     let r = async {
         sqlx::query(CRIAR_AVISOS).execute(&*st.pool).await?;
-        sqlx::query_scalar::<_, i64>("INSERT INTO avisos_globais (texto, autor) VALUES ($1, $2) RETURNING id")
-            .bind(&texto)
-            .bind(a.autor.trim())
-            .fetch_one(&*st.pool)
-            .await
+        sqlx::query_scalar::<_, i64>(
+            "INSERT INTO avisos_globais (texto, autor) VALUES ($1, $2) RETURNING id",
+        )
+        .bind(&texto)
+        .bind(a.autor.trim())
+        .fetch_one(&*st.pool)
+        .await
     }
     .await;
     match r {
-        Ok(id) => (axum::http::StatusCode::OK, axum::Json(serde_json::json!({ "ok": true, "id": id }))),
+        Ok(id) => (
+            axum::http::StatusCode::OK,
+            axum::Json(serde_json::json!({ "ok": true, "id": id })),
+        ),
         Err(e) => (
             axum::http::StatusCode::INTERNAL_SERVER_ERROR,
             axum::Json(serde_json::json!({ "ok": false, "erro": e.to_string() })),
@@ -661,14 +673,22 @@ const CRIAR_EVENTOS: &str = "CREATE TABLE IF NOT EXISTS eventos_bonus (
 /// Level range of each mob kind as it spawns RIGHT NOW (min–max over every
 /// channel's live snapshot), plus the zones it is in. A mob scales with its
 /// zone, so this is what the staff needs to pick a target.
-async fn niveis_ao_vivo(st: &Estado) -> HashMap<u16, (u32, u32, std::collections::BTreeSet<String>)> {
+async fn niveis_ao_vivo(
+    st: &Estado,
+) -> HashMap<u16, (u32, u32, std::collections::BTreeSet<String>)> {
     let mut v: HashMap<u16, (u32, u32, std::collections::BTreeSet<String>)> = HashMap::new();
     for c in canais_com_retrato(st).await {
         let zona = c["zona"].as_str().unwrap_or("").to_string();
-        let Some(mobs) = c["retrato"]["mobs"].as_array() else { continue };
+        let Some(mobs) = c["retrato"]["mobs"].as_array() else {
+            continue;
+        };
         for m in mobs {
-            let (Some(k), Some(n)) = (m["kind"].as_u64(), m["nivel"].as_u64()) else { continue };
-            let e = v.entry(k as u16).or_insert((u32::MAX, 0, Default::default()));
+            let (Some(k), Some(n)) = (m["kind"].as_u64(), m["nivel"].as_u64()) else {
+                continue;
+            };
+            let e = v
+                .entry(k as u16)
+                .or_insert((u32::MAX, 0, Default::default()));
             e.0 = e.0.min(n as u32);
             e.1 = e.1.max(n as u32);
             e.2.insert(zona.clone());
@@ -682,7 +702,13 @@ fn nome_da_zona(z: &str) -> String {
         .iter()
         .find(|d| d.zona == z)
         .map(|d| d.nome.to_string())
-        .unwrap_or_else(|| if z.starts_with(shared::magica::ZONA) { "Magic Island".into() } else { z.to_string() })
+        .unwrap_or_else(|| {
+            if z.starts_with(shared::magica::ZONA) {
+                "Magic Island".into()
+            } else {
+                z.to_string()
+            }
+        })
 }
 
 async fn opcoes_de_evento(st: &Estado) -> serde_json::Value {
@@ -694,11 +720,15 @@ async fn opcoes_de_evento(st: &Estado) -> serde_json::Value {
         .collect();
     mapas.push((shared::magica::ZONA.to_string(), "Magic Island".to_string()));
     mapas.push(("dungeon".to_string(), "Dungeons (all)".to_string()));
-    let mobs: Vec<(i32, String)> = sqlx::query_as("SELECT kind, name FROM enemy_kinds ORDER BY kind")
-        .fetch_all(pool)
-        .await
-        .unwrap_or_default();
-    let dungeons: Vec<(u16, &str)> = shared::dungeon::CONTEUDOS.iter().map(|c| (c.id, c.nome)).collect();
+    let mobs: Vec<(i32, String)> =
+        sqlx::query_as("SELECT kind, name FROM enemy_kinds ORDER BY kind")
+            .fetch_all(pool)
+            .await
+            .unwrap_or_default();
+    let dungeons: Vec<(u16, &str)> = shared::dungeon::CONTEUDOS
+        .iter()
+        .map(|c| (c.id, c.nome))
+        .collect();
     let chefes: Vec<(u16, &str, String, u32)> = shared::bosses::CHEFES
         .iter()
         .map(|c| (c.kind, c.nome, nome_da_zona(c.zona), c.nivel as u32))
@@ -724,7 +754,19 @@ async fn opcoes_de_evento(st: &Estado) -> serde_json::Value {
 
 async fn eventos_lista(State(st): State<Estado>) -> impl IntoResponse {
     let _ = sqlx::query(CRIAR_EVENTOS).execute(&*st.pool).await;
-    let linhas: Vec<(i64, String, String, String, String, f32, String, String, String, bool, bool)> = sqlx::query_as(
+    let linhas: Vec<(
+        i64,
+        String,
+        String,
+        String,
+        String,
+        f32,
+        String,
+        String,
+        String,
+        bool,
+        bool,
+    )> = sqlx::query_as(
         "SELECT id, tipo, escopo, alvo, alvo_nome, mult, \
            to_char(inicio AT TIME ZONE 'America/Sao_Paulo', 'DD/MM HH24:MI'), \
            to_char(fim AT TIME ZONE 'America/Sao_Paulo', 'DD/MM HH24:MI'), autor, cancelado, \
@@ -757,7 +799,10 @@ struct EventoPedido {
 }
 
 fn recusa(t: impl Into<String>) -> (axum::http::StatusCode, axum::Json<serde_json::Value>) {
-    (axum::http::StatusCode::BAD_REQUEST, axum::Json(serde_json::json!({ "ok": false, "erro": t.into() })))
+    (
+        axum::http::StatusCode::BAD_REQUEST,
+        axum::Json(serde_json::json!({ "ok": false, "erro": t.into() })),
+    )
 }
 
 async fn evento_criar(
@@ -779,7 +824,11 @@ async fn evento_criar(
     }
     // The target's name for players, from the same lists the panel shows.
     let op = opcoes_de_evento(&st).await;
-    let alvo = if escopo == Escopo::Todos { String::new() } else { e.alvo.trim().to_string() };
+    let alvo = if escopo == Escopo::Todos {
+        String::new()
+    } else {
+        e.alvo.trim().to_string()
+    };
     let chave = match escopo {
         Escopo::Todos => None,
         Escopo::Mapa => Some("mapas"),
@@ -790,13 +839,21 @@ async fn evento_criar(
     let alvo_nome = match chave {
         None => String::new(),
         Some(k) => {
-            let achado = op[k].as_array().and_then(|v| v.iter().find(|o| o["v"].as_str() == Some(alvo.as_str())));
+            let achado = op[k]
+                .as_array()
+                .and_then(|v| v.iter().find(|o| o["v"].as_str() == Some(alvo.as_str())));
             let Some(o) = achado else {
                 return recusa("alvo não encontrado");
             };
             // Players see the name without the "(#12)" / "· zone" admin tail.
             let n = o["n"].as_str().unwrap_or("").to_string();
-            n.split(" (#").next().unwrap_or("").split(" · ").next().unwrap_or("").to_string()
+            n.split(" (#")
+                .next()
+                .unwrap_or("")
+                .split(" · ")
+                .next()
+                .unwrap_or("")
+                .to_string()
         }
     };
     if matches!(escopo, Escopo::Mapa | Escopo::Mob) && alvo.is_empty() {
@@ -820,7 +877,10 @@ async fn evento_criar(
     }
     .await;
     match r {
-        Ok(id) => (axum::http::StatusCode::OK, axum::Json(serde_json::json!({ "ok": true, "id": id }))),
+        Ok(id) => (
+            axum::http::StatusCode::OK,
+            axum::Json(serde_json::json!({ "ok": true, "id": id })),
+        ),
         Err(e) => (
             axum::http::StatusCode::INTERNAL_SERVER_ERROR,
             axum::Json(serde_json::json!({ "ok": false, "erro": e.to_string() })),
@@ -866,7 +926,10 @@ async fn chat_lista(
     let pool = &*st.pool;
     chat_tabelas(pool).await;
     let so = q.get("so").map(String::as_str).unwrap_or("todas");
-    let busca = q.get("q").map(|s| s.trim().to_lowercase()).unwrap_or_default();
+    let busca = q
+        .get("q")
+        .map(|s| s.trim().to_lowercase())
+        .unwrap_or_default();
     let filtro = match so {
         "marcadas" => "AND h.palavras <> ''",
         "denunciadas" => "AND d.n > 0",
@@ -880,12 +943,30 @@ async fn chat_lista(
          WHERE ($1 = '' OR lower(h.nome) LIKE '%' || $1 || '%' OR lower(h.texto) LIKE '%' || $1 || '%') {filtro} \
          ORDER BY h.id DESC LIMIT 300"
     );
-    let msgs: Vec<(i64, String, String, String, i64, String, String, String, String, bool, i64, String, String)> =
-        sqlx::query_as(&sql).bind(&busca).fetch_all(pool).await.unwrap_or_default();
-    let palavras: Vec<(String, String)> = sqlx::query_as("SELECT palavra, acao FROM chat_palavras ORDER BY palavra")
+    let msgs: Vec<(
+        i64,
+        String,
+        String,
+        String,
+        i64,
+        String,
+        String,
+        String,
+        String,
+        bool,
+        i64,
+        String,
+        String,
+    )> = sqlx::query_as(&sql)
+        .bind(&busca)
         .fetch_all(pool)
         .await
         .unwrap_or_default();
+    let palavras: Vec<(String, String)> =
+        sqlx::query_as("SELECT palavra, acao FROM chat_palavras ORDER BY palavra")
+            .fetch_all(pool)
+            .await
+            .unwrap_or_default();
     let silencios: Vec<(i64, String, String, String, String)> = sqlx::query_as(
         "SELECT conta, nome, to_char(MAX(ate) AT TIME ZONE 'America/Sao_Paulo', 'DD/MM HH24:MI'), \
                 string_agg(DISTINCT motivo, ' | '), string_agg(DISTINCT autor, ', ') \
@@ -930,7 +1011,10 @@ async fn chat_palavra(
         return recusa("palavra vazia ou longa demais");
     }
     let r = if p.acao == "remover" {
-        sqlx::query("DELETE FROM chat_palavras WHERE palavra = $1").bind(&palavra).execute(pool).await
+        sqlx::query("DELETE FROM chat_palavras WHERE palavra = $1")
+            .bind(&palavra)
+            .execute(pool)
+            .await
     } else if shared::chat::Acao::de_texto(&p.acao).is_some() {
         sqlx::query(
             "INSERT INTO chat_palavras (palavra, acao) VALUES ($1, $2) \
@@ -944,7 +1028,10 @@ async fn chat_palavra(
         return recusa("ação inválida");
     };
     match r {
-        Ok(_) => (axum::http::StatusCode::OK, axum::Json(serde_json::json!({ "ok": true }))),
+        Ok(_) => (
+            axum::http::StatusCode::OK,
+            axum::Json(serde_json::json!({ "ok": true })),
+        ),
         Err(e) => recusa(e.to_string()),
     }
 }
@@ -964,7 +1051,10 @@ struct AcaoPedido {
     autor: String,
 }
 
-async fn chat_notificar(pool: &sqlx::PgPool, n: &shared::chat::Notificacao) -> Result<(), sqlx::Error> {
+async fn chat_notificar(
+    pool: &sqlx::PgPool,
+    n: &shared::chat::Notificacao,
+) -> Result<(), sqlx::Error> {
     sqlx::query("SELECT pg_notify($1, $2)")
         .bind(shared::chat::CANAL_NOTIFY)
         .bind(serde_json::to_string(n).unwrap_or_default())
@@ -980,17 +1070,27 @@ async fn chat_acao(
     use shared::chat::Notificacao as N;
     let pool = &*st.pool;
     chat_tabelas(pool).await;
-    let autor = if a.autor.trim().is_empty() { "staff".to_string() } else { a.autor.trim().to_string() };
+    let autor = if a.autor.trim().is_empty() {
+        "staff".to_string()
+    } else {
+        a.autor.trim().to_string()
+    };
     let texto = a.texto.trim().to_string();
     let r: Result<String, String> = match a.tipo.as_str() {
         "alertar" => {
             if texto.is_empty() {
                 Err("escreva o aviso".into())
             } else {
-                chat_notificar(pool, &N::Aviso { conta: a.conta, texto: texto.clone() })
-                    .await
-                    .map(|_| format!("aviso enviado a {}", a.nome))
-                    .map_err(|e| e.to_string())
+                chat_notificar(
+                    pool,
+                    &N::Aviso {
+                        conta: a.conta,
+                        texto: texto.clone(),
+                    },
+                )
+                .await
+                .map(|_| format!("aviso enviado a {}", a.nome))
+                .map_err(|e| e.to_string())
             }
         }
         "silenciar" => {
@@ -1009,12 +1109,14 @@ async fn chat_acao(
             .map(|_| format!("{} silenciado por {min} min", a.nome))
             .map_err(|e| e.to_string())
         }
-        "dessilenciar" => sqlx::query("UPDATE chat_silencios SET ate = NOW() WHERE conta = $1 AND ate > NOW()")
-            .bind(a.conta)
-            .execute(pool)
-            .await
-            .map(|_| format!("{} pode falar de novo", a.nome))
-            .map_err(|e| e.to_string()),
+        "dessilenciar" => {
+            sqlx::query("UPDATE chat_silencios SET ate = NOW() WHERE conta = $1 AND ate > NOW()")
+                .bind(a.conta)
+                .execute(pool)
+                .await
+                .map(|_| format!("{} pode falar de novo", a.nome))
+                .map_err(|e| e.to_string())
+        }
         "banir" => {
             let ate = (a.minutos > 0).then_some(a.minutos as i32);
             let ins = sqlx::query(
@@ -1029,19 +1131,37 @@ async fn chat_acao(
             .execute(pool)
             .await;
             match ins {
-                Ok(_) => chat_notificar(pool, &N::Expulsar { conta: a.conta, motivo: if texto.is_empty() { "staff".into() } else { texto.clone() } })
-                    .await
-                    .map(|_| format!("{} banido{}", a.nome, ate.map_or(" de vez".to_string(), |m| format!(" por {m} min"))))
-                    .map_err(|e| e.to_string()),
+                Ok(_) => chat_notificar(
+                    pool,
+                    &N::Expulsar {
+                        conta: a.conta,
+                        motivo: if texto.is_empty() {
+                            "staff".into()
+                        } else {
+                            texto.clone()
+                        },
+                    },
+                )
+                .await
+                .map(|_| {
+                    format!(
+                        "{} banido{}",
+                        a.nome,
+                        ate.map_or(" de vez".to_string(), |m| format!(" por {m} min"))
+                    )
+                })
+                .map_err(|e| e.to_string()),
                 Err(e) => Err(e.to_string()),
             }
         }
-        "desbanir" => sqlx::query("UPDATE banimentos SET revogado = TRUE WHERE conta = $1 AND NOT revogado")
-            .bind(a.conta)
-            .execute(pool)
-            .await
-            .map(|_| format!("{} desbanido", a.nome))
-            .map_err(|e| e.to_string()),
+        "desbanir" => {
+            sqlx::query("UPDATE banimentos SET revogado = TRUE WHERE conta = $1 AND NOT revogado")
+                .bind(a.conta)
+                .execute(pool)
+                .await
+                .map(|_| format!("{} desbanido", a.nome))
+                .map_err(|e| e.to_string())
+        }
         _ => Err("tipo inválido".into()),
     };
     match r {
@@ -1054,7 +1174,10 @@ async fn chat_acao(
                 .bind(&autor)
                 .execute(pool)
                 .await;
-            (axum::http::StatusCode::OK, axum::Json(serde_json::json!({ "ok": true, "msg": msg })))
+            (
+                axum::http::StatusCode::OK,
+                axum::Json(serde_json::json!({ "ok": true, "msg": msg })),
+            )
         }
         Err(e) => recusa(e),
     }
@@ -1198,7 +1321,13 @@ async fn personagens(
     if busca.is_empty() {
         return axum::Json(Vec::<serde_json::Value>::new());
     }
-    let padrao = format!("%{}%", busca.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_"));
+    let padrao = format!(
+        "%{}%",
+        busca
+            .replace('\\', "\\\\")
+            .replace('%', "\\%")
+            .replace('_', "\\_")
+    );
     let nomes: Vec<(String, i64, Option<String>)> = sqlx::query_as(
         "SELECT name, xp, zona FROM characters WHERE account_id IS NOT NULL AND name ILIKE $1 \
          ORDER BY (lower(name) = lower($2)) DESC, length(name), name LIMIT 15",
@@ -1439,8 +1568,12 @@ mod testes {
     #[test]
     fn o_publicado_vence_a_deducao() {
         assert_eq!(
-            endereco_do_painel("127.0.0.1:10000", "mmo.brunji.com.br/z/ilha_inicial/1", None)
-                .as_deref(),
+            endereco_do_painel(
+                "127.0.0.1:10000",
+                "mmo.brunji.com.br/z/ilha_inicial/1",
+                None
+            )
+            .as_deref(),
             Some("127.0.0.1:10000")
         );
         assert_eq!(

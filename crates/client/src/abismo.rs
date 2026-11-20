@@ -9,10 +9,9 @@
 //! * the BUBBLE HELMET every character wears here (the owner's one rule for
 //!   this map), round each head.
 
-use macroquad::prelude::*;
 use crate::relogio::get_time;
+use macroquad::prelude::*;
 use std::f32::consts::TAU;
-
 
 /// A soft-edged quad strip and disc builder over one additive mesh.
 #[derive(Default)]
@@ -39,12 +38,17 @@ impl Lote {
         for (p, cor) in [a, b, c, d] {
             self.v.push(Vertex::new2(p, Vec2::ZERO, cor));
         }
-        self.i.extend_from_slice(&[n, n + 1, n + 2, n, n + 2, n + 3]);
+        self.i
+            .extend_from_slice(&[n, n + 1, n + 2, n, n + 2, n + 3]);
     }
 
     fn desenha(self) {
         if !self.v.is_empty() {
-            draw_mesh(&Mesh { vertices: self.v, indices: self.i, texture: None });
+            draw_mesh(&Mesh {
+                vertices: self.v,
+                indices: self.i,
+                texture: None,
+            });
         }
     }
 }
@@ -72,7 +76,12 @@ fn bolha(l: &mut Lote, cam: &Camera3D, chao_y: f32) {
     };
     for i in 0..LAT {
         for j in 0..LON {
-            l.quad(ponto(i, j), ponto(i + 1, j), ponto(i + 1, j + 1), ponto(i, j + 1));
+            l.quad(
+                ponto(i, j),
+                ponto(i + 1, j),
+                ponto(i + 1, j + 1),
+                ponto(i, j + 1),
+            );
         }
     }
 }
@@ -87,7 +96,11 @@ fn raios(l: &mut Lote, cam: &Camera3D, chao_y: f32, t: f32) {
         let a = k as f32 * 2.39996;
         let r = (k as f32 * 13.7) % (shared::abissal::BOLHA_RAIO * 0.85);
         let base = vec3(a.cos() * r, chao_y, a.sin() * r);
-        let deriva = vec3((t * 0.13 + k as f32).sin() * 6.0, 0.0, (t * 0.11 + k as f32 * 0.7).cos() * 6.0);
+        let deriva = vec3(
+            (t * 0.13 + k as f32).sin() * 6.0,
+            0.0,
+            (t * 0.11 + k as f32 * 0.7).cos() * 6.0,
+        );
         let cima = base + deriva + vec3(0.0, topo - chao_y, 0.0);
         let w = 2.5 + (k % 4) as f32;
         let pulso = 0.05 + 0.03 * (t * 0.6 + k as f32).sin();
@@ -109,16 +122,27 @@ fn particulas(l: &mut Lote, cam: &Camera3D, chao_y: f32, t: f32) {
     let alvo = cam.target;
     const LADO: f32 = 40.0;
     for k in 0..260u32 {
-        let h = |s: u32| ((k.wrapping_mul(2654435761).wrapping_add(s.wrapping_mul(40503))) % 10_000) as f32 / 10_000.0;
+        let h = |s: u32| {
+            ((k.wrapping_mul(2654435761)
+                .wrapping_add(s.wrapping_mul(40503)))
+                % 10_000) as f32
+                / 10_000.0
+        };
         // A fixed lattice in world space, wrapped round the target: motes stay
         // put when the camera moves, and new ones come in at the edges.
-        let wrap = |base: f32, centro: f32| centro + ((base - centro).rem_euclid(LADO)) - LADO * 0.5;
+        let wrap =
+            |base: f32, centro: f32| centro + ((base - centro).rem_euclid(LADO)) - LADO * 0.5;
         let x = wrap(h(1) * LADO * 8.0, alvo.x);
         let z = wrap(h(2) * LADO * 8.0, alvo.z);
         let y = chao_y + ((h(3) * 12.0 + t * (0.25 + h(4) * 0.4)) % 12.0);
         let p = vec3(x + (t * 0.5 + h(5) * 6.0).sin() * 0.3, y, z);
         let c = Color::new(0.75, 0.95, 1.0, 0.35);
-        l.quad((p - lado - cima, c), (p + lado - cima, c), (p + lado + cima, c), (p - lado + cima, c));
+        l.quad(
+            (p - lado - cima, c),
+            (p + lado - cima, c),
+            (p + lado + cima, c),
+            (p - lado + cima, c),
+        );
     }
 }
 
@@ -127,7 +151,12 @@ fn particulas(l: &mut Lote, cam: &Camera3D, chao_y: f32, t: f32) {
 fn cardumes(l: &mut Lote, cam: &Camera3D, chao: &dyn Fn(f32, f32) -> f32, t: f32) {
     let alvo = vec2(cam.target.x, cam.target.z);
     for s in 0..40u32 {
-        let h = |k: u32| ((s.wrapping_mul(2246822519).wrapping_add(k.wrapping_mul(3266489917))) % 10_000) as f32 / 10_000.0;
+        let h = |k: u32| {
+            ((s.wrapping_mul(2246822519)
+                .wrapping_add(k.wrapping_mul(3266489917)))
+                % 10_000) as f32
+                / 10_000.0
+        };
         let a0 = h(1) * TAU;
         let r0 = shared::abissal::BOLHA_RAIO + 20.0 + h(2) * 480.0;
         let centro = vec2(a0.cos(), a0.sin()) * r0;
@@ -146,7 +175,10 @@ fn cardumes(l: &mut Lote, cam: &Camera3D, chao: &dyn Fn(f32, f32) -> f32, t: f32
             let fase = t * vel + f as f32 * 0.09 + h(10 + f) * 0.05;
             let off = vec2((h(20 + f) - 0.5) * 2.0, (h(30 + f) - 0.5) * 2.0);
             let p2 = centro + vec2(fase.cos(), fase.sin()) * raio + off;
-            let y = chao(p2.x, p2.y) + altura + (h(40 + f) - 0.5) * 1.5 + (t * 2.0 + f as f32).sin() * 0.15;
+            let y = chao(p2.x, p2.y)
+                + altura
+                + (h(40 + f) - 0.5) * 1.5
+                + (t * 2.0 + f as f32).sin() * 0.15;
             let p = vec3(p2.x, y, p2.y);
             let rumo = vec3(-fase.sin(), 0.0, fase.cos()) * vel.signum();
             let lado = rumo.cross(Vec3::Y) * 0.12;
@@ -154,7 +186,11 @@ fn cardumes(l: &mut Lote, cam: &Camera3D, chao: &dyn Fn(f32, f32) -> f32, t: f32
             let rabo = p - rumo * 0.35;
             let bate = (t * 9.0 + f as f32).sin() * 0.1;
             l.tri((cabeca, cor), (p + lado, cor), (p - lado, cor));
-            l.tri((p + lado * 0.6, cor), (rabo + lado * (1.5 + bate), alfa(cor, cor.a * 0.6)), (rabo - lado * (1.5 - bate), alfa(cor, cor.a * 0.6)));
+            l.tri(
+                (p + lado * 0.6, cor),
+                (rabo + lado * (1.5 + bate), alfa(cor, cor.a * 0.6)),
+                (rabo - lado * (1.5 - bate), alfa(cor, cor.a * 0.6)),
+            );
             if l.cheio() {
                 return;
             }
@@ -167,7 +203,9 @@ thread_local! {
 }
 
 fn material() -> Material {
-    use macroquad::miniquad::{BlendFactor, BlendState, BlendValue, Comparison, Equation, PipelineParams};
+    use macroquad::miniquad::{
+        BlendFactor, BlendState, BlendValue, Comparison, Equation, PipelineParams,
+    };
     MATERIAL.with(|m| {
         m.get_or_init(|| {
             load_material(

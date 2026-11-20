@@ -56,15 +56,20 @@ pub fn preco_atual(id: u16) -> Option<u64> {
 /// history from the ring buffer, and what they bought today.
 pub fn quadro(diario: &prime::Diario, agora: i64) -> QuadroPrime {
     let (_, tabela) = crate::precos::atual();
-    let atuais = tabela.map(|t| precos_do_catalogo(&t.mapa())).unwrap_or_default();
+    let atuais = tabela
+        .map(|t| precos_do_catalogo(&t.mapa()))
+        .unwrap_or_default();
     let h = HIST.read();
     let dia = shared::dungeon::dia(agora);
     let linhas = prime::catalogo()
         .into_iter()
         .filter_map(|i| {
             let preco = *atuais.get(&i.item_id)?;
-            let mut historico: Vec<u64> =
-                h.pontos.iter().filter_map(|p| p.get(&i.item_id).copied()).collect();
+            let mut historico: Vec<u64> = h
+                .pontos
+                .iter()
+                .filter_map(|p| p.get(&i.item_id).copied())
+                .collect();
             // The live price is always the last point.
             if historico.last() != Some(&preco) || historico.is_empty() {
                 historico.push(preco);
@@ -108,7 +113,10 @@ mod testes {
         }
         let h = HIST.read();
         assert_eq!(h.pontos.len(), prime::HISTORICO_MAX);
-        assert_eq!(h.pontos.back().unwrap()[&item_id::DARKSTEEL], prime::com_markup(129));
+        assert_eq!(
+            h.pontos.back().unwrap()[&item_id::DARKSTEEL],
+            prime::com_markup(129)
+        );
         assert_eq!(h.ultimo, 1_000 + 29 * 300);
     }
 }

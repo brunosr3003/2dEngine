@@ -118,14 +118,22 @@ impl GameWorld {
             if add_to_inventory(&mut tentativa, *item, *qtd, None) {
                 s.inventory = tentativa;
             } else {
-                s.dungeon.postar(*item, *qtd, None, MOTIVO_CORREIO_RENASCIMENTO, quando);
+                s.dungeon
+                    .postar(*item, *qtd, None, MOTIVO_CORREIO_RENASCIMENTO, quando);
                 no_correio += 1;
             }
         }
         s.inventory_dirty = true;
 
         // ── The new character: stats with the new bonus, full health.
-        s.stats = effective_stats_rv(&s.equipment, &s.allocated_points, &s.proficiencies, s.xp, s.renascimentos, &s.arvore);
+        s.stats = effective_stats_rv(
+            &s.equipment,
+            &s.allocated_points,
+            &s.proficiencies,
+            s.xp,
+            s.renascimentos,
+            &s.arvore,
+        );
         s.mp_current = s.stats.mp_max as f32;
         s.stamina_current = s.stats.stamina_max as f32;
         s.poise_current = s.stats.poise_max as f32;
@@ -133,7 +141,10 @@ impl GameWorld {
         s.stat_points_dirty = true;
         s.skills_dirty = true;
         s.nivel_mudou = true;
-        let _ = s.handle.to_client.send(ServerMessage::ProgressUpdate { xp: 0, level: 1 });
+        let _ = s
+            .handle
+            .to_client
+            .send(ServerMessage::ProgressUpdate { xp: 0, level: 1 });
         let _ = s.handle.to_client.send(ServerMessage::ProgressoDeSkills {
             progresso: s.skill_progress.clone(),
         });
@@ -147,24 +158,36 @@ impl GameWorld {
         s.arvore.preencher_slots(n);
         s.enviar_arvore();
         let chat = |s: &Session, t: String| {
-            let _ = s.handle.to_client.send(ServerMessage::Chat { from: "System".into(), text: t });
+            let _ = s.handle.to_client.send(ServerMessage::Chat {
+                from: "System".into(),
+                text: t,
+            });
         };
-        chat(s, format!(
-            "Rebirth {n}! Back to level 1, with +{}% to every attribute for good.",
-            rn::bonus_em_pct(n)
-        ));
+        chat(
+            s,
+            format!(
+                "Rebirth {n}! Back to level 1, with +{}% to every attribute for good.",
+                rn::bonus_em_pct(n)
+            ),
+        );
         let (ds, chaves, material) = (premios[0].1, premios[1].1, premios[2].1);
         chat(s, format!(
             "Rebirth chest: {ds} Darksteel, {chaves} crafting keys, {material} crafting materials and {essencia} Rebirth Essence."
         ));
         if energia > 0 {
-            chat(s, format!("Your attribute points were reset: {energia} Energy refunded."));
+            chat(
+                s,
+                format!("Your attribute points were reset: {energia} Energy refunded."),
+            );
         }
         for a in avisos {
             chat(s, a);
         }
         if no_correio > 0 {
-            chat(s, "Your bag was full: part of the rebirth chest went to the Mail.".into());
+            chat(
+                s,
+                "Your bag was full: part of the rebirth chest went to the Mail.".into(),
+            );
         }
         let nome = s.name.clone();
         tracing::info!(
@@ -192,10 +215,12 @@ impl GameWorld {
         match self.auth_ctx.as_ref().map(|c| c.pool.clone()) {
             Some(pool) => {
                 tokio::spawn(async move {
-                    let r = sqlx::query("INSERT INTO avisos_globais (texto, autor) VALUES ($1, 'renascimento')")
-                        .bind(&texto)
-                        .execute(&pool)
-                        .await;
+                    let r = sqlx::query(
+                        "INSERT INTO avisos_globais (texto, autor) VALUES ($1, 'renascimento')",
+                    )
+                    .bind(&texto)
+                    .execute(&pool)
+                    .await;
                     if let Err(e) = r {
                         tracing::warn!("renascimento: aviso global falhou: {e}");
                     }
@@ -218,12 +243,27 @@ mod testes {
         let (tx, rx) = mpsc::unbounded_channel();
         // The receiver must live, or every send fails silently (fine) — keep it.
         std::mem::forget(rx);
-        w.on_connect(SessionHandle { id: sid, to_client: tx });
+        w.on_connect(SessionHandle {
+            id: sid,
+            to_client: tx,
+        });
         let eid = EntityId(4_700);
-        let e = w.ecs.spawn((NetId(eid), Position(Vec2::new(10.0, 10.0)),
-            Velocity(Vec2::ZERO), EntityKind::Player, Health { current: 100, max: 100 },
-            PlayerTag { name: "Renato".into(), player_id: PlayerId(47),
-                attack_anim_pending: None, combo_step_pending: None }));
+        let e = w.ecs.spawn((
+            NetId(eid),
+            Position(Vec2::new(10.0, 10.0)),
+            Velocity(Vec2::ZERO),
+            EntityKind::Player,
+            Health {
+                current: 100,
+                max: 100,
+            },
+            PlayerTag {
+                name: "Renato".into(),
+                player_id: PlayerId(47),
+                attack_anim_pending: None,
+                combo_step_pending: None,
+            },
+        ));
         let s = w.sessions.get_mut(&sid).unwrap();
         s.logged_in = true;
         s.entity = Some(e);
@@ -247,7 +287,11 @@ mod testes {
     }
 
     fn tem(s: &Session, item: u16) -> u32 {
-        s.inventory.iter().filter(|i| i.item_id == item && i.qty > 0).map(|i| i.qty).sum()
+        s.inventory
+            .iter()
+            .filter(|i| i.item_id == item && i.qty > 0)
+            .map(|i| i.qty)
+            .sum()
     }
 
     #[test]
@@ -279,7 +323,11 @@ mod testes {
             .filter(|c| c.item_id == shared::item_id::ESSENCIA_RENASCIMENTO)
             .map(|c| c.qtd)
             .sum();
-        assert!(s.dungeon.correio.iter().all(|c| c.motivo == MOTIVO_CORREIO_RENASCIMENTO));
+        assert!(s
+            .dungeon
+            .correio
+            .iter()
+            .all(|c| c.motivo == MOTIVO_CORREIO_RENASCIMENTO));
         assert_eq!(
             tem(s, shared::item_id::ESSENCIA_RENASCIMENTO) + no_correio,
             rn::essencia_do_renascimento(1)
@@ -337,6 +385,9 @@ mod testes {
         assert_eq!(s.bolsa_extra, bolsa + 1);
         s.xp_bonus_ate = 0;
         s.grant_xp(900);
-        assert_eq!(s.xp, 643, "900 / 1.4 (R2 on the linear part of the divisor)");
+        assert_eq!(
+            s.xp, 643,
+            "900 / 1.4 (R2 on the linear part of the divisor)"
+        );
     }
 }

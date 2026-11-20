@@ -97,7 +97,9 @@ impl Evento {
             Escopo::Dungeon => {
                 a.dungeon.is_some() && (alvo.is_empty() || alvo.parse::<u16>().ok() == a.dungeon)
             }
-            Escopo::Chefe => a.chefe && (alvo.is_empty() || alvo.parse::<u16>().is_ok_and(|k| k == a.kind)),
+            Escopo::Chefe => {
+                a.chefe && (alvo.is_empty() || alvo.parse::<u16>().is_ok_and(|k| k == a.kind))
+            }
         }
     }
 
@@ -176,9 +178,24 @@ mod testes {
 
     #[test]
     fn cada_escopo_pega_so_o_seu_abate_e_eles_multiplicam() {
-        let campo = Abate { zona: "ilha_inicial", kind: 3, dungeon: None, chefe: false };
-        let dg = Abate { zona: "dungeon", kind: 40, dungeon: Some(5), chefe: true };
-        let magica = Abate { zona: "ilha_magica_3", kind: 9, dungeon: None, chefe: false };
+        let campo = Abate {
+            zona: "ilha_inicial",
+            kind: 3,
+            dungeon: None,
+            chefe: false,
+        };
+        let dg = Abate {
+            zona: "dungeon",
+            kind: 40,
+            dungeon: Some(5),
+            chefe: true,
+        };
+        let magica = Abate {
+            zona: "ilha_magica_3",
+            kind: 9,
+            dungeon: None,
+            chefe: false,
+        };
         let v = vec![
             ev(Tipo::Xp, Escopo::Todos, "", 1.5),
             ev(Tipo::Xp, Escopo::Mapa, "ilha_magica", 2.0),
@@ -187,7 +204,11 @@ mod testes {
             ev(Tipo::Drop, Escopo::Chefe, "", 1.5),
         ];
         assert_eq!(mult(&v, Tipo::Xp, &campo, 10), 1.5);
-        assert_eq!(mult(&v, Tipo::Xp, &magica, 10), 3.0, "everyone 1.5x times the map 2x");
+        assert_eq!(
+            mult(&v, Tipo::Xp, &magica, 10),
+            3.0,
+            "everyone 1.5x times the map 2x"
+        );
         assert_eq!(mult(&v, Tipo::Drop, &campo, 10), 2.0);
         assert_eq!(mult(&v, Tipo::Drop, &magica, 10), 1.0);
         assert_eq!(mult(&v, Tipo::Ouro, &dg, 10), 3.0);

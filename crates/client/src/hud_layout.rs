@@ -31,7 +31,9 @@ pub const ESCALA_UI_MIN: f32 = 0.8;
 pub const ESCALA_UI_MAX: f32 = 2.0;
 
 /// Escala padrao de 160%; a preferencia manual salva continua valendo.
-pub fn escala_ui_padrao() -> f32 { 1.6 }
+pub fn escala_ui_padrao() -> f32 {
+    1.6
+}
 
 /// Bits do f32; 0 = nunca escolheu (vale o padrao da plataforma).
 static ESCALA_UI: AtomicU32 = AtomicU32::new(0);
@@ -290,14 +292,22 @@ pub fn atual() -> Zonas {
         Some((k, z)) if k == chave => z,
         _ => {
             let z = zonas_com(sw, sh, mg, ui, grande, tarja, pvp);
-            let seguro = Rect::new(mg[1], mg[0], (sw - mg[1] - mg[3]).max(64.0), (sh - mg[0] - mg[2]).max(64.0));
+            let seguro = Rect::new(
+                mg[1],
+                mg[0],
+                (sw - mg[1] - mg[3]).max(64.0),
+                (sh - mg[0] - mg[2]).max(64.0),
+            );
             // The joystick's whole start zone in ONE rect (the strip plus the
             // bottom-left quadrant, as `main` used to test them apart), so the
             // HUD editor shows it and moving it moves all of it.
             let mut z = z;
             let q = quadrante_do_joystick_em(seguro, ui);
             let (x0, y0) = (z.joystick.x.min(q.x), z.joystick.y.min(q.y));
-            let (x1, y1) = ((z.joystick.x + z.joystick.w).max(q.x + q.w), (z.joystick.y + z.joystick.h).max(q.y + q.h));
+            let (x1, y1) = (
+                (z.joystick.x + z.joystick.w).max(q.x + q.w),
+                (z.joystick.y + z.joystick.h).max(q.y + q.h),
+            );
             z.joystick = Rect::new(x0, y0, x1 - x0, y1 - y0);
             let z = crate::hud_custom::aplica(z, seguro, &crate::hud_custom::atual());
             c.set(Some((chave, z)));
@@ -374,7 +384,12 @@ fn monta(
     // ── esquerda: ficha, buffs, rastreador ──
     let ficha = Rect::new(m, m, 440.0 * s, 160.0 * s);
     let modo_pk = Rect::new(m, ficha.y + ficha.h + 6.0 * s, 120.0 * s, 40.0 * s);
-    let buffs = Rect::new(modo_pk.x + modo_pk.w + 8.0 * s, modo_pk.y, 312.0 * s, 40.0 * s);
+    let buffs = Rect::new(
+        modo_pk.x + modo_pk.w + 8.0 * s,
+        modo_pk.y,
+        312.0 * s,
+        40.0 * s,
+    );
     // 16:10 ganha uma missao; tela baixa perde. Medido na altura "de 1080"
     // (px / escala): no celular a 130% sobra menos altura que os px sugerem.
     let hb = sh / s;
@@ -546,7 +561,12 @@ fn monta(
         lado_eco,
         lado_eco,
     );
-    let sprint = Rect::new(montaria.x + montaria.w + 10.0 * s, economia.y, lado_eco, lado_eco);
+    let sprint = Rect::new(
+        montaria.x + montaria.w + 10.0 * s,
+        economia.y,
+        lado_eco,
+        lado_eco,
+    );
     let jbaixo = economia.y - 8.0 * s;
     // O teto: nem acima da metade da tela, nem por cima do rastreador.
     let jtopo = (jbaixo - lado_joy)
@@ -565,7 +585,11 @@ fn monta(
     // to the centre, at the bottom there is room").
     let chat = {
         let x0 = joystick.x + joystick.w + 10.0 * s;
-        let x1 = skills.iter().map(|r| r.x).fold(pulo.x.min(atacar.x), f32::min) - 10.0 * s;
+        let x1 = skills
+            .iter()
+            .map(|r| r.x)
+            .fold(pulo.x.min(atacar.x), f32::min)
+            - 10.0 * s;
         let baixo = rapidos
             .iter()
             .map(|r| r.y)
@@ -1241,5 +1265,3 @@ mod testes_do_quadrante {
         }
     }
 }
-
-

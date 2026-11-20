@@ -166,7 +166,10 @@ impl EconomyConfig {
             .iter()
             .filter_map(|e| {
                 let f = shared::escassez::fator_em_mob(e.item_id);
-                (f > 0.0).then(|| LootEntry { chance: e.chance * f, ..e.clone() })
+                (f > 0.0).then(|| LootEntry {
+                    chance: e.chance * f,
+                    ..e.clone()
+                })
             })
             .collect();
         roll_entries(&table, &self.items, seed, mult)
@@ -177,12 +180,15 @@ impl EconomyConfig {
 
     /// Usa a mesma tabela, fallback e filtro de itens do sorteio real.
     pub fn itens_possiveis_do_mob(&self, kind: u16) -> Vec<u16> {
-        self.loot_tables.get(&kind)
+        self.loot_tables
+            .get(&kind)
             .or_else(|| (0..kind).rev().find_map(|k| self.loot_tables.get(&k)))
-            .into_iter().flatten()
+            .into_iter()
+            .flatten()
             .filter(|e| e.chance > 0.0 && e.qty_max > 0 && self.permitido_em_mob(e.item_id))
             .filter(|e| shared::escassez::fator_em_mob(e.item_id) > 0.0)
-            .map(|e| e.item_id).collect()
+            .map(|e| e.item_id)
+            .collect()
     }
 
     /// Vale tambem para tabelas antigas ou reintroduzidas pelo hot-reload.
@@ -362,23 +368,37 @@ pub(crate) fn por_kinds_do_seed_para_testes(kinds: &[u16]) {
 pub(crate) fn por_loot_do_seed_para_testes() {
     let mut c = cell().write();
     use crate::loot_mobs::*;
-    for t in [BASE, BASE_PRAIA, BASE_ILHAS, BASE_VARIANTES, BASE_VARIANTES_CELESTE, BASE_VARIANTES_KOGEN, BASE_VARIANTES_ABISSAL] {
+    for t in [
+        BASE,
+        BASE_PRAIA,
+        BASE_ILHAS,
+        BASE_VARIANTES,
+        BASE_VARIANTES_CELESTE,
+        BASE_VARIANTES_KOGEN,
+        BASE_VARIANTES_ABISSAL,
+    ] {
         for &(kind, item_id, min, max, chance) in t {
-            c.loot_tables.entry(kind as u16).or_default().push(LootEntry {
+            c.loot_tables
+                .entry(kind as u16)
+                .or_default()
+                .push(LootEntry {
+                    item_id,
+                    qty_min: min as u32,
+                    qty_max: max as u32,
+                    chance,
+                });
+        }
+    }
+    for (tier, item_id, min, max, chance) in linhas_da_pedra() {
+        c.farm_loot_tables
+            .entry(("Rock".into(), tier))
+            .or_default()
+            .push(LootEntry {
                 item_id,
                 qty_min: min as u32,
                 qty_max: max as u32,
                 chance,
             });
-        }
-    }
-    for (tier, item_id, min, max, chance) in linhas_da_pedra() {
-        c.farm_loot_tables.entry(("Rock".into(), tier)).or_default().push(LootEntry {
-            item_id,
-            qty_min: min as u32,
-            qty_max: max as u32,
-            chance,
-        });
     }
 }
 
@@ -910,12 +930,19 @@ mod testes_onde_obter {
     fn previa_do_drop_respeita_fallback_inativos_e_equipamento() {
         let mut c = cfg();
         let equipamento = shared::item_id::KATANA;
-        c.items.insert(equipamento, item(equipamento,false));
+        c.items.insert(equipamento, item(equipamento, false));
         c.items.get_mut(&HEALTH_POTION).unwrap().active = false;
-        c.loot_tables.get_mut(&0).unwrap().push(LootEntry { item_id: equipamento,qty_min:1,qty_max:1,chance:1. });
-        assert_eq!(c.itens_possiveis_do_mob(1),vec![COPPER]);
+        c.loot_tables.get_mut(&0).unwrap().push(LootEntry {
+            item_id: equipamento,
+            qty_min: 1,
+            qty_max: 1,
+            chance: 1.,
+        });
+        assert_eq!(c.itens_possiveis_do_mob(1), vec![COPPER]);
         for seed in 0..100 {
-            for (id,_) in c.roll_loot(1,seed) { assert!(c.itens_possiveis_do_mob(1).contains(&id)); }
+            for (id, _) in c.roll_loot(1, seed) {
+                assert!(c.itens_possiveis_do_mob(1).contains(&id));
+            }
         }
     }
 
@@ -1041,7 +1068,10 @@ mod testes_onde_obter {
         // Wood is also sold by the Prime Merchant since 16/11/2026 (ships).
         assert!(de(&f, WOOD_T1).contains(&FonteDeItem::Prime));
         assert_eq!(
-            de(&f, WOOD_T1).into_iter().filter(|x| *x != FonteDeItem::Prime).collect::<Vec<_>>(),
+            de(&f, WOOD_T1)
+                .into_iter()
+                .filter(|x| *x != FonteDeItem::Prime)
+                .collect::<Vec<_>>(),
             vec![FonteDeItem::Coleta {
                 tipo: 0,
                 chance: 1.0,
@@ -2006,7 +2036,11 @@ pub(crate) fn todos_os_kinds() -> &'static [KindInicial] {
                 .iter()
                 .find(|k| k.kind as u16 == var.species)
                 .unwrap_or_else(|| panic!("{}: species {} has no row", var.name, var.species));
-            v.push(KindInicial { kind: var.kind as i32, name: var.name, ..base.clone() });
+            v.push(KindInicial {
+                kind: var.kind as i32,
+                name: var.name,
+                ..base.clone()
+            });
         }
         v
     })
@@ -2054,7 +2088,9 @@ mod testes_de_praia {
     #[test]
     fn praia_sorteia_um_rei_em_quatro_e_nunca_bicho_comum() {
         let praia = shared::terreno::Bioma::Floresta;
-        let reis = (0..4000u64).filter(|s| kind_de_praia(praia, *s) == 9).count();
+        let reis = (0..4000u64)
+            .filter(|s| kind_de_praia(praia, *s) == 9)
+            .count();
         assert_eq!(reis, 1000);
         assert!((0..4000u64).all(|s| KINDS_DE_PRAIA.contains(&kind_de_praia(praia, s))));
         assert_eq!(bichos_de_praia(praia), vec![(8, 75), (9, 25)]);
@@ -2205,7 +2241,10 @@ mod testes_do_bestiario {
     #[test]
     fn todo_kind_do_bestiario_tem_linha() {
         for d in ARQUIPELAGO.iter() {
-            for k in kinds_do_bioma(d.bioma).iter().chain(kinds_de_praia_do_bioma(d.bioma)) {
+            for k in kinds_do_bioma(d.bioma)
+                .iter()
+                .chain(kinds_de_praia_do_bioma(d.bioma))
+            {
                 let _ = def(*k);
                 assert_ne!(*k, KIND_CHEFE, "{}: o chefe nao entra no sorteio", d.nome);
             }
@@ -2365,7 +2404,10 @@ mod testes_do_porte_dos_novos {
         let (def_min, def_max) = faixa(|k| k.def as f32);
 
         for d in ARQUIPELAGO.iter() {
-            for k in kinds_do_bioma(d.bioma).iter().chain(kinds_de_praia_do_bioma(d.bioma)) {
+            for k in kinds_do_bioma(d.bioma)
+                .iter()
+                .chain(kinds_de_praia_do_bioma(d.bioma))
+            {
                 let m = kind_inicial(*k).expect("known kind");
                 if bosque.iter().any(|b| b.kind == m.kind) {
                     continue; // ja' calibrado

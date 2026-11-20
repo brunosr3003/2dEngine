@@ -29,10 +29,15 @@ fn mob_daqui(baixo: u32, alto: u32) -> Option<(String, u16, u16)> {
         zonas
             .iter()
             .filter(|z| z.lv_max as u32 >= baixo && z.lv_min as u32 <= alto)
-            .max_by_key(|z| (z.lv_max as u32).min(alto) as i64 - (z.lv_min as u32).max(baixo) as i64)
+            .max_by_key(|z| {
+                (z.lv_max as u32).min(alto) as i64 - (z.lv_min as u32).max(baixo) as i64
+            })
             .and_then(|z| {
                 let kind = z.bichos.first()?.0;
-                let nome = nomes.get(&kind).cloned().unwrap_or_else(|| crate::icones_ui::nome_do_bicho(kind).to_string());
+                let nome = nomes
+                    .get(&kind)
+                    .cloned()
+                    .unwrap_or_else(|| crate::icones_ui::nome_do_bicho(kind).to_string());
                 Some((nome, z.lv_min, z.lv_max))
             })
     })
@@ -57,7 +62,12 @@ fn cor_do_atraso(a: u8) -> Color {
 }
 
 /// Draws the tab inside `r` (the bag's item area).
-pub fn desenha(r: Rect, nivel: u32, stats: Option<&shared::PlayerStats>, equip: &shared::Equipment) {
+pub fn desenha(
+    r: Rect,
+    nivel: u32,
+    stats: Option<&shared::PlayerStats>,
+    equip: &shared::Equipment,
+) {
     let nivel = nivel.max(1);
     let x = r.x + u(8.0);
     let w = r.w - u(16.0);
@@ -65,20 +75,38 @@ pub fn desenha(r: Rect, nivel: u32, stats: Option<&shared::PlayerStats>, equip: 
     estilo::texto_forte(
         x,
         y,
-        &format!("Your strength at level {}", shared::progressao::texto_de_nivel(nivel)),
+        &format!(
+            "Your strength at level {}",
+            shared::progressao::texto_de_nivel(nivel)
+        ),
         16,
         estilo::OURO,
     );
     y += u(10.0);
     let poder = stats.map_or(0, shared::dungeon::poder_de_stats);
     if let Some(s) = stats {
-        for (nome, c) in ["Attack", "Defense", "Health"].iter().zip(ajuda::comparar(nivel, s)) {
+        for (nome, c) in ["Attack", "Defense", "Health"]
+            .iter()
+            .zip(ajuda::comparar(nivel, s))
+        {
             y += u(22.0);
             let f = c.fracao();
             estilo::texto(x, y, nome, 13, estilo::TEXTO);
             let barra = Rect::new(x + u(70.0), y - u(11.0), w - u(200.0), u(12.0));
-            draw_rectangle(barra.x, barra.y, barra.w, barra.h, Color::new(1.0, 1.0, 1.0, 0.08));
-            draw_rectangle(barra.x, barra.y, barra.w * f.clamp(0.0, 1.0), barra.h, cor_da_fracao(f));
+            draw_rectangle(
+                barra.x,
+                barra.y,
+                barra.w,
+                barra.h,
+                Color::new(1.0, 1.0, 1.0, 0.08),
+            );
+            draw_rectangle(
+                barra.x,
+                barra.y,
+                barra.w * f.clamp(0.0, 1.0),
+                barra.h,
+                cor_da_fracao(f),
+            );
             estilo::texto(
                 barra.x + barra.w + u(8.0),
                 y,
@@ -88,7 +116,13 @@ pub fn desenha(r: Rect, nivel: u32, stats: Option<&shared::PlayerStats>, equip: 
             );
         }
         y += u(16.0);
-        estilo::texto(x, y, "Expected = a character of your level with gear of the level at +0.", 11, estilo::SUAVE);
+        estilo::texto(
+            x,
+            y,
+            "Expected = a character of your level with gear of the level at +0.",
+            11,
+            estilo::SUAVE,
+        );
     }
 
     // ── slot by slot ──
@@ -96,11 +130,16 @@ pub fn desenha(r: Rect, nivel: u32, stats: Option<&shared::PlayerStats>, equip: 
     estilo::texto_forte(x, y, "Gear", 14, estilo::OURO);
     let col = w / 2.0;
     for (k, (nome, p)) in ajuda::pecas(equip).iter().enumerate() {
-        let (cx, cy) = (x + (k % 2) as f32 * col, y + u(20.0) + (k / 2) as f32 * u(18.0));
+        let (cx, cy) = (
+            x + (k % 2) as f32 * col,
+            y + u(20.0) + (k / 2) as f32 * u(18.0),
+        );
         let cor = cor_do_atraso(ajuda::atraso(p, nivel));
         let txt = match p {
             Peca::Vazia => format!("{nome}: empty"),
-            Peca::Com { item_level, refino, .. } => format!("{nome}: item Lv {item_level} +{refino}"),
+            Peca::Com {
+                item_level, refino, ..
+            } => format!("{nome}: item Lv {item_level} +{refino}"),
         };
         estilo::texto_ajustado(&txt, cx, cy, col - u(8.0), 12, cor);
     }
@@ -131,7 +170,11 @@ pub fn desenha(r: Rect, nivel: u32, stats: Option<&shared::PlayerStats>, equip: 
     estilo::texto_ajustado(&caca, x, y, w, 13, estilo::TEXTO);
     y += u(18.0);
     let dg = match ajuda::dungeon_para(nivel, poder) {
-        Some(c) => format!("Dungeon: {} (Lv {})", c.nome, shared::progressao::texto_de_nivel(c.nivel_min)),
+        Some(c) => format!(
+            "Dungeon: {} (Lv {})",
+            c.nome,
+            shared::progressao::texto_de_nivel(c.nivel_min)
+        ),
         None => "Dungeon: none yet — get stronger first".into(),
     };
     estilo::texto_ajustado(&dg, x, y, w, 13, estilo::TEXTO);

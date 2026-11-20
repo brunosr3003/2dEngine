@@ -79,7 +79,12 @@ pub fn grupo_no_corpo(r: Rect, membros: &[String], world: &World) -> Option<Acao
     let tam = (12.0 * k).max(9.0) as u16;
     let mut acao = None;
     for (i, nome) in membros.iter().take(mostra).enumerate() {
-        let linha = Rect::new(r.x + 8.0 * s, r.y + i as f32 * altura, r.w - 16.0 * s, altura);
+        let linha = Rect::new(
+            r.x + 8.0 * s,
+            r.y + i as f32 * altura,
+            r.w - 16.0 * s,
+            altura,
+        );
         let jogador = world.ents.iter().find(|(_, ent)| {
             ent.meta.tag == shared::EntityTag::Player
                 && ent.meta.name.as_deref() == Some(nome.as_str())
@@ -92,13 +97,7 @@ pub fn grupo_no_corpo(r: Rect, membros: &[String], world: &World) -> Option<Acao
             linha.w,
             (altura - 5.0 * k).max(11.0),
         );
-        draw_rectangle(
-            barra.x,
-            barra.y,
-            barra.w,
-            barra.h,
-            e::FUNDO_ALTO,
-        );
+        draw_rectangle(barra.x, barra.y, barra.w, barra.h, e::FUNDO_ALTO);
         if linha.toca(p) {
             draw_rectangle(
                 barra.x,
@@ -129,7 +128,10 @@ pub fn grupo_no_corpo(r: Rect, membros: &[String], world: &World) -> Option<Acao
             None => "Out of range".to_string(),
         };
         let largura = e::medir(&direita, tam);
-        let rotulo = jogador.map_or_else(|| nome.clone(), |(_, ent)| shared::social::com_tag(&ent.meta.cla, nome));
+        let rotulo = jogador.map_or_else(
+            || nome.clone(),
+            |(_, ent)| shared::social::com_tag(&ent.meta.cla, nome),
+        );
         e::texto_ajustado(
             &rotulo,
             barra.x + 5.0 * k,
@@ -315,13 +317,7 @@ impl SocialHud {
                 e::TEXTO,
             );
             let y = linha.y + 24.0 * k;
-            draw_rectangle(
-                linha.x,
-                y,
-                linha.w,
-                15.0 * k,
-                e::FUNDO_ALTO,
-            );
+            draw_rectangle(linha.x, y, linha.w, 15.0 * k, e::FUNDO_ALTO);
             if let Some((id, ent)) = jogador {
                 let fracao = (ent.state.hp as f32 / ent.meta.hp_max.max(1) as f32).clamp(0., 1.);
                 draw_rectangle(
@@ -406,7 +402,9 @@ pub async fn previa() {
         for (i, nome) in nomes.iter().take(3).enumerate() {
             let id = EntityId(i as u32 + 1);
             world.apply(
-                vec![shared::EntityMeta { skins: 0, cla: String::new(),
+                vec![shared::EntityMeta {
+                    skins: 0,
+                    cla: String::new(),
                     pk: Default::default(),
                     auras: 0,
                     id,
@@ -418,7 +416,8 @@ pub async fn previa() {
                     nivel: 70,
                     desafio: None,
                     aparencia: 0,
-                    poder: 0, renascimentos: 0,
+                    poder: 0,
+                    renascimentos: 0,
                 }],
                 vec![shared::EntityState {
                     id,
@@ -446,7 +445,11 @@ pub async fn previa() {
                     .iter()
                     .take(2)
                     .map(|d| {
-                        shared::quests::QuestNet::from_def(d, shared::quests::quest_status::ACTIVE, 3)
+                        shared::quests::QuestNet::from_def(
+                            d,
+                            shared::quests::quest_status::ACTIVE,
+                            3,
+                        )
                     })
                     .collect(),
             );

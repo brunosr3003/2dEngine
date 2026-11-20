@@ -54,7 +54,12 @@ impl PrimeUi {
     }
 
     /// A message from the server. Returns a chat line, if any.
-    pub fn recebe(&mut self, aviso: AvisoPrime, agora: f64, nomes: &HashMap<u16, String>) -> Option<String> {
+    pub fn recebe(
+        &mut self,
+        aviso: AvisoPrime,
+        agora: f64,
+        nomes: &HashMap<u16, String>,
+    ) -> Option<String> {
         match aviso {
             AvisoPrime::Quadro(q) => {
                 if self.selecionado.is_none() {
@@ -70,8 +75,17 @@ impl PrimeUi {
                 self.aviso = Some((t.clone(), false, agora));
                 (!self.aberto).then_some(t)
             }
-            AvisoPrime::Comprou { item_id, qtd, total } => {
-                let t = format!("Bought {}× {} for {} gold.", milhar(qtd as u64), nome(item_id, nomes), milhar(total));
+            AvisoPrime::Comprou {
+                item_id,
+                qtd,
+                total,
+            } => {
+                let t = format!(
+                    "Bought {}× {} for {} gold.",
+                    milhar(qtd as u64),
+                    nome(item_id, nomes),
+                    milhar(total)
+                );
                 self.aviso = Some((t.clone(), true, agora));
                 Some(t)
             }
@@ -86,7 +100,10 @@ impl PrimeUi {
             return None;
         }
         let server_agora = q.agora + (agora - self.recebido_em) as i64;
-        Some(((server_agora - q.atualizado).max(0), q.proxima - server_agora))
+        Some((
+            (server_agora - q.atualizado).max(0),
+            q.proxima - server_agora,
+        ))
     }
 
     /// While open: ask for the board again a little after the next update.
@@ -106,15 +123,25 @@ impl PrimeUi {
         if !self.aberto {
             return Vec::new();
         }
-        estilo::no_painel(estilo::escala_do_painel(LARGURA, ALTURA), || self.desenha_na_escala(c, agora))
+        estilo::no_painel(estilo::escala_do_painel(LARGURA, ALTURA), || {
+            self.desenha_na_escala(c, agora)
+        })
     }
 
     fn desenha_na_escala(&mut self, c: &Contexto, agora: f64) -> Vec<PedidoPrime> {
         let mut saida = Vec::new();
         let f = estilo::fator_texto();
         let seguro = crate::hud_layout::tela_segura();
-        let (w, h) = ((LARGURA * f).min(seguro.w - 16.0), (ALTURA * f).min(seguro.h - 16.0));
-        let p = Rect::new(seguro.center().x - w * 0.5, seguro.center().y - h * 0.5, w, h);
+        let (w, h) = (
+            (LARGURA * f).min(seguro.w - 16.0),
+            (ALTURA * f).min(seguro.h - 16.0),
+        );
+        let p = Rect::new(
+            seguro.center().x - w * 0.5,
+            seguro.center().y - h * 0.5,
+            w,
+            h,
+        );
         crate::hud_layout::escurece(0.55);
         estilo::painel(p);
         let x = p.x + 18.0 * f;
@@ -132,13 +159,20 @@ impl PrimeUi {
         }
         let relogio = match self.relogio(agora) {
             Some((ha, falta)) if falta > 0 => {
-                format!("Updated {} ago · next update in {}", duracao(ha), duracao(falta))
+                format!(
+                    "Updated {} ago · next update in {}",
+                    duracao(ha),
+                    duracao(falta)
+                )
             }
             Some((ha, _)) => format!("Updated {} ago · updating…", duracao(ha)),
             None => "Waiting for the first market update…".into(),
         };
         estilo::texto_ajustado(
-            &format!("Market price +{}% · gold only · {relogio}", shared::prime::MARKUP_PCT),
+            &format!(
+                "Market price +{}% · gold only · {relogio}",
+                shared::prime::MARKUP_PCT
+            ),
             x,
             p.y + 58.0 * f,
             larg,
@@ -151,7 +185,11 @@ impl PrimeUi {
         let rod = Rect::new(x, p.y + p.h - rod_h - 12.0 * f, larg, rod_h);
         let lista = Rect::new(x, p.y + 72.0 * f, larg, rod.y - 8.0 * f - (p.y + 72.0 * f));
 
-        let linhas: Vec<LinhaPrime> = self.quadro.as_ref().map(|q| q.linhas.clone()).unwrap_or_default();
+        let linhas: Vec<LinhaPrime> = self
+            .quadro
+            .as_ref()
+            .map(|q| q.linhas.clone())
+            .unwrap_or_default();
         if linhas.is_empty() {
             estilo::texto_ajustado(
                 "The Prime Merchant is waiting for the market's prices. Come back in a few minutes.",
@@ -167,12 +205,21 @@ impl PrimeUi {
         let cabem = ((lista.h / (alto + 4.0 * f)).floor() as usize).max(1);
         let (_, roda) = mouse_wheel();
         if roda != 0.0 && lista.toca(Vec2::from(mouse_position())) {
-            self.rolagem = if roda < 0.0 { self.rolagem + 1 } else { self.rolagem.saturating_sub(1) };
+            self.rolagem = if roda < 0.0 {
+                self.rolagem + 1
+            } else {
+                self.rolagem.saturating_sub(1)
+            };
         }
         self.rolagem = self.rolagem.min(linhas.len().saturating_sub(cabem));
         let estreito = larg < 560.0 * f;
         for (k, l) in linhas.iter().skip(self.rolagem).take(cabem).enumerate() {
-            let r = Rect::new(lista.x, lista.y + k as f32 * (alto + 4.0 * f), lista.w - 30.0 * f, alto);
+            let r = Rect::new(
+                lista.x,
+                lista.y + k as f32 * (alto + 4.0 * f),
+                lista.w - 30.0 * f,
+                alto,
+            );
             let ativo = self.selecionado == Some(l.item_id);
             let m = Vec2::from(mouse_position());
             let sobre = r.toca(m);
@@ -194,20 +241,38 @@ impl PrimeUi {
             if crate::ui::botao(baixo, "v", self.rolagem + cabem < linhas.len()) {
                 self.rolagem += cabem.max(2) - 1;
             }
-            let trilho = Rect::new(bx + 9.0 * f, cima.y + cima.h + 4.0 * f, 8.0 * f, baixo.y - cima.y - cima.h - 8.0 * f);
-            estilo::scroll(trilho, self.rolagem as f32 / linhas.len() as f32, cabem as f32 / linhas.len() as f32);
+            let trilho = Rect::new(
+                bx + 9.0 * f,
+                cima.y + cima.h + 4.0 * f,
+                8.0 * f,
+                baixo.y - cima.y - cima.h - 8.0 * f,
+            );
+            estilo::scroll(
+                trilho,
+                self.rolagem as f32 / linhas.len() as f32,
+                cabem as f32 / linhas.len() as f32,
+            );
         }
 
         // ── footer: the picked item, quantity, Buy ──
         estilo::ret_arredondado(rod, estilo::RAIO, estilo::FUNDO_BAIXO);
-        let sel = self.selecionado.and_then(|id| linhas.iter().find(|l| l.item_id == id));
+        let sel = self
+            .selecionado
+            .and_then(|id| linhas.iter().find(|l| l.item_id == id));
         if let Some(l) = sel {
             let resta = l.resta_hoje() as u64;
             let por_ouro = c.ouro / l.preco.max(1);
-            let max = resta.min(por_ouro).min(shared::prime::QTD_MAX_POR_COMPRA as u64);
+            let max = resta
+                .min(por_ouro)
+                .min(shared::prime::QTD_MAX_POR_COMPRA as u64);
             self.qtd = self.qtd.clamp(1, max.max(1));
             estilo::texto_ajustado(
-                &format!("{} · {} gold each · {} left today", nome(l.item_id, c.nomes), milhar(l.preco), milhar(resta)),
+                &format!(
+                    "{} · {} gold each · {} left today",
+                    nome(l.item_id, c.nomes),
+                    milhar(l.preco),
+                    milhar(resta)
+                ),
                 rod.x + 12.0 * f,
                 rod.y + 24.0 * f,
                 rod.w - 24.0 * f,
@@ -215,14 +280,28 @@ impl PrimeUi {
                 estilo::TEXTO,
             );
             let comprar_w = (200.0 * f).min(rod.w * 0.42);
-            let sel_r = Rect::new(rod.x + 12.0 * f, rod.y + 58.0 * f, rod.w - comprar_w - 36.0 * f, 46.0 * f);
+            let sel_r = Rect::new(
+                rod.x + 12.0 * f,
+                rod.y + 58.0 * f,
+                rod.w - comprar_w - 36.0 * f,
+                46.0 * f,
+            );
             seletor(sel_r, &mut self.qtd, 1, max.max(1), f);
             let total = l.preco.saturating_mul(self.qtd);
             let pode = max > 0 && total <= c.ouro;
-            let b = Rect::new(rod.x + rod.w - comprar_w - 12.0 * f, sel_r.y, comprar_w, 46.0 * f);
+            let b = Rect::new(
+                rod.x + rod.w - comprar_w - 12.0 * f,
+                sel_r.y,
+                comprar_w,
+                46.0 * f,
+            );
             let rotulo = format!("Buy · {} gold", milhar(total));
             if crate::ui::botao(b, &rotulo, pode) && pode {
-                saida.push(PedidoPrime::Comprar { item_id: l.item_id, qtd: self.qtd as u32, preco_visto: l.preco });
+                saida.push(PedidoPrime::Comprar {
+                    item_id: l.item_id,
+                    qtd: self.qtd as u32,
+                    preco_visto: l.preco,
+                });
             }
             let motivo = if resta == 0 {
                 Some("Daily limit reached. Come back tomorrow.")
@@ -232,13 +311,26 @@ impl PrimeUi {
                 None
             };
             if let Some(m) = motivo {
-                estilo::texto(rod.x + 12.0 * f, rod.y + rod.h - 10.0 * f, m, 12, estilo::VERMELHO);
+                estilo::texto(
+                    rod.x + 12.0 * f,
+                    rod.y + rod.h - 10.0 * f,
+                    m,
+                    12,
+                    estilo::VERMELHO,
+                );
             }
         }
         if let Some((texto, ok, quando)) = &self.aviso {
             if agora - quando < 6.0 {
                 let cor = if *ok { estilo::VERDE } else { estilo::VERMELHO };
-                estilo::texto_ajustado(texto, rod.x + 12.0 * f, rod.y + 44.0 * f, rod.w - 24.0 * f, 12, cor);
+                estilo::texto_ajustado(
+                    texto,
+                    rod.x + 12.0 * f,
+                    rod.y + 44.0 * f,
+                    rod.w - 24.0 * f,
+                    12,
+                    cor,
+                );
             }
         }
         saida
@@ -249,7 +341,10 @@ fn nome(id: u16, nomes: &HashMap<u16, String>) -> String {
     if shared::prime::e_energia(id) {
         return "Energy ×1,000".into();
     }
-    nomes.get(&id).cloned().unwrap_or_else(|| format!("item {id}"))
+    nomes
+        .get(&id)
+        .cloned()
+        .unwrap_or_else(|| format!("item {id}"))
 }
 
 /// "45s", "4m 10s", "1h 5m".
@@ -270,22 +365,54 @@ fn linha(r: Rect, l: &LinhaPrime, c: &Contexto, f: f32, estreito: bool) {
     if shared::prime::e_energia(l.item_id) {
         estilo::icone_energia(icone.center(), icone.w * 0.9);
     } else {
-        crate::icones::icone_com_3d(l.item_id, icone, shared::item_id::cor_de_id(l.item_id), None, Some((c.vox, c.solido)));
+        crate::icones::icone_com_3d(
+            l.item_id,
+            icone,
+            shared::item_id::cor_de_id(l.item_id),
+            None,
+            Some((c.vox, c.solido)),
+        );
     }
     let x = icone.x + icone.w + 10.0 * f;
     // Right to left: price, change, sparkline.
     let preco = format!("{} gold", milhar(l.preco));
     let preco_w = estilo::medir_forte(&preco, 16).max(90.0 * f);
     let xp = r.x + r.w - 12.0 * f - preco_w;
-    estilo::texto_forte(xp + preco_w - estilo::medir_forte(&preco, 16), r.y + 26.0 * f, &preco, 16, estilo::OURO);
+    estilo::texto_forte(
+        xp + preco_w - estilo::medir_forte(&preco, 16),
+        r.y + 26.0 * f,
+        &preco,
+        16,
+        estilo::OURO,
+    );
     variacao(Rect::new(xp, r.y + 34.0 * f, preco_w, 16.0 * f), l, f);
     let spark_w = if estreito { 70.0 * f } else { 120.0 * f };
-    let spark = Rect::new(xp - 14.0 * f - spark_w, r.y + 10.0 * f, spark_w, r.h - 20.0 * f);
+    let spark = Rect::new(
+        xp - 14.0 * f - spark_w,
+        r.y + 10.0 * f,
+        spark_w,
+        r.h - 20.0 * f,
+    );
     sparkline(spark, &l.historico, f);
     let largura_nome = (spark.x - x - 8.0 * f).max(50.0 * f);
-    estilo::texto_ajustado(&nome(l.item_id, c.nomes), x, r.y + 24.0 * f, largura_nome, 15, estilo::TEXTO);
-    let hoje = format!("Today {}/{}", milhar(l.comprado_hoje as u64), milhar(l.limite_dia as u64));
-    let cor = if l.resta_hoje() == 0 { estilo::VERMELHO } else { estilo::SUAVE };
+    estilo::texto_ajustado(
+        &nome(l.item_id, c.nomes),
+        x,
+        r.y + 24.0 * f,
+        largura_nome,
+        15,
+        estilo::TEXTO,
+    );
+    let hoje = format!(
+        "Today {}/{}",
+        milhar(l.comprado_hoje as u64),
+        milhar(l.limite_dia as u64)
+    );
+    let cor = if l.resta_hoje() == 0 {
+        estilo::VERMELHO
+    } else {
+        estilo::SUAVE
+    };
     estilo::texto_ajustado(&hoje, x, r.y + 44.0 * f, largura_nome, 12, cor);
 }
 
@@ -293,7 +420,13 @@ fn linha(r: Rect, l: &LinhaPrime, c: &Contexto, f: f32, estreito: bool) {
 fn variacao(r: Rect, l: &LinhaPrime, f: f32) {
     let Some(pct) = l.variacao_pct() else {
         let t = "new";
-        estilo::texto(r.x + r.w - estilo::medir(t, 12), r.y + 12.0 * f, t, 12, estilo::SUAVE);
+        estilo::texto(
+            r.x + r.w - estilo::medir(t, 12),
+            r.y + 12.0 * f,
+            t,
+            12,
+            estilo::SUAVE,
+        );
         return;
     };
     let (cor, sobe) = if pct > 0.005 {
@@ -310,26 +443,57 @@ fn variacao(r: Rect, l: &LinhaPrime, f: f32) {
     let c = vec2(tx - 9.0 * f, r.y + 7.0 * f);
     let s = 5.0 * f;
     match sobe {
-        Some(true) => draw_triangle(vec2(c.x, c.y - s), vec2(c.x - s, c.y + s * 0.8), vec2(c.x + s, c.y + s * 0.8), cor),
-        Some(false) => draw_triangle(vec2(c.x, c.y + s), vec2(c.x - s, c.y - s * 0.8), vec2(c.x + s, c.y - s * 0.8), cor),
+        Some(true) => draw_triangle(
+            vec2(c.x, c.y - s),
+            vec2(c.x - s, c.y + s * 0.8),
+            vec2(c.x + s, c.y + s * 0.8),
+            cor,
+        ),
+        Some(false) => draw_triangle(
+            vec2(c.x, c.y + s),
+            vec2(c.x - s, c.y - s * 0.8),
+            vec2(c.x + s, c.y - s * 0.8),
+            cor,
+        ),
         None => draw_rectangle(c.x - s, c.y - 1.0 * f, 2.0 * s, 2.0 * f, cor),
     }
 }
 
 /// The last price points as a line, scaled to their own min..max.
 fn sparkline(r: Rect, pontos: &[u64], f: f32) {
-    estilo::ret_arredondado(r, estilo::RAIO_PEQUENO, estilo::alfa(estilo::FUNDO_BAIXO, 0.6));
+    estilo::ret_arredondado(
+        r,
+        estilo::RAIO_PEQUENO,
+        estilo::alfa(estilo::FUNDO_BAIXO, 0.6),
+    );
     if pontos.len() < 2 {
-        draw_line(r.x + 4.0 * f, r.center().y, r.x + r.w - 4.0 * f, r.center().y, 1.5 * f, estilo::alfa(estilo::SUAVE, 0.6));
+        draw_line(
+            r.x + 4.0 * f,
+            r.center().y,
+            r.x + r.w - 4.0 * f,
+            r.center().y,
+            1.5 * f,
+            estilo::alfa(estilo::SUAVE, 0.6),
+        );
         return;
     }
-    let (lo, hi) = pontos.iter().fold((u64::MAX, 0), |(a, b), &v| (a.min(v), b.max(v)));
+    let (lo, hi) = pontos
+        .iter()
+        .fold((u64::MAX, 0), |(a, b), &v| (a.min(v), b.max(v)));
     let faixa = (hi - lo).max(1) as f32;
-    let cor = if pontos.last() >= pontos.first() { estilo::VERDE } else { estilo::VERMELHO };
+    let cor = if pontos.last() >= pontos.first() {
+        estilo::VERDE
+    } else {
+        estilo::VERMELHO
+    };
     let n = pontos.len() - 1;
     let ponto = |i: usize| {
         let px = r.x + 4.0 * f + (r.w - 8.0 * f) * i as f32 / n as f32;
-        let py = if hi == lo { r.center().y } else { r.y + r.h - 4.0 * f - (r.h - 8.0 * f) * (pontos[i] - lo) as f32 / faixa };
+        let py = if hi == lo {
+            r.center().y
+        } else {
+            r.y + r.h - 4.0 * f - (r.h - 8.0 * f) * (pontos[i] - lo) as f32 / faixa
+        };
         vec2(px, py)
     };
     for i in 0..n {
@@ -362,9 +526,20 @@ fn seletor(r: Rect, valor: &mut u64, min: u64, max: u64, f: f32) {
         }
     }
     *valor = (*valor).clamp(min, max.max(min));
-    let meio = Rect::new(rects[1].x + bw + 4.0 * f, r.y, rects[2].x - 4.0 * f - (rects[1].x + bw + 4.0 * f), r.h);
+    let meio = Rect::new(
+        rects[1].x + bw + 4.0 * f,
+        r.y,
+        rects[2].x - 4.0 * f - (rects[1].x + bw + 4.0 * f),
+        r.h,
+    );
     estilo::ret_arredondado(meio, estilo::RAIO_PEQUENO, estilo::FUNDO);
-    estilo::texto_centro_forte(meio.center().x, meio.center().y + 6.0 * f, &milhar(*valor), 16, estilo::TEXTO);
+    estilo::texto_centro_forte(
+        meio.center().x,
+        meio.center().y + 6.0 * f,
+        &milhar(*valor),
+        16,
+        estilo::TEXTO,
+    );
 }
 
 #[cfg(test)]
@@ -373,7 +548,13 @@ mod testes {
 
     fn quadro(atualizado: i64) -> QuadroPrime {
         QuadroPrime {
-            linhas: vec![LinhaPrime { item_id: shared::item_id::DARKSTEEL, preco: 12, historico: vec![10, 12], limite_dia: 50_000, comprado_hoje: 0 }],
+            linhas: vec![LinhaPrime {
+                item_id: shared::item_id::DARKSTEEL,
+                preco: 12,
+                historico: vec![10, 12],
+                limite_dia: 50_000,
+                comprado_hoje: 0,
+            }],
             agora: 1_000,
             atualizado,
             proxima: atualizado + 300,

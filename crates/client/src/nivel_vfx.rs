@@ -225,16 +225,38 @@ pub fn desenha_faixa(e: &SubiuDeNivel, nivel: u32) {
     let a = vis * vis;
     // POP: it lands bigger and settles in the first 12% (an overshoot reads
     // as a celebration; a fade-in reads as a notice).
-    let pop = if f < 0.12 { 1.0 + 0.45 * (1.0 - f / 0.12) } else { 1.0 };
+    let pop = if f < 0.12 {
+        1.0 + 0.45 * (1.0 - f / 0.12)
+    } else {
+        1.0
+    };
     let tam = (46.0 * pop) as u16;
     let texto = format!("LEVEL {nivel}");
     let cx = seguro.center().x;
     let cima = y - crate::hud_estilo::u(34.0);
-    crate::hud_estilo::texto_centro_forte(cx + 2.0, cima + 2.0, "LEVEL UP!", 20, Color::new(0.0, 0.0, 0.0, 0.5 * a));
-    crate::hud_estilo::texto_centro_forte(cx, cima, "LEVEL UP!", 20, Color::new(1.0, 0.95, 0.78, a));
+    crate::hud_estilo::texto_centro_forte(
+        cx + 2.0,
+        cima + 2.0,
+        "LEVEL UP!",
+        20,
+        Color::new(0.0, 0.0, 0.0, 0.5 * a),
+    );
+    crate::hud_estilo::texto_centro_forte(
+        cx,
+        cima,
+        "LEVEL UP!",
+        20,
+        Color::new(1.0, 0.95, 0.78, a),
+    );
     // A gold glow behind the number: three offset copies, faint.
     for (dx, dy) in [(-3.0, 0.0), (3.0, 0.0), (0.0, -3.0), (0.0, 3.0)] {
-        crate::hud_estilo::texto_centro_forte(cx + dx, y + dy, &texto, tam, Color::new(1.0, 0.7, 0.2, 0.22 * a));
+        crate::hud_estilo::texto_centro_forte(
+            cx + dx,
+            y + dy,
+            &texto,
+            tam,
+            Color::new(1.0, 0.7, 0.2, 0.22 * a),
+        );
     }
     crate::hud_estilo::texto_centro_forte(
         cx + 2.0,

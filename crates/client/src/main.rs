@@ -10,9 +10,14 @@
 
 #[allow(unused_imports)]
 use crate::ui::Toque as _;
-mod api;
-mod auto_combate;
 mod ajuda_ui;
+mod api;
+/// The path tree's vector glyphs (one per stat).
+mod arvore_icones;
+/// The PATH TREE screen (rebirth phase 2, `shared::arvore`).
+mod arvore_ui;
+mod atualizacao;
+mod auto_combate;
 mod auto_dungeon;
 mod auto_missao;
 mod auto_resumo;
@@ -25,65 +30,53 @@ mod bolsa;
 mod colecao;
 mod combinar_anim;
 mod craft_ui;
-mod dungeon_ui;
+mod desktop;
 mod dungeon_cenario;
 mod dungeon_recompensas;
-mod nivel_ui;
-mod recompensas_ui;
-mod reconexao;
+mod dungeon_ui;
 mod efeitos;
 mod energia_vfx;
 mod entrada;
-mod novidades;
-mod atualizacao;
-mod desktop;
 mod evolucao_skills;
 mod ficha_ui;
-/// The PATH TREE screen (rebirth phase 2, `shared::arvore`).
-mod arvore_ui;
-/// The path tree's vector glyphs (one per stat).
-mod arvore_icones;
+mod nivel_ui;
+mod novidades;
+mod recompensas_ui;
+mod reconexao;
 // Rebirth phase 4: the tree's actives in skill slots 4–6, and invisibility.
+mod abismo;
 mod ativas;
-mod invisibilidade;
-mod mar_casco;
+mod capacete_abissal;
 #[cfg(debug_assertions)]
 mod conves_previa;
-mod mar_cena;
-mod mar_temas;
-mod mar_ui;
-mod mar_combate_ui;
-mod mar_rota;
-/// The sailing camera (sea HUD clean-up): lower, behind the heading.
-mod mar_camera;
-/// The ESSENCE SHOP screen (rebirth phase 3, `shared::essencia`).
-mod loja_essencia_ui;
 mod foco;
 mod forja_ui;
 mod ganhos;
 mod gpu_estatica;
-mod luzes;
-mod abismo;
-mod capacete_abissal;
-mod marinhos;
-mod hidra;
 mod habilidades;
 mod habilidades_input;
+mod hidra;
 mod hud;
+mod invisibilidade;
+/// The ESSENCE SHOP screen (rebirth phase 3, `shared::essencia`).
+mod loja_essencia_ui;
+mod luzes;
+/// The sailing camera (sea HUD clean-up): lower, behind the heading.
+mod mar_camera;
+mod mar_casco;
+mod mar_cena;
+mod mar_combate_ui;
+mod mar_rota;
+mod mar_temas;
+mod mar_ui;
+mod marinhos;
 mod porao_ui;
 // A prévia da porta é só do desktop em debug, como a do HUD: ela usa alvo com
 // profundidade, que no iOS some.
-#[cfg(all(debug_assertions, not(any(target_os = "ios", target_os = "android"))))]
-mod previa_porta;
-mod previa_bestiary;
-#[cfg(all(debug_assertions, not(any(target_os = "ios", target_os = "android"))))]
-mod renascimento_previa;
-mod porao_planta;
-#[cfg(all(debug_assertions, not(any(target_os = "ios", target_os = "android"))))]
-mod previa_hud;
-mod hud_estilo;
+mod auras;
 mod hud_custom;
 mod hud_editor;
+mod hud_estilo;
 mod hud_layout;
 mod icone_npc;
 mod icones;
@@ -93,19 +86,26 @@ mod login_google;
 mod loja;
 mod lojas;
 mod menu;
-mod mobs_ui;
 mod mercado_ui;
 mod missoes;
-mod sons;
-mod auras;
+mod mobs_ui;
 mod nativo;
 mod oficina_ui;
 mod pets_ui;
 mod pk_ui;
+mod porao_planta;
+mod previa_bestiary;
+#[cfg(all(debug_assertions, not(any(target_os = "ios", target_os = "android"))))]
+mod previa_hud;
+#[cfg(all(debug_assertions, not(any(target_os = "ios", target_os = "android"))))]
+mod previa_porta;
+#[cfg(all(debug_assertions, not(any(target_os = "ios", target_os = "android"))))]
+mod renascimento_previa;
 mod rolagem;
-mod social_ui;
-mod social_hud;
 mod seguir;
+mod social_hud;
+mod social_ui;
+mod sons;
 mod teclado_virtual;
 
 /// Pedacos de terreno em volta do jogador que precisam existir pra tela de
@@ -113,8 +113,13 @@ mod teclado_virtual;
 const RAIO_DO_CARREGANDO: i32 = 3;
 mod agua;
 mod auto_coleta;
+mod avaliacao;
+mod aviso_global;
 mod barra;
+mod benchmark;
+mod benchmark_ui;
 mod camera_suave;
+mod chat_ui;
 mod chefe_anim;
 mod coleta_hud;
 mod colonia_ui;
@@ -122,31 +127,30 @@ mod config_barra;
 mod config_coleta;
 mod config_combate;
 mod config_graficos;
-mod benchmark;
-mod filme;
-mod filme_luta;
-mod relogio;
-mod benchmark_ui;
 mod config_interface;
 mod confirmar;
 mod construcoes;
 mod corrida;
+mod cura_vfx;
 mod densidade;
 mod dialogo;
 mod diarias;
 mod economia;
 mod escolha_npc;
+mod estaleiro_ui;
+mod eventos_ui;
+mod filme;
+mod filme_luta;
 mod gesto_camera;
 mod guarda_roupa_ui;
 mod habilidades_vfx;
+mod ilhas_aereas;
 mod ir_para;
 mod joystick;
 mod lascas;
 mod lembranca;
 mod loja_tp;
 mod magica_ui;
-mod pocoes_xp;
-mod prime_ui;
 mod map;
 mod mapa;
 mod menu_missoes;
@@ -155,34 +159,30 @@ mod morte;
 mod mundo_ui;
 mod net;
 mod nivel_vfx;
-mod cura_vfx;
-mod renascimento_vfx;
+mod ofertas_ui;
 mod onde_obter;
 mod parado;
 mod personagens;
+mod pocoes_xp;
+mod portal_ilhas_ui;
 mod preferencias;
 mod presenca_ui;
-mod ofertas_ui;
-mod ranking_ui;
-mod troca_ui;
-mod avaliacao;
-mod aviso_global;
-mod eventos_ui;
-mod chat_ui;
 mod previa_skills;
+mod prime_ui;
+mod ranking_ui;
 mod rastro;
+mod relogio;
+mod renascimento_vfx;
 mod render3d;
 mod rig;
 mod telegrafico;
 mod terreno;
-mod ilhas_aereas;
-mod transito;
 mod toque;
+mod transito;
+mod troca_ui;
 mod ui;
 mod vegetacao;
 mod viagem_ui;
-mod estaleiro_ui;
-mod portal_ilhas_ui;
 mod vox;
 mod world;
 
@@ -1263,7 +1263,8 @@ async fn main() {
         if let Some(dir) = &previa_login {
             previa_quadro += 1;
             if previa_quadro % 120 == 119 {
-                let nome = ["servidores", "login", "cadastro", "esqueci"][(previa_quadro / 120) as usize];
+                let nome =
+                    ["servidores", "login", "cadastro", "esqueci"][(previa_quadro / 120) as usize];
                 get_screen_data().export_png(&format!("{dir}/login-{nome}.png"));
                 if previa_quadro / 120 >= 3 {
                     return;
@@ -1383,7 +1384,12 @@ fn alvo_da_trava(painel_aberto: bool) -> &'static [u16] {
 /// The main action of a pre-game card (gold, bigger text).
 fn botao_principal(r: Rect, rotulo: &str, ativo: bool) -> bool {
     let sobre = ativo && r.toca(Vec2::from(mouse_position()));
-    let e = hud_estilo::estado(sobre, is_mouse_button_down(MouseButton::Left), !ativo, false);
+    let e = hud_estilo::estado(
+        sobre,
+        is_mouse_button_down(MouseButton::Left),
+        !ativo,
+        false,
+    );
     hud_estilo::botao(r, "", e, ativo);
     hud_estilo::texto_centro_forte(
         r.x + r.w * 0.5,
@@ -1404,9 +1410,22 @@ fn link_k(r: Rect, rotulo: &str, k: f32) -> bool {
     let sobre = r.toca(Vec2::from(mouse_position()));
     let w = hud_estilo::medir(rotulo, 14);
     let x = r.x + r.w - w;
-    hud_estilo::texto(x, r.y + r.h * 0.5 + 5.0 * k, rotulo, 14, if sobre { ui::OURO_CLARO } else { ui::OURO });
+    hud_estilo::texto(
+        x,
+        r.y + r.h * 0.5 + 5.0 * k,
+        rotulo,
+        14,
+        if sobre { ui::OURO_CLARO } else { ui::OURO },
+    );
     if sobre {
-        draw_line(x, r.y + r.h * 0.5 + 8.0 * k, x + w, r.y + r.h * 0.5 + 8.0 * k, 1.0, ui::OURO);
+        draw_line(
+            x,
+            r.y + r.h * 0.5 + 8.0 * k,
+            x + w,
+            r.y + r.h * 0.5 + 8.0 * k,
+            1.0,
+            ui::OURO,
+        );
     }
     sobre && foco::clique()
 }
@@ -1427,8 +1446,13 @@ struct TelaInicial {
 
 impl TelaInicial {
     fn nova(w: f32, h: f32, seguro: [f32; 4]) -> Self {
-        let (aw, ah) = ((w - seguro[1] - seguro[3]).max(1.0), (h - seguro[0] - seguro[2]).max(1.0));
-        let k = (aw / BASE_INICIAL.0).min(ah / BASE_INICIAL.1).clamp(0.5, 2.2);
+        let (aw, ah) = (
+            (w - seguro[1] - seguro[3]).max(1.0),
+            (h - seguro[0] - seguro[2]).max(1.0),
+        );
+        let k = (aw / BASE_INICIAL.0)
+            .min(ah / BASE_INICIAL.1)
+            .clamp(0.5, 2.2);
         Self {
             k,
             ox: seguro[1] + (aw - BASE_INICIAL.0 * k) * 0.5,
@@ -1442,7 +1466,12 @@ impl TelaInicial {
 
     /// A rect in design units, on screen.
     fn r(&self, x: f32, y: f32, w: f32, h: f32) -> Rect {
-        Rect::new(self.ox + x * self.k, self.oy + y * self.k, w * self.k, h * self.k)
+        Rect::new(
+            self.ox + x * self.k,
+            self.oy + y * self.k,
+            w * self.k,
+            h * self.k,
+        )
     }
 
     /// The card on the right (its full box).
@@ -1464,7 +1493,11 @@ fn peca(c: Rect, k: f32, x: f32, y: f32, w: f32, h: f32) -> Rect {
 /// FORGOT PASSWORD: e-mail, send, back.
 fn layout_do_esqueci(c: Rect, k: f32) -> [Rect; 3] {
     let w = c.w / k;
-    [peca(c, k, 0.0, 44.0, w, 42.0), peca(c, k, 0.0, 100.0, w, 46.0), peca(c, k, 0.0, 156.0, w, 40.0)]
+    [
+        peca(c, k, 0.0, 44.0, w, 42.0),
+        peca(c, k, 0.0, 100.0, w, 46.0),
+        peca(c, k, 0.0, 156.0, w, 40.0),
+    ]
 }
 
 /// SIGN-UP: username, e-mail, password, repeat, create, back.
@@ -1512,11 +1545,17 @@ mod testes_do_login {
         ] {
             let t = TelaInicial::nova(w, h, seguro);
             let card = t.cartao();
-            assert!(card.x >= 0.0 && card.y >= 0.0 && card.x + card.w <= w && card.y + card.h <= h, "{nome_tela} {w}x{h}: card fora da tela");
+            assert!(
+                card.x >= 0.0 && card.y >= 0.0 && card.x + card.w <= w && card.y + card.h <= h,
+                "{nome_tela} {w}x{h}: card fora da tela"
+            );
             let v = pecas(t.conteudo(), t.k);
             for (i, (n, a)) in v.iter().enumerate() {
                 assert!(
-                    a.x >= card.x && a.y >= card.y && a.x + a.w <= card.x + card.w + 0.01 && a.y + a.h <= card.y + card.h + 0.01,
+                    a.x >= card.x
+                        && a.y >= card.y
+                        && a.x + a.w <= card.x + card.w + 0.01
+                        && a.y + a.h <= card.y + card.h + 0.01,
                     "{nome_tela} {w}x{h}: {n} vaza o card: {a:?}"
                 );
                 for (m, b) in v.iter().skip(i + 1) {
@@ -1530,10 +1569,12 @@ mod testes_do_login {
     fn a_tela_de_login_nao_se_sobrepoe() {
         confere_cartao("login", &|c, k| {
             let p = layout_do_login(c, k);
-            ["username", "senha", "lembrar", "entrar", "ou", "google", "criar", "esqueci"]
-                .into_iter()
-                .zip(p)
-                .collect()
+            [
+                "username", "senha", "lembrar", "entrar", "ou", "google", "criar", "esqueci",
+            ]
+            .into_iter()
+            .zip(p)
+            .collect()
         });
     }
 
@@ -1587,7 +1628,10 @@ mod testes_do_login {
     fn a_tela_de_cadastro_nao_se_sobrepoe() {
         confere_cartao("cadastro", &|c, k| {
             let p = layout_do_cadastro(c, k);
-            ["username", "e-mail", "senha", "repetir", "criar", "voltar"].into_iter().zip(p).collect()
+            ["username", "e-mail", "senha", "repetir", "criar", "voltar"]
+                .into_iter()
+                .zip(p)
+                .collect()
         });
     }
 
@@ -1641,7 +1685,9 @@ impl Jogo {
             {
                 let terreno = self.terreno.as_ref();
                 self.world.tick(get_frame_time(), &|x, z, camada| {
-                    terreno.map_or(0.0, |t| t.altura_apoio_na(x, z, shared::ENTITY_RADIUS, camada))
+                    terreno.map_or(0.0, |t| {
+                        t.altura_apoio_na(x, z, shared::ENTITY_RADIUS, camada)
+                    })
                 });
             }
             self.subiu_de_nivel.passo(get_frame_time());
@@ -1704,7 +1750,9 @@ impl Jogo {
                     }
                     Some(mapa::Entrada::Dungeon(id)) => {
                         self.mapa.aberto = false;
-                        for pedido in self.dungeon.abrir_em(id) { self.envia(pedido); }
+                        for pedido in self.dungeon.abrir_em(id) {
+                            self.envia(pedido);
+                        }
                     }
                     Some(mapa::Entrada::Ir(alvo)) => {
                         self.iniciar_ir_para(alvo);
@@ -1757,7 +1805,8 @@ impl Jogo {
                 self.mapa.destino_mar = self.mar_rota.destino().filter(|_| mar_ui::no_mar());
             }
             // Indo sozinho e nada segurando: depois de 1,5 s andando, corre.
-            let indo_sozinho = self.mapa.viagem.ativa() || self.mar_rota.ativa()
+            let indo_sozinho = self.mapa.viagem.ativa()
+                || self.mar_rota.ativa()
                 || self.ir_para.ativo()
                 || self.rastro.ativo()
                 || self.auto_missao.etapa() == Some(auto_missao::Etapa::Indo);
@@ -1823,7 +1872,11 @@ impl Jogo {
                 t.atualiza(
                     centro,
                     // At sea one chunk more, to fade out over (`mar_cena::raio_no_mar`).
-                    if mar_ui::no_mar() { mar_cena::raio_no_mar() } else { config_graficos::raio_terreno() },
+                    if mar_ui::no_mar() {
+                        mar_cena::raio_no_mar()
+                    } else {
+                        config_graficos::raio_terreno()
+                    },
                     if carregando { 40 } else { 4 },
                 );
             }
@@ -1938,10 +1991,11 @@ impl Jogo {
         let agora = get_time();
         if !eventos.is_empty() {
             self.ultimo_dado = agora;
-        } else if matches!(self.tela, Tela::Jogando)
-            && agora - self.ultimo_dado > SILENCIO_MAX_S
-        {
-            println!("[reconexao] servidor mudo ha' {:.0} s", agora - self.ultimo_dado);
+        } else if matches!(self.tela, Tela::Jogando) && agora - self.ultimo_dado > SILENCIO_MAX_S {
+            println!(
+                "[reconexao] servidor mudo ha' {:.0} s",
+                agora - self.ultimo_dado
+            );
             self.ultimo_dado = agora;
             eventos.push(NetEvent::Disconnected(
                 "no data from the server for a few seconds".into(),
@@ -1973,7 +2027,8 @@ impl Jogo {
                             Some(r) => r.motivo = por_que,
                             None => {
                                 println!("[reconexao] conexao caiu: {por_que}");
-                                self.reconexao = Some(reconexao::Reconexao::nova(get_time(), por_que));
+                                self.reconexao =
+                                    Some(reconexao::Reconexao::nova(get_time(), por_que));
                             }
                         }
                         self.net = None;
@@ -2001,7 +2056,10 @@ impl Jogo {
     fn despacha_billing(&mut self) {
         while let Some(r) = billing_android::poll_result() {
             if r.codigo == -2 {
-                self.chat.push("Purchase pending: it is delivered as soon as Google confirms the payment.".into());
+                self.chat.push(
+                    "Purchase pending: it is delivered as soon as Google confirms the payment."
+                        .into(),
+                );
                 self.loja_tp.compra_cancelada();
                 self.ofertas.cancelou();
                 continue;
@@ -2012,7 +2070,11 @@ impl Jogo {
                 continue;
             }
             let pedido = billing_android::pedido_do_token(&r.purchase_token);
-            if let Some(pacote) = r.product_id.strip_prefix("tp_pacote_").and_then(|n| n.parse::<u16>().ok()) {
+            if let Some(pacote) = r
+                .product_id
+                .strip_prefix("tp_pacote_")
+                .and_then(|n| n.parse::<u16>().ok())
+            {
                 self.envia(ClientMessage::Loja {
                     pedido: shared::loja::PedidoLoja::ComprarTpGooglePlay {
                         pacote,
@@ -2024,7 +2086,10 @@ impl Jogo {
                 // ALWAYS sent, even when this client no longer knows the offer
                 // (paid late, recovered at login): the server finds it by the
                 // product and delivers — a paid purchase is never dropped.
-                let oferta = self.ofertas.oferta_do_produto(&r.product_id).unwrap_or_default();
+                let oferta = self
+                    .ofertas
+                    .oferta_do_produto(&r.product_id)
+                    .unwrap_or_default();
                 self.envia(ClientMessage::Loja {
                     pedido: shared::loja::PedidoLoja::ComprarOfertaGooglePlay {
                         oferta,
@@ -2077,7 +2142,10 @@ impl Jogo {
                 // Ignoring case, then exactly: two names that differ only in
                 // case keep a fixed order.
                 self.personagens.sort_by(|a, b| {
-                    a.name.to_lowercase().cmp(&b.name.to_lowercase()).then_with(|| a.name.cmp(&b.name))
+                    a.name
+                        .to_lowercase()
+                        .cmp(&b.name.to_lowercase())
+                        .then_with(|| a.name.cmp(&b.name))
                 });
                 self.armas = available_weapons;
                 self.selecao_personagem.recebeu_lista(
@@ -2225,7 +2293,9 @@ impl Jogo {
                 // The one being played (by name) first; the list position
                 // only if there is none.
                 self.personagem_atual = self.personagem_atual.clone().or_else(|| {
-                    self.personagens.get(self.selecionado).map(|p| p.name.clone())
+                    self.personagens
+                        .get(self.selecionado)
+                        .map(|p| p.name.clone())
                 });
                 self.host = Some(host);
                 self.conectar();
@@ -2250,7 +2320,9 @@ impl Jogo {
                 mar_ui::define_no_mar(shared::mar::e_mar(&map_name));
                 self.mar_rota.parar();
                 self.terreno = shared::terreno::def_da_zona(&map_name).map(terreno::Terreno::novo);
-                render3d::define_noite(shared::kogen::e_kogen(&map_name) || shared::abissal::e_abissal(&map_name));
+                render3d::define_noite(
+                    shared::kogen::e_kogen(&map_name) || shared::abissal::e_abissal(&map_name),
+                );
                 render3d::define_abismo(shared::abissal::e_abissal(&map_name));
                 // Mapa novo pra ilha nova; a viagem da ilha anterior morre junto.
                 // Os filtros do mapa valem a sessao: sobrevivem a ilha nova.
@@ -2331,7 +2403,8 @@ impl Jogo {
                 }
             }
             ServerMessage::Prime { aviso } => {
-                let abriu = matches!(aviso, shared::prime::AvisoPrime::Quadro(_)) && !self.prime.aberto;
+                let abriu =
+                    matches!(aviso, shared::prime::AvisoPrime::Quadro(_)) && !self.prime.aberto;
                 if abriu {
                     self.fecha_paineis();
                 }
@@ -2339,7 +2412,11 @@ impl Jogo {
                     self.chat.push(t);
                 }
             }
-            ServerMessage::PocoesXpDoDia { dia, pagas, ultima_paga } => {
+            ServerMessage::PocoesXpDoDia {
+                dia,
+                pagas,
+                ultima_paga,
+            } => {
                 pocoes_xp::definir(dia, pagas, ultima_paga);
             }
             ServerMessage::Magica { aviso } => {
@@ -2358,7 +2435,9 @@ impl Jogo {
                 self.tick = snapshot.tick;
                 self.world
                     .apply(snapshot.entered, snapshot.states, &snapshot.removed);
-                if novo_tick { self.world.acertos(&snapshot.acertos, get_time()); }
+                if novo_tick {
+                    self.world.acertos(&snapshot.acertos, get_time());
+                }
                 // At sea: the hull's hit flash and a bite's splinters.
                 if novo_tick && mar_ui::no_mar() {
                     self.mar_vfx.acertos(&self.world, &snapshot.acertos);
@@ -2393,7 +2472,9 @@ impl Jogo {
                 }
                 // The answer to what was just typed (slow down, muted,
                 // report sent) shows in the open chat too.
-                if (self.chat_ui.aberto || self.chat_ui.acabou_de_enviar()) && (from == "System" || from == "SYS") {
+                if (self.chat_ui.aberto || self.chat_ui.acabou_de_enviar())
+                    && (from == "System" || from == "SYS")
+                {
                     self.chat_ui.sistema(text.clone());
                 }
                 self.chat.push(format!("{from}: {text}"));
@@ -2403,7 +2484,9 @@ impl Jogo {
             ServerMessage::InventoryUpdate { slots } => {
                 // O que ENTROU sobe do personagem (coleta, loot, compra).
                 let entrou = self.ganhos.bolsa_nova(&slots);
-                if !entrou.is_empty() { sons::tocar(sons::Som::Item); }
+                if !entrou.is_empty() {
+                    sons::tocar(sons::Som::Item);
+                }
                 self.economia.itens_novos(&entrou);
                 if self.auto_coleta.coletando_confirmado() {
                     self.auto_resumo.coletar_itens(&entrou);
@@ -2465,18 +2548,37 @@ impl Jogo {
                     self.envia(pedido);
                 }
             }
-            ServerMessage::ChatGlobal { id, canal, para, de, texto, staff, tag } => {
+            ServerMessage::ChatGlobal {
+                id,
+                canal,
+                para,
+                de,
+                texto,
+                staff,
+                tag,
+            } => {
                 // In the box, and over the speaker's head when they are near
                 // (never a whisper: that one is private).
                 let privado = canal == shared::chat::CANAL_SUSSURRO;
-                if self.chat_ui.receber(id, canal, para, de.clone(), texto.clone(), staff, tag) && !privado {
-                    self.world.falas.insert(de.to_lowercase(), (texto, get_time()));
+                if self
+                    .chat_ui
+                    .receber(id, canal, para, de.clone(), texto.clone(), staff, tag)
+                    && !privado
+                {
+                    self.world
+                        .falas
+                        .insert(de.to_lowercase(), (texto, get_time()));
                 }
-                if privado && !de.eq_ignore_ascii_case(self.personagem_atual.as_deref().unwrap_or("")) {
+                if privado
+                    && !de.eq_ignore_ascii_case(self.personagem_atual.as_deref().unwrap_or(""))
+                {
                     sons::tocar(sons::Som::Clique);
                 }
             }
-            ServerMessage::Renascimento { renascimentos, festa } => {
+            ServerMessage::Renascimento {
+                renascimentos,
+                festa,
+            } => {
                 self.ficha_ui.renascimentos = renascimentos;
                 if festa {
                     self.renasceu.dispara(renascimentos);
@@ -2494,7 +2596,14 @@ impl Jogo {
                 self.arvore_ui.receber(estado);
             }
             // Rebirth phase 4: a path-tree active went off (anyone's).
-            ServerMessage::AtivaFx { ativa, caster_eid, de, alvo, duracao_s, suprema: _ } => {
+            ServerMessage::AtivaFx {
+                ativa,
+                caster_eid,
+                de,
+                alvo,
+                duracao_s,
+                suprema: _,
+            } => {
                 let meu = self.world.self_id == Some(caster_eid);
                 if meu {
                     self.ativas.confirmada(ativa, duracao_s);
@@ -2502,17 +2611,29 @@ impl Jogo {
                 if let Some(fx) = ativas::fx_da_ativa(ativa) {
                     let (de, alvo) = (vec2(de.x, de.y), vec2(alvo.x, alvo.y));
                     sons::skill(fx, true, alvo, self.world.self_pos(), meu);
-                    self.habilidades.efeito(fx, caster_eid, de, alvo, None, true, 1);
+                    self.habilidades
+                        .efeito(fx, caster_eid, de, alvo, None, true, 1);
                 }
             }
             ServerMessage::Invisibilidade { eid, segundos } => {
                 invisibilidade::marcar(eid, segundos);
             }
-            ServerMessage::AscensaoResultado { ok, estrelas, item_id, motivo } => {
+            ServerMessage::AscensaoResultado {
+                ok,
+                estrelas,
+                item_id,
+                motivo,
+            } => {
                 let nome = self.bolsa.nome(item_id);
-                crate::sons::tocar(if ok { crate::sons::Som::RefinoOk } else { crate::sons::Som::RefinoFalha });
-                self.forja.resultado_ascensao(ok, estrelas, &nome, &motivo, get_time());
-                self.chat.push(forja_ui::texto_da_ascensao(ok, estrelas, &nome, &motivo).0);
+                crate::sons::tocar(if ok {
+                    crate::sons::Som::RefinoOk
+                } else {
+                    crate::sons::Som::RefinoFalha
+                });
+                self.forja
+                    .resultado_ascensao(ok, estrelas, &nome, &motivo, get_time());
+                self.chat
+                    .push(forja_ui::texto_da_ascensao(ok, estrelas, &nome, &motivo).0);
             }
             ServerMessage::AvisoGlobal { texto } => {
                 self.chat.push(format!("[Announcement] {texto}"));
@@ -2537,8 +2658,12 @@ impl Jogo {
                 match &aviso {
                     shared::loja::AvisoLoja::OfertasRelampago(v) => self.ofertas.receber(v.clone()),
                     // Test server (simulated payments): offers work on any client.
-                    shared::loja::AvisoLoja::Estado(e) => self.ofertas.definir_simulado(e.ligada && e.simulado),
-                    shared::loja::AvisoLoja::Resultado { ok, texto } => self.ofertas.resultado(*ok, texto),
+                    shared::loja::AvisoLoja::Estado(e) => {
+                        self.ofertas.definir_simulado(e.ligada && e.simulado)
+                    }
+                    shared::loja::AvisoLoja::Resultado { ok, texto } => {
+                        self.ofertas.resultado(*ok, texto)
+                    }
                     _ => {}
                 }
                 if let Some(t) = self.loja_tp.receber(aviso) {
@@ -2638,7 +2763,11 @@ impl Jogo {
                 } else {
                     format!("Craft refused: {motivo}")
                 };
-                crate::sons::tocar(if ok { crate::sons::Som::Craft } else { crate::sons::Som::Recusa });
+                crate::sons::tocar(if ok {
+                    crate::sons::Som::Craft
+                } else {
+                    crate::sons::Som::Recusa
+                });
                 self.craft.resultado(ok, txt.clone(), get_time());
                 self.chat.push(txt);
             }
@@ -2730,7 +2859,8 @@ impl Jogo {
                         oficina_ui::texto_do_resultado(tentativas, sucessos, &saida, &texto)
                     };
                 self.craft.resultado(ok, txt.clone(), get_time());
-                self.craft.combinou(entrada, tentativas, sucessos, get_time());
+                self.craft
+                    .combinou(entrada, tentativas, sucessos, get_time());
                 self.chat.push(txt);
             }
             ServerMessage::RefinoResultado {
@@ -2766,7 +2896,11 @@ impl Jogo {
             }
             ServerMessage::BarraDeItens { espacos } => self.barra.do_servidor(&espacos),
             ServerMessage::Preferencias { prefs } => self.aplica_preferencias(prefs),
-            ServerMessage::Morte { xp_perdido, xp_pk, pct_pk } => {
+            ServerMessage::Morte {
+                xp_perdido,
+                xp_pk,
+                pct_pk,
+            } => {
                 self.parar_tudo_ao_morrer();
                 self.pk_ui.aberto = false;
                 self.morte.morreu(xp_perdido, xp_pk, pct_pk);
@@ -2808,6 +2942,15 @@ impl Jogo {
                 self.ir_para.parar();
                 self.loja.abre_magica(vendor_id, items);
             }
+            ServerMessage::NavalShopOpen { items, vendor_id } => {
+                self.interacao.cancela();
+                self.missoes.fecha();
+                self.auto_missao.parar();
+                self.dialogo.fechar();
+                self.mapa.viagem.cancelar();
+                self.ir_para.parar();
+                self.loja.abre_naval(vendor_id, items);
+            }
             ServerMessage::ShopClose => self.loja.fecha(),
             ServerMessage::ShopTradeResult { ok, reason } => {
                 self.chat.push(format!("shop: {reason}"));
@@ -2837,8 +2980,7 @@ impl Jogo {
                     }
                 }
                 self.bolsa.nivel = level;
-                self.bolsa.nivel_tela =
-                    shared::progressao::nivel_exibido(xp, self.ficha.mult());
+                self.bolsa.nivel_tela = shared::progressao::nivel_exibido(xp, self.ficha.mult());
                 self.ficha.xp = xp;
                 self.ficha.nivel = level;
             }
@@ -2863,7 +3005,9 @@ impl Jogo {
             ServerMessage::ProgressoDeSkills { progresso } => {
                 let ganho = self.ganhos.energia_nova(progresso.energia);
                 if self.auto_coleta.coletando_confirmado() {
-                    if let Some(qtd) = ganho { self.auto_resumo.coletar_energia(qtd); }
+                    if let Some(qtd) = ganho {
+                        self.auto_resumo.coletar_energia(qtd);
+                    }
                 }
                 self.bolsa.energia = progresso.energia;
                 self.evolucao_skills.progresso = progresso;
@@ -2892,8 +3036,12 @@ impl Jogo {
                     .and_then(|id| self.world.ents.get(&id))
                     .map(|e| e.render_pos);
                 if let Some(e) = self.world.ents.get(&attacker) {
-                    sons::mob(sons::ataque_mob(e.meta.kind), e.render_pos,
-                        self.world.self_pos(), target.is_some() && target == self.world.self_id);
+                    sons::mob(
+                        sons::ataque_mob(e.meta.kind),
+                        e.render_pos,
+                        self.world.self_pos(),
+                        target.is_some() && target == self.world.self_id,
+                    );
                 }
                 if let Some(e) = self.world.ents.get_mut(&attacker) {
                     e.golpe = 0.0;
@@ -2914,7 +3062,13 @@ impl Jogo {
                 ..
             } => {
                 let de = vec2(caster_pos.x, caster_pos.y);
-                sons::skill(skill_id, false, de, self.world.self_pos(), self.world.self_id == Some(id));
+                sons::skill(
+                    skill_id,
+                    false,
+                    de,
+                    self.world.self_pos(),
+                    self.world.self_id == Some(id),
+                );
                 let alvo = vec2(target_pos.x, target_pos.y);
                 self.habilidades
                     .efeito(skill_id, id, de, alvo, target_eid, false, tier);
@@ -2946,14 +3100,27 @@ impl Jogo {
                 target_pos,
                 tier,
             } => {
-                sons::skill(skill_id, true, vec2(target_pos.x,target_pos.y), self.world.self_pos(), self.world.self_id == Some(caster_eid));
+                sons::skill(
+                    skill_id,
+                    true,
+                    vec2(target_pos.x, target_pos.y),
+                    self.world.self_pos(),
+                    self.world.self_id == Some(caster_eid),
+                );
                 // MY Danca landed: the same instant the server opens the
                 // katana's THIRST lifesteal window.
                 if skill_id == 5 && self.world.self_id == Some(caster_eid) {
                     self.habilidades.open_thirst();
                 }
                 // A ship skill (phase 2) has its own cannon FX.
-                if !self.mar_vfx.tiro(&self.world, skill_id, caster_eid, vec2(caster_pos.x, caster_pos.y), vec2(target_pos.x, target_pos.y), tier) {
+                if !self.mar_vfx.tiro(
+                    &self.world,
+                    skill_id,
+                    caster_eid,
+                    vec2(caster_pos.x, caster_pos.y),
+                    vec2(target_pos.x, target_pos.y),
+                    tier,
+                ) {
                     self.habilidades.efeito(
                         skill_id,
                         caster_eid,
@@ -2999,7 +3166,11 @@ impl Jogo {
                 status,
             } => {
                 use shared::historia;
-                let anterior = self.missoes.log.iter().find(|q| q.id == quest_id)
+                let anterior = self
+                    .missoes
+                    .log
+                    .iter()
+                    .find(|q| q.id == quest_id)
                     .map(|q| (q.progress, q.status));
                 if status == shared::quests::quest_status::TURNED_IN {
                     if let Some(def) = shared::quests::quest_by_id(quest_id) {
@@ -3007,11 +3178,24 @@ impl Jogo {
                             self.auto_resumo.concluir(def, &self.bolsa.nomes);
                             crate::sons::tocar(crate::sons::Som::Missao);
                         }
-                        let itens = [(def.reward_item, def.reward_item_qty), (def.reward_item2, def.reward_item2_qty)]
-                            .into_iter().filter(|(id, qtd)| *id != 0 && *qtd > 0 && pocoes_xp::paga_na_entrega(*id, def.daily))
-                            .map(|(id, qtd)| (id, qtd as u32)).collect();
-                        self.recompensas.mostrar("QUEST COMPLETE".into(), def.title.into(), itens,
-                            def.reward_cobre, shared::progressao::xp_da_quest(def), def.reward_faction_points);
+                        let itens = [
+                            (def.reward_item, def.reward_item_qty),
+                            (def.reward_item2, def.reward_item2_qty),
+                        ]
+                        .into_iter()
+                        .filter(|(id, qtd)| {
+                            *id != 0 && *qtd > 0 && pocoes_xp::paga_na_entrega(*id, def.daily)
+                        })
+                        .map(|(id, qtd)| (id, qtd as u32))
+                        .collect();
+                        self.recompensas.mostrar(
+                            "QUEST COMPLETE".into(),
+                            def.title.into(),
+                            itens,
+                            def.reward_cobre,
+                            shared::progressao::xp_da_quest(def),
+                            def.reward_faction_points,
+                        );
                     }
                     self.quest_entregues.entry(quest_id).or_insert(0);
                     // O CONTADOR do topo: sobe a cada missao concluida, FIXADA
@@ -3031,19 +3215,40 @@ impl Jogo {
                         .is_some_and(|q| q != quest_id && historia::e_da_historia(q));
                 self.missoes.atualiza(quest_id, progress, status);
                 if status != 255 && anterior != Some((progress, status)) {
-                    sons::tocar(if status == shared::quests::quest_status::TURNED_IN { sons::Som::Recompensa } else if status == shared::quests::quest_status::READY { sons::Som::Pronta } else { sons::Som::Progresso });
+                    sons::tocar(if status == shared::quests::quest_status::TURNED_IN {
+                        sons::Som::Recompensa
+                    } else if status == shared::quests::quest_status::READY {
+                        sons::Som::Pronta
+                    } else {
+                        sons::Som::Progresso
+                    });
                     if let Some(def) = shared::quests::quest_by_id(quest_id) {
-                        self.missoes.aviso_progresso = if status == shared::quests::quest_status::TURNED_IN {
-                            format!("Quests completed: {} · {}", self.missoes.concluidas, def.title)
-                        } else if status == shared::quests::quest_status::READY {
-                            format!("{} · {}/{} · Ready!", def.title, def.obj_count, def.obj_count)
-                        } else {
-                            format!("{} · {}/{}", def.title, progress.min(def.obj_count), def.obj_count)
-                        };
+                        self.missoes.aviso_progresso =
+                            if status == shared::quests::quest_status::TURNED_IN {
+                                format!(
+                                    "Quests completed: {} · {}",
+                                    self.missoes.concluidas, def.title
+                                )
+                            } else if status == shared::quests::quest_status::READY {
+                                format!(
+                                    "{} · {}/{} · Ready!",
+                                    def.title, def.obj_count, def.obj_count
+                                )
+                            } else {
+                                format!(
+                                    "{} · {}/{}",
+                                    def.title,
+                                    progress.min(def.obj_count),
+                                    def.obj_count
+                                )
+                            };
                         self.missoes.aviso_em = get_time();
                     }
                 }
-                if segue && shared::quests::quest_by_id(quest_id).is_some_and(menu_missoes::automatizavel) {
+                if segue
+                    && shared::quests::quest_by_id(quest_id)
+                        .is_some_and(menu_missoes::automatizavel)
+                {
                     if let Some(d) = shared::quests::quest_by_id(quest_id) {
                         self.auto_missao
                             .iniciar(quest_id, d.title.to_string(), get_time());
@@ -3052,7 +3257,14 @@ impl Jogo {
             }
             ServerMessage::BossRewards { items } => {
                 crate::sons::tocar(crate::sons::Som::Bau);
-                self.recompensas.mostrar("BOSS DEFEATED".into(), "Loot on the ground · pick the items up".into(), items, 0, 0, 0);
+                self.recompensas.mostrar(
+                    "BOSS DEFEATED".into(),
+                    "Loot on the ground · pick the items up".into(),
+                    items,
+                    0,
+                    0,
+                    0,
+                );
             }
             ServerMessage::QuestEstado { entregues, faccao } => {
                 self.quest_entregues = entregues.into_iter().collect();
@@ -3223,7 +3435,8 @@ impl Jogo {
                                 .filter(|k| shared::porao::porao_da_chave(*k).is_some());
                             if let Some(k) = chave {
                                 self.craft.abrir_chaves(Some(k));
-                                self.chat.push("Quest: craft the key in Craft › Dungeon keys.".into());
+                                self.chat
+                                    .push("Quest: craft the key in Craft › Dungeon keys.".into());
                             } else {
                                 self.craft
                                     .abrir_no_que_da(&self.bolsa.slots, self.bolsa.nivel);
@@ -3335,7 +3548,13 @@ impl Jogo {
                 );
                 // At sea the tap goes through the sailing camera drawn last.
                 if let Some(q) = self.mar_camera.ultimo().filter(|_| mar_ui::navegando()) {
-                    vista.cam = render3d::camera_no_mar(q.centro, self.cam_altura, self.cam_yaw, q.fator, q.pitch);
+                    vista.cam = render3d::camera_no_mar(
+                        q.centro,
+                        self.cam_altura,
+                        self.cam_yaw,
+                        q.fator,
+                        q.pitch,
+                    );
                 }
                 let alvo = render3d::pick(&self.world, &vista, vec2(mx, my), 48.0);
                 // Clicou no vazio? Entao foi no CHAO.
@@ -3505,7 +3724,9 @@ impl Jogo {
         // The story's trips are the Island Portal's since 17/11/2026: the
         // Captain no longer starts them with a conversation.
         let q = self.missoes.log.iter().find(|q| {
-            q.status == quest_status::ACTIVE && q.obj_kind == objective_kind::TALK && q.obj_target == papel
+            q.status == quest_status::ACTIVE
+                && q.obj_kind == objective_kind::TALK
+                && q.obj_target == papel
         })?;
         Some((
             q.id,
@@ -3550,7 +3771,8 @@ impl Jogo {
             );
         } else if let Some(q) = proxima {
             if self.auto_missao.etapa() == Some(auto_missao::Etapa::AguardandoProxima)
-                && shared::quests::quest_by_id(q.id).is_some_and(menu_missoes::automatizavel) {
+                && shared::quests::quest_by_id(q.id).is_some_and(menu_missoes::automatizavel)
+            {
                 self.envia(ClientMessage::AcceptQuest { quest_id: q.id });
                 self.chat.push(format!("New quest: {}", q.title));
                 self.auto_missao.iniciar(q.id, q.title.clone(), get_time());
@@ -3599,12 +3821,17 @@ impl Jogo {
         }
         while let Some(id) = self.fila_de_missoes.first().copied() {
             self.fila_de_missoes.remove(0);
-            let tem = self
-                .missoes
-                .log
-                .iter()
-                .any(|q| q.id == id && shared::quests::quest_by_id(id)
-                    .is_some_and(|d| menu_missoes::automatizavel(d) && matches!(q.status, shared::quests::quest_status::ACTIVE | shared::quests::quest_status::READY)));
+            let tem = self.missoes.log.iter().any(|q| {
+                q.id == id
+                    && shared::quests::quest_by_id(id).is_some_and(|d| {
+                        menu_missoes::automatizavel(d)
+                            && matches!(
+                                q.status,
+                                shared::quests::quest_status::ACTIVE
+                                    | shared::quests::quest_status::READY
+                            )
+                    })
+            });
             if tem {
                 self.fila_feitas += 1;
                 self.iniciar_auto_missao(id);
@@ -3657,12 +3884,22 @@ impl Jogo {
         }
         let f = hud_estilo::fator_texto();
         let seguro = hud_layout::tela_segura();
-        let r = Rect::new(seguro.x + seguro.w - 142.0 * f, seguro.y + 8.0 * f, 132.0 * f, 34.0 * f);
+        let r = Rect::new(
+            seguro.x + seguro.w - 142.0 * f,
+            seguro.y + 8.0 * f,
+            132.0 * f,
+            34.0 * f,
+        );
         let sobre = r.toca(Vec2::from(mouse_position()));
         hud_estilo::botao(
             r,
             "Close the tutorial",
-            hud_estilo::estado(sobre, sobre && is_mouse_button_down(MouseButton::Left), false, false),
+            hud_estilo::estado(
+                sobre,
+                sobre && is_mouse_button_down(MouseButton::Left),
+                false,
+                false,
+            ),
             false,
         );
         // Usa o clique bruto porque o botão fica fora do buraco do foco.
@@ -3733,7 +3970,9 @@ impl Jogo {
     /// Clicou numa missao do rastreador (ou "Ir" no diario): auto missao.
     fn iniciar_auto_missao(&mut self, id: u16) {
         self.parar_seguir();
-        let Some(def) = shared::quests::quest_by_id(id) else { return };
+        let Some(def) = shared::quests::quest_by_id(id) else {
+            return;
+        };
         if let Some(alvo) = self
             .missoes
             .log
@@ -3749,10 +3988,20 @@ impl Jogo {
             self.nivel_ui.abrir(alvo);
             return;
         }
-        let pode = self.missoes.log.iter().find(|q| q.id == id)
+        let pode = self
+            .missoes
+            .log
+            .iter()
+            .find(|q| q.id == id)
             .is_some_and(|q| menu_missoes::pode_iniciar_auto(def, q.status));
         if !pode {
-            if self.missoes.log.iter().any(|q|q.id==id && q.status==shared::quests::quest_status::ACTIVE) && menu_missoes::tem_atalho_manual(def) {
+            if self
+                .missoes
+                .log
+                .iter()
+                .any(|q| q.id == id && q.status == shared::quests::quest_status::ACTIVE)
+                && menu_missoes::tem_atalho_manual(def)
+            {
                 self.abrir_missao_manual(id);
                 return;
             }
@@ -3781,7 +4030,9 @@ impl Jogo {
             self.envia(ClientMessage::SetTarget { target: None });
         }
         self.auto_missao.iniciar(id, nome, get_time());
-        if !self.auto_resumo.ativo { self.auto_resumo.iniciar(); }
+        if !self.auto_resumo.ativo {
+            self.auto_resumo.iniciar();
+        }
     }
 
     // ─────────────────────────── HUD e Menu (MIR4) ───────────────────────────
@@ -3831,7 +4082,11 @@ impl Jogo {
         // Bigger than the strip: a finger button, not a label.
         let h = z.faixa.h * 1.5;
         let w = hud_estilo::medir_forte(&rotulo, 18) + h * 1.4;
-        let w_find = if qtd == 0 { hud_estilo::medir_forte("Find", 18) + h * 1.2 } else { 0.0 };
+        let w_find = if qtd == 0 {
+            hud_estilo::medir_forte("Find", 18) + h * 1.2
+        } else {
+            0.0
+        };
         let gap = if qtd == 0 { 8.0 } else { 0.0 };
         let x0 = z.faixa.center().x - (w + gap + w_find) * 0.5;
         // ABOVE the travel strip (owner, 15/11/2026): below it sit the gather
@@ -3840,9 +4095,19 @@ impl Jogo {
         let r = Rect::new(x0, y, w, h);
         let r_find = Rect::new(x0 + w + gap, y, w_find, h);
         self.botao_teleporte = Some(Rect::new(x0, y, w + gap + w_find, h));
-        hud_estilo::botao(r, &rotulo, hud_estilo::estado_de(r, qtd == 0, false), qtd > 0);
+        hud_estilo::botao(
+            r,
+            &rotulo,
+            hud_estilo::estado_de(r, qtd == 0, false),
+            qtd > 0,
+        );
         if qtd == 0 {
-            hud_estilo::botao(r_find, "Find", hud_estilo::estado_de(r_find, false, false), true);
+            hud_estilo::botao(
+                r_find,
+                "Find",
+                hud_estilo::estado_de(r_find, false, false),
+                true,
+            );
         }
         let m = Vec2::from(mouse_position());
         if !(crate::foco::clique() && (r.toca(m) || (qtd == 0 && r_find.toca(m)))) {
@@ -3854,7 +4119,10 @@ impl Jogo {
             self.onde_obter.abrir(shared::item_id::PERGAMINHO_TELEPORTE);
             return;
         }
-        self.envia(ClientMessage::Teleportar { x: destino.x, z: destino.y });
+        self.envia(ClientMessage::Teleportar {
+            x: destino.x,
+            z: destino.y,
+        });
     }
 
     /// "REBIRTH AVAILABLE" (owner, 15/11/2026: "quando atingir o nível 100
@@ -3874,7 +4142,12 @@ impl Jogo {
         let rotulo = "REBIRTH AVAILABLE";
         let h = 40.0 * z.s;
         let w = hud_estilo::medir_forte(rotulo, 20) + 64.0 * z.s;
-        let r = Rect::new(z.alvo.center().x - w * 0.5, z.alvo.y + z.alvo.h + 8.0 * z.s, w, h);
+        let r = Rect::new(
+            z.alvo.center().x - w * 0.5,
+            z.alvo.y + z.alvo.h + 8.0 * z.s,
+            w,
+            h,
+        );
         let t = get_time() as f32;
         let pulso = (t * 3.0).sin() * 0.5 + 0.5;
         // Glow: three widening outlines, fading with the pulse.
@@ -3886,7 +4159,12 @@ impl Jogo {
                 r.w + 2.0 * g,
                 r.h + 2.0 * g,
                 2.0,
-                Color::new(1.0, 0.78, 0.30, (0.35 - k as f32 * 0.09) * (0.5 + 0.5 * pulso)),
+                Color::new(
+                    1.0,
+                    0.78,
+                    0.30,
+                    (0.35 - k as f32 * 0.09) * (0.5 + 0.5 * pulso),
+                ),
             );
         }
         draw_rectangle(r.x, r.y, r.w, r.h, Color::new(0.20, 0.12, 0.02, 0.88));
@@ -4014,8 +4292,8 @@ impl Jogo {
         let estado = self.estado_da_economia();
         let bolsa = &self.bolsa;
         let nome_item = |id: u16| bolsa.nome(id);
-        let missao_atual = self.auto_missao.quest.and_then(|id| self.missoes.log.iter()
-            .find(|q| q.id == id).map(|q| {
+        let missao_atual = self.auto_missao.quest.and_then(|id| {
+            self.missoes.log.iter().find(|q| q.id == id).map(|q| {
                 // A trava de nivel conta niveis: na escala exibida; past the
                 // cap ("100+") the count says nothing, so it is left out.
                 if q.obj_kind == shared::quests::objective_kind::NIVEL {
@@ -4032,7 +4310,8 @@ impl Jogo {
                 } else {
                     (id, q.title.as_str(), q.progress, q.obj_count)
                 }
-            }));
+            })
+        });
         let resumo = economia::Resumo {
             nome: &nome,
             nivel,
@@ -4046,7 +4325,7 @@ impl Jogo {
             nome_item: &nome_item,
             auto_resumo: (self.auto_resumo.ativo
                 && (self.auto_missao.ativo() || !self.fila_de_missoes.is_empty()))
-                .then_some(&self.auto_resumo),
+            .then_some(&self.auto_resumo),
             missao_atual,
             proximas_missoes: &self.fila_de_missoes,
             nomes_itens: &bolsa.nomes,
@@ -4076,8 +4355,12 @@ impl Jogo {
         {
             return true;
         }
-        self.social_hud.captura(&hud_layout::atual(), p, self.alvo_jogador().is_some(), self.social.grupo.len())
-            || hud_layout::atual().contem(p)
+        self.social_hud.captura(
+            &hud_layout::atual(),
+            p,
+            self.alvo_jogador().is_some(),
+            self.social.grupo.len(),
+        ) || hud_layout::atual().contem(p)
             || self.botao_teleporte.is_some_and(|r| r.toca(p))
             || (mar_ui::no_mar() && mar_ui::retangulo_do_leme(&hud_layout::atual()).toca(p))
             || self.benchmark.pega(p)
@@ -4137,11 +4420,7 @@ impl Jogo {
         if (pronto && passou >= 0.35) || passou >= 10.0 {
             println!(
                 "[loading] finished in {passou:.2} s ({})",
-                if pronto {
-                    "chao pronto"
-                } else {
-                    "10 s cap"
-                }
+                if pronto { "chao pronto" } else { "10 s cap" }
             );
             self.carregando_desde = None;
             self.cam_altura = f32::MIN;
@@ -4181,8 +4460,12 @@ impl Jogo {
             return true;
         }
         let z = hud_layout::atual();
-        self.social_hud.captura(&z, m, self.alvo_jogador().is_some(), self.social.grupo.len())
-            || z.contem(m)
+        self.social_hud.captura(
+            &z,
+            m,
+            self.alvo_jogador().is_some(),
+            self.social.grupo.len(),
+        ) || z.contem(m)
             || self.mar_rota.pega_em(m)
             || self.botao_teleporte.is_some_and(|r| r.toca(m))
             || (mar_ui::no_mar() && mar_ui::retangulo_do_leme(&hud_layout::atual()).toca(m))
@@ -4254,9 +4537,15 @@ impl Jogo {
     /// pedir de novo a cada trecho da rota.
     fn montar_pra_viajar(&mut self) {
         let agora = get_time();
-        if self.world.self_pos().is_some_and(|p| self.world.ents.values().any(|e|
-            e.state.flags & shared::ent_flags::BOSS != 0 && e.state.hp > 0
-                && p.distance_squared(e.render_pos) <= 144.0)) { return; }
+        if self.world.self_pos().is_some_and(|p| {
+            self.world.ents.values().any(|e| {
+                e.state.flags & shared::ent_flags::BOSS != 0
+                    && e.state.hp > 0
+                    && p.distance_squared(e.render_pos) <= 144.0
+            })
+        }) {
+            return;
+        }
         if !self.tem_montaria()
             || self.eu_montado()
             || self.montarias.montando(agora)
@@ -4357,9 +4646,12 @@ impl Jogo {
                 self.mercado.abrir_buscando(&nome)
             }
             bolsa::AtalhoMercado::Vender(slot) => {
-                let Some(s) = self.bolsa.slots.get(slot).copied() else { return };
+                let Some(s) = self.bolsa.slots.get(slot).copied() else {
+                    return;
+                };
                 let nome = self.bolsa.nome(s.item_id);
-                self.mercado.abrir_vendendo(slot, s.item_id, s.instance.as_ref(), &nome)
+                self.mercado
+                    .abrir_vendendo(slot, s.item_id, s.instance.as_ref(), &nome)
             }
             bolsa::AtalhoMercado::Pedir(item) => self.mercado.abrir_pedindo(item),
         };
@@ -4420,9 +4712,13 @@ impl Jogo {
                     .mapa
                     .npcs_da_vila()
                     .into_iter()
-                    .filter(|(n, _)| n == "Banker" || n == shared::construcao::Papel::Deposito.nome())
-                    .min_by(|a, b| a.1.distance_squared(eu).total_cmp(&b.1.distance_squared(eu)))
-                {
+                    .filter(|(n, _)| {
+                        n == "Banker" || n == shared::construcao::Papel::Deposito.nome()
+                    })
+                    .min_by(|a, b| {
+                        a.1.distance_squared(eu)
+                            .total_cmp(&b.1.distance_squared(eu))
+                    }) {
                     Some((nome, pos)) => {
                         self.chat.push(format!("Heading to the bank: {nome}"));
                         self.iniciar_ir_para(ir_para::Alvo {
@@ -4432,9 +4728,9 @@ impl Jogo {
                             rotulo: format!("Bank · {nome}"),
                         });
                     }
-                    None => self
-                        .chat
-                        .push("Banco: procure a Banqueira da cidade ou o Banqueiro do porto.".into()),
+                    None => self.chat.push(
+                        "Banco: procure a Banqueira da cidade ou o Banqueiro do porto.".into(),
+                    ),
                 }
             }
             Item::GuardaRoupa => {
@@ -4460,7 +4756,8 @@ impl Jogo {
             Item::Eventos => self.eventos.aberto = true,
             Item::Avaliar => {
                 if !avaliacao::abrir_loja() {
-                    self.chat.push("Open Google Play and search for Tempest Online.".into());
+                    self.chat
+                        .push("Open Google Play and search for Tempest Online.".into());
                 }
             }
             Item::LojaTp => {
@@ -4503,8 +4800,12 @@ impl Jogo {
             Item::Sair => {
                 self.voltar_ao_menu = false;
                 // With PK the body stays in the world: say so first.
-                let pk = self.world.self_id.and_then(|id| self.world.ents.get(&id))
-                    .map(|e| e.meta.pk).unwrap_or_default();
+                let pk = self
+                    .world
+                    .self_id
+                    .and_then(|id| self.world.ents.get(&id))
+                    .map(|e| e.meta.pk)
+                    .unwrap_or_default();
                 if pk_ui::saida_fica(pk) {
                     self.pk_ui.confirmar_saida = true;
                 } else {
@@ -4519,8 +4820,13 @@ impl Jogo {
     /// veio do Menu volta pro Menu; o Menu volta pro jogo. Nunca abre nada.
     /// Devolve `true` se fechou algo (ai' nao cancela alvo nem AUTO).
     fn esc(&mut self) -> bool {
-        if self.social_hud.aberto.take().is_some() { return true; }
-        if self.seguir.alvo.is_some() { self.parar_seguir(); return true; }
+        if self.social_hud.aberto.take().is_some() {
+            return true;
+        }
+        if self.seguir.alvo.is_some() {
+            self.parar_seguir();
+            return true;
+        }
         if self.dialogo.aberto {
             self.dialogo.fechar();
             self.auto_missao.parar();
@@ -4728,10 +5034,18 @@ impl Jogo {
         }
         // AT SEA: where the ship is sailing, how far by the route, the ETA.
         if mar_ui::no_mar() {
-            let restante = eu.and_then(|p| rastro::restante(&self.rastro, p, self.mar_rota.destino()));
-            let id = self.bolsa.equip.navio.filter(|i| shared::item_id::e_navio(*i));
+            let restante =
+                eu.and_then(|p| rastro::restante(&self.rastro, p, self.mar_rota.destino()));
+            let id = self
+                .bolsa
+                .equip
+                .navio
+                .filter(|i| shared::item_id::e_navio(*i));
             let vel = id.map_or(shared::navio::CASCOS[0].velocidade, |id| {
-                shared::navio::velocidade_do_navio(id, &shared::navio::dados(self.bolsa.equip.navio_inst.as_ref(), id))
+                shared::navio::velocidade_do_navio(
+                    id,
+                    &shared::navio::dados(self.bolsa.equip.navio_inst.as_ref(), id),
+                )
             });
             if let Some(t) = self.mar_rota.faixa(eu, restante, vel) {
                 return Some((t, hud_estilo::AUTO));
@@ -4841,8 +5155,14 @@ impl Jogo {
             .filter(|i| shared::item_id::e_navio(*i))
             // The rail's glow sits at the hull's side (the walkable deck's
             // sizes, `shared::conves`).
-            .map_or(1.0, |i| shared::conves::meia_boca(shared::navio::classe(i)) / 1.2);
-        mar_combate_ui::Prontos { bordada: pronto(0), canhonaco: pronto(1), escala }
+            .map_or(1.0, |i| {
+                shared::conves::meia_boca(shared::navio::classe(i)) / 1.2
+            });
+        mar_combate_ui::Prontos {
+            bordada: pronto(0),
+            canhonaco: pronto(1),
+            escala,
+        }
     }
 
     fn atacar(&mut self) {
@@ -4963,7 +5283,10 @@ impl Jogo {
             // The old factory order (ranged first, then nearest) was saved
             // for everyone who never touched it: that is the old default,
             // not a choice, so it becomes the new default (Nearest).
-            if o == [shared::protocol::auto_alvo::RANGED_EM_MIM, shared::protocol::auto_alvo::MAIS_PERTO] {
+            if o == [
+                shared::protocol::auto_alvo::RANGED_EM_MIM,
+                shared::protocol::auto_alvo::MAIS_PERTO,
+            ] {
                 self.auto_combate.ordem = shared::protocol::auto_alvo::PADRAO.to_vec();
             } else if !o.is_empty() {
                 self.auto_combate.ordem = o;
@@ -5126,14 +5449,25 @@ impl Jogo {
                 na_log: q.is_some(),
                 dialogo_aberto: self.dialogo.aberto,
                 combate_ativo: self.auto_combate.ativo(),
-                combatendo_alvo: self.alvo.and_then(|id| self.world.ents.get(&id))
-                    .is_some_and(|e| e.meta.tag == shared::EntityTag::Enemy && e.state.hp > 0
-                        && e.morte.is_none() && q.is_some_and(|q|
-                            if matches!(q.obj_kind, shared::quests::objective_kind::COLLECT | shared::quests::objective_kind::DELIVER) {
-                                true
-                            } else {
-                                shared::quests::kill_conta(q.obj_target, e.meta.kind)
-                            })),
+                combatendo_alvo: self
+                    .alvo
+                    .and_then(|id| self.world.ents.get(&id))
+                    .is_some_and(|e| {
+                        e.meta.tag == shared::EntityTag::Enemy
+                            && e.state.hp > 0
+                            && e.morte.is_none()
+                            && q.is_some_and(|q| {
+                                if matches!(
+                                    q.obj_kind,
+                                    shared::quests::objective_kind::COLLECT
+                                        | shared::quests::objective_kind::DELIVER
+                                ) {
+                                    true
+                                } else {
+                                    shared::quests::kill_conta(q.obj_target, e.meta.kind)
+                                }
+                            })
+                    }),
                 coleta_ativa: self.auto_coleta.ativo(),
                 // O PROGRESSO É O SINAL DE VIDA do passo: é por ele que o
                 // auto missão sabe a diferença entre colher e girar no vazio.
@@ -5151,7 +5485,8 @@ impl Jogo {
                     if let Some(ilha) = ilha {
                         if self.mar_rota.atracar != Some(ilha) || !self.mar_rota.ativa() {
                             if let Some(v) = shared::mar::vista_da_ilha(ilha as usize) {
-                                self.chat.push(format!("Auto quest: sailing to {}.", v.nome));
+                                self.chat
+                                    .push(format!("Auto quest: sailing to {}.", v.nome));
                             }
                         }
                         self.retomar_auto_missao = Some(q);
@@ -5232,7 +5567,8 @@ impl Jogo {
             self.defesa_da_coleta = Some(id);
             self.mapa.viagem.cancelar();
             self.envia(ClientMessage::PararColeta);
-            self.chat.push("Auto gather: attacked, striking back.".into());
+            self.chat
+                .push("Auto gather: attacked, striking back.".into());
         }
         let Some(id) = self.defesa_da_coleta else {
             return false;
@@ -5359,7 +5695,9 @@ impl Jogo {
             auto_coleta::AcaoBau::Abrir(id) => {
                 self.mapa.viagem.cancelar();
                 self.envia(ClientMessage::PararRota);
-                self.envia(ClientMessage::Interact { target_eid: Some(id.0 as u64) });
+                self.envia(ClientMessage::Interact {
+                    target_eid: Some(id.0 as u64),
+                });
                 return;
             }
             auto_coleta::AcaoBau::Terminou => {
@@ -5367,7 +5705,10 @@ impl Jogo {
                 return;
             }
         }
-        match self.auto_coleta.passo(eu, agora, self.mapa.viagem.ativa() || self.mar_rota.ativa()) {
+        match self
+            .auto_coleta
+            .passo(eu, agora, self.mapa.viagem.ativa() || self.mar_rota.ativa())
+        {
             auto_coleta::Acao::PedirNo {
                 tipos,
                 energia,
@@ -5492,7 +5833,9 @@ impl Jogo {
         }
         if viagem.is_some() {
             match self.missoes.log.iter().find(|q| {
-                shared::historia::e_da_historia(q.id) && q.id != quest && q.status == shared::quests::quest_status::ACTIVE
+                shared::historia::e_da_historia(q.id)
+                    && q.id != quest
+                    && q.status == shared::quests::quest_status::ACTIVE
             }) {
                 Some(q) => quest = q.id,
                 None => return,
@@ -5583,7 +5926,9 @@ impl Jogo {
                 if let Some(v) = shared::mar::vista_da_ilha(ilha as usize) {
                     self.chat.push(format!("Docking at {}.", v.nome));
                 }
-                self.envia(ClientMessage::Navio { pedido: shared::navio::PedidoNavio::Atracar { ilha } });
+                self.envia(ClientMessage::Navio {
+                    pedido: shared::navio::PedidoNavio::Atracar { ilha },
+                });
             }
             mar_rota::Passo::Desistiu => self.chat.push("No water route: stopped.".into()),
             mar_rota::Passo::Chegou | mar_rota::Passo::Nada => {}
@@ -5644,8 +5989,14 @@ impl Jogo {
                     || q.status == shared::quests::quest_status::READY)
                     && q.id != quest_id
                     && !self.auto_pulados.contains(&q.id)
-                    && shared::quests::quest_by_id(q.id)
-                        .is_some_and(|d| menu_missoes::automatizavel(d) && matches!(q.status, shared::quests::quest_status::ACTIVE | shared::quests::quest_status::READY))
+                    && shared::quests::quest_by_id(q.id).is_some_and(|d| {
+                        menu_missoes::automatizavel(d)
+                            && matches!(
+                                q.status,
+                                shared::quests::quest_status::ACTIVE
+                                    | shared::quests::quest_status::READY
+                            )
+                    })
             })
             .map(|q| (q.id, q.title.clone()));
         match prox {
@@ -5680,7 +6031,10 @@ impl Jogo {
             return;
         };
         let agora = get_time();
-        let Some(acao) = self.ir_para.passo(eu, agora, self.mapa.viagem.ativa() || self.mar_rota.ativa()) else {
+        let Some(acao) =
+            self.ir_para
+                .passo(eu, agora, self.mapa.viagem.ativa() || self.mar_rota.ativa())
+        else {
             return;
         };
         match acao {
@@ -5732,8 +6086,12 @@ impl Jogo {
     /// Clique no menu de todas as missoes.
     fn abrir_missao_manual(&mut self, id: u16) {
         use shared::quests::{objective_kind as o, tutorial as t};
-        let Some(d)=shared::quests::quest_by_id(id) else {return};
-        if !menu_missoes::tem_atalho_manual(d) {return}
+        let Some(d) = shared::quests::quest_by_id(id) else {
+            return;
+        };
+        if !menu_missoes::tem_atalho_manual(d) {
+            return;
+        }
         self.parar_fila();
         self.auto_missao.parar();
         self.auto_combate.parar();
@@ -5741,35 +6099,44 @@ impl Jogo {
         self.ir_para.parar();
         self.mapa.viagem.cancelar();
         self.fecha_paineis();
-        self.menu_missoes.aberto=false;
+        self.menu_missoes.aberto = false;
         self.diarias.fechar();
-        self.foco_tutorial=None;
-        self.dica_da_trava=None;
+        self.foco_tutorial = None;
+        self.dica_da_trava = None;
         foco::limpar();
         match d.obj_kind {
-            o::CRAFT if shared::porao::porao_da_chave(d.obj_target).is_some()=>self.craft.abrir_chaves(Some(d.obj_target)),
-            o::CRAFT=>self.craft.abrir_no_que_da(&self.bolsa.slots,self.bolsa.nivel),
-            o::REFINE=>self.forja.abrir(),
-            o::DUNGEON=>{for pedido in self.dungeon.abrir_em(d.obj_target) {self.envia(pedido);}},
-            o::TREASURE=>self.mapa.abrir(),
-            o::TUTORIAL=>{
+            o::CRAFT if shared::porao::porao_da_chave(d.obj_target).is_some() => {
+                self.craft.abrir_chaves(Some(d.obj_target))
+            }
+            o::CRAFT => self
+                .craft
+                .abrir_no_que_da(&self.bolsa.slots, self.bolsa.nivel),
+            o::REFINE => self.forja.abrir(),
+            o::DUNGEON => {
+                for pedido in self.dungeon.abrir_em(d.obj_target) {
+                    self.envia(pedido);
+                }
+            }
+            o::TREASURE => self.mapa.abrir(),
+            o::TUTORIAL => {
                 match d.obj_target {
-                    t::POCAO_LIMIAR=>self.config_barra.abrir(Some(0)),
-                    t::MAPA_IR=>self.mapa.abrir(),
-                    t::PONTO_ATRIBUTO | t::EVOLUIR_SKILL=>{
+                    t::POCAO_LIMIAR => self.config_barra.abrir(Some(0)),
+                    t::MAPA_IR => self.mapa.abrir(),
+                    t::PONTO_ATRIBUTO | t::EVOLUIR_SKILL => {
                         // O servidor decide: sem energia leva ao cristal;
                         // com saldo devolve TUTORIAL para abrir o painel.
                         // Só o clique individual chega aqui, nunca a fila.
-                        self.auto_missao.iniciar(id, d.title.to_string(), get_time());
+                        self.auto_missao
+                            .iniciar(id, d.title.to_string(), get_time());
                         return;
-                    },
-                    _=>{},
+                    }
+                    _ => {}
                 }
-                self.foco_tutorial=Some((id,get_time()));
-            },
-            _=>{},
+                self.foco_tutorial = Some((id, get_time()));
+            }
+            _ => {}
         }
-        self.chat.push(format!("{}: {}",d.title,d.desc));
+        self.chat.push(format!("{}: {}", d.title, d.desc));
     }
 
     fn clique_menu_missoes(&mut self, c: menu_missoes::Clique) {
@@ -5795,7 +6162,12 @@ impl Jogo {
             menu_missoes::Clique::Fila(ids) => {
                 self.menu_missoes.aberto = false;
                 self.diarias.fechar();
-                self.fila_de_missoes = ids.into_iter().filter(|id| shared::quests::quest_by_id(*id).is_some_and(menu_missoes::automatizavel)).collect();
+                self.fila_de_missoes = ids
+                    .into_iter()
+                    .filter(|id| {
+                        shared::quests::quest_by_id(*id).is_some_and(menu_missoes::automatizavel)
+                    })
+                    .collect();
                 self.fila_feitas = 0;
                 self.fila_puladas = 0;
                 self.auto_resumo.iniciar();
@@ -5906,19 +6278,32 @@ impl Jogo {
                 .and_then(|id| self.world.ents.get(&id))
                 .filter(|e| e.state.hp > 0 && e.morte.is_none())
                 .map(|e| eu.render_pos.distance(e.render_pos));
-            let sao = mar_ui::casco_de(&self.bolsa.equip).is_some_and(|(c, _, avariado)| c > 0 && !avariado);
-            let no_costado = self.alvo.and_then(|id| self.world.ents.get(&id)).is_some_and(|e| {
-                let g = |v: Vec2| ::glam::Vec2::new(v.x, v.y);
-                shared::navio::no_costado(g(eu.render_pos), mar_ui::rumo_do_casco(eu.state.vel_f32(), eu.yaw), g(e.render_pos))
-            });
+            let sao = mar_ui::casco_de(&self.bolsa.equip)
+                .is_some_and(|(c, _, avariado)| c > 0 && !avariado);
+            let no_costado = self
+                .alvo
+                .and_then(|id| self.world.ents.get(&id))
+                .is_some_and(|e| {
+                    let g = |v: Vec2| ::glam::Vec2::new(v.x, v.y);
+                    shared::navio::no_costado(
+                        g(eu.render_pos),
+                        mar_ui::rumo_do_casco(eu.state.vel_f32(), eu.yaw),
+                        g(e.render_pos),
+                    )
+                });
             let contexto = mar_ui::ContextoNavio {
                 pronto: vivo && sao,
                 distancia_alvo,
                 auto_combate: self.auto_combate.ativo(),
                 no_costado,
             };
-            if let Some(id) = self.barra_navio.pedido(contexto, &mut self.habilidades, !entrada_bloqueada) {
-                self.envia(ClientMessage::Navio { pedido: shared::navio::PedidoNavio::Habilidade { id } });
+            if let Some(id) =
+                self.barra_navio
+                    .pedido(contexto, &mut self.habilidades, !entrada_bloqueada)
+            {
+                self.envia(ClientMessage::Navio {
+                    pedido: shared::navio::PedidoNavio::Habilidade { id },
+                });
             }
             return;
         }
@@ -5943,7 +6328,10 @@ impl Jogo {
         };
         // Skill slots 4–6 (the path tree's actives) go first: they are
         // instant and do not hold the weapon skills (`ativas.rs`).
-        if let Some(slot) = self.ativas.pedido(&mut self.habilidades, contexto, entrada_bloqueada) {
+        if let Some(slot) = self
+            .ativas
+            .pedido(&mut self.habilidades, contexto, entrada_bloqueada)
+        {
             self.envia(ClientMessage::UsarAtiva { slot });
             return;
         }
@@ -6051,7 +6439,9 @@ impl Jogo {
         // the AUTO button and is resent while on.
         let piloto_quer = mar_ui::navegando() && self.auto_combate.ativo();
         if let Some(ligado) = self.mar_rota.piloto.pedido(piloto_quer, get_time()) {
-            self.envia(ClientMessage::Navio { pedido: shared::navio::PedidoNavio::Piloto { ligado } });
+            self.envia(ClientMessage::Navio {
+                pedido: shared::navio::PedidoNavio::Piloto { ligado },
+            });
         }
         let movimento = self.andando_na_mao();
         let clique_mundo = self.clique_no_mundo() && !self.ui_pega_mouse();
@@ -6148,11 +6538,16 @@ impl Jogo {
         if no_mar {
             if let Some((casco, total, _)) = mar_ui::casco_de(&self.bolsa.equip) {
                 let reparo = self.habilidades.recarga_ate(shared::navio::id_de_skill(2)) <= agora;
-                if self.mar_rota.piloto.casco(casco as f32 / total.max(1) as f32, reparo) {
+                if self
+                    .mar_rota
+                    .piloto
+                    .casco(casco as f32 / total.max(1) as f32, reparo)
+                {
                     if self.mar_rota.ativa() && self.mar_rota.atracar.is_none() {
                         self.mar_rota.parar();
                     }
-                    self.chat.push("AUTO: hull low, heading for the harbour to patch it.".into());
+                    self.chat
+                        .push("AUTO: hull low, heading for the harbour to patch it.".into());
                 }
                 if self.mar_rota.piloto.recuando {
                     return;
@@ -6178,8 +6573,7 @@ impl Jogo {
             // walking routes (they would steer the ship).
             return;
         }
-        {
-        }
+        {}
         // A target at sea: the fight's approach takes over the route.
         if no_mar && novo.is_some() {
             self.mar_rota.parar();
@@ -6192,7 +6586,10 @@ impl Jogo {
             } else if no_mar
                 && !self.mar_rota.ativa()
                 && !self.world.ents.values().any(|e| {
-                    e.meta.tag == shared::EntityTag::Enemy && e.state.hp > 0 && e.morte.is_none() && e.render_pos.distance(eu) < 110.0
+                    e.meta.tag == shared::EntityTag::Enemy
+                        && e.state.hp > 0
+                        && e.morte.is_none()
+                        && e.render_pos.distance(eu) < 110.0
                 })
             {
                 // Nothing in sight at sea: sail to the nearest mob nest.
@@ -6205,13 +6602,17 @@ impl Jogo {
 
     /// Other players around (alive, named), nearest first: the trade picker.
     fn jogadores_perto(&self) -> Vec<(String, f32)> {
-        let Some(eu) = self.world.self_pos() else { return Vec::new() };
+        let Some(eu) = self.world.self_pos() else {
+            return Vec::new();
+        };
         let mut v: Vec<(String, f32)> = self
             .world
             .ents
             .iter()
             .filter(|(id, e)| {
-                Some(**id) != self.world.self_id && e.meta.tag == shared::EntityTag::Player && e.morte.is_none()
+                Some(**id) != self.world.self_id
+                    && e.meta.tag == shared::EntityTag::Player
+                    && e.morte.is_none()
             })
             .filter_map(|(_, e)| {
                 let nome = e.meta.name.clone().filter(|n| !n.is_empty())?;
@@ -6226,14 +6627,18 @@ impl Jogo {
 
     fn alvo_jogador(&self) -> Option<(shared::EntityId, String)> {
         let id = self.alvo?;
-        if Some(id) == self.world.self_id { return None; }
+        if Some(id) == self.world.self_id {
+            return None;
+        }
         let e = self.world.ents.get(&id)?;
         (e.meta.tag == shared::EntityTag::Player && e.morte.is_none())
             .then(|| (id, e.meta.name.clone().unwrap_or_default()))
     }
 
     fn parar_seguir(&mut self) {
-        if let Some(msg) = self.seguir.parar() { self.envia(msg); }
+        if let Some(msg) = self.seguir.parar() {
+            self.envia(msg);
+        }
     }
 
     fn conduzir_seguir(&mut self) {
@@ -6242,13 +6647,32 @@ impl Jogo {
             self.parar_seguir();
             return;
         }
-        if self.habilidades.ocupada() { return; }
+        if self.habilidades.ocupada() {
+            return;
+        }
         let eu = self.world.self_pos();
-        let vivo = self.world.self_id.and_then(|id| self.world.ents.get(&id))
-            .is_some_and(|e| e.state.hp > 0 && e.morte.is_none() && e.state.flags & shared::ent_flags::DOWNED == 0);
-        if !vivo || eu.is_none() { self.parar_seguir(); return; }
-        let destino = self.world.ents.get(&id).filter(|e| e.state.hp > 0 && e.morte.is_none()).map(|e| e.render_pos);
-        if let Some(msg) = self.seguir.passo(eu.unwrap(), destino, get_time()) { self.envia(msg); }
+        let vivo = self
+            .world
+            .self_id
+            .and_then(|id| self.world.ents.get(&id))
+            .is_some_and(|e| {
+                e.state.hp > 0
+                    && e.morte.is_none()
+                    && e.state.flags & shared::ent_flags::DOWNED == 0
+            });
+        if !vivo || eu.is_none() {
+            self.parar_seguir();
+            return;
+        }
+        let destino = self
+            .world
+            .ents
+            .get(&id)
+            .filter(|e| e.state.hp > 0 && e.morte.is_none())
+            .map(|e| e.render_pos);
+        if let Some(msg) = self.seguir.passo(eu.unwrap(), destino, get_time()) {
+            self.envia(msg);
+        }
     }
 
     fn acao_social_alvo(&mut self, acao: social_hud::Acao) {
@@ -6256,7 +6680,9 @@ impl Jogo {
         match acao {
             Acao::AbrirGrupo => {
                 let pedidos = self.social.abrir(social_ui::Aba::Grupo);
-                for p in pedidos { self.envia(p); }
+                for p in pedidos {
+                    self.envia(p);
+                }
             }
             Acao::Selecionar(id) => {
                 self.parar_seguir();
@@ -6270,7 +6696,9 @@ impl Jogo {
                 self.envia(ClientMessage::SetTarget { target: None });
             }
             _ => {
-                let Some((id, nome)) = self.alvo_jogador() else { return };
+                let Some((id, nome)) = self.alvo_jogador() else {
+                    return;
+                };
                 match acao {
                     Acao::Inspecionar => {
                         self.dungeon.auto = false;
@@ -6280,12 +6708,19 @@ impl Jogo {
                         self.envia(ClientMessage::SetTarget { target: None });
                         self.envia(ClientMessage::PararRota);
                     }
-                    Acao::Amigo => self.envia(ClientMessage::Social { pedido: shared::social::Pedido::Amizade { nome } }),
-                    Acao::ListaNegra => self.envia(ClientMessage::Social { pedido: shared::social::Pedido::AdicionarListaNegra { nome } }),
+                    Acao::Amigo => self.envia(ClientMessage::Social {
+                        pedido: shared::social::Pedido::Amizade { nome },
+                    }),
+                    Acao::ListaNegra => self.envia(ClientMessage::Social {
+                        pedido: shared::social::Pedido::AdicionarListaNegra { nome },
+                    }),
                     Acao::Grupo => self.envia(ClientMessage::PartyInvite { target_name: nome }),
                     Acao::Trocar => self.envia(troca_ui::TrocaUi::convidar(nome)),
                     Acao::Seguir => {
-                        if self.seguir.alvo == Some(id) { self.parar_seguir(); return; }
+                        if self.seguir.alvo == Some(id) {
+                            self.parar_seguir();
+                            return;
+                        }
                         self.dungeon.auto = false;
                         self.auto_combate.parar();
                         self.auto_coleta.parar();
@@ -6298,7 +6733,8 @@ impl Jogo {
                         self.envia(ClientMessage::PararRota);
                         self.social_hud.pacifico = Some(id);
                         self.seguir.iniciar(id);
-                        self.chat.push(format!("Seguindo {nome}. Mova-se ou use Esc para parar."));
+                        self.chat
+                            .push(format!("Seguindo {nome}. Mova-se ou use Esc para parar."));
                     }
                     _ => {}
                 }
@@ -6308,7 +6744,9 @@ impl Jogo {
 
     /// Com um inimigo selecionado e fora do alcance, anda ate ele.
     fn ir_ate_o_alvo(&mut self) {
-        if self.seguir.alvo.is_some() { return; }
+        if self.seguir.alvo.is_some() {
+            return;
+        }
         // On a deck off the helm a walking route would steer the SHIP: the
         // body fights from where it stands (the rail, a gun's reach).
         if mar_ui::no_mar() && !mar_ui::navegando() {
@@ -6340,8 +6778,14 @@ impl Jogo {
             && (!pk_ui::posso_atacar(
                 &eu.meta,
                 &ele.meta,
-                ele.meta.name.as_ref().is_some_and(|n| self.social.grupo.contains(n)),
-            ) || self.social_hud.pacifico == Some(alvo)) { return; }
+                ele.meta
+                    .name
+                    .as_ref()
+                    .is_some_and(|n| self.social.grupo.contains(n)),
+            ) || self.social_hud.pacifico == Some(alvo))
+        {
+            return;
+        }
         if ele.state.hp == 0 || ele.morte.is_some() {
             if self.aproximando_alvo == Some(alvo) {
                 self.envia(ClientMessage::PararRota);
@@ -6387,7 +6831,13 @@ impl Jogo {
             return;
         }
         // At sea each request is a water A* on the server: fewer of them.
-        let intervalo = if no_mar { 0.6 } else if conjunto_dist { 0.35 } else { 0.25 };
+        let intervalo = if no_mar {
+            0.6
+        } else if conjunto_dist {
+            0.35
+        } else {
+            0.25
+        };
         if agora - self.ultima_aproximacao < intervalo {
             return;
         }
@@ -6622,8 +7072,11 @@ impl Jogo {
                 && !na_ui.contains(&p)
         };
         let dono = self.joystick.dedo();
-        self.joystick
-            .quadro(&toques, joystick::RAIO_BASE * z.s * hud_custom::tamanho("joystick"), &pode_comecar);
+        self.joystick.quadro(
+            &toques,
+            joystick::RAIO_BASE * z.s * hud_custom::tamanho("joystick"),
+            &pode_comecar,
+        );
         // O de antes tambem sai: no quadro do soltar o joystick ja' largou o id.
         let resto = joystick::sem_dedos(&toques, &[dono, self.joystick.dedo()]);
         // O HUD e' conferido no ponto do DEDO, nao no do mouse simulado: ele
@@ -6672,13 +7125,13 @@ impl Jogo {
             dyaw += 2.2 * dt;
         }
         let mut mexeu = 0.0f32;
-        let segurando = is_mouse_button_down(MouseButton::Right)
-            || is_mouse_button_down(MouseButton::Middle);
+        let segurando =
+            is_mouse_button_down(MouseButton::Right) || is_mouse_button_down(MouseButton::Middle);
         let bloqueado = self.teclado_bloqueado() || self.toque_ativo;
         let sobre_ui = self.ui_pega_mouse();
-        let delta = self.mouse_camera.quadro(
-            Vec2::from(mouse_position()), segurando, sobre_ui, bloqueado,
-        );
+        let delta =
+            self.mouse_camera
+                .quadro(Vec2::from(mouse_position()), segurando, sobre_ui, bloqueado);
         dyaw += delta.x * 0.008;
         mexeu += delta.y * 0.004;
         // Toque: um dedo arrastando no mundo gira com a MESMA sensibilidade do
@@ -6737,10 +7190,23 @@ impl Jogo {
                 let alvo = self
                     .alvo
                     .and_then(|id| self.world.ents.get(&id))
-                    .filter(|a| a.state.hp > 0 && a.morte.is_none() && a.meta.tag != shared::EntityTag::Npc)
+                    .filter(|a| {
+                        a.state.hp > 0 && a.morte.is_none() && a.meta.tag != shared::EntityTag::Npc
+                    })
                     .map(|a| a.render_pos);
-                let alcance = shared::navio::HABILIDADES.iter().map(|h| h.alcance).fold(0.0f32, f32::max) + 10.0;
-                let luta = mar_camera::em_luta(e.render_pos, alvo, alcance, self.auto_combate.ativo(), self.mar_vfx.desde_a_luta(), 3.0);
+                let alcance = shared::navio::HABILIDADES
+                    .iter()
+                    .map(|h| h.alcance)
+                    .fold(0.0f32, f32::max)
+                    + 10.0;
+                let luta = mar_camera::em_luta(
+                    e.render_pos,
+                    alvo,
+                    alcance,
+                    self.auto_combate.ativo(),
+                    self.mar_vfx.desde_a_luta(),
+                    3.0,
+                );
                 (vec2(r.x, r.y), e.state.vel_f32().length(), luta)
             })
         } else {
@@ -6751,7 +7217,9 @@ impl Jogo {
         let cs = &mut self.camera_suave;
         if let Some((rumo, vel, luta)) = segue_rumo {
             let mexeu_mao = dyaw != 0.0 || mexeu != 0.0 || segurando || self.girando_toque;
-            cs.yaw = self.mar_camera.segue(cs.yaw, rumo, mexeu_mao, vel, dt, luta);
+            cs.yaw = self
+                .mar_camera
+                .segue(cs.yaw, rumo, mexeu_mao, vel, dt, luta);
         }
         cs.yaw += dyaw;
         if cs.yaw > std::f32::consts::PI {
@@ -6874,7 +7342,8 @@ impl Jogo {
             // The performance test (docs/BENCHMARK.md) draws in place of the
             // character screen or, re-run from Graphics, of the world.
             Tela::Jogando | Tela::Personagens if self.benchmark.ativo() => {
-                self.benchmark.quadro(&self.vox, &self.solido, &mut self.config_graficos)
+                self.benchmark
+                    .quadro(&self.vox, &self.solido, &mut self.config_graficos)
             }
             Tela::Jogando if self.economia.ativa => self.desenhar_economia(),
             Tela::Jogando => {
@@ -6883,14 +7352,16 @@ impl Jogo {
                     self.desenhar_carregando();
                 }
                 let observar = self.carregando_desde.is_none();
-                self.benchmark.guarda_quadro(&mut self.config_graficos, observar);
+                self.benchmark
+                    .guarda_quadro(&mut self.config_graficos, observar);
             }
             Tela::Servidores => self.tela_servidores(),
             Tela::Login => self.tela_login(),
             Tela::Cadastro => self.tela_cadastro(),
             Tela::EsqueciSenha => self.tela_esqueci(),
             Tela::Personagens if self.benchmark.quer_rodar() => {
-                self.benchmark.quadro(&self.vox, &self.solido, &mut self.config_graficos)
+                self.benchmark
+                    .quadro(&self.vox, &self.solido, &mut self.config_graficos)
             }
             Tela::Personagens => self.tela_personagens(),
             Tela::Conectando => {
@@ -6898,15 +7369,37 @@ impl Jogo {
                 match self.reconexao.as_ref().map(|r| r.tentativas) {
                     None => {
                         let r = ui::painel(420.0, 160.0, "");
-                        ui::texto_centro(r.x + r.w * 0.5, r.y + 50.0, "conectando...", 22, ui::OURO);
+                        ui::texto_centro(
+                            r.x + r.w * 0.5,
+                            r.y + 50.0,
+                            "conectando...",
+                            22,
+                            ui::OURO,
+                        );
                     }
                     Some(tentativas) => {
                         let r = ui::painel(520.0, 220.0, "");
-                        ui::texto_centro(r.x + r.w * 0.5, r.y + 50.0, "Connection lost — reconnecting…", 22, ui::OURO);
+                        ui::texto_centro(
+                            r.x + r.w * 0.5,
+                            r.y + 50.0,
+                            "Connection lost — reconnecting…",
+                            22,
+                            ui::OURO,
+                        );
                         if tentativas > 0 {
-                            ui::texto_centro(r.x + r.w * 0.5, r.y + 88.0, &format!("Attempt {tentativas}"), 16, crate::hud_estilo::SUAVE);
+                            ui::texto_centro(
+                                r.x + r.w * 0.5,
+                                r.y + 88.0,
+                                &format!("Attempt {tentativas}"),
+                                16,
+                                crate::hud_estilo::SUAVE,
+                            );
                         }
-                        if ui::botao(Rect::new(r.x + r.w * 0.5 - 80.0, r.y + 130.0, 160.0, 44.0), "Give up", true) {
+                        if ui::botao(
+                            Rect::new(r.x + r.w * 0.5 - 80.0, r.y + 130.0, 160.0, 44.0),
+                            "Give up",
+                            true,
+                        ) {
                             self.reconexao = None;
                             self.net = None;
                             self.busca = Some(api::buscar_canais());
@@ -6929,7 +7422,8 @@ impl Jogo {
                     ui::erro(r.x + r.w * 0.5, r.y + 50.0, &msg);
                     ui::botao(
                         Rect::new(r.x + r.w * 0.5 - 80.0, r.y + 110.0, 160.0, 40.0),
-                        "voltar", true,
+                        "voltar",
+                        true,
                     )
                 };
                 if voltar {
@@ -6945,7 +7439,8 @@ impl Jogo {
         // O contador de missoes: por cima de tudo, menos do foco do tutorial
         // (que apaga o que nao interessa e tem que continuar apagando).
         missoes::desenha_contador(&self.missoes, get_time());
-        self.recompensas.desenhar(&self.bolsa.nomes, Some((&self.vox, &self.solido)));
+        self.recompensas
+            .desenhar(&self.bolsa.nomes, Some((&self.vox, &self.solido)));
         foco::desenha(get_time());
         foco::novo_quadro();
         if let Some(escolha) = self.nivel_ui.desenhar() {
@@ -6978,7 +7473,9 @@ impl Jogo {
         // fechar a prévia também restaura o visual confirmado pelo servidor.
         self.world.sincroniza_visual_local(
             &self.bolsa.equip,
-            self.guarda_roupa.provando().unwrap_or(self.guarda_roupa_salvo.aparencia),
+            self.guarda_roupa
+                .provando()
+                .unwrap_or(self.guarda_roupa_salvo.aparencia),
         );
         render3d::clear();
         let centro = self.world.self_pos().unwrap_or(Vec2::ZERO)
@@ -7001,12 +7498,35 @@ impl Jogo {
         if mar_ui::navegando() {
             if let Some(e) = self.world.casco_do_eu() {
                 let r = mar_ui::rumo_do_casco(e.state.vel_f32(), e.yaw);
-                let alvo = self.alvo.and_then(|id| self.world.ents.get(&id)).filter(|a| a.state.hp > 0 && a.morte.is_none()).map(|a| a.render_pos);
-                let classe = self.bolsa.equip.navio.filter(|i| shared::item_id::e_navio(*i)).map_or(0, shared::navio::classe);
+                let alvo = self
+                    .alvo
+                    .and_then(|id| self.world.ents.get(&id))
+                    .filter(|a| a.state.hp > 0 && a.morte.is_none())
+                    .map(|a| a.render_pos);
+                let classe = self
+                    .bolsa
+                    .equip
+                    .navio
+                    .filter(|i| shared::item_id::e_navio(*i))
+                    .map_or(0, shared::navio::classe);
                 let retrato = screen_height() > screen_width();
-                let quer = mar_camera::enquadramento(centro, vec2(r.x, r.y), alvo, classe, retrato, self.cam_zoom, self.cam_pitch_ajuste);
+                let quer = mar_camera::enquadramento(
+                    centro,
+                    vec2(r.x, r.y),
+                    alvo,
+                    classe,
+                    retrato,
+                    self.cam_zoom,
+                    self.cam_pitch_ajuste,
+                );
                 let q = self.mar_camera.quadro(quer, get_frame_time().min(0.1));
-                vista.cam = render3d::camera_no_mar(q.centro, self.cam_altura, self.cam_yaw, q.fator, q.pitch);
+                vista.cam = render3d::camera_no_mar(
+                    q.centro,
+                    self.cam_altura,
+                    self.cam_yaw,
+                    q.fator,
+                    q.pitch,
+                );
             }
         }
         set_camera(&vista.cam);
@@ -7014,14 +7534,22 @@ impl Jogo {
         // Kōgen-tō is always night: -1 in the late-sun slot tells the world
         // shader so (`render3d::SOLIDO_VERTICE`).
         let noite = render3d::noite();
-        let luz_dia = render3d::luz_dia(if modo_sombras == config_graficos::Sombras::Bonitas { 1.0 } else { 0.0 });
+        let luz_dia = render3d::luz_dia(if modo_sombras == config_graficos::Sombras::Bonitas {
+            1.0
+        } else {
+            0.0
+        });
         self.solido.set_uniform("LuzDia", luz_dia);
         gpu_estatica::define_luz_dia(luz_dia);
         // Distance fog: centred where the terrain is loaded around (the
         // player), solid sky before the edge of what is loaded. A negative
         // start is night's fog (the night sky).
         // At sea the haze reaches much farther (`mar_cena::neblina`).
-        let (inicio, fim) = if mar_ui::no_mar() { mar_cena::neblina() } else { config_graficos::neblina() };
+        let (inicio, fim) = if mar_ui::no_mar() {
+            mar_cena::neblina()
+        } else {
+            config_graficos::neblina()
+        };
         let inicio = if noite { -inicio.max(0.01) } else { inicio };
         let em_volta = self.world.self_pos().unwrap_or(Vec2::ZERO);
         gpu_estatica::define_neblina(em_volta, inicio, fim);
@@ -7036,10 +7564,15 @@ impl Jogo {
         }
         if self.zona_atual == shared::arena::ZONA {
             if let (Some((id, andar, centro)), Some(t)) = (self.dungeon.cenario(), &self.terreno) {
-                self.cenario_dungeon.preparar(id, andar, centro, &|x,z| t.altura(x,z));
+                self.cenario_dungeon
+                    .preparar(id, andar, centro, &|x, z| t.altura(x, z));
                 self.cenario_dungeon.luzes();
-            } else { self.cenario_dungeon.limpar(); }
-        } else { self.cenario_dungeon.limpar(); }
+            } else {
+                self.cenario_dungeon.limpar();
+            }
+        } else {
+            self.cenario_dungeon.limpar();
+        }
         // Tudo que e' mundo — chao, vegetacao, bichos — vai com descarte de
         // face de costas. O HUD volta pro material padrao no fim, porque ele
         // e' 2D e nao tem lado de tras.
@@ -7126,14 +7659,16 @@ impl Jogo {
                 if self.cura.ativo(get_time()) {
                     if let Some(eu) = self.world.self_pos() {
                         let y = t.altura(eu.x, eu.y);
-                        self.cura.desenha(vec3(eu.x, y, eu.y), vista.cam.position, get_time());
+                        self.cura
+                            .desenha(vec3(eu.x, y, eu.y), vista.cam.position, get_time());
                     }
                 }
                 // Reborn: the rebirth's bigger burst, by tier.
                 if self.renasceu.ativo() {
                     if let Some(eu) = self.world.self_pos() {
                         let y = t.altura(eu.x, eu.y);
-                        self.renasceu.desenha(vec3(eu.x, y, eu.y), vista.cam.position);
+                        self.renasceu
+                            .desenha(vec3(eu.x, y, eu.y), vista.cam.position);
                         gl_use_material(&self.solido);
                     }
                 }
@@ -7194,8 +7729,8 @@ impl Jogo {
             let portas = self.porao.portas(&self.zona_atual).to_vec();
             if let Some(terreno) = &self.terreno {
                 for (conteudo, pos) in portas {
-                    let perto = eu
-                        .is_some_and(|e| e.distance(pos) <= shared::porao::ALCANCE_DA_PORTA);
+                    let perto =
+                        eu.is_some_and(|e| e.distance(pos) <= shared::porao::ALCANCE_DA_PORTA);
                     let y = terreno.altura(pos.x, pos.y);
                     render3d::desenha_porta_do_porao(vec3(pos.x, y, pos.y), conteudo, perto);
                 }
@@ -7204,10 +7739,16 @@ impl Jogo {
                     // Whole, never dithered by a fade left on the material.
                     self.solido.set_uniform("Some", 0.0f32);
                     self.solido.set_uniform("Oco", Vec3::ZERO);
-                    let perto = eu.is_some_and(|e| e.distance(pos) <= shared::portal_ilhas::ALCANCE + 1.5);
+                    let perto =
+                        eu.is_some_and(|e| e.distance(pos) <= shared::portal_ilhas::ALCANCE + 1.5);
                     let y = terreno.altura(pos.x, pos.y);
                     let girado = portal_ilhas_ui::girado(pos, chegada);
-                    portal_ilhas_ui::desenha_virado(vec3(pos.x, y, pos.y), girado, perto, get_time() as f32);
+                    portal_ilhas_ui::desenha_virado(
+                        vec3(pos.x, y, pos.y),
+                        girado,
+                        perto,
+                        get_time() as f32,
+                    );
                 }
                 // Stepping in: the light wraps the character before the trip.
                 if let (Some((conteudo, progresso)), Some(e)) = (self.porao.entrando(), eu) {
@@ -7259,21 +7800,37 @@ impl Jogo {
             // The auto path's dashed line, ON the water.
             if let Some(eu) = self.world.self_pos() {
                 let y = mar_combate_ui::altura_do_tracejado();
-                rastro::desenha(&self.rastro, eu, self.mar_rota.destino(), &|_, _| y, get_time() as f32);
+                rastro::desenha(
+                    &self.rastro,
+                    eu,
+                    self.mar_rota.destino(),
+                    &|_, _| y,
+                    get_time() as f32,
+                );
             }
             self.mar_vfx.atualiza(&self.world);
             let prontos = self.prontos_do_mar();
-            self.mar_vfx.desenha_3d(&self.world, &vista.cam, self.alvo, prontos);
+            self.mar_vfx
+                .desenha_3d(&self.world, &vista.cam, self.alvo, prontos);
             if let Some(f) = self.mar_vfx.tremor() {
                 self.tremor = (f, get_time() + 0.22);
             }
         }
         set_default_camera();
         if mar_ui::no_mar() {
-            let foco = self.world.self_pos().and_then(|p| self.mar_rota.ilha_em_foco(p));
-            mar_cena::rotulos(&vista.cam, self.world.self_pos(), vec2(screen_width(), screen_height()), foco);
+            let foco = self
+                .world
+                .self_pos()
+                .and_then(|p| self.mar_rota.ilha_em_foco(p));
+            mar_cena::rotulos(
+                &vista.cam,
+                self.world.self_pos(),
+                vec2(screen_width(), screen_height()),
+                foco,
+            );
             let prontos = self.prontos_do_mar();
-            self.mar_vfx.desenha_2d(&self.world, &vista.cam, self.alvo, prontos);
+            self.mar_vfx
+                .desenha_2d(&self.world, &vista.cam, self.alvo, prontos);
         }
         // Numero de dano, faisca e a borda vermelha, por cima do mundo.
         efeitos::desenha(&self.world, &vista);
@@ -7285,7 +7842,11 @@ impl Jogo {
             rastro::desenha_distancia(
                 &self.rastro,
                 eu,
-                if mar { self.mar_rota.destino() } else { self.mapa.viagem.destino() },
+                if mar {
+                    self.mar_rota.destino()
+                } else {
+                    self.mapa.viagem.destino()
+                },
                 &altura,
                 &vista.cam,
             );
@@ -7299,7 +7860,12 @@ impl Jogo {
         icone_npc::desenha(&self.world, &vista, self.world.self_pos());
         if let Some(t) = &self.terreno {
             let altura = |x: f32, z: f32| t.altura(x, z);
-            self.portal.desenha_rotulo(&self.zona_atual, &vista.cam, &altura, self.world.self_pos());
+            self.portal.desenha_rotulo(
+                &self.zona_atual,
+                &vista.cam,
+                &altura,
+                self.world.self_pos(),
+            );
         }
         {
             let slots = &self.bolsa.slots;
@@ -7380,9 +7946,7 @@ impl Jogo {
             // porta com a chave. O servidor confere tudo de novo.
             {
                 let slots = self.bolsa.slots.clone();
-                let tem = move |chave: u16| {
-                    slots.iter().any(|i| i.item_id == chave && i.qty > 0)
-                };
+                let tem = move |chave: u16| slots.iter().any(|i| i.item_id == chave && i.qty > 0);
                 let eu = self.world.self_pos();
                 let zona = self.zona_atual.clone();
                 if let Some(msg) = self.porao.desenha(&zona, eu, &tem) {
@@ -7410,7 +7974,10 @@ impl Jogo {
             let eu = self.world.self_pos();
             let zona = self.zona_atual.clone();
             let menu = self.viagem.aberto() || self.viagem_pendente.is_some();
-            if let Some(msg) = self.portal.passo(&zona, eu, menu || mar_ui::no_mar(), get_time()) {
+            if let Some(msg) = self
+                .portal
+                .passo(&zona, eu, menu || mar_ui::no_mar(), get_time())
+            {
                 self.envia(msg);
             }
         }
@@ -7459,10 +8026,16 @@ impl Jogo {
                     mp_max,
                     vigor_max,
                     poder,
-                    mar_ui::casco_de(&self.bolsa.equip).filter(|_| mar_ui::navegando()).map(|(c, m, _)| (c, m)),
+                    mar_ui::casco_de(&self.bolsa.equip)
+                        .filter(|_| mar_ui::navegando())
+                        .map(|(c, m, _)| (c, m)),
                 );
-                let pk = self.world.self_id.and_then(|id| self.world.ents.get(&id))
-                    .map(|e| e.meta.pk).unwrap_or_default();
+                let pk = self
+                    .world
+                    .self_id
+                    .and_then(|id| self.world.ents.get(&id))
+                    .map(|e| e.meta.pk)
+                    .unwrap_or_default();
                 if hud::draw_modo_pk(&z, pk) {
                     self.pk_ui.abrir();
                 }
@@ -7470,14 +8043,16 @@ impl Jogo {
                 // mar limpo", 17/11/2026): hull, ship bar, minimap with
                 // "Sail to…", the helm toggle, chat, AUTO.
                 let leme = mar_ui::navegando();
-                if !leme { hud::draw_buffs(
-                    self.bonus_xp_ate,
-                    self.bonus_fortuna_ate,
-                    self.bonus_sorte_ate,
-                    agora_unix,
-                    z.buffs,
-                    self.barra.curas(get_time()),
-                ); }
+                if !leme {
+                    hud::draw_buffs(
+                        self.bonus_xp_ate,
+                        self.bonus_fortuna_ate,
+                        self.bonus_sorte_ate,
+                        agora_unix,
+                        z.buffs,
+                        self.barra.curas(get_time()),
+                    );
+                }
                 if !leme && self.eventos.selo(z.buffs) {
                     self.eventos.aberto = true;
                 }
@@ -7492,12 +8067,17 @@ impl Jogo {
                         self.ficha.mp.unwrap_or(0),
                         &self.evolucao_skills.progresso,
                     );
-                    self.ativas.desenha(&self.habilidades, self.ficha.mp.unwrap_or(0));
+                    self.ativas
+                        .desenha(&self.habilidades, self.ficha.mp.unwrap_or(0));
                 }
                 self.auto_combate.desenha();
                 // At sea GATHER is only for wreckage: shown near some (or
                 // while it runs), else it is clutter.
-                let destroco_perto = self.world.self_pos().zip(self.terreno.as_ref()).is_some_and(|(p, t)| t.destroco_perto(p, 30.0));
+                let destroco_perto = self
+                    .world
+                    .self_pos()
+                    .zip(self.terreno.as_ref())
+                    .is_some_and(|(p, t)| t.destroco_perto(p, 30.0));
                 if !mar_ui::no_mar() || self.auto_coleta.ativo() || destroco_perto {
                     self.auto_coleta.desenha();
                 }
@@ -7530,7 +8110,13 @@ impl Jogo {
                 // Barra de itens: clique usa, arrastar ↑/↓ liga/desliga o AUTO
                 // do espaco, botao direito abre o configurador.
                 // (At the helm the bar is not drawn: nothing to tap.)
-                let rects = hud::rects_rapidos(&z).map(|r| if leme { Rect::new(-9999.0, -9999.0, 0.0, 0.0) } else { r });
+                let rects = hud::rects_rapidos(&z).map(|r| {
+                    if leme {
+                        Rect::new(-9999.0, -9999.0, 0.0, 0.0)
+                    } else {
+                        r
+                    }
+                });
                 let mouse = Vec2::from(mouse_position());
                 if is_mouse_button_pressed(MouseButton::Right) {
                     if let Some(i) = rects.iter().position(|r| r.toca(mouse)) {
@@ -7547,10 +8133,7 @@ impl Jogo {
                 }
                 // Segurar um espaco parado (toque longo) tambem abre o
                 // configurador; arrastar continua sendo o AUTO.
-                let sob_dedo = rects
-                    .iter()
-                    .position(|r| r.toca(mouse))
-                    .map(|i| i as u32);
+                let sob_dedo = rects.iter().position(|r| r.toca(mouse)).map(|i| i as u32);
                 if let toque::Toque::Longo(i) = self.toque_barra.quadro(
                     crate::foco::clique(),
                     is_mouse_button_down(MouseButton::Left),
@@ -7583,8 +8166,13 @@ impl Jogo {
                 // Dentro da dungeon o rastreador e' da DUNGEON (a linha de
                 // missao dela ocupa este mesmo lugar): as missoes normais nao
                 // aparecem.
-                let rastreador_no_mar = !mar_ui::no_mar() || (self.auto_missao.quest.is_some() && !mar_ui::navegando());
-                if !self.missoes.aberta && !self.loja.aberta() && !self.dungeon.na_instancia() && rastreador_no_mar {
+                let rastreador_no_mar =
+                    !mar_ui::no_mar() || (self.auto_missao.quest.is_some() && !mar_ui::navegando());
+                if !self.missoes.aberta
+                    && !self.loja.aberta()
+                    && !self.dungeon.na_instancia()
+                    && rastreador_no_mar
+                {
                     // Quem mede a caixa precisa saber o tamanho do grupo.
                     self.missoes.membros_grupo = self.social.grupo.len();
                     let clique = {
@@ -7680,7 +8268,11 @@ impl Jogo {
                 telegrafico::desenha_barra_de_chefe(z.alvo, &nome, nv, hp, hp_max);
             }
             let jogador = self.alvo_jogador().map(|(id, _)| id);
-            if let Some(acao) = self.social_hud.alvo(&z, jogador, jogador.is_some() && self.seguir.alvo == jogador) {
+            if let Some(acao) = self.social_hud.alvo(
+                &z,
+                jogador,
+                jogador.is_some() && self.seguir.alvo == jogador,
+            ) {
                 self.acao_social_alvo(acao);
             }
             foco::marca(foco::chave::MENU, z.menu);
@@ -7696,7 +8288,14 @@ impl Jogo {
                 || selo_ficha
                 || self.selo_skills()
                 || self.selo_pets();
-            match hud::draw_topo(&z, selo, selo_diarias, selo_presenca, selo_ofertas, selo_menu) {
+            match hud::draw_topo(
+                &z,
+                selo,
+                selo_diarias,
+                selo_presenca,
+                selo_ofertas,
+                selo_menu,
+            ) {
                 Some(hud::Topo::Ofertas) => {
                     self.fecha_paineis();
                     for pedido in self.ofertas.abrir() {
@@ -7740,10 +8339,13 @@ impl Jogo {
             let progresso = self.montarias.progresso(get_time());
             // At sea there is no mount; at the helm no sprint either (on deck
             // the legs run, as on land).
-            if !mar_ui::no_mar() && hud::draw_botao_montaria(&z, montado, progresso, self.tem_montaria()) {
+            if !mar_ui::no_mar()
+                && hud::draw_botao_montaria(&z, montado, progresso, self.tem_montaria())
+            {
                 self.alternar_montaria();
             }
-            if !mar_ui::navegando() && hud::draw_sprint(&z, self.corrida.ativa(self.correndo_auto)) {
+            if !mar_ui::navegando() && hud::draw_sprint(&z, self.corrida.ativa(self.correndo_auto))
+            {
                 self.corrida.alternar(self.correndo_auto);
             }
             // No dash any more (09/11/2026): the jump took its slot.
@@ -7784,7 +8386,9 @@ impl Jogo {
                 .world
                 .self_id
                 .and_then(|id| self.world.ents.get(&id))
-                .map_or((false, 0.0), |e| (e.meta.pk.marcado, e.state.vel_f32().length()));
+                .map_or((false, 0.0), |e| {
+                    (e.meta.pk.marcado, e.state.vel_f32().length())
+                });
             // THE SEA HUD (sea HUD clean-up, 16/11/2026): the zone toast and
             // the badges by the minimap; the hull is the character frame's,
             // and "Sail to…" is the pill at the minimap's foot.
@@ -7793,32 +8397,58 @@ impl Jogo {
             if mar_ui::navegando() {
                 let _ = velocidade;
                 let eu_v = self.world.self_pos();
-                self.mar_vfx.hud_do_mar(&z, &self.bolsa.equip, eu_v, marcado, mapa::Mapa::mini_rect());
+                self.mar_vfx.hud_do_mar(
+                    &z,
+                    &self.bolsa.equip,
+                    eu_v,
+                    marcado,
+                    mapa::Mapa::mini_rect(),
+                );
                 let vel_max = shared::item_id::e_navio(self.bolsa.equip.navio.unwrap_or(0))
                     .then(|| {
                         let id = self.bolsa.equip.navio.unwrap_or(0);
-                        shared::navio::velocidade_do_navio(id, &shared::navio::dados(self.bolsa.equip.navio_inst.as_ref(), id))
+                        shared::navio::velocidade_do_navio(
+                            id,
+                            &shared::navio::dados(self.bolsa.equip.navio_inst.as_ref(), id),
+                        )
                     })
                     .unwrap_or(shared::navio::CASCOS[0].velocidade);
                 if !hud_layout::minimapa_oculto() {
-                    if let Some(ilha) = self.mar_rota.desenha_portos(mapa::Mapa::disco_do_minimapa(), z.s, eu_v, vel_max) {
+                    if let Some(ilha) = self.mar_rota.desenha_portos(
+                        mapa::Mapa::disco_do_minimapa(),
+                        z.s,
+                        eu_v,
+                        vel_max,
+                    ) {
                         self.navegar_para_ilha(ilha);
                     }
                 }
             }
             // Docking is the captain's (the crew comes ashore with it).
             if let Some(ilha) = mar_ui::botao_atracar(&z, eu).filter(|_| self.world.eu_capitao()) {
-                self.envia(ClientMessage::Navio { pedido: shared::navio::PedidoNavio::Atracar { ilha } });
+                self.envia(ClientMessage::Navio {
+                    pedido: shared::navio::PedidoNavio::Atracar { ilha },
+                });
             }
             // THE WALKABLE DECK: the one helm toggle (and, beside a party
             // member's ship, the compact board prompt).
             let tem_navio = self.bolsa.equip.navio.is_some_and(shared::item_id::e_navio);
-            if let Some(pedido) = mar_ui::botao_do_leme(&z, &self.world, &self.social.grupo, tem_navio) {
+            if let Some(pedido) =
+                mar_ui::botao_do_leme(&z, &self.world, &self.social.grupo, tem_navio)
+            {
                 self.envia(ClientMessage::Navio { pedido });
             }
-            let bonus = self.arvore_ui.estado.map_or(0.0, |e| e.arvore.passivas().mult_tesouro);
+            if let Some(pedido) = mar_ui::botoes_navais(&z, &self.world, self.coleta_hud.tipo()) {
+                self.envia(ClientMessage::Navio { pedido });
+            }
+            let bonus = self
+                .arvore_ui
+                .estado
+                .map_or(0.0, |e| e.arvore.passivas().mult_tesouro);
             if mar_ui::botao_abrir_tesouro(&z, &self.bolsa.equip, bonus) {
-                self.envia(ClientMessage::Navio { pedido: shared::navio::PedidoNavio::AbrirTesouro });
+                self.envia(ClientMessage::Navio {
+                    pedido: shared::navio::PedidoNavio::AbrirTesouro,
+                });
             }
         }
 
@@ -8041,7 +8671,9 @@ impl Jogo {
             if std::mem::take(&mut self.ficha_ui.abrir_caminhos) {
                 self.fecha_paineis();
                 self.arvore_ui.abrir();
-                self.envia(ClientMessage::Arvore { pedido: shared::arvore::PedidoArvore::Painel });
+                self.envia(ClientMessage::Arvore {
+                    pedido: shared::arvore::PedidoArvore::Painel,
+                });
             }
             // ESSENCE: the sheet gives way to the Essence shop.
             if std::mem::take(&mut self.ficha_ui.abrir_loja_essencia) {
@@ -8059,7 +8691,9 @@ impl Jogo {
                 .bolsa
                 .slots
                 .iter()
-                .filter(|s| s.item_id == shared::item_id::ESSENCIA_RENASCIMENTO && s.instance.is_none())
+                .filter(|s| {
+                    s.item_id == shared::item_id::ESSENCIA_RENASCIMENTO && s.instance.is_none()
+                })
                 .map(|s| s.qty)
                 .sum();
             if let Some(pedido) = self.loja_essencia.desenha(essencia) {
@@ -8108,7 +8742,10 @@ impl Jogo {
                 let c = menu_missoes::Contexto {
                     log: &self.missoes.log,
                     entregues: &self.quest_entregues,
-                    nivel: shared::quests::nivel_de_missao(self.ficha.nivel, self.ficha_ui.renascimentos),
+                    nivel: shared::quests::nivel_de_missao(
+                        self.ficha.nivel,
+                        self.ficha_ui.renascimentos,
+                    ),
                     faccao: self.faccao_qid,
                     zona: self.mapa.zona(),
                     agora_unix,
@@ -8152,7 +8789,10 @@ impl Jogo {
                 let c = menu_missoes::Contexto {
                     log: &self.missoes.log,
                     entregues: &self.quest_entregues,
-                    nivel: shared::quests::nivel_de_missao(self.ficha.nivel, self.ficha_ui.renascimentos),
+                    nivel: shared::quests::nivel_de_missao(
+                        self.ficha.nivel,
+                        self.ficha_ui.renascimentos,
+                    ),
                     faccao: self.faccao_qid,
                     zona: self.mapa.zona(),
                     agora_unix,
@@ -8240,7 +8880,9 @@ impl Jogo {
         {
             Some(mapa::Entrada::Dungeon(id)) => {
                 self.mapa.aberto = false;
-                for pedido in self.dungeon.abrir_em(id) { self.envia(pedido); }
+                for pedido in self.dungeon.abrir_em(id) {
+                    self.envia(pedido);
+                }
             }
             Some(mapa::Entrada::Ir(alvo)) => {
                 self.iniciar_ir_para(alvo);
@@ -8257,7 +8899,9 @@ impl Jogo {
             None
         } else {
             self.bolsa.aparencia = self.minha_aparencia();
-            self.bolsa.skins = self.world.self_id
+            self.bolsa.skins = self
+                .world
+                .self_id
                 .and_then(|id| self.world.ents.get(&id))
                 .map_or(0, |e| e.meta.skins);
             self.bolsa
@@ -8392,24 +9036,33 @@ impl Jogo {
                 self.bolsa.stats.as_ref(),
                 &self.bolsa.equip,
                 self.ficha_ui.nivel_da_arma(self.bolsa.equip.weapon),
-                &self.vox, &self.solido,
+                &self.vox,
+                &self.solido,
             ) {
                 let eu = self.world.self_pos().unwrap_or(Vec2::ZERO);
                 let destino = self.mapa.info.as_ref().and_then(|info| {
                     if pedido.chefe {
-                        info.chefes.iter().find(|c| c.kind == pedido.kind && c.nivel == pedido.nivel)
+                        info.chefes
+                            .iter()
+                            .find(|c| c.kind == pedido.kind && c.nivel == pedido.nivel)
                             .map(|c| (vec2(c.centro[0], c.centro[1]), 8.0))
                     } else {
-                        mapa::zona_mais_perto(&info.zonas, pedido.kind, eu,
-                            self.ficha.nivel.max(self.bolsa.nivel))
-                            .map(|z| (vec2(z.centro[0], z.centro[1]), z.raio))
+                        mapa::zona_mais_perto(
+                            &info.zonas,
+                            pedido.kind,
+                            eu,
+                            self.ficha.nivel.max(self.bolsa.nivel),
+                        )
+                        .map(|z| (vec2(z.centro[0], z.centro[1]), z.raio))
                     }
                 });
                 if let Some((pos, raio)) = destino {
                     self.mobs_ui.fechar();
                     self.iniciar_ir_para(ir_para::Alvo {
                         objetivo: ir_para::Objetivo::Lugar,
-                        pos, raio, rotulo: pedido.nome,
+                        pos,
+                        raio,
+                        rotulo: pedido.nome,
                     });
                 } else {
                     self.chat.push("Esse mob não aparece na ilha atual. Viaje para a ilha dele antes de usar Ir.".into());
@@ -8521,7 +9174,8 @@ impl Jogo {
         // "Rate Tempest": counts play time; shows only at a calm moment (no
         // window open, outside dungeons), then on top of everything.
         let calmo = !self.painel_grande() && self.mapa.zona() != Some("dungeon");
-        self.avaliacao.passo(get_frame_time(), self.bolsa.nivel, calmo);
+        self.avaliacao
+            .passo(get_frame_time(), self.bolsa.nivel, calmo);
         // The market keeps itself fresh (open tab, deliveries for the dots).
         for pedido in self.mercado.passo(get_time()) {
             self.envia(pedido);
@@ -8563,10 +9217,19 @@ impl Jogo {
             }
         }
         let auras = shared::auras::equipamento(&self.bolsa.equip);
-        if let Some(msg) = self.guarda_roupa.desenha(&self.vox, &self.solido, self.bolsa.equip.weapon.unwrap_or(0), auras, self.bolsa.equip.montaria) {
+        if let Some(msg) = self.guarda_roupa.desenha(
+            &self.vox,
+            &self.solido,
+            self.bolsa.equip.weapon.unwrap_or(0),
+            auras,
+            self.bolsa.equip.montaria,
+        ) {
             self.envia(msg);
         }
-        nivel_vfx::desenha_faixa(&self.subiu_de_nivel, self.ficha.nivel_na_tela(self.ficha.nivel));
+        nivel_vfx::desenha_faixa(
+            &self.subiu_de_nivel,
+            self.ficha.nivel_na_tela(self.ficha.nivel),
+        );
         renascimento_vfx::desenha_faixa(&self.renasceu);
         if let Some(pedido) = self.escolha_npc.desenha() {
             self.envia(pedido);
@@ -8595,7 +9258,11 @@ impl Jogo {
                 slots: &bolsa.slots,
                 conta: &conta,
                 nome: &nome,
-                nivel: shared::quests::nivel_de_missao(self.ficha.nivel, self.ficha_ui.renascimentos),
+                nivel: shared::quests::nivel_de_missao(
+                    self.ficha.nivel,
+                    self.ficha_ui.renascimentos,
+                ),
+                ouro: bolsa.ouro,
                 solido: &self.solido,
             };
             self.estaleiro.desenha(&ctx)
@@ -8603,10 +9270,32 @@ impl Jogo {
         {
             use shared::navio::PedidoNavio as P;
             match escolha_estaleiro {
-                Some(estaleiro_ui::Escolha::Zarpar) => self.envia(ClientMessage::Navio { pedido: P::Zarpar }),
-                Some(estaleiro_ui::Escolha::Reparar) => self.envia(ClientMessage::Navio { pedido: P::Reparar }),
-                Some(estaleiro_ui::Escolha::Construir) => self.envia(ClientMessage::Navio { pedido: P::Construir }),
-                Some(estaleiro_ui::Escolha::Melhorar(eixo)) => self.envia(ClientMessage::Navio { pedido: P::Melhorar { eixo } }),
+                Some(estaleiro_ui::Escolha::Zarpar) => {
+                    self.envia(ClientMessage::Navio { pedido: P::Zarpar })
+                }
+                Some(estaleiro_ui::Escolha::Reparar) => {
+                    self.envia(ClientMessage::Navio { pedido: P::Reparar })
+                }
+                Some(estaleiro_ui::Escolha::Construir) => self.envia(ClientMessage::Navio {
+                    pedido: P::Construir,
+                }),
+                Some(estaleiro_ui::Escolha::ConstruirTipo(tipo)) => {
+                    self.envia(ClientMessage::Navio {
+                        pedido: P::ConstruirTipo { tipo },
+                    })
+                }
+                Some(estaleiro_ui::Escolha::Alocar(pontos)) => self.envia(ClientMessage::Navio {
+                    pedido: P::Alocar { pontos },
+                }),
+                Some(estaleiro_ui::Escolha::Respec) => {
+                    self.envia(ClientMessage::Navio { pedido: P::Respec })
+                }
+                Some(estaleiro_ui::Escolha::UpgradeTier) => self.envia(ClientMessage::Navio {
+                    pedido: P::UpgradeTier,
+                }),
+                Some(estaleiro_ui::Escolha::Melhorar(eixo)) => self.envia(ClientMessage::Navio {
+                    pedido: P::Melhorar { eixo },
+                }),
                 Some(estaleiro_ui::Escolha::Vestir(slot)) => {
                     self.envia(ClientMessage::UseItem { slot });
                     // The panel shows the ship's new state on the next one.
@@ -8636,7 +9325,10 @@ impl Jogo {
         // A TARJA e a faixa de PvP desenham no COMECO do quadro (mais acima):
         // aqui fica so' o painel, que e' janela e janela vem por cima.
         // Loja de cash e janela de montarias (Menu).
-        self.loja_tp.define_personagem(self.guarda_roupa_salvo.aparencia, self.bolsa.equip.weapon.unwrap_or(0));
+        self.loja_tp.define_personagem(
+            self.guarda_roupa_salvo.aparencia,
+            self.bolsa.equip.weapon.unwrap_or(0),
+        );
         for pedido in self.loja_tp.desenha(&self.vox, &self.solido) {
             self.envia(pedido);
         }
@@ -8704,9 +9396,16 @@ impl Jogo {
         }
         // The PK panel, over the HUD (opened from the PK card).
         if self.pk_ui.aberto {
-            let pk = self.world.self_id.and_then(|id| self.world.ents.get(&id))
-                .map(|e| e.meta.pk).unwrap_or_default();
-            let nivel = self.world.self_id.and_then(|id| self.world.ents.get(&id))
+            let pk = self
+                .world
+                .self_id
+                .and_then(|id| self.world.ents.get(&id))
+                .map(|e| e.meta.pk)
+                .unwrap_or_default();
+            let nivel = self
+                .world
+                .self_id
+                .and_then(|id| self.world.ents.get(&id))
                 .map_or(1, |e| e.meta.nivel.max(1) as u32);
             if let Some(pedido) = self.pk_ui.desenha(pk, nivel, self.bolsa.ouro) {
                 self.envia(pedido);
@@ -8749,17 +9448,36 @@ impl Jogo {
         for i in 0..fatias {
             let x0 = (solido + borda * i as f32 / fatias as f32).floor();
             let x1 = (solido + borda * (i + 1) as f32 / fatias as f32).floor();
-            draw_rectangle(x0, 0.0, x1 - x0, h, escuro(0.42 * (1.0 - (i as f32 + 0.5) / fatias as f32)));
+            draw_rectangle(
+                x0,
+                0.0,
+                x1 - x0,
+                h,
+                escuro(0.42 * (1.0 - (i as f32 + 0.5) / fatias as f32)),
+            );
         }
         let t = TelaInicial::da_tela();
         hud_estilo::no_painel(t.k, || {
             let cx = t.ox + 226.0 * t.k;
             let titulo = "TEMPEST";
             let tw = hud_estilo::medir_forte(titulo, 72);
-            hud_estilo::texto_sombra(cx - tw * 0.5, t.oy + 190.0 * t.k, titulo, 72, ui::OURO, true);
+            hud_estilo::texto_sombra(
+                cx - tw * 0.5,
+                t.oy + 190.0 * t.k,
+                titulo,
+                72,
+                ui::OURO,
+                true,
+            );
             hud_estilo::separador(cx - 150.0 * t.k, t.oy + 210.0 * t.k, 300.0 * t.k);
             hud_estilo::texto_centro(cx, t.oy + 240.0 * t.k, "O N L I N E", 18, ui::OURO_CLARO);
-            hud_estilo::texto_centro(cx, t.oy + 282.0 * t.k, "Islands, storms and treasure await.", 17, hud_estilo::TEXTO);
+            hud_estilo::texto_centro(
+                cx,
+                t.oy + 282.0 * t.k,
+                "Islands, storms and treasure await.",
+                17,
+                hud_estilo::TEXTO,
+            );
         });
         t
     }
@@ -8784,8 +9502,12 @@ impl Jogo {
 
     fn tela_servidores(&mut self) {
         let t = self.fundo_inicial();
-        if self.atualizacao.desenha() { return; }
-        if self.novidades.desenha() { return; }
+        if self.atualizacao.desenha() {
+            return;
+        }
+        if self.novidades.desenha() {
+            return;
+        }
         hud_estilo::no_painel(Self::fonte_inicial(&t), || self.servidores_na_escala(t));
     }
 
@@ -8824,7 +9546,13 @@ impl Jogo {
             let linha = peca(c, k, 0.0, 26.0 + i as f32 * 70.0, c.w / k, 62.0);
             let sobre = linha.toca(Vec2::from(mouse_position()));
             hud_estilo::cartao(linha, sobre, false);
-            hud_estilo::texto_forte(linha.x + 16.0 * k, linha.y + 28.0 * k, nome, 22, hud_estilo::TEXTO);
+            hud_estilo::texto_forte(
+                linha.x + 16.0 * k,
+                linha.y + 28.0 * k,
+                nome,
+                22,
+                hud_estilo::TEXTO,
+            );
             // No player count (owner, 11/11/2026): only how full it is, as a
             // color — green, yellow above 60%, red above 90%.
             let (rotulo, cor) = lotacao(*jog, *cap);
@@ -8843,7 +9571,11 @@ impl Jogo {
                 self.tela = Tela::Login;
             }
         }
-        if ui::botao(peca(c, k, c.w / k - 150.0, 294.0, 150.0, 40.0), "Refresh", true) {
+        if ui::botao(
+            peca(c, k, c.w / k - 150.0, 294.0, 150.0, 40.0),
+            "Refresh",
+            true,
+        ) {
             self.busca = Some(api::buscar_canais());
         }
     }
@@ -8864,7 +9596,8 @@ impl Jogo {
         let aberto = nativo::TECLADO_NA_TELA && self.teclado_virtual.aberto();
         let base = t.conteudo();
         let [ce0, ..] = layout_do_esqueci(base, k);
-        let dy = teclado_virtual::deslocamento(aberto, screen_height(), t.cartao().y, ce0.y + ce0.h);
+        let dy =
+            teclado_virtual::deslocamento(aberto, screen_height(), t.cartao().y, ce0.y + ce0.h);
         let c = Self::cartao_inicial(&t, "Forgot password", dy);
         let cx = c.x + c.w * 0.5;
         let [ce, cenviar, cvoltar] = layout_do_esqueci(c, k);
@@ -8883,7 +9616,13 @@ impl Jogo {
             }
         }
         let esperando = self.esq_pedido.is_some();
-        ui::texto_centro(cx, c.y + 14.0 * k, "Type your account's e-mail.", 15, ui::APOIO);
+        ui::texto_centro(
+            cx,
+            c.y + 14.0 * k,
+            "Type your account's e-mail.",
+            15,
+            ui::APOIO,
+        );
         let digitado = self.teclado.digitado().to_vec();
         let mut email = std::mem::take(&mut self.esq_email);
         if ui::campo(ce, "E-mail", &mut email, true, false, &digitado) {
@@ -8893,7 +9632,11 @@ impl Jogo {
 
         let enter = is_key_pressed(KeyCode::Enter) || is_key_pressed(KeyCode::KpEnter);
         let pode = self.esq_email.contains('@') && !esperando;
-        let rotulo = if esperando { "Sending…" } else { "Send the link" };
+        let rotulo = if esperando {
+            "Sending…"
+        } else {
+            "Send the link"
+        };
         if (ui::botao(cenviar, rotulo, pode) || (pode && enter)) && pode {
             self.campo_login_ativo = false;
             self.esq_recado = None;
@@ -8908,7 +9651,13 @@ impl Jogo {
                 ui::erro(cx, cvoltar.y + cvoltar.h + 26.0 * k, &m);
             } else {
                 for (i, linha) in quebra_em_linhas(&m, 44).iter().take(3).enumerate() {
-                    ui::texto_centro(cx, cvoltar.y + cvoltar.h + (26.0 + i as f32 * 18.0) * k, linha, 14, ui::OURO);
+                    ui::texto_centro(
+                        cx,
+                        cvoltar.y + cvoltar.h + (26.0 + i as f32 * 18.0) * k,
+                        linha,
+                        14,
+                        ui::OURO,
+                    );
                 }
             }
         }
@@ -8932,7 +9681,8 @@ impl Jogo {
         let base = layout_do_cadastro(t.conteudo(), k);
         let foco = base[self.cad_foco.min(3)];
         let aberto = nativo::TECLADO_NA_TELA && self.teclado_virtual.aberto();
-        let dy = teclado_virtual::deslocamento(aberto, screen_height(), t.cartao().y, foco.y + foco.h);
+        let dy =
+            teclado_virtual::deslocamento(aberto, screen_height(), t.cartao().y, foco.y + foco.h);
         let c = Self::cartao_inicial(&t, "Create account", dy);
         let cx = c.x + c.w * 0.5;
         let [cu, ce, cs, cs2, ccriar, cvoltar] = layout_do_cadastro(c, k);
@@ -8971,7 +9721,12 @@ impl Jogo {
             (cu, "Username", std::mem::take(&mut self.cad_usuario), false),
             (ce, "E-mail", std::mem::take(&mut self.cad_email), false),
             (cs, "Password", std::mem::take(&mut self.cad_senha), true),
-            (cs2, "Repeat the password", std::mem::take(&mut self.cad_senha2), true),
+            (
+                cs2,
+                "Repeat the password",
+                std::mem::take(&mut self.cad_senha2),
+                true,
+            ),
         ];
         for (i, (rect, rotulo, valor, senha)) in campos.iter_mut().enumerate() {
             if ui::campo(*rect, rotulo, valor, self.cad_foco == i, *senha, &digitado) {
@@ -9015,7 +9770,11 @@ impl Jogo {
             ui::texto_centro(cx, ccriar.y - 6.0 * k, m, 13, ui::APOIO);
         }
         let pode = motivo.is_none() && !esperando;
-        let rotulo = if esperando { "Creating…" } else { "Create account" };
+        let rotulo = if esperando {
+            "Creating…"
+        } else {
+            "Create account"
+        };
         if (ui::botao(ccriar, rotulo, pode) || (pode && self.cad_foco == 3 && enter)) && pode {
             self.campo_login_ativo = false;
             self.cad_recado = None;
@@ -9041,8 +9800,12 @@ impl Jogo {
 
     fn tela_login(&mut self) {
         let t = self.fundo_inicial();
-        if self.atualizacao.desenha() { return; }
-        if self.novidades.desenha() { return; }
+        if self.atualizacao.desenha() {
+            return;
+        }
+        if self.novidades.desenha() {
+            return;
+        }
         // SESSÃO GUARDADA: entra sozinho, sem mostrar a tela. É isto que faz
         // o "remember me" valer a pena — lembrar só o nome de usuário
         // ainda deixaria a senha pra digitar no celular.
@@ -9068,12 +9831,18 @@ impl Jogo {
         let base = layout_do_login(t.conteudo(), k);
         let foco = base[if self.foco_senha { 1 } else { 0 }];
         let aberto = nativo::TECLADO_NA_TELA && self.teclado_virtual.aberto();
-        let dy = teclado_virtual::deslocamento(aberto, screen_height(), t.cartao().y, foco.y + foco.h);
+        let dy =
+            teclado_virtual::deslocamento(aberto, screen_height(), t.cartao().y, foco.y + foco.h);
         let c = Self::cartao_inicial(&t, "Sign in", dy);
         let cx = c.x + c.w * 0.5;
         let cartao = t.cartao();
         // The server, and the way back to the list, in the card's corner.
-        let voltar = Rect::new(cartao.x + 10.0 * k, cartao.y - dy + 10.0 * k, 44.0 * k, 32.0 * k);
+        let voltar = Rect::new(
+            cartao.x + 10.0 * k,
+            cartao.y - dy + 10.0 * k,
+            44.0 * k,
+            32.0 * k,
+        );
         if ui::botao(voltar, "‹", true) {
             self.campo_login_ativo = false;
             self.google.cancelar();
@@ -9082,7 +9851,13 @@ impl Jogo {
         }
         if let Some(realm) = &self.realm {
             let s = format!("Server {realm}");
-            hud_estilo::texto(cartao.x + cartao.w - 14.0 * k - hud_estilo::medir(&s, 13), cartao.y - dy + 30.0 * k, &s, 13, ui::APOIO);
+            hud_estilo::texto(
+                cartao.x + cartao.w - 14.0 * k - hud_estilo::medir(&s, 13),
+                cartao.y - dy + 30.0 * k,
+                &s,
+                13,
+                ui::APOIO,
+            );
         }
         if let Some(e) = self.erro_login.clone() {
             ui::erro(cx, c.y + 4.0 * k, &e);
@@ -9091,7 +9866,14 @@ impl Jogo {
         let mut usuario = std::mem::take(&mut self.usuario);
         let mut senha = std::mem::take(&mut self.senha);
         let digitado = self.teclado.digitado().to_vec();
-        let clicou_u = ui::campo(cu, "Username", &mut usuario, !self.foco_senha, false, &digitado);
+        let clicou_u = ui::campo(
+            cu,
+            "Username",
+            &mut usuario,
+            !self.foco_senha,
+            false,
+            &digitado,
+        );
         let clicou_s = ui::campo(cs, "Password", &mut senha, self.foco_senha, true, &digitado);
         self.usuario = usuario;
         self.senha = senha;
@@ -9116,8 +9898,10 @@ impl Jogo {
         if enter && !self.foco_senha {
             self.foco_senha = true;
         } else {
-            let pode = !self.usuario.is_empty() && !self.senha.is_empty() && !self.google.aguardando();
-            let entrar = botao_principal(centrar, "Sign in", pode) || (pode && self.foco_senha && enter);
+            let pode =
+                !self.usuario.is_empty() && !self.senha.is_empty() && !self.google.aguardando();
+            let entrar =
+                botao_principal(centrar, "Sign in", pode) || (pode && self.foco_senha && enter);
             if entrar {
                 self.campo_login_ativo = false;
                 self.erro_login = None;
@@ -9149,8 +9933,18 @@ impl Jogo {
         // Entrar com Google: so' aparece com o servidor configurado.
         if self.google.disponivel() {
             if self.google.aguardando() {
-                ui::texto_centro(cx, cgoogle.y + 16.0 * k, &self.google.texto().unwrap_or_default(), 15, ui::OURO_CLARO);
-                if ui::botao(Rect::new(cx - 70.0 * k, cgoogle.y + 22.0 * k, 140.0 * k, 30.0 * k), "Cancel", true) {
+                ui::texto_centro(
+                    cx,
+                    cgoogle.y + 16.0 * k,
+                    &self.google.texto().unwrap_or_default(),
+                    15,
+                    ui::OURO_CLARO,
+                );
+                if ui::botao(
+                    Rect::new(cx - 70.0 * k, cgoogle.y + 22.0 * k, 140.0 * k, 30.0 * k),
+                    "Cancel",
+                    true,
+                ) {
                     self.google.cancelar();
                 }
             } else {
@@ -9193,7 +9987,10 @@ impl Jogo {
             Tela::Login | Tela::Cadastro | Tela::EsqueciSenha => self.campo_login_ativo,
             Tela::Personagens => self.selecao_personagem.foco_no_nome(),
             Tela::Jogando => {
-                self.mercado.foco_na_busca() || self.social.foco() || self.chat_ui.foco() || self.troca.digitando()
+                self.mercado.foco_na_busca()
+                    || self.social.foco()
+                    || self.chat_ui.foco()
+                    || self.troca.digitando()
             }
             // SEM `_`, e isso é o conserto de verdade.
             //
@@ -9275,7 +10072,11 @@ impl Jogo {
 /// How full a server is, for the server list: the label and its color.
 /// Green up to 60%, yellow above 60%, red above 90% (owner, 11/11/2026).
 pub fn lotacao(jogadores: u32, capacidade: u32) -> (&'static str, Color) {
-    let f = if capacidade > 0 { jogadores as f32 / capacidade as f32 } else { 0.0 };
+    let f = if capacidade > 0 {
+        jogadores as f32 / capacidade as f32
+    } else {
+        0.0
+    };
     if f > 0.90 {
         ("Full", Color::new(0.92, 0.33, 0.30, 1.0))
     } else if f > 0.60 {
@@ -9297,4 +10098,3 @@ mod testes_lotacao {
         assert_eq!(super::lotacao(5, 0).0, "Available");
     }
 }
-

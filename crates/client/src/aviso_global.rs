@@ -21,7 +21,11 @@ impl AvisoGlobal {
     }
 
     pub fn desenha(&mut self, agora: f64) {
-        if self.atual.as_ref().is_none_or(|(_, t0)| agora - t0 > DURACAO) {
+        if self
+            .atual
+            .as_ref()
+            .is_none_or(|(_, t0)| agora - t0 > DURACAO)
+        {
             self.atual = self.fila.pop_front().map(|t| (t, agora));
         }
         let Some((texto, t0)) = &self.atual else {
@@ -35,11 +39,29 @@ impl AvisoGlobal {
             let w = (720.0 * k).min(seguro.w - 16.0);
             let h = 74.0 * k;
             let desce = (1.0 - a) * -20.0 * k;
-            let r = Rect::new(seguro.center().x - w * 0.5, seguro.y + 70.0 * k + desce, w, h);
+            let r = Rect::new(
+                seguro.center().x - w * 0.5,
+                seguro.y + 70.0 * k + desce,
+                w,
+                h,
+            );
             draw_rectangle(r.x, r.y, r.w, r.h, Color::new(0.07, 0.05, 0.04, 0.92 * a));
             draw_rectangle(r.x, r.y, r.w, 3.0 * k, estilo::alfa(estilo::OURO, a));
-            draw_rectangle(r.x, r.y + r.h - 3.0 * k, r.w, 3.0 * k, estilo::alfa(estilo::OURO, a));
-            draw_rectangle_lines(r.x, r.y, r.w, r.h, 1.5 * k, estilo::alfa(estilo::OURO, 0.6 * a));
+            draw_rectangle(
+                r.x,
+                r.y + r.h - 3.0 * k,
+                r.w,
+                3.0 * k,
+                estilo::alfa(estilo::OURO, a),
+            );
+            draw_rectangle_lines(
+                r.x,
+                r.y,
+                r.w,
+                r.h,
+                1.5 * k,
+                estilo::alfa(estilo::OURO, 0.6 * a),
+            );
             estilo::texto_centro_forte(
                 r.center().x,
                 r.y + 24.0 * k,

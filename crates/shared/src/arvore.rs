@@ -54,8 +54,12 @@ pub enum Caminho {
 }
 
 impl Caminho {
-    pub const TODOS: [Caminho; CAMINHOS] =
-        [Caminho::Assassino, Caminho::Mago, Caminho::Guardiao, Caminho::Corsario];
+    pub const TODOS: [Caminho; CAMINHOS] = [
+        Caminho::Assassino,
+        Caminho::Mago,
+        Caminho::Guardiao,
+        Caminho::Corsario,
+    ];
 
     pub fn de_indice(i: u8) -> Option<Caminho> {
         Self::TODOS.get(i as usize).copied()
@@ -221,7 +225,10 @@ impl Efeito {
 
     /// Is the value shown ×100 (a fraction) or as is (per second, points)?
     fn em_pct(self) -> bool {
-        !matches!(self, Efeito::RegenMana | Efeito::RegenVida | Efeito::Firmeza | Efeito::MultTesouro)
+        !matches!(
+            self,
+            Efeito::RegenMana | Efeito::RegenVida | Efeito::Firmeza | Efeito::MultTesouro
+        )
     }
 
     /// The number for `modelo`'s hole ("2", "0.5", "7.5"), always positive.
@@ -230,7 +237,11 @@ impl Efeito {
         if self == Efeito::SempreMarcado {
             return String::new();
         }
-        let v = if self.em_pct() { valor.abs() * 100.0 } else { valor.abs() };
+        let v = if self.em_pct() {
+            valor.abs() * 100.0
+        } else {
+            valor.abs()
+        };
         let r = (v * 10.0).round() / 10.0;
         if (r - r.round()).abs() < 1e-4 {
             format!("{}", r.round() as i64)
@@ -321,8 +332,12 @@ impl No {
 pub const ANGULO_DO_CAMINHO: [f32; CAMINHOS] = [-135.0, -45.0, 135.0, 45.0];
 /// The arms clockwise around the centre: a bridge joins `RODA[b]`'s right
 /// side to `RODA[b + 1]`'s left side.
-pub const RODA: [Caminho; CAMINHOS] =
-    [Caminho::Assassino, Caminho::Mago, Caminho::Corsario, Caminho::Guardiao];
+pub const RODA: [Caminho; CAMINHOS] = [
+    Caminho::Assassino,
+    Caminho::Mago,
+    Caminho::Corsario,
+    Caminho::Guardiao,
+];
 
 /// The template's role for a slot: which of the arm's tables fills it.
 #[derive(Clone, Copy)]
@@ -359,7 +374,13 @@ const INICIO_LOCAL: u8 = 254;
 const SEM: u8 = 255;
 
 const fn m(x: f32, y: f32, p1: u8, p2: u8, anel: u8, papel: Papel) -> Molde {
-    Molde { x, y, pais: [p1, p2], anel, papel }
+    Molde {
+        x,
+        y,
+        pais: [p1, p2],
+        anel,
+        papel,
+    }
 }
 
 use Papel as P;
@@ -385,38 +406,38 @@ const MOLDE: [Molde; 41] = [
     m(3.3, 1.9, 7, SEM, 1, P::Direita),            // 8 R1
     m(4.3, 2.4, 8, SEM, 1, P::Notavel(1)),         // 9 R2
     // ring 2 — the spine to the second active, the side chains, connectors
-    m(5.3, 0.0, 3, SEM, 2, P::Espinha),     // 10 S3
-    m(6.2, 0.0, 10, SEM, 2, P::Espinha),    // 11 S4
-    m(7.1, 0.0, 11, SEM, 2, P::Espinha),    // 12 S5
-    m(8.1, 0.0, 12, SEM, 2, P::Ativa(1)),   // 13 A2
-    m(5.3, -2.9, 6, SEM, 2, P::Esquerda),   // 14 L3
-    m(6.2, -3.4, 14, SEM, 2, P::Esquerda),  // 15 L4
+    m(5.3, 0.0, 3, SEM, 2, P::Espinha),      // 10 S3
+    m(6.2, 0.0, 10, SEM, 2, P::Espinha),     // 11 S4
+    m(7.1, 0.0, 11, SEM, 2, P::Espinha),     // 12 S5
+    m(8.1, 0.0, 12, SEM, 2, P::Ativa(1)),    // 13 A2
+    m(5.3, -2.9, 6, SEM, 2, P::Esquerda),    // 14 L3
+    m(6.2, -3.4, 14, SEM, 2, P::Esquerda),   // 15 L4
     m(7.1, -3.9, 15, SEM, 2, P::Notavel(2)), // 16 L5
-    m(5.3, 2.9, 9, SEM, 2, P::Direita),     // 17 R3
-    m(6.2, 3.4, 17, SEM, 2, P::Direita),    // 18 R4
-    m(7.1, 3.9, 18, SEM, 2, P::Notavel(3)), // 19 R5
-    m(6.7, -1.6, 11, 15, 2, P::Ligacao),    // 20 ML (loop spine ↔ left)
-    m(6.7, 1.6, 11, 18, 2, P::Ligacao),     // 21 MR (loop spine ↔ right)
-    m(7.0, -5.4, 16, SEM, 2, P::Ligacao),   // 22 EL (toward the left bridge)
-    m(7.0, 5.4, 19, SEM, 2, P::Ligacao),    // 23 ER (toward the right bridge)
+    m(5.3, 2.9, 9, SEM, 2, P::Direita),      // 17 R3
+    m(6.2, 3.4, 17, SEM, 2, P::Direita),     // 18 R4
+    m(7.1, 3.9, 18, SEM, 2, P::Notavel(3)),  // 19 R5
+    m(6.7, -1.6, 11, 15, 2, P::Ligacao),     // 20 ML (loop spine ↔ left)
+    m(6.7, 1.6, 11, 18, 2, P::Ligacao),      // 21 MR (loop spine ↔ right)
+    m(7.0, -5.4, 16, SEM, 2, P::Ligacao),    // 22 EL (toward the left bridge)
+    m(7.0, 5.4, 19, SEM, 2, P::Ligacao),     // 23 ER (toward the right bridge)
     // ring 3 — the capstone, the keystones, the deep notables
-    m(9.1, 0.0, 13, SEM, 3, P::Espinha),     // 24 S6
-    m(10.0, 0.0, 24, SEM, 3, P::Espinha),    // 25 S7
-    m(10.9, 0.0, 25, SEM, 3, P::Espinha),    // 26 S8
-    m(12.0, 0.0, 26, SEM, 3, P::Ativa(2)),   // 27 A3 (capstone)
-    m(13.3, 0.0, 27, SEM, 3, P::Chave(0)),   // 28 KC
-    m(8.3, -4.2, 16, SEM, 3, P::Esquerda),   // 29 L6
-    m(9.4, -4.4, 29, SEM, 3, P::Esquerda),   // 30 L7
+    m(9.1, 0.0, 13, SEM, 3, P::Espinha),      // 24 S6
+    m(10.0, 0.0, 24, SEM, 3, P::Espinha),     // 25 S7
+    m(10.9, 0.0, 25, SEM, 3, P::Espinha),     // 26 S8
+    m(12.0, 0.0, 26, SEM, 3, P::Ativa(2)),    // 27 A3 (capstone)
+    m(13.3, 0.0, 27, SEM, 3, P::Chave(0)),    // 28 KC
+    m(8.3, -4.2, 16, SEM, 3, P::Esquerda),    // 29 L6
+    m(9.4, -4.4, 29, SEM, 3, P::Esquerda),    // 30 L7
     m(10.5, -4.3, 30, SEM, 3, P::Notavel(4)), // 31 L8
-    m(11.5, -3.9, 31, SEM, 3, P::Esquerda),  // 32 L9
-    m(12.5, -3.3, 32, SEM, 3, P::Chave(1)),  // 33 KL
-    m(8.3, 4.2, 19, SEM, 3, P::Direita),     // 34 R6
-    m(9.4, 4.4, 34, SEM, 3, P::Direita),     // 35 R7
-    m(10.5, 4.3, 35, SEM, 3, P::Notavel(5)), // 36 R8
-    m(11.5, 3.9, 36, SEM, 3, P::Direita),    // 37 R9
-    m(12.5, 3.3, 37, SEM, 3, P::Chave(2)),   // 38 KR
-    m(11.4, -1.8, 25, 32, 3, P::Notavel(6)), // 39 IL (loop spine ↔ left)
-    m(11.4, 1.8, 25, 37, 3, P::Notavel(7)),  // 40 IR (loop spine ↔ right)
+    m(11.5, -3.9, 31, SEM, 3, P::Esquerda),   // 32 L9
+    m(12.5, -3.3, 32, SEM, 3, P::Chave(1)),   // 33 KL
+    m(8.3, 4.2, 19, SEM, 3, P::Direita),      // 34 R6
+    m(9.4, 4.4, 34, SEM, 3, P::Direita),      // 35 R7
+    m(10.5, 4.3, 35, SEM, 3, P::Notavel(5)),  // 36 R8
+    m(11.5, 3.9, 36, SEM, 3, P::Direita),     // 37 R9
+    m(12.5, 3.3, 37, SEM, 3, P::Chave(2)),    // 38 KR
+    m(11.4, -1.8, 25, 32, 3, P::Notavel(6)),  // 39 IL (loop spine ↔ left)
+    m(11.4, 1.8, 25, 37, 3, P::Notavel(7)),   // 40 IR (loop spine ↔ right)
 ];
 
 /// Nodes in one arm.
@@ -460,24 +481,52 @@ const CONTEUDO: [Conteudo; CAMINHOS] = [
     // Assassin
     Conteudo {
         espinha: [(E::Critico, 0.005), (E::Critico, 0.005)],
-        esquerda: [(E::VelocidadeDeAtaque, 0.015), (E::VelocidadeDeAtaque, 0.015)],
+        esquerda: [
+            (E::VelocidadeDeAtaque, 0.015),
+            (E::VelocidadeDeAtaque, 0.015),
+        ],
         direita: [(E::DestrezaPct, 0.03), (E::DestrezaPct, 0.03)],
         ligacao: [(E::Movimento, 0.01), (E::Esquiva, 0.03)],
-        ativas: [(E::Movimento, 0.01), (E::Critico, 0.01), (E::DanoCritico, 0.05)],
+        ativas: [
+            (E::Movimento, 0.01),
+            (E::Critico, 0.01),
+            (E::DanoCritico, 0.05),
+        ],
         notaveis: [
-            nm("Quick Hands", &[(E::VelocidadeDeAtaque, 0.03), (E::Esquiva, 0.05)]),
+            nm(
+                "Quick Hands",
+                &[(E::VelocidadeDeAtaque, 0.03), (E::Esquiva, 0.05)],
+            ),
             nm("Keen Eye", &[(E::Critico, 0.01), (E::DestrezaPct, 0.03)]),
-            nm("Flurry", &[(E::VelocidadeDeAtaque, 0.04), (E::Movimento, 0.01)]),
+            nm(
+                "Flurry",
+                &[(E::VelocidadeDeAtaque, 0.04), (E::Movimento, 0.01)],
+            ),
             nm("Precision", &[(E::DanoCritico, 0.06), (E::Critico, 0.01)]),
             nm("Shadow Dancer", &[(E::Esquiva, 0.08), (E::Movimento, 0.02)]),
-            nm("Assassinate", &[(E::DanoCritico, 0.08), (E::DestrezaPct, 0.03)]),
+            nm(
+                "Assassinate",
+                &[(E::DanoCritico, 0.08), (E::DestrezaPct, 0.03)],
+            ),
             nm("Cutthroat", &[(E::AtaquePct, 0.03), (E::Critico, 0.01)]),
-            nm("Twin Fangs", &[(E::VelocidadeDeAtaque, 0.03), (E::DanoCritico, 0.04)]),
+            nm(
+                "Twin Fangs",
+                &[(E::VelocidadeDeAtaque, 0.03), (E::DanoCritico, 0.04)],
+            ),
         ],
         chaves: [
-            nm("Death's Edge", &[(E::DanoCritico, 0.30), (E::VidaPct, -0.15)]),
-            nm("Whirlwind", &[(E::VelocidadeDeAtaque, 0.12), (E::DefesaPct, -0.15)]),
-            nm("Opportunist", &[(E::Critico, 0.06), (E::DanoCritico, -0.10)]),
+            nm(
+                "Death's Edge",
+                &[(E::DanoCritico, 0.30), (E::VidaPct, -0.15)],
+            ),
+            nm(
+                "Whirlwind",
+                &[(E::VelocidadeDeAtaque, 0.12), (E::DefesaPct, -0.15)],
+            ),
+            nm(
+                "Opportunist",
+                &[(E::Critico, 0.06), (E::DanoCritico, -0.10)],
+            ),
         ],
     },
     // Mage
@@ -486,9 +535,16 @@ const CONTEUDO: [Conteudo; CAMINHOS] = [
         esquerda: [(E::SabedoriaPct, 0.03), (E::SabedoriaPct, 0.03)],
         direita: [(E::ManaPct, 0.04), (E::ManaPct, 0.04)],
         ligacao: [(E::RegenMana, 0.3), (E::RegenMana, 0.3)],
-        ativas: [(E::SabedoriaPct, 0.03), (E::AtaquePct, 0.02), (E::AtaquePct, 0.03)],
+        ativas: [
+            (E::SabedoriaPct, 0.03),
+            (E::AtaquePct, 0.02),
+            (E::AtaquePct, 0.03),
+        ],
         notaveis: [
-            nm("Arcane Mind", &[(E::SabedoriaPct, 0.05), (E::RegenMana, 0.5)]),
+            nm(
+                "Arcane Mind",
+                &[(E::SabedoriaPct, 0.05), (E::RegenMana, 0.5)],
+            ),
             nm("Deep Reserves", &[(E::ManaPct, 0.08), (E::RegenMana, 0.3)]),
             nm("Insight", &[(E::SabedoriaPct, 0.06), (E::AtaquePct, 0.02)]),
             nm("Mana Spring", &[(E::RegenMana, 1.0), (E::ManaPct, 0.04)]),
@@ -499,8 +555,18 @@ const CONTEUDO: [Conteudo; CAMINHOS] = [
         ],
         chaves: [
             nm("Overcharge", &[(E::AtaquePct, 0.15), (E::ManaPct, -0.20)]),
-            nm("Mind over Matter", &[(E::SabedoriaPct, 0.15), (E::VidaPct, -0.10)]),
-            nm("Eldritch Battery", &[(E::ManaPct, 0.30), (E::RegenMana, 2.0), (E::AtaquePct, -0.05)]),
+            nm(
+                "Mind over Matter",
+                &[(E::SabedoriaPct, 0.15), (E::VidaPct, -0.10)],
+            ),
+            nm(
+                "Eldritch Battery",
+                &[
+                    (E::ManaPct, 0.30),
+                    (E::RegenMana, 2.0),
+                    (E::AtaquePct, -0.05),
+                ],
+            ),
         ],
     },
     // Guardian
@@ -509,7 +575,11 @@ const CONTEUDO: [Conteudo; CAMINHOS] = [
         esquerda: [(E::VidaPct, 0.02), (E::VidaPct, 0.02)],
         direita: [(E::RegenVida, 0.5), (E::RegenVida, 0.5)],
         ligacao: [(E::Firmeza, 8.0), (E::Firmeza, 8.0)],
-        ativas: [(E::Reducao, 0.005), (E::DefesaPct, 0.03), (E::Reducao, 0.01)],
+        ativas: [
+            (E::Reducao, 0.005),
+            (E::DefesaPct, 0.03),
+            (E::Reducao, 0.01),
+        ],
         notaveis: [
             nm("Thick Skin", &[(E::VidaPct, 0.04), (E::Reducao, 0.005)]),
             nm("Second Wind", &[(E::RegenVida, 1.5), (E::VidaPct, 0.02)]),
@@ -522,7 +592,10 @@ const CONTEUDO: [Conteudo; CAMINHOS] = [
         ],
         chaves: [
             nm("Immovable", &[(E::Reducao, 0.04), (E::Movimento, -0.08)]),
-            nm("Titan", &[(E::VidaPct, 0.18), (E::VelocidadeDeAtaque, -0.08)]),
+            nm(
+                "Titan",
+                &[(E::VidaPct, 0.18), (E::VelocidadeDeAtaque, -0.08)],
+            ),
             nm("Fortress", &[(E::DefesaPct, 0.25), (E::AtaquePct, -0.08)]),
         ],
     },
@@ -536,7 +609,10 @@ const CONTEUDO: [Conteudo; CAMINHOS] = [
         notaveis: [
             nm("Pickpocket", &[(E::Ouro, 0.06), (E::Drop, 0.02)]),
             nm("Prospector", &[(E::Minerio, 0.06), (E::Darksteel, 0.04)]),
-            nm("Treasure Hunter", &[(E::Drop, 0.05), (E::LootMelhor, 0.005)]),
+            nm(
+                "Treasure Hunter",
+                &[(E::Drop, 0.05), (E::LootMelhor, 0.005)],
+            ),
             nm("Vein Seeker", &[(E::Energia, 0.08), (E::Minerio, 0.03)]),
             nm("Golden Touch", &[(E::Ouro, 0.08), (E::LootMelhor, 0.01)]),
             nm("Deep Miner", &[(E::Darksteel, 0.08), (E::Minerio, 0.06)]),
@@ -544,9 +620,19 @@ const CONTEUDO: [Conteudo; CAMINHOS] = [
             nm("Seasoned Sailor", &[(E::Xp, 0.03), (E::Movimento, 0.02)]),
         ],
         chaves: [
-            nm("Pirate King", &[(E::Drop, 0.15), (E::LootMelhor, 0.02), (E::VidaPct, -0.10)]),
+            nm(
+                "Pirate King",
+                &[(E::Drop, 0.15), (E::LootMelhor, 0.02), (E::VidaPct, -0.10)],
+            ),
             nm("Greed", &[(E::Ouro, 0.40), (E::DefesaPct, -0.10)]),
-            nm("Master Gatherer", &[(E::Minerio, 0.25), (E::Darksteel, 0.25), (E::AtaquePct, -0.05)]),
+            nm(
+                "Master Gatherer",
+                &[
+                    (E::Minerio, 0.25),
+                    (E::Darksteel, 0.25),
+                    (E::AtaquePct, -0.05),
+                ],
+            ),
         ],
     },
 ];
@@ -563,7 +649,10 @@ struct Ponte {
 const PONTES: [Ponte; CAMINHOS] = [
     Ponte {
         interna: [(E::Critico, 0.005), (E::SabedoriaPct, 0.02)],
-        externa: nm("Arcane Blade", &[(E::DanoCritico, 0.05), (E::AtaquePct, 0.02)]),
+        externa: nm(
+            "Arcane Blade",
+            &[(E::DanoCritico, 0.05), (E::AtaquePct, 0.02)],
+        ),
     },
     Ponte {
         interna: [(E::ManaPct, 0.03), (E::Drop, 0.02)],
@@ -613,8 +702,22 @@ use PaiDoMar as PM;
 
 const MAR: [NoDoMar; 7] = [
     // From Deep Miner (R8): cannon, hull, then Boarding Party.
-    NoDoMar { x: 9.06, y: 5.88, pais: [PM::Braco(36), PM::Nenhum], tipo: TipoNo::Menor, nome: "", efeitos: &[(E::CanhaoPct, 0.04)] },
-    NoDoMar { x: 10.06, y: 6.54, pais: [PM::Mar(0), PM::Nenhum], tipo: TipoNo::Menor, nome: "", efeitos: &[(E::CascoPct, 0.05)] },
+    NoDoMar {
+        x: 9.06,
+        y: 5.88,
+        pais: [PM::Braco(36), PM::Nenhum],
+        tipo: TipoNo::Menor,
+        nome: "",
+        efeitos: &[(E::CanhaoPct, 0.04)],
+    },
+    NoDoMar {
+        x: 10.06,
+        y: 6.54,
+        pais: [PM::Mar(0), PM::Nenhum],
+        tipo: TipoNo::Menor,
+        nome: "",
+        efeitos: &[(E::CascoPct, 0.05)],
+    },
     NoDoMar {
         x: 11.07,
         y: 7.19,
@@ -624,8 +727,22 @@ const MAR: [NoDoMar; 7] = [
         efeitos: &[(E::PegarTesouro, 0.30), (E::MultTesouro, 0.1)],
     },
     // From Sea Legs (the Corsair|Guardian bridge): hull, hauling, Plunderer.
-    NoDoMar { x: 7.07, y: 8.43, pais: [PM::PonteExterna(2), PM::Nenhum], tipo: TipoNo::Menor, nome: "", efeitos: &[(E::CascoPct, 0.05)] },
-    NoDoMar { x: 7.85, y: 9.45, pais: [PM::Mar(3), PM::Nenhum], tipo: TipoNo::Menor, nome: "", efeitos: &[(E::PegarTesouro, 0.15)] },
+    NoDoMar {
+        x: 7.07,
+        y: 8.43,
+        pais: [PM::PonteExterna(2), PM::Nenhum],
+        tipo: TipoNo::Menor,
+        nome: "",
+        efeitos: &[(E::CascoPct, 0.05)],
+    },
+    NoDoMar {
+        x: 7.85,
+        y: 9.45,
+        pais: [PM::Mar(3), PM::Nenhum],
+        tipo: TipoNo::Menor,
+        nome: "",
+        efeitos: &[(E::PegarTesouro, 0.15)],
+    },
     NoDoMar {
         x: 8.55,
         y: 10.45,
@@ -723,31 +840,37 @@ fn construir() -> Tabela {
         for (local, mo) in MOLDE.iter().enumerate() {
             let id = id_no_braco(c, local);
             let (x, y) = girar(mo.x, mo.y, ANGULO_DO_CAMINHO[c as usize]);
-            let (tipo, nome, lista, ativa): (TipoNo, &'static str, &[(Efeito, f32)], Option<u8>) = match mo.papel {
-                P::Espinha | P::Esquerda | P::Direita | P::Ligacao => {
-                    let (k, tabela) = match mo.papel {
-                        P::Espinha => (0, &cont.espinha),
-                        P::Esquerda => (1, &cont.esquerda),
-                        P::Direita => (2, &cont.direita),
-                        _ => (3, &cont.ligacao),
-                    };
-                    let e = &tabela[conta[k] % 2];
-                    conta[k] += 1;
-                    (TipoNo::Menor, "", std::slice::from_ref(e), None)
-                }
-                P::Notavel(k) => {
-                    let n = &cont.notaveis[k as usize];
-                    (TipoNo::Notavel, n.nome, n.efeitos, None)
-                }
-                P::Chave(k) => {
-                    let n = &cont.chaves[k as usize];
-                    (TipoNo::Chave, n.nome, n.efeitos, None)
-                }
-                P::Ativa(k) => {
-                    let a = c as u8 * 3 + k;
-                    (TipoNo::Ativa, ATIVAS[a as usize].1, std::slice::from_ref(&cont.ativas[k as usize]), Some(a))
-                }
-            };
+            let (tipo, nome, lista, ativa): (TipoNo, &'static str, &[(Efeito, f32)], Option<u8>) =
+                match mo.papel {
+                    P::Espinha | P::Esquerda | P::Direita | P::Ligacao => {
+                        let (k, tabela) = match mo.papel {
+                            P::Espinha => (0, &cont.espinha),
+                            P::Esquerda => (1, &cont.esquerda),
+                            P::Direita => (2, &cont.direita),
+                            _ => (3, &cont.ligacao),
+                        };
+                        let e = &tabela[conta[k] % 2];
+                        conta[k] += 1;
+                        (TipoNo::Menor, "", std::slice::from_ref(e), None)
+                    }
+                    P::Notavel(k) => {
+                        let n = &cont.notaveis[k as usize];
+                        (TipoNo::Notavel, n.nome, n.efeitos, None)
+                    }
+                    P::Chave(k) => {
+                        let n = &cont.chaves[k as usize];
+                        (TipoNo::Chave, n.nome, n.efeitos, None)
+                    }
+                    P::Ativa(k) => {
+                        let a = c as u8 * 3 + k;
+                        (
+                            TipoNo::Ativa,
+                            ATIVAS[a as usize].1,
+                            std::slice::from_ref(&cont.ativas[k as usize]),
+                            Some(a),
+                        )
+                    }
+                };
             let (efeitos, n_efeitos) = efeitos_de(lista);
             nos.push(No {
                 id,
@@ -778,10 +901,16 @@ fn construir() -> Tabela {
         for (k, raio) in RAIO_DAS_PONTES.iter().enumerate() {
             let id = PRIMEIRA_PONTE + (2 * b + k) as u16;
             let (x, y) = girar(*raio, 0.0, angulo);
-            let (tipo, anel, nome, lista): (TipoNo, u8, &'static str, &[(Efeito, f32)]) = if k == 0 {
+            let (tipo, anel, nome, lista): (TipoNo, u8, &'static str, &[(Efeito, f32)]) = if k == 0
+            {
                 (TipoNo::Menor, 2, "", &ponte.interna)
             } else {
-                (TipoNo::Notavel, 3, ponte.externa.nome, ponte.externa.efeitos)
+                (
+                    TipoNo::Notavel,
+                    3,
+                    ponte.externa.nome,
+                    ponte.externa.efeitos,
+                )
             };
             let (efeitos, n_efeitos) = efeitos_de(lista);
             nos.push(No {
@@ -839,7 +968,11 @@ fn construir() -> Tabela {
         vizinhos[l.0 as usize].push(l.1);
         vizinhos[l.1 as usize].push(l.0);
     }
-    Tabela { nos, vizinhos, ligacoes }
+    Tabela {
+        nos,
+        vizinhos,
+        ligacoes,
+    }
 }
 
 /// The web (built once).
@@ -860,7 +993,10 @@ pub fn no(id: u16) -> Option<&'static No> {
 
 /// The nodes linked to `id`.
 pub fn vizinhos(id: u16) -> &'static [u16] {
-    tabela().vizinhos.get(id as usize).map_or(&[], |v| v.as_slice())
+    tabela()
+        .vizinhos
+        .get(id as usize)
+        .map_or(&[], |v| v.as_slice())
 }
 
 /// Every link once (low id first).
@@ -1011,7 +1147,16 @@ const fn d(
     alcance: f32,
     descricao: &'static str,
 ) -> DefAtiva {
-    DefAtiva { tipo, custo_mp, espera_s, duracao_s, fator, raio, alcance, descricao }
+    DefAtiva {
+        tipo,
+        custo_mp,
+        espera_s,
+        duracao_s,
+        fator,
+        raio,
+        alcance,
+        descricao,
+    }
 }
 
 use TipoAtiva as T;
@@ -1086,7 +1231,6 @@ pub fn bonus_de_saque(ativa: u8, renascimentos: u32) -> crate::acessorios::Bonus
     b.loot_melhor *= m;
     b
 }
-
 
 /// Points a character has EARNED: none before the first rebirth, then one
 /// per `NIVEIS_POR_PONTO` SHOWN levels of every climb. `nivel_exibido` is
@@ -1187,7 +1331,11 @@ impl Arvore {
 
     /// Points allocated (the bought nodes' costs).
     pub fn gastos(&self) -> u32 {
-        self.ids().iter().filter_map(|&id| no(id)).map(|n| n.custo as u32).sum()
+        self.ids()
+            .iter()
+            .filter_map(|&id| no(id))
+            .map(|n| n.custo as u32)
+            .sum()
     }
 
     /// Points still free out of `ganhos`.
@@ -1202,7 +1350,9 @@ impl Arvore {
 
     /// Can node `id` be learned with `ganhos` earned? Same rule as `aprender`.
     pub fn pode_aprender(&self, id: u16, ganhos: u32) -> Result<&'static No, &'static str> {
-        let n = no(id).filter(|n| n.tipo != TipoNo::Inicio).ok_or(NO_INVALIDO)?;
+        let n = no(id)
+            .filter(|n| n.tipo != TipoNo::Inicio)
+            .ok_or(NO_INVALIDO)?;
         if self.tem(id) {
             return Err(JA_APRENDIDO);
         }
@@ -1335,7 +1485,9 @@ impl Arvore {
 
     /// The learned actives, in `ATIVAS` order.
     pub fn ativas_possuidas(&self) -> Vec<u8> {
-        (0..ATIVAS.len() as u8).filter(|&a| self.possui_ativa(a)).collect()
+        (0..ATIVAS.len() as u8)
+            .filter(|&a| self.possui_ativa(a))
+            .collect()
     }
 
     /// The active in extra slot `slot` (0 = skill 4) that can be USED now:
@@ -1344,12 +1496,21 @@ impl Arvore {
         if slot as usize >= slots_abertos(renascimentos) {
             return None;
         }
-        self.slots.get(slot as usize).copied().flatten().filter(|&a| self.possui_ativa(a))
+        self.slots
+            .get(slot as usize)
+            .copied()
+            .flatten()
+            .filter(|&a| self.possui_ativa(a))
     }
 
     /// Put `ativa` in extra slot `slot` (`None` empties it). Only an owned
     /// active, only an open slot; an active already in another slot moves.
-    pub fn equipar(&mut self, slot: u8, ativa: Option<u8>, renascimentos: u32) -> Result<(), &'static str> {
+    pub fn equipar(
+        &mut self,
+        slot: u8,
+        ativa: Option<u8>,
+        renascimentos: u32,
+    ) -> Result<(), &'static str> {
         if slot as usize >= slots_abertos(renascimentos) {
             return Err(SLOT_FECHADO);
         }
@@ -1410,7 +1571,11 @@ impl Arvore {
 
     /// `characters.arvore_json`: `{"ids":[3,7,…],"slots":[x,null,y]}`.
     pub fn para_json(&self) -> String {
-        serde_json::to_string(&Gravado { ids: self.ids(), slots: self.slots }).unwrap_or_default()
+        serde_json::to_string(&Gravado {
+            ids: self.ids(),
+            slots: self.slots,
+        })
+        .unwrap_or_default()
     }
 
     /// From `para_json`. Empty or broken = nothing allocated.
@@ -1660,7 +1825,11 @@ mod testes {
         let conta = |k: TipoNo| t.nos.iter().filter(|n| n.tipo == k).count();
         assert_eq!(conta(TipoNo::Inicio), 1);
         assert_eq!(conta(TipoNo::Ativa), 12);
-        assert_eq!(conta(TipoNo::Chave), 13, "three keystones a path + the Pirate's Code");
+        assert_eq!(
+            conta(TipoNo::Chave),
+            13,
+            "three keystones a path + the Pirate's Code"
+        );
         assert_eq!(conta(TipoNo::Notavel), 38);
         assert_eq!(conta(TipoNo::Menor), 116);
         // The whole web: about rebirth 40–50 (10 points a climb).
@@ -1669,8 +1838,14 @@ mod testes {
         // minors at 3, two notables at 4, the keystone at 6).
         assert_eq!(total, 486);
         assert!((400..=500).contains(&total));
-        assert!(pontos_ganhos(55, 100) >= total, "the owner's R55 test character buys it all");
-        assert!(pontos_ganhos(7, 100) < total / 5, "rebirth 7 is far from done");
+        assert!(
+            pontos_ganhos(55, 100) >= total,
+            "the owner's R55 test character buys it all"
+        );
+        assert!(
+            pontos_ganhos(7, 100) < total / 5,
+            "rebirth 7 is far from done"
+        );
         assert_eq!(cheia().gastos(), total);
     }
 
@@ -1717,7 +1892,12 @@ mod testes {
         for a in nos {
             for b in nos.iter().filter(|b| b.id > a.id) {
                 let d = ((a.x - b.x).powi(2) + (a.y - b.y).powi(2)).sqrt();
-                assert!(d >= raio(a) + raio(b) + 0.15, "{} and {} overlap ({d:.2})", a.id, b.id);
+                assert!(
+                    d >= raio(a) + raio(b) + 0.15,
+                    "{} and {} overlap ({d:.2})",
+                    a.id,
+                    b.id
+                );
             }
         }
     }
@@ -1737,13 +1917,25 @@ mod testes {
                 }
                 TipoNo::Chave => {
                     assert!(!n.nome.is_empty());
-                    assert!(n.efeitos().iter().any(|&(_, v)| v > 0.0), "{}: a bonus", n.nome);
-                    assert!(n.efeitos().iter().any(|&(_, v)| v < 0.0), "{}: a cost", n.nome);
+                    assert!(
+                        n.efeitos().iter().any(|&(_, v)| v > 0.0),
+                        "{}: a bonus",
+                        n.nome
+                    );
+                    assert!(
+                        n.efeitos().iter().any(|&(_, v)| v < 0.0),
+                        "{}: a cost",
+                        n.nome
+                    );
                     assert_eq!(n.custo, CUSTO_DA_CHAVE);
                 }
                 TipoNo::Ativa => {
                     let a = n.ativa.expect("an active node teaches an active");
-                    assert_eq!(Some(ATIVAS[a as usize].0), n.caminho, "the active belongs to its path");
+                    assert_eq!(
+                        Some(ATIVAS[a as usize].0),
+                        n.caminho,
+                        "the active belongs to its path"
+                    );
                     assert_eq!(n.nome, ATIVAS[a as usize].1);
                 }
             }
@@ -1767,10 +1959,18 @@ mod testes {
         let mut a = Arvore::default();
         let s0 = id(Caminho::Assassino, 0);
         let s1 = id(Caminho::Assassino, 1);
-        assert_eq!(a.aprender(s1, 50).err(), Some(NAO_ALCANCAVEL), "not next to anything owned");
+        assert_eq!(
+            a.aprender(s1, 50).err(),
+            Some(NAO_ALCANCAVEL),
+            "not next to anything owned"
+        );
         assert_eq!(a.aprender(s0, 0).err(), Some(SEM_PONTOS));
         assert!(a.aprender(s0, 50).is_ok(), "next to the start");
-        assert_eq!(a.aprender(s0, 50).err(), Some(JA_APRENDIDO), "a double tap does not buy twice");
+        assert_eq!(
+            a.aprender(s0, 50).err(),
+            Some(JA_APRENDIDO),
+            "a double tap does not buy twice"
+        );
         assert!(a.aprender(s1, 50).is_ok());
         assert_eq!(a.aprender(INICIO, 50).err(), Some(NO_INVALIDO));
         assert_eq!(a.aprender(999, 50).err(), Some(NO_INVALIDO));
@@ -1782,7 +1982,10 @@ mod testes {
         let mut b = Arvore::com_nos([12, 0, 0, 0]);
         let kc = id(Caminho::Assassino, 28);
         let gasto = b.gastos();
-        assert_eq!(b.pode_aprender(kc, gasto + CUSTO_DA_CHAVE as u32 - 1).err(), Some(SEM_PONTOS));
+        assert_eq!(
+            b.pode_aprender(kc, gasto + CUSTO_DA_CHAVE as u32 - 1).err(),
+            Some(SEM_PONTOS)
+        );
         assert!(b.aprender(kc, gasto + CUSTO_DA_CHAVE as u32).is_ok());
         assert_eq!(b.livres(gasto + CUSTO_DA_CHAVE as u32), 0);
         // A bridge is learned from either side.
@@ -1792,7 +1995,10 @@ mod testes {
             c.aprender(id(Caminho::Assassino, l), 99).unwrap();
         }
         assert!(c.aprender(ponte, 99).is_ok());
-        assert!(c.alcancavel(id(Caminho::Mago, 5)), "the bridge leads into the Mage arm");
+        assert!(
+            c.alcancavel(id(Caminho::Mago, 5)),
+            "the bridge leads into the Mage arm"
+        );
     }
 
     #[test]
@@ -1811,7 +2017,10 @@ mod testes {
         // The reset is the empty allocation: every point free again.
         let zerada = Arvore::default();
         assert_eq!(zerada.livres(100), 100);
-        assert!(a.rota_ate(id(Caminho::Guardiao, 13)).is_empty(), "owned: nothing to buy");
+        assert!(
+            a.rota_ate(id(Caminho::Guardiao, 13)).is_empty(),
+            "owned: nothing to buy"
+        );
     }
 
     #[test]
@@ -1843,24 +2052,40 @@ mod testes {
         assert!(!Arvore::e_formato_antigo(&j));
         assert_eq!(Arvore::de_json(""), Arvore::default());
         assert_eq!(Arvore::de_json("lixo"), Arvore::default());
-        assert_eq!(Arvore::de_json(r#"{"ids":[1,9999],"slots":[0,99,null]}"#).ids(), vec![1]);
-        assert_eq!(Arvore::de_json(r#"{"ids":[1],"slots":[0,99,null]}"#).slots, [Some(0), None, None]);
+        assert_eq!(
+            Arvore::de_json(r#"{"ids":[1,9999],"slots":[0,99,null]}"#).ids(),
+            vec![1]
+        );
+        assert_eq!(
+            Arvore::de_json(r#"{"ids":[1],"slots":[0,99,null]}"#).slots,
+            [Some(0), None, None]
+        );
     }
 
     /// Saves from before the web (both shapes) load as a FREE RESPEC:
     /// nothing bought, slots empty, every point back.
     #[test]
     fn json_antigo_vira_redistribuicao_gratis() {
-        for antigo in ["[5,0,10,3]", " [1,2,3,4] ", r#"{"nos":[15,5,0,0],"slots":[2,0,null]}"#, r#"{"nos":[1,0,0,0]}"#] {
+        for antigo in [
+            "[5,0,10,3]",
+            " [1,2,3,4] ",
+            r#"{"nos":[15,5,0,0],"slots":[2,0,null]}"#,
+            r#"{"nos":[1,0,0,0]}"#,
+        ] {
             let a = Arvore::de_json(antigo);
             assert_eq!(a, Arvore::default(), "{antigo}");
             assert_eq!(a.gastos(), 0);
             assert_eq!(a.livres(37), 37, "every point refunded");
             assert!(Arvore::e_formato_antigo(antigo), "{antigo}");
         }
-        assert!(!Arvore::e_formato_antigo(r#"{"nos":[0,0,0,0]}"#), "nothing to refund");
+        assert!(
+            !Arvore::e_formato_antigo(r#"{"nos":[0,0,0,0]}"#),
+            "nothing to refund"
+        );
         // The next save writes the new shape.
-        assert!(Arvore::de_json("[5,0,10,3]").para_json().starts_with("{\"ids\""));
+        assert!(Arvore::de_json("[5,0,10,3]")
+            .para_json()
+            .starts_with("{\"ids\""));
     }
 
     #[test]
@@ -1894,14 +2119,21 @@ mod testes {
         assert_eq!(cheia().passivas(), esperado);
         // Nothing leaks across arms.
         let corsario = braco(Caminho::Corsario).passivas();
-        assert!(corsario.critico == 0.0 && corsario.dano_critico == 0.0 && corsario.sabedoria_pct == 0.0);
+        assert!(
+            corsario.critico == 0.0
+                && corsario.dano_critico == 0.0
+                && corsario.sabedoria_pct == 0.0
+        );
         let mut b = crate::acessorios::Bonus::default();
         braco(Caminho::Corsario).passivas().somar_economia(&mut b);
         assert!(b.drop > 0.2 && b.ouro > 0.2 && b.xp > 0.0 && b.loot_melhor > 0.0);
         // Modest: the whole web is the R50 fantasy, not a new tier.
         let t = cheia().passivas();
         assert!(t.critico <= 0.18 && t.dano_critico <= 0.80, "{t:?}");
-        assert!(t.vida_pct <= 0.40 && t.ataque_pct <= 0.45 && t.defesa_pct <= 0.60, "{t:?}");
+        assert!(
+            t.vida_pct <= 0.40 && t.ataque_pct <= 0.45 && t.defesa_pct <= 0.60,
+            "{t:?}"
+        );
         assert!(t.reducao <= 0.10 && t.velocidade_de_ataque <= 0.40, "{t:?}");
     }
 
@@ -1914,7 +2146,13 @@ mod testes {
         assert!(perto(p1.dano_critico - p0.dano_critico, 0.30));
         assert!(perto(p1.vida_pct - p0.vida_pct, -0.15));
         let n = no(id(Caminho::Assassino, 28)).unwrap();
-        assert_eq!(n.linhas(), vec!["Crit damage +30%".to_string(), "Max health -15%".to_string()]);
+        assert_eq!(
+            n.linhas(),
+            vec![
+                "Crit damage +30%".to_string(),
+                "Max health -15%".to_string()
+            ]
+        );
         // Titan: health up, attack speed down.
         let titan = no(id(Caminho::Guardiao, 33)).unwrap();
         assert_eq!(titan.nome, "Titan");
@@ -1931,7 +2169,11 @@ mod testes {
     #[test]
     fn os_nos_do_mar_do_corsario() {
         let ids: Vec<u16> = (PRIMEIRO_DO_MAR..PRIMEIRO_DO_MAR + NOS_DO_MAR as u16).collect();
-        assert_eq!(*ids.last().unwrap() as usize, NOS_TOTAL - 1, "appended last");
+        assert_eq!(
+            *ids.last().unwrap() as usize,
+            NOS_TOTAL - 1,
+            "appended last"
+        );
         for &id in &ids {
             assert_eq!(no(id).unwrap().caminho, Some(Caminho::Corsario));
         }
@@ -1939,7 +2181,13 @@ mod testes {
         assert!(vizinhos(PRIMEIRO_DO_MAR + 3).contains(&(PRIMEIRA_PONTE + 5)));
         let k = no(CODIGO_PIRATA).unwrap();
         assert_eq!((k.tipo, k.nome), (TipoNo::Chave, "Pirate's Code"));
-        assert_eq!(k.linhas(), vec!["Cannon damage vs marked ships +25%".to_string(), "Always marked at sea".to_string()]);
+        assert_eq!(
+            k.linhas(),
+            vec![
+                "Cannon damage vs marked ships +25%".to_string(),
+                "Always marked at sea".to_string()
+            ]
+        );
         // Buying the route from the start reaches the keystone.
         let mut a = Arvore::default();
         let rota = a.rota_ate(CODIGO_PIRATA);
@@ -1984,7 +2232,16 @@ mod testes {
 
     #[test]
     fn slots_abrem_nos_renascimentos_1_3_e_5() {
-        let esperado = [(0, 0), (1, 1), (2, 1), (3, 2), (4, 2), (5, 3), (9, 3), (40, 3)];
+        let esperado = [
+            (0, 0),
+            (1, 1),
+            (2, 1),
+            (3, 2),
+            (4, 2),
+            (5, 3),
+            (9, 3),
+            (40, 3),
+        ];
         for (r, n) in esperado {
             assert_eq!(slots_abertos(r), n, "rebirth {r}");
         }
@@ -1995,7 +2252,11 @@ mod testes {
         assert!(a.equipar(1, Some(0), 3).is_ok());
         assert_eq!(a.equipar(2, Some(2), 4), Err(SLOT_FECHADO));
         assert!(a.equipar(2, Some(2), 5).is_ok());
-        assert_eq!(a.equipar(3, Some(2), 99), Err(SLOT_FECHADO), "there is no 7th slot");
+        assert_eq!(
+            a.equipar(3, Some(2), 99),
+            Err(SLOT_FECHADO),
+            "there is no 7th slot"
+        );
         assert_eq!(a.ativa_no_slot(2, 5), Some(2));
         assert_eq!(a.ativa_no_slot(2, 4), None);
     }
@@ -2003,14 +2264,30 @@ mod testes {
     #[test]
     fn so_equipa_ativa_aprendida() {
         let mut a = Arvore::com_nos([3, 0, 0, 0]);
-        assert_eq!(a.equipar(0, Some(0), 5), Err(ATIVA_NAO_APRENDIDA), "active node not bought");
+        assert_eq!(
+            a.equipar(0, Some(0), 5),
+            Err(ATIVA_NAO_APRENDIDA),
+            "active node not bought"
+        );
         a = Arvore::com_nos([4, 0, 0, 0]);
         assert!(a.possui_ativa(0) && !a.possui_ativa(1) && !a.possui_ativa(3));
         assert!(a.equipar(0, Some(0), 5).is_ok());
-        assert_eq!(a.equipar(1, Some(3), 5), Err(ATIVA_NAO_APRENDIDA), "another path's active");
-        assert_eq!(a.equipar(1, Some(77), 5), Err(ATIVA_NAO_APRENDIDA), "unknown id");
+        assert_eq!(
+            a.equipar(1, Some(3), 5),
+            Err(ATIVA_NAO_APRENDIDA),
+            "another path's active"
+        );
+        assert_eq!(
+            a.equipar(1, Some(77), 5),
+            Err(ATIVA_NAO_APRENDIDA),
+            "unknown id"
+        );
         assert!(a.equipar(2, Some(0), 5).is_ok());
-        assert_eq!(a.slots, [None, None, Some(0)], "equipping elsewhere MOVES it");
+        assert_eq!(
+            a.slots,
+            [None, None, Some(0)],
+            "equipping elsewhere MOVES it"
+        );
         // Losing the node (budget cut) empties the slot.
         let mut b = Arvore::com_nos([12, 0, 0, 0]);
         b.equipar(0, Some(2), 1).unwrap();
@@ -2021,10 +2298,17 @@ mod testes {
     #[test]
     fn comprar_ativa_ocupa_o_proximo_slot_aberto() {
         let mut a = Arvore::com_nos([4, 0, 0, 0]);
-        assert_eq!(a.encaixar_nova(0, 0), None, "no slot before the first rebirth");
+        assert_eq!(
+            a.encaixar_nova(0, 0),
+            None,
+            "no slot before the first rebirth"
+        );
         assert_eq!(a.encaixar_nova(0, 1), Some(0));
         assert_eq!(a.encaixar_nova(0, 1), None, "already in a slot");
-        a = Arvore { slots: a.slots, ..Arvore::com_nos([4, 4, 0, 0]) };
+        a = Arvore {
+            slots: a.slots,
+            ..Arvore::com_nos([4, 4, 0, 0])
+        };
         assert_eq!(a.encaixar_nova(3, 1), None, "the only open slot is taken");
         assert_eq!(a.preencher_slots(3), 1);
         assert_eq!(a.slots, [Some(0), Some(3), None]);
@@ -2035,7 +2319,8 @@ mod testes {
         let mut a = Arvore::com_nos([4, 8, 0, 1]);
         a.slots = [Some(0), Some(4), None];
         let e = EstadoArvore::de(a, 40).com_renascimentos(3);
-        let volta: EstadoArvore = postcard::from_bytes(&postcard::to_allocvec(&e).unwrap()).unwrap();
+        let volta: EstadoArvore =
+            postcard::from_bytes(&postcard::to_allocvec(&e).unwrap()).unwrap();
         assert_eq!(volta.arvore.ids(), a.ids());
         assert_eq!(volta.slots, a.slots);
         assert_eq!((volta.slots_abertos, volta.renascimentos), (2, 3));
@@ -2048,14 +2333,21 @@ mod testes {
     fn tabela_das_ativas() {
         for (i, d) in DEFS.iter().enumerate() {
             assert!(d.custo_mp > 0 && d.custo_mp <= 50, "{}", ATIVAS[i].1);
-            assert!(d.espera_s >= crate::skills::RECARGA_MINIMA_S, "{}", ATIVAS[i].1);
+            assert!(
+                d.espera_s >= crate::skills::RECARGA_MINIMA_S,
+                "{}",
+                ATIVAS[i].1
+            );
             assert!(!d.descricao.is_empty() && !d.descricao.contains("{}"));
             assert_eq!(ativa_do_id(id_de_skill(i as u8)), Some(i as u8));
         }
         assert_eq!(ativa_do_id(12), None, "a weapon skill is not an active");
         assert_eq!(ativa_do_id(ID_SKILL_BASE + 12), None);
         assert_eq!(DEFS[1].tipo, TipoAtiva::Invisibilidade);
-        assert_eq!(no_da_ativa(1), Some((Caminho::Assassino, id(Caminho::Assassino, 13))));
+        assert_eq!(
+            no_da_ativa(1),
+            Some((Caminho::Assassino, id(Caminho::Assassino, 13)))
+        );
         // Supreme: only capstones, only from rebirth 10.
         assert!(!e_suprema(2, 9) && e_suprema(2, 10));
         assert!(!e_suprema(0, 50), "the first active is never supreme");

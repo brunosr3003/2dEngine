@@ -395,7 +395,9 @@ pub fn aplica_montado(p: &mut Pose, tempo: f32, em_combate: bool) {
     p.rot[CANELA_E] = dobra_pra_tras(1.3);
     p.subida = 0.0;
     p.ferramenta = None;
-    if em_combate { return; }
+    if em_combate {
+        return;
+    }
     p.rot[BRACO_D] = frente(0.7 + 0.04 * s);
     p.rot[BRACO_E] = frente(0.7 + 0.04 * s);
     p.rot[ANTEBRACO_D] = frente(0.6);

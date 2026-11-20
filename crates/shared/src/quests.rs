@@ -658,7 +658,10 @@ impl QuestNet {
             // Shown after the pace at the quest's level (the server divides
             // by the player's level when it pays; they are nearly always the
             // same band).
-            reward_xp: crate::progressao::no_ritmo(crate::progressao::xp_da_quest(d), d.min_level.max(1)),
+            reward_xp: crate::progressao::no_ritmo(
+                crate::progressao::xp_da_quest(d),
+                d.min_level.max(1),
+            ),
             reward_item: d.reward_item,
             reward_item_qty: d.reward_item_qty,
             reward_faction_points: d.reward_faction_points,
@@ -1806,7 +1809,9 @@ mod testes_nivel_de_missao {
     fn renascido_passa_toda_trava_de_nivel() {
         assert_eq!(nivel_de_missao(7, 0), 7);
         assert!(nivel_de_missao(1, 1) >= 10_000);
-        assert!(QUESTS.iter().all(|q| nivel_pedido(q) <= nivel_de_missao(1, 1)));
+        assert!(QUESTS
+            .iter()
+            .all(|q| nivel_pedido(q) <= nivel_de_missao(1, 1)));
     }
 }
 
@@ -1973,9 +1978,12 @@ mod testes_da_pocao_de_xp {
             .filter_map(crate::historia::id_do_passo)
             .filter_map(crate::historia::def_da_historia);
         for d in QUESTS.iter().chain(historia) {
-            let paga = [(d.reward_item, d.reward_item_qty), (d.reward_item2, d.reward_item2_qty)]
-                .iter()
-                .any(|&(id, q)| id == item_id::XP_POTION && q > 0);
+            let paga = [
+                (d.reward_item, d.reward_item_qty),
+                (d.reward_item2, d.reward_item2_qty),
+            ]
+            .iter()
+            .any(|&(id, q)| id == item_id::XP_POTION && q > 0);
             assert_eq!(paga, paga_pocao_xp(d), "{} {}", d.id, d.title);
             if paga {
                 assert!(d.daily, "{} pays an XP potion and is not a daily", d.id);

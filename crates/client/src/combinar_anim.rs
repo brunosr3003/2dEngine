@@ -143,7 +143,11 @@ impl Animacao {
 
     fn tempos(&self) -> Tempos {
         if self.sintese() {
-            Tempos { junta: (0.22, 0.62), revela: 0.78, fica: 1.05 }
+            Tempos {
+                junta: (0.22, 0.62),
+                revela: 0.78,
+                fica: 1.05,
+            }
         } else {
             Tempos {
                 junta: (0.34, 1.08),
@@ -277,12 +281,16 @@ impl Animacao {
         palco: Option<(&VoxCache, &Material)>,
     ) {
         let n = self.r.qtd.clamp(1, 10) as usize;
-        let (raio0, lado) = if n > 5 { (u(150.0), u(44.0)) } else { (u(132.0), u(54.0)) };
+        let (raio0, lado) = if n > 5 {
+            (u(150.0), u(44.0))
+        } else {
+            (u(132.0), u(54.0))
+        };
         let raio0 = raio0.min(self.lim - lado * 0.5);
         let passo = if self.sintese() { 0.022 } else { 0.045 };
         let g = ((t - tm.junta.0) / (tm.junta.1 - tm.junta.0)).clamp(0.0, 1.0);
         let gi = g * g * g; // ease-in: slow start, fast pull
-        // Thin rings contracting into the middle while it charges.
+                            // Thin rings contracting into the middle while it charges.
         for j in 0..3 {
             let f = (t * 1.5 + j as f32 / 3.0).fract();
             let r = u(30.0) + (self.lim - u(30.0)) * (1.0 - f);
@@ -294,7 +302,11 @@ impl Animacao {
             let a = sorte(j) * TAU + t * 0.4;
             let r = u(40.0) + (self.lim - u(40.0)) * (1.0 - f);
             let p = c + vec2(a.cos(), a.sin()) * r;
-            disco(p, u(1.4 + 1.4 * sorte(j + 7)), estilo::alfa(estilo::misturar(cor, WHITE, 0.4), carga * f * 0.85 * fa));
+            disco(
+                p,
+                u(1.4 + 1.4 * sorte(j + 7)),
+                estilo::alfa(estilo::misturar(cor, WHITE, 0.4), carga * f * 0.85 * fa),
+            );
         }
         // The orb.
         let tensao = ((t - (tm.revela - 0.2)) / 0.2).clamp(0.0, 1.0);
@@ -303,8 +315,19 @@ impl Animacao {
         for (k, a) in [(3.2, 0.06), (2.2, 0.11), (1.5, 0.20)] {
             disco(c, ro * k, estilo::alfa(cor, a * carga * fa));
         }
-        disco(c, ro, estilo::alfa(estilo::misturar(cor, WHITE, 0.35 + 0.4 * tensao), 0.85 * carga * fa));
-        disco(c, ro * 0.55, estilo::alfa(WHITE, (0.45 + 0.5 * tensao) * carga * fa));
+        disco(
+            c,
+            ro,
+            estilo::alfa(
+                estilo::misturar(cor, WHITE, 0.35 + 0.4 * tensao),
+                0.85 * carga * fa,
+            ),
+        );
+        disco(
+            c,
+            ro * 0.55,
+            estilo::alfa(WHITE, (0.45 + 0.5 * tensao) * carga * fa),
+        );
 
         // The inputs, back to front by position.
         let giro = 1.6 * gi + t * 0.25;
@@ -328,7 +351,11 @@ impl Animacao {
                     let gk3 = gk * gk * gk;
                     let ak = -PI * 0.5 + i as f32 / n as f32 * TAU + 1.6 * gk3 + t * 0.25;
                     let pk = c + vec2(ak.cos(), ak.sin()) * raio0 * (1.0 - gk3);
-                    disco(pk, lado * escala * (0.30 - k as f32 * 0.06), estilo::alfa(cor, a * g * (0.22 - k as f32 * 0.05)));
+                    disco(
+                        pk,
+                        lado * escala * (0.30 - k as f32 * 0.06),
+                        estilo::alfa(cor, a * g * (0.22 - k as f32 * 0.05)),
+                    );
                 }
             }
             let p = c + vec2(ang.cos(), ang.sin()) * r;
@@ -336,12 +363,21 @@ impl Animacao {
             cartao_do_item(p, lado * escala, self.r.entrada, brilho, a, gi, palco);
         }
         // What is going on, under it all.
-        let rotulo = if self.sintese() { "Synthesising" } else { "Combining" };
+        let rotulo = if self.sintese() {
+            "Synthesising"
+        } else {
+            "Combining"
+        };
         let y = (c.y + raio0 + u(64.0)).min(self.chao - u(50.0));
         let a = fa * (t / 0.3).min(1.0);
         estilo::texto_centro_forte(c.x, y, rotulo, 18, estilo::alfa(estilo::TEXTO, a));
         let sub = if self.tentativas > 1 {
-            format!("{} × {} · {} attempts", self.r.qtd, nome_curto(self.sintese()), self.tentativas)
+            format!(
+                "{} × {} · {} attempts",
+                self.r.qtd,
+                nome_curto(self.sintese()),
+                self.tentativas
+            )
         } else {
             format!("{} × {}", self.r.qtd, nome_curto(self.sintese()))
         };
@@ -386,7 +422,12 @@ impl Animacao {
                 disco(c, rb * f, estilo::alfa(luz, 0.10 * forca_b));
             }
             disco(c, u(26.0) * (1.0 - q), estilo::alfa(WHITE, 0.9 * forca_b));
-            anel(c, u(30.0) + (self.lim - u(30.0)) * sai(q), u(5.0) * (1.0 - q), estilo::alfa(luz, (1.0 - q) * 0.9 * fa));
+            anel(
+                c,
+                u(30.0) + (self.lim - u(30.0)) * sai(q),
+                u(5.0) * (1.0 - q),
+                estilo::alfa(luz, (1.0 - q) * 0.9 * fa),
+            );
         }
         // Sparks flying out, a little gravity.
         if b < 1.0 {
@@ -396,7 +437,11 @@ impl Animacao {
                 let vel = (self.lim * 0.45) + self.lim * 0.55 * sorte(j + 90);
                 let p = c + vec2(a.cos(), a.sin()) * vel * sai(q) + vec2(0.0, u(50.0) * q * q);
                 let cc = if j % 3 == 0 { WHITE } else { viva };
-                brilhinho(p, u(4.0 + 4.0 * sorte(j + 13)) * (1.0 - q), estilo::alfa(cc, (1.0 - q) * fa));
+                brilhinho(
+                    p,
+                    u(4.0 + 4.0 * sorte(j + 13)) * (1.0 - q),
+                    estilo::alfa(cc, (1.0 - q) * fa),
+                );
             }
         }
         // The result.
@@ -413,12 +458,21 @@ impl Animacao {
             if s <= 0.01 {
                 continue;
             }
-            let p = vec2(c.x - largura * 0.5 + lado * 0.5 + i as f32 * (lado + gap), c.y + boia);
+            let p = vec2(
+                c.x - largura * 0.5 + lado * 0.5 + i as f32 * (lado + gap),
+                c.y + boia,
+            );
             cartao_do_item(p, lado * s, id, cor, fa, 1.0, palco);
             if qtd > 1 {
                 let txt = format!("×{qtd}");
                 let tx = p.x + lado * 0.5 * s - estilo::medir(&txt, 15) * 0.5;
-                estilo::texto_centro_forte(tx, p.y + lado * 0.5 * s + u(4.0), &txt, 15, estilo::alfa(estilo::TEXTO, fa * s.min(1.0)));
+                estilo::texto_centro_forte(
+                    tx,
+                    p.y + lado * 0.5 * s + u(4.0),
+                    &txt,
+                    15,
+                    estilo::alfa(estilo::TEXTO, fa * s.min(1.0)),
+                );
             }
         }
         // Text.
@@ -426,7 +480,11 @@ impl Animacao {
         let sobe = u(8.0) * (1.0 - a.min(1.0));
         let y = c.y + lado * 0.5 + u(48.0) + sobe;
         let titulo = if self.sintese() {
-            if self.sucessos > 1 { format!("Created {}×", self.sucessos) } else { "Created!".to_string() }
+            if self.sucessos > 1 {
+                format!("Created {}×", self.sucessos)
+            } else {
+                "Created!".to_string()
+            }
         } else if self.sucessos == 1 && self.tentativas == 1 {
             "Success!".to_string()
         } else if self.sucessos == 1 {
@@ -438,8 +496,15 @@ impl Animacao {
         let mut y2 = y + u(24.0);
         let sub = if k == 1 {
             let (id, qtd) = self.saidas[0];
-            let nome = nomes.get(&id).cloned().unwrap_or_else(|| format!("item {id}"));
-            if qtd > 1 { format!("{qtd} × {nome}") } else { nome }
+            let nome = nomes
+                .get(&id)
+                .cloned()
+                .unwrap_or_else(|| format!("item {id}"));
+            if qtd > 1 {
+                format!("{qtd} × {nome}")
+            } else {
+                nome
+            }
         } else {
             String::new()
         };
@@ -453,26 +518,51 @@ impl Animacao {
             y2 += u(22.0);
         }
         if self.garantida {
-            chip(vec2(c.x, y2 + u(2.0)), "Guaranteed success", estilo::OURO, a);
+            chip(
+                vec2(c.x, y2 + u(2.0)),
+                "Guaranteed success",
+                estilo::OURO,
+                a,
+            );
             y2 += u(26.0);
         }
         if let Some(n) = self.faltam_depois {
             linha_garantia(c.x, y2 + u(4.0), n, a * 0.85, "Next guarantee in");
         }
-        dica(area, "Tap to continue", fa * ((b - 0.6) / 0.3).clamp(0.0, 1.0) * 0.8);
+        dica(
+            area,
+            "Tap to continue",
+            fa * ((b - 0.6) / 0.3).clamp(0.0, 1.0) * 0.8,
+        );
     }
 
     /// Phase 2, fail: the orb gutters out, the inputs come back grey, crack
     /// and crumble.
-    fn falha(&self, c: Vec2, area: Rect, b: f32, cor_in: Color, fa: f32, palco: Option<(&VoxCache, &Material)>) {
+    fn falha(
+        &self,
+        c: Vec2,
+        area: Rect,
+        b: f32,
+        cor_in: Color,
+        fa: f32,
+        palco: Option<(&VoxCache, &Material)>,
+    ) {
         let cinza = Color::new(0.55, 0.52, 0.50, 1.0);
         // The orb shrinks and greys.
         if b < 0.4 {
             let q = b / 0.4;
             let ro = u(38.0) * (1.0 - sai(q));
             let tremor = 1.0 + 0.15 * (b * 60.0).sin() * (1.0 - q);
-            disco(c, ro * 1.8 * tremor, estilo::alfa(cinza, 0.14 * (1.0 - q) * fa));
-            disco(c, ro * tremor, estilo::alfa(estilo::misturar(cor_in, cinza, q), 0.7 * (1.0 - q) * fa));
+            disco(
+                c,
+                ro * 1.8 * tremor,
+                estilo::alfa(cinza, 0.14 * (1.0 - q) * fa),
+            );
+            disco(
+                c,
+                ro * tremor,
+                estilo::alfa(estilo::misturar(cor_in, cinza, q), 0.7 * (1.0 - q) * fa),
+            );
         }
         // A puff of grey smoke.
         if b < 1.1 {
@@ -503,7 +593,15 @@ impl Animacao {
                 c.y + u(14.0) * d * d + u(6.0) * (1.0 - aparece),
             );
             // Grey and dim: the colour has gone out of it.
-            cartao_do_item(p, lado * (1.0 - 0.12 * d), self.r.entrada, cinza, a * 0.6, 0.0, palco);
+            cartao_do_item(
+                p,
+                lado * (1.0 - 0.12 * d),
+                self.r.entrada,
+                cinza,
+                a * 0.6,
+                0.0,
+                palco,
+            );
             let h = lado * 0.5;
             // Cracks.
             let fr = ((b - 0.25 - i as f32 * 0.05) / 0.15).clamp(0.0, 1.0);
@@ -519,21 +617,40 @@ impl Animacao {
                 for w in pts.windows(2) {
                     draw_line(w[0].x, w[0].y, w[1].x, w[1].y, u(1.6), tinta);
                 }
-                draw_line(pts[1].x, pts[1].y, p.x + h * 0.9, p.y - h * 0.1, u(1.2), tinta);
+                draw_line(
+                    pts[1].x,
+                    pts[1].y,
+                    p.x + h * 0.9,
+                    p.y - h * 0.1,
+                    u(1.2),
+                    tinta,
+                );
             }
             // Dust falling off as it goes.
             if d > 0.0 {
                 for j in 0..5u32 {
                     let sx = (sorte(j + i as u32 * 7 + 400) - 0.5) * lado;
                     let p2 = p + vec2(sx, h * 0.6 + u(30.0) * d * (0.6 + sorte(j + 500)));
-                    draw_rectangle(p2.x, p2.y, u(2.5), u(2.5), estilo::alfa(cinza, 0.8 * (1.0 - d) * fa));
+                    draw_rectangle(
+                        p2.x,
+                        p2.y,
+                        u(2.5),
+                        u(2.5),
+                        estilo::alfa(cinza, 0.8 * (1.0 - d) * fa),
+                    );
                 }
             }
         }
         // Text.
         let a = fa * ((b - 0.15) / 0.3).clamp(0.0, 1.0);
         let y = c.y + lado * 0.5 + u(56.0);
-        estilo::texto_centro_forte(c.x, y, "No luck this time", 24, estilo::alfa(Color::new(0.88, 0.82, 0.74, 1.0), a));
+        estilo::texto_centro_forte(
+            c.x,
+            y,
+            "No luck this time",
+            24,
+            estilo::alfa(Color::new(0.88, 0.82, 0.74, 1.0), a),
+        );
         let sub = if self.tentativas > 1 {
             format!("0 of {} attempts succeeded", self.tentativas)
         } else {
@@ -543,20 +660,40 @@ impl Animacao {
         if let Some(n) = self.faltam_depois {
             linha_garantia(c.x, y + u(50.0), n, a, "Guaranteed in");
         }
-        dica(area, "Tap to continue", fa * ((b - 0.6) / 0.3).clamp(0.0, 1.0) * 0.8);
+        dica(
+            area,
+            "Tap to continue",
+            fa * ((b - 0.6) / 0.3).clamp(0.0, 1.0) * 0.8,
+        );
     }
 }
 
 fn nome_curto(sintese: bool) -> &'static str {
-    if sintese { "materials" } else { "items" }
+    if sintese {
+        "materials"
+    } else {
+        "items"
+    }
 }
 
 fn linha_garantia(x: f32, y: f32, n: u16, a: f32, prefixo: &str) {
     if n <= 1 {
-        estilo::texto_centro(x, y, "Next one is guaranteed!", 14, estilo::alfa(estilo::VERDE, a));
+        estilo::texto_centro(
+            x,
+            y,
+            "Next one is guaranteed!",
+            14,
+            estilo::alfa(estilo::VERDE, a),
+        );
     } else {
         let txt = format!("{prefixo} {n} tries");
-        estilo::texto_centro(x, y, &txt, 14, estilo::alfa(Color::new(0.95, 0.78, 0.30, 1.0), a));
+        estilo::texto_centro(
+            x,
+            y,
+            &txt,
+            14,
+            estilo::alfa(Color::new(0.95, 0.78, 0.30, 1.0), a),
+        );
     }
 }
 
@@ -572,7 +709,13 @@ fn chip(c: Vec2, txt: &str, cor: Color, a: f32) {
 
 fn dica(area: Rect, txt: &str, a: f32) {
     if a > 0.01 {
-        estilo::texto_centro(area.center().x, area.y + area.h - u(14.0), txt, 13, estilo::alfa(estilo::SUAVE, a));
+        estilo::texto_centro(
+            area.center().x,
+            area.y + area.h - u(14.0),
+            txt,
+            13,
+            estilo::alfa(estilo::SUAVE, a),
+        );
     }
 }
 
@@ -599,8 +742,14 @@ fn cartao_do_item(
     estilo::ret_gradiente(
         r,
         raio,
-        estilo::alfa(estilo::misturar(Color::new(0.10, 0.08, 0.07, 1.0), cor, 0.28), 0.95 * a),
-        estilo::alfa(estilo::misturar(Color::new(0.05, 0.04, 0.04, 1.0), cor, 0.12), 0.95 * a),
+        estilo::alfa(
+            estilo::misturar(Color::new(0.10, 0.08, 0.07, 1.0), cor, 0.28),
+            0.95 * a,
+        ),
+        estilo::alfa(
+            estilo::misturar(Color::new(0.05, 0.04, 0.04, 1.0), cor, 0.12),
+            0.95 * a,
+        ),
     );
     estilo::borda_arredondada(r, raio, (lado * 0.04).max(1.0), estilo::alfa(cor, 0.9 * a));
     let pad = lado * 0.10;
@@ -682,10 +831,16 @@ mod tests {
 
     #[test]
     fn a_duracao_fica_na_faixa_pedida() {
-        let r = combinar::receitas().into_iter().find(|r| r.chance < 100).unwrap();
+        let r = combinar::receitas()
+            .into_iter()
+            .find(|r| r.chance < 100)
+            .unwrap();
         let a = Animacao::nova(r, 1, 1, Some(25), None, 0.0);
         assert!(a.tempos().revela <= 1.3 && a.duracao() < 3.5);
-        let s = combinar::receitas().into_iter().find(|r| r.chance == 100).unwrap();
+        let s = combinar::receitas()
+            .into_iter()
+            .find(|r| r.chance == 100)
+            .unwrap();
         let b = Animacao::nova(s, 1, 1, None, None, 0.0);
         assert!(b.tempos().revela < a.tempos().revela && b.duracao() < a.duracao());
         assert!(!a.acabou(1.0) && a.acabou(10.0));

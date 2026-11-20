@@ -8,27 +8,31 @@ para o jogador) e detalhe em `docs/CHANGELOG.md` (para o time).
 
 _Para o Bruno preencher: regiões, bosses, dungeons, sistemas, eventos._
 
-### Sistema Naval (Redesign Completo) — Proposta documentada
+### Sistema Naval (Redesign Completo) — implementado na versão de teste
 
-> **Status:** Especificação finalizada em `docs/BARCOS.md` e `docs/PVP-NAVAL.md`  
-> **Implementação:** A definir
+> **Status:** fluxo completo implementado; faltam skins, polimento e balanceamento.
+>
+> **Acompanhamento:** `docs/BARCOS-IMPLEMENTACAO.md`
 
 **Redesign completo do sistema de barcos:**
-- [ ] **Sistema de barcos como items upgradáveis** (docs/BARCOS.md)
+- [x] **Sistema de barcos como items upgradáveis** (docs/BARCOS.md)
   - 9 barcos base (3 tamanhos × 3 variantes: Veloz/Ataque/Tanque)
   - Tiers T1-T4 como items normais (upgrade com 2 iguais)
   - 4 stats alocáveis: Velocidade, HP, Dano, Virada
   - Pontos limitados por tier (10/18/26/34) = trade-offs forçados
   - Builds especializados (tank/dps/speed) ou balanceados
-  - Sistema de skins cosméticas (velas, figuras, casco completo)
+  - Velas e figuras implementadas; skins completas de casco ainda pendentes
   - Respec permitido com custo em ouro
 
-- [ ] **PvP Naval Multi-Fase** (docs/PVP-NAVAL.md)
-  - Fase 1: Combate com projéteis desvíáveis (lead targeting, skill-based)
-  - Fase 2: Barco derrotado não some (pega fogo, deriva, pode reparar)
-  - Fase 3: Boarding (abordar barco inimigo, PvP no convés)
-  - Fase 4: Sistema de respawn com delay crescente (5s/10s/15s)
-  - Fase 5: Saquear com 10s channel vulnerável
+- [x] **PvP Naval Multi-Fase** (docs/PVP-NAVAL.md)
+  - [x] Fase 1: combate com projéteis desviáveis, Broadside, Long Gun e Chain Shot
+  - [x] Fase 2: Barco derrotado não some (pega fogo, deriva, pode reparar)
+  - [x] Fase 3: Boarding (abordar barco inimigo, PvP no convés)
+  - [x] Fase 4: Sistema de respawn com delay crescente (5s/10s/15s)
+  - [x] Fase 5: Saquear com 10s channel vulnerável
+  - [x] Loja/fonte PvE de Naval Tokens, barril de espólio e loja naval
+  - [x] IA do barco vazio com auto-defesa, retorno e tolerância de reconexão
+  - [x] Alianças via grupos, sem fogo amigo e com split automático do saque
   - Loot: items especiais de PvP (Naval Tokens → skins/pets)
   - Morte: apenas 2% XP, sem perda de items (casual-friendly)
   - IA: barco volta sozinho pro dock se tripulação morreu

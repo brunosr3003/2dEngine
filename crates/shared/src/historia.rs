@@ -127,7 +127,7 @@ pub mod ponto {
             CAIS => "the end of the quay",
             MIRANTE => "the lookout",
             COSTA => "the distant coast",
-            40..=44 => crate::planalto::NOMES[(p-40) as usize],
+            40..=44 => crate::planalto::NOMES[(p - 40) as usize],
             80..=88 => crate::kogen::NOMES_DOS_PONTOS[(p - 80) as usize],
             90..=95 => crate::abissal::NOMES_DOS_PONTOS[(p - 90) as usize],
             _ => "the place",
@@ -1258,10 +1258,17 @@ pub fn ponto_da_historia(
         return Some(q);
     }
     let c = cidade?;
-    if (crate::planalto::PONTO_BASE..crate::planalto::PONTO_BASE+5).contains(&p) {
-        let nivel = (altura(c.x,c.y)/crate::terreno::BLOCO).round() as i32 - 1;
-        let plano = crate::planalto::Plano::novo(crate::terreno::Cidade::nova(c.x/crate::terreno::BLOCO,c.y/crate::terreno::BLOCO,nivel),None);
-        return Some(plano.regioes[(p-crate::planalto::PONTO_BASE) as usize].centro);
+    if (crate::planalto::PONTO_BASE..crate::planalto::PONTO_BASE + 5).contains(&p) {
+        let nivel = (altura(c.x, c.y) / crate::terreno::BLOCO).round() as i32 - 1;
+        let plano = crate::planalto::Plano::novo(
+            crate::terreno::Cidade::nova(
+                c.x / crate::terreno::BLOCO,
+                c.y / crate::terreno::BLOCO,
+                nivel,
+            ),
+            None,
+        );
+        return Some(plano.regioes[(p - crate::planalto::PONTO_BASE) as usize].centro);
     }
     match p {
         ponto::CIDADE => Some(c),
@@ -1335,10 +1342,16 @@ mod testes {
     /// while `obj_count` keeps the internal level the server checks.
     #[test]
     fn titulo_da_trava_fala_o_nivel_da_tela() {
-        for d in PASSOS.iter().filter(|d| d.obj_kind == objective_kind::NIVEL) {
+        for d in PASSOS
+            .iter()
+            .filter(|d| d.obj_kind == objective_kind::NIVEL)
+        {
             assert_eq!(
                 d.title,
-                format!("Reach level {}", crate::progressao::texto_de_nivel(d.obj_count)),
+                format!(
+                    "Reach level {}",
+                    crate::progressao::texto_de_nivel(d.obj_count)
+                ),
                 "{}",
                 d.id
             );
@@ -1372,7 +1385,10 @@ mod testes {
                 assert_eq!(zona_do_passo(d.id), Some("ilha_inicial"));
             } else if e_passo_de_chave(d.id) {
                 // A key step lives on the island of the Porão it opens.
-                let porao = CHAVES_DA_HISTORIA.iter().find(|l| l[1..].contains(&d.id)).unwrap()[0];
+                let porao = CHAVES_DA_HISTORIA
+                    .iter()
+                    .find(|l| l[1..].contains(&d.id))
+                    .unwrap()[0];
                 assert_eq!(zona_do_passo(d.id), zona_do_passo(porao), "{}", d.id);
             } else {
                 // Os de sempre seguem 700, 701, 702... com tutorial no meio.
@@ -1426,7 +1442,8 @@ mod testes {
             // tutorials: they are the preparation the owner asked for before
             // every door, not more story. The first Porão's (834-836) keep
             // counting, as they did when the caps were set.
-            let preparo = |d: &&QuestDef| e_passo_de_chave(d.id) && !PASSOS_DA_CHAVE_DO_PORAO.contains(&d.id);
+            let preparo =
+                |d: &&QuestDef| e_passo_de_chave(d.id) && !PASSOS_DA_CHAVE_DO_PORAO.contains(&d.id);
             let n = n - passos_do_capitulo(c).iter().filter(preparo).count();
             let so_historia = passos_do_capitulo(c)
                 .iter()
@@ -1456,7 +1473,8 @@ mod testes {
         for &(velho, novo) in PASSOS_REMOVIDOS {
             assert!(!e_da_historia(velho), "{velho} voltou pra historia");
             assert!(indice(velho).is_none());
-            let i = indice(novo).unwrap_or_else(|| panic!("{velho} aponta pra {novo}, que nao existe"));
+            let i =
+                indice(novo).unwrap_or_else(|| panic!("{velho} aponta pra {novo}, que nao existe"));
             assert!(
                 i <= indice(CAPITULOS[0].ultimo).unwrap(),
                 "{velho}: o sucessor caiu depois do barco"
@@ -1472,7 +1490,9 @@ mod testes {
             t::COLONIA_RETIRAR,
         ] {
             assert!(
-                !PASSOS.iter().any(|d| d.obj_kind == objective_kind::TUTORIAL && d.obj_target == acao),
+                !PASSOS
+                    .iter()
+                    .any(|d| d.obj_kind == objective_kind::TUTORIAL && d.obj_target == acao),
                 "um passo da historia ainda pede a ilha ({acao})"
             );
         }
@@ -1535,21 +1555,30 @@ mod testes {
                         );
                     }
                     objective_kind::VIAGEM => {
-                        let papel = if crate::abissal::e_abissal(ARQUIPELAGO[d.obj_target as usize].zona) {
-                            Papel::Submarino
-                        } else if crate::kogen::e_kogen(ARQUIPELAGO[d.obj_target as usize].zona) {
-                            Papel::Motorista
-                        } else {
-                            Papel::Estaleiro
-                        };
-                        assert!(papeis.contains(&(papel as u16)), "{id}: sem transporte {papel:?}");
+                        let papel =
+                            if crate::abissal::e_abissal(ARQUIPELAGO[d.obj_target as usize].zona) {
+                                Papel::Submarino
+                            } else if crate::kogen::e_kogen(ARQUIPELAGO[d.obj_target as usize].zona)
+                            {
+                                Papel::Motorista
+                            } else {
+                                Papel::Estaleiro
+                            };
+                        assert!(
+                            papeis.contains(&(papel as u16)),
+                            "{id}: sem transporte {papel:?}"
+                        );
                     }
                     objective_kind::KILL if d.obj_target != 0 => {
                         let kind = d.obj_target - 1;
                         assert!(
                             (kind as u32) < def.nivel.1 / 3 + 1
-                                || crate::bestiary::VARIANTS.iter().any(|v| v.kind == kind && v.zone == def.zona)
-                                || crate::bosses::da_zona(def.zona).iter().any(|c| c.kind == kind),
+                                || crate::bestiary::VARIANTS
+                                    .iter()
+                                    .any(|v| v.kind == kind && v.zone == def.zona)
+                                || crate::bosses::da_zona(def.zona)
+                                    .iter()
+                                    .any(|c| c.kind == kind),
                             "{id}: kind {kind} nao nasce ate' o nivel {}",
                             def.nivel.1
                         );
@@ -1701,7 +1730,10 @@ mod testes {
         }
         for (item, qtd) in [(r.madeira, r.madeira_qtd), (r.material, r.material_qtd)] {
             let tem = ganho.get(&item).copied().unwrap_or(0);
-            assert!(tem >= qtd, "the story pays {tem} of {item}, the Cellar key asks {qtd}");
+            assert!(
+                tem >= qtd,
+                "the story pays {tem} of {item}, the Cellar key asks {qtd}"
+            );
         }
     }
 
@@ -1722,13 +1754,26 @@ mod testes {
             let d = def_da_historia(dg).unwrap();
             assert_eq!(d.obj_kind, objective_kind::DUNGEON, "{dg}");
             let porao = crate::dungeon::conteudo(d.obj_target).unwrap();
-            let chave = crate::porao::chave_de(porao).expect("a story key step for a door-less dungeon");
+            let chave =
+                crate::porao::chave_de(porao).expect("a story key step for a door-less dungeon");
             let r = crate::porao::receita_de(porao).unwrap();
             let k = def_da_historia(craft).unwrap();
-            assert_eq!((k.obj_kind, k.obj_target), (objective_kind::CRAFT, chave), "{craft} crafts the wrong key for {}", porao.nome);
-            for (id, item, qtd) in [(madeira, r.madeira, r.madeira_qtd), (aco, r.material, r.material_qtd)] {
+            assert_eq!(
+                (k.obj_kind, k.obj_target),
+                (objective_kind::CRAFT, chave),
+                "{craft} crafts the wrong key for {}",
+                porao.nome
+            );
+            for (id, item, qtd) in [
+                (madeira, r.madeira, r.madeira_qtd),
+                (aco, r.material, r.material_qtd),
+            ] {
                 let p = def_da_historia(id).unwrap();
-                assert_eq!(p.obj_kind, objective_kind::TER, "{id} must not consume the key material");
+                assert_eq!(
+                    p.obj_kind,
+                    objective_kind::TER,
+                    "{id} must not consume the key material"
+                );
                 assert_eq!(
                     (p.obj_target, p.obj_count),
                     (item, qtd),
@@ -1737,18 +1782,35 @@ mod testes {
                     porao.nome
                 );
                 // Pays it back (the 834-836 rule) and says the number.
-                assert_eq!((p.reward_item, p.reward_item_qty as u32), (item, qtd), "{id}");
-                assert!(p.desc.contains(&qtd.to_string()), "{id}: the text does not say {qtd}");
+                assert_eq!(
+                    (p.reward_item, p.reward_item_qty as u32),
+                    (item, qtd),
+                    "{id}"
+                );
+                assert!(
+                    p.desc.contains(&qtd.to_string()),
+                    "{id}: the text does not say {qtd}"
+                );
             }
-            let receita = chaves.iter().find(|x| x.output_item_id == chave).expect("key recipe");
-            assert!(receita.nivel_min as u32 <= porao.nivel_min, "{}: key recipe above the door", porao.nome);
+            let receita = chaves
+                .iter()
+                .find(|x| x.output_item_id == chave)
+                .expect("key recipe");
+            assert!(
+                receita.nivel_min as u32 <= porao.nivel_min,
+                "{}: key recipe above the door",
+                porao.nome
+            );
         }
     }
 
     /// No story step sends the player to a LOCKED door without the table.
     #[test]
     fn a_tabela_de_chaves_cobre_todo_porao_da_historia() {
-        for d in PASSOS.iter().filter(|d| d.obj_kind == objective_kind::DUNGEON) {
+        for d in PASSOS
+            .iter()
+            .filter(|d| d.obj_kind == objective_kind::DUNGEON)
+        {
             let porao = crate::dungeon::conteudo(d.obj_target).unwrap();
             if crate::porao::chave_de(porao).is_some() {
                 assert!(
@@ -1761,7 +1823,10 @@ mod testes {
         }
         for l in CHAVES_DA_HISTORIA {
             for id in l {
-                assert!(e_da_historia(*id), "{id} in CHAVES_DA_HISTORIA is not a story step");
+                assert!(
+                    e_da_historia(*id),
+                    "{id} in CHAVES_DA_HISTORIA is not a story step"
+                );
             }
         }
     }
@@ -1906,7 +1971,10 @@ mod testes_do_pet_inicial {
 
     #[test]
     fn montaria_chega_antes_da_viagem_ao_mirante() {
-        let entrega = PASSOS.iter().position(|q| q.reward_item == item_id::PERGAMINHO_INVOCA_MONTARIA).unwrap();
+        let entrega = PASSOS
+            .iter()
+            .position(|q| q.reward_item == item_id::PERGAMINHO_INVOCA_MONTARIA)
+            .unwrap();
         let viagem = PASSOS.iter().position(|q| q.id == 709).unwrap();
         assert!(entrega < viagem);
         assert_eq!(PASSOS[entrega].reward_item_qty, 1);

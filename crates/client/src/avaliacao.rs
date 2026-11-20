@@ -20,9 +20,9 @@
 
 use macroquad::prelude::*;
 
+use crate::hud_estilo as estilo;
 #[allow(unused_imports)]
 use crate::ui::Toque as _;
-use crate::hud_estilo as estilo;
 
 /// A TEST build points at a server that is not production. The desktop
 /// release scripts also set `MMO_API_PADRAO` — to the production host — so
@@ -76,7 +76,10 @@ impl Estado {
     }
 
     fn texto(&self) -> String {
-        format!("{:.0};{};{};{}", self.segundos, self.vezes, self.ultimo_unix, self.feito as u8)
+        format!(
+            "{:.0};{};{};{}",
+            self.segundos, self.vezes, self.ultimo_unix, self.feito as u8
+        )
     }
 
     /// Time to show it? (`agora` in unix seconds).
@@ -115,7 +118,12 @@ impl Default for Avaliacao {
             .and_then(|p| std::fs::read_to_string(p).ok())
             .map(|t| Estado::de(&t))
             .unwrap_or_default();
-        Self { estado, aberta: false, gravado_em: 0.0, pedida: false }
+        Self {
+            estado,
+            aberta: false,
+            gravado_em: 0.0,
+            pedida: false,
+        }
     }
 }
 
@@ -170,7 +178,12 @@ impl Avaliacao {
         let k = estilo::escala_do_painel(520.0, 300.0);
         estilo::no_painel(k, || {
             let (w, h) = (520.0 * k, 286.0 * k);
-            let p = Rect::new(seguro.center().x - w * 0.5, seguro.center().y - h * 0.5, w, h);
+            let p = Rect::new(
+                seguro.center().x - w * 0.5,
+                seguro.center().y - h * 0.5,
+                w,
+                h,
+            );
             crate::hud_layout::escurece(0.55);
             estilo::painel_destaque(p, estilo::OURO);
             let cx = p.center().x;
@@ -180,18 +193,56 @@ impl Avaliacao {
                 estrela(c, 14.0 * k, estilo::OURO);
             }
             estilo::texto_centro_forte(cx, p.y + 104.0 * k, "Rate Tempest", 24, estilo::OURO);
-            estilo::texto_centro(cx, p.y + 136.0 * k, "Your review on Google Play helps other", 16, estilo::TEXTO);
-            estilo::texto_centro(cx, p.y + 158.0 * k, "players find the game. Thank you!", 16, estilo::TEXTO);
+            estilo::texto_centro(
+                cx,
+                p.y + 136.0 * k,
+                "Your review on Google Play helps other",
+                16,
+                estilo::TEXTO,
+            );
+            estilo::texto_centro(
+                cx,
+                p.y + 158.0 * k,
+                "players find the game. Thank you!",
+                16,
+                estilo::TEXTO,
+            );
             let m = Vec2::from(mouse_position());
             let clicou = crate::foco::clique();
             let bw = (w - 60.0 * k) * 0.5;
             let avaliar = Rect::new(p.x + 20.0 * k, p.y + h - 70.0 * k, bw + 20.0 * k, 50.0 * k);
-            let depois = Rect::new(avaliar.x + avaliar.w + 20.0 * k, avaliar.y, bw - 20.0 * k, 50.0 * k);
+            let depois = Rect::new(
+                avaliar.x + avaliar.w + 20.0 * k,
+                avaliar.y,
+                bw - 20.0 * k,
+                50.0 * k,
+            );
             let sobre_a = avaliar.toca(m);
-            estilo::botao(avaliar, "", estilo::estado(sobre_a, is_mouse_button_down(MouseButton::Left), false, false), true);
-            estilo::texto_centro_forte(avaliar.center().x, avaliar.center().y + 7.0 * k, "Rate on Google Play", 18, crate::ui::OURO_CLARO);
+            estilo::botao(
+                avaliar,
+                "",
+                estilo::estado(
+                    sobre_a,
+                    is_mouse_button_down(MouseButton::Left),
+                    false,
+                    false,
+                ),
+                true,
+            );
+            estilo::texto_centro_forte(
+                avaliar.center().x,
+                avaliar.center().y + 7.0 * k,
+                "Rate on Google Play",
+                18,
+                crate::ui::OURO_CLARO,
+            );
             let sobre_d = depois.toca(m);
-            estilo::botao(depois, "Later", estilo::estado(sobre_d, false, false, false), false);
+            estilo::botao(
+                depois,
+                "Later",
+                estilo::estado(sobre_d, false, false, false),
+                false,
+            );
             if clicou && sobre_a {
                 self.estado.feito = true;
                 self.aberta = false;
@@ -224,35 +275,74 @@ mod testes {
 
     #[test]
     fn estado_vai_e_volta_do_arquivo() {
-        let e = Estado { segundos: 7300.0, vezes: 2, ultimo_unix: 1_800_000_000, feito: true };
+        let e = Estado {
+            segundos: 7300.0,
+            vezes: 2,
+            ultimo_unix: 1_800_000_000,
+            feito: true,
+        };
         assert_eq!(Estado::de(&e.texto()), e);
         assert_eq!(Estado::de("lixo"), Estado::default());
     }
 
     #[test]
     fn pedido_da_equipe_respeita_quem_ja_avaliou_e_o_limite() {
-        let mut a = Avaliacao { estado: Estado::default(), aberta: false, gravado_em: f64::MAX, pedida: false };
+        let mut a = Avaliacao {
+            estado: Estado::default(),
+            aberta: false,
+            gravado_em: f64::MAX,
+            pedida: false,
+        };
         a.pedir();
-        assert_eq!(a.pedida, DISPONIVEL, "asked: shows even before the play-time threshold");
-        let mut ja = Avaliacao { estado: Estado { feito: true, ..Default::default() }, aberta: false, gravado_em: f64::MAX, pedida: false };
+        assert_eq!(
+            a.pedida, DISPONIVEL,
+            "asked: shows even before the play-time threshold"
+        );
+        let mut ja = Avaliacao {
+            estado: Estado {
+                feito: true,
+                ..Default::default()
+            },
+            aberta: false,
+            gravado_em: f64::MAX,
+            pedida: false,
+        };
         ja.pedir();
         assert!(!ja.pedida, "already rated: never again");
-        let mut cheio = Avaliacao { estado: Estado { vezes: VEZES_MAX, ..Default::default() }, aberta: false, gravado_em: f64::MAX, pedida: false };
+        let mut cheio = Avaliacao {
+            estado: Estado {
+                vezes: VEZES_MAX,
+                ..Default::default()
+            },
+            aberta: false,
+            gravado_em: f64::MAX,
+            pedida: false,
+        };
         cheio.pedir();
         assert!(!cheio.pedida, "at most VEZES_MAX times");
     }
 
     #[test]
     fn so_aparece_quando_jogou_bastante_e_nao_insiste() {
-        let mut e = Estado { segundos: SEGUNDOS_MIN, ..Default::default() };
+        let mut e = Estado {
+            segundos: SEGUNDOS_MIN,
+            ..Default::default()
+        };
         assert!(e.pronto(NIVEL_MIN, 10_000_000));
         assert!(!e.pronto(NIVEL_MIN.saturating_sub(1).max(0), 10_000_000) || NIVEL_MIN == 0);
         e.feito = true;
         assert!(!e.pronto(99, 10_000_000), "after rating, never again");
-        let mut e = Estado { segundos: SEGUNDOS_MIN, vezes: VEZES_MAX, ..Default::default() };
+        let mut e = Estado {
+            segundos: SEGUNDOS_MIN,
+            vezes: VEZES_MAX,
+            ..Default::default()
+        };
         assert!(!e.pronto(99, 10_000_000), "at most VEZES_MAX times");
         e.vezes = 1;
         e.ultimo_unix = 10_000_000;
-        assert_eq!(e.pronto(99, 10_000_000 + INTERVALO_DIAS * 86_400 - 1), INTERVALO_DIAS == 0);
+        assert_eq!(
+            e.pronto(99, 10_000_000 + INTERVALO_DIAS * 86_400 - 1),
+            INTERVALO_DIAS == 0
+        );
     }
 }

@@ -42,7 +42,12 @@ async fn comprar_tp_e_responder(
             if let (Resposta::Feito { .. }, Some(p)) = (&r, cat::pacote(pacote)) {
                 let codigo = Produto::Tp(pacote).codigo();
                 crate::telemetria::conta_de(nome_tel, "loja_pedido", &codigo, 1);
-                crate::telemetria::conta_de(nome_tel, "loja_receita_centavos", "BRL", p.centavos as i64);
+                crate::telemetria::conta_de(
+                    nome_tel,
+                    "loja_receita_centavos",
+                    "BRL",
+                    p.centavos as i64,
+                );
                 crate::telemetria::conta_de(nome_tel, "loja_tp_vendida", codigo, p.total() as i64);
             }
             resultado(to, r.ok(), r.texto());
@@ -57,7 +62,10 @@ async fn comprar_tp_e_responder(
 /// "Starter Pack unlocked! +400 TP…" after a paid offer.
 fn texto_da_compra(e: &crate::ofertas::Entrega) -> String {
     if e.tp > 0 {
-        format!("{} unlocked! +{} TP. The items are on their way.", e.titulo, e.tp)
+        format!(
+            "{} unlocked! +{} TP. The items are on their way.",
+            e.titulo, e.tp
+        )
     } else {
         format!("{} unlocked! The items are on their way.", e.titulo)
     }
@@ -192,10 +200,8 @@ impl GameWorld {
                     entregar_pendentes(&central, &conta, &personagem, sid, &tx_mundo).await;
                 }
                 PedidoLoja::ComprarTp { pacote, pedido } => {
-                    comprar_tp_e_responder(
-                        &central, &conta, &nome_tel, &to, pacote, &pedido, None,
-                    )
-                    .await;
+                    comprar_tp_e_responder(&central, &conta, &nome_tel, &to, pacote, &pedido, None)
+                        .await;
                 }
                 // Mesma compra, aprovada pelo Google Play real (Android) em
                 // vez do provedor simulado — so' o purchase_token muda.
@@ -208,7 +214,13 @@ impl GameWorld {
                         purchase_token: &purchase_token,
                     });
                     comprar_tp_e_responder(
-                        &central, &conta, &nome_tel, &to, pacote, &pedido, google_play,
+                        &central,
+                        &conta,
+                        &nome_tel,
+                        &to,
+                        pacote,
+                        &pedido,
+                        google_play,
                     )
                     .await;
                 }
@@ -222,10 +234,16 @@ impl GameWorld {
                         Ok(r) => {
                             if let Resposta::Feito { .. } = &r {
                                 let codigo = produto.codigo();
-                                crate::telemetria::conta_de(&nome_tel, "loja_item", &codigo, vezes as i64);
+                                crate::telemetria::conta_de(
+                                    &nome_tel,
+                                    "loja_item",
+                                    &codigo,
+                                    vezes as i64,
+                                );
                                 // O gasto medido e' o COBRADO, com desconto —
                                 // senao a telemetria de TP nao fecha com o razao.
-                                crate::telemetria::conta_de(&nome_tel, 
+                                crate::telemetria::conta_de(
+                                    &nome_tel,
                                     "loja_tp_gasta",
                                     codigo,
                                     cat::preco_do_lote(produto.preco_tp().unwrap_or(0), vezes)
@@ -322,7 +340,9 @@ impl GameWorld {
                 PedidoLoja::Montar | PedidoLoja::Desmontar => return,
                 PedidoLoja::OfertasRelampago => {
                     entregar_pendentes(&central, &conta, &personagem, sid, &tx_mundo).await;
-                    match crate::ofertas::abrir_e_listar(&central, &conta, nivel, abrir_ofertas).await {
+                    match crate::ofertas::abrir_e_listar(&central, &conta, nivel, abrir_ofertas)
+                        .await
+                    {
                         Ok(v) => {
                             if let Some(o) = v.iter().find(|o| o.nova) {
                                 crate::telemetria::conta_de(&nome_tel, "oferta_aberta", &o.id, 1);
@@ -334,18 +354,47 @@ impl GameWorld {
                     // Only the list: no shop state reload on every check.
                     return;
                 }
-                PedidoLoja::ComprarOfertaGooglePlay { oferta, produto, pedido, purchase_token } => {
-                    match crate::ofertas::comprar(&central, &conta, &oferta, &produto, &pedido, &purchase_token).await {
+                PedidoLoja::ComprarOfertaGooglePlay {
+                    oferta,
+                    produto,
+                    pedido,
+                    purchase_token,
+                } => {
+                    match crate::ofertas::comprar(
+                        &central,
+                        &conta,
+                        &oferta,
+                        &produto,
+                        &pedido,
+                        &purchase_token,
+                    )
+                    .await
+                    {
                         Ok(crate::ofertas::Compra::Feita(e, _saldo)) => {
                             crate::telemetria::conta_de(&nome_tel, "oferta_comprada", &oferta, 1);
                             // The monitoring panel counts sales and revenue
                             // from these, like a TP pack (the offer used to
                             // be invisible there). Test purchases apart.
                             if e.teste {
-                                crate::telemetria::conta_de(&nome_tel, "loja_pedido_teste", format!("oferta:{oferta}"), 1);
+                                crate::telemetria::conta_de(
+                                    &nome_tel,
+                                    "loja_pedido_teste",
+                                    format!("oferta:{oferta}"),
+                                    1,
+                                );
                             } else {
-                                crate::telemetria::conta_de(&nome_tel, "loja_pedido", format!("oferta:{oferta}"), 1);
-                                crate::telemetria::conta_de(&nome_tel, "loja_receita_centavos", "BRL", e.preco_centavos as i64);
+                                crate::telemetria::conta_de(
+                                    &nome_tel,
+                                    "loja_pedido",
+                                    format!("oferta:{oferta}"),
+                                    1,
+                                );
+                                crate::telemetria::conta_de(
+                                    &nome_tel,
+                                    "loja_receita_centavos",
+                                    "BRL",
+                                    e.preco_centavos as i64,
+                                );
                             }
                             resultado(&to, true, texto_da_compra(&e));
                         }
@@ -361,7 +410,9 @@ impl GameWorld {
                     // Whatever the answer, deliver what is owed (this purchase,
                     // or an older one approved late).
                     entregar_pendentes(&central, &conta, &personagem, sid, &tx_mundo).await;
-                    if let Ok(v) = crate::ofertas::abrir_e_listar(&central, &conta, nivel, abrir_ofertas).await {
+                    if let Ok(v) =
+                        crate::ofertas::abrir_e_listar(&central, &conta, nivel, abrir_ofertas).await
+                    {
                         avisa(&to, AvisoLoja::OfertasRelampago(v));
                     }
                 }
@@ -371,10 +422,22 @@ impl GameWorld {
                     if banco::Provedor::do_ambiente() != banco::Provedor::Simulado {
                         resultado(&to, false, "Payment unavailable right now.");
                     } else {
-                        match crate::ofertas::comprar_simulado(&central, &conta, &oferta, &pedido).await {
+                        match crate::ofertas::comprar_simulado(&central, &conta, &oferta, &pedido)
+                            .await
+                        {
                             Ok(crate::ofertas::Compra::Feita(e, _)) => {
-                                crate::telemetria::conta_de(&nome_tel, "oferta_comprada", &oferta, 1);
-                                crate::telemetria::conta_de(&nome_tel, "loja_pedido_teste", format!("oferta:{oferta}"), 1);
+                                crate::telemetria::conta_de(
+                                    &nome_tel,
+                                    "oferta_comprada",
+                                    &oferta,
+                                    1,
+                                );
+                                crate::telemetria::conta_de(
+                                    &nome_tel,
+                                    "loja_pedido_teste",
+                                    format!("oferta:{oferta}"),
+                                    1,
+                                );
                                 resultado(&to, true, texto_da_compra(&e));
                             }
                             Ok(crate::ofertas::Compra::JaFeita(_)) => {
@@ -388,7 +451,9 @@ impl GameWorld {
                         }
                     }
                     entregar_pendentes(&central, &conta, &personagem, sid, &tx_mundo).await;
-                    if let Ok(v) = crate::ofertas::abrir_e_listar(&central, &conta, nivel, abrir_ofertas).await {
+                    if let Ok(v) =
+                        crate::ofertas::abrir_e_listar(&central, &conta, nivel, abrir_ofertas).await
+                    {
                         avisa(&to, AvisoLoja::OfertasRelampago(v));
                     }
                 }
@@ -527,7 +592,11 @@ impl GameWorld {
                     format!("You received {} {nome}!", milhar(qtd as u64)),
                 );
             }
-            Evento::Entregas { sid, personagem, entregas } => {
+            Evento::Entregas {
+                sid,
+                personagem,
+                entregas,
+            } => {
                 let ids: Vec<i64> = entregas.iter().map(|e| e.id).collect();
                 let Some(s) = self
                     .sessions
@@ -549,7 +618,8 @@ impl GameWorld {
                 let (mut itens, mut energia, mut ouro, mut na_bolsa) = (0u32, 0u64, 0u64, 0u32);
                 for e in &entregas {
                     if e.energia > 0 {
-                        s.skill_progress.energia = s.skill_progress.energia.saturating_add(e.energia);
+                        s.skill_progress.energia =
+                            s.skill_progress.energia.saturating_add(e.energia);
                         energia += e.energia;
                     }
                     if e.ouro > 0 {
@@ -564,16 +634,33 @@ impl GameWorld {
                             s.inventory_dirty = true;
                             na_bolsa += 1;
                         } else {
-                            s.dungeon.postar(e.item_id, 1, inst, shared::loja::MOTIVO_CORREIO_LOJA, quando);
+                            s.dungeon.postar(
+                                e.item_id,
+                                1,
+                                inst,
+                                shared::loja::MOTIVO_CORREIO_LOJA,
+                                quando,
+                            );
                             itens += 1;
                         }
                     } else if e.item_id != 0 && e.qtd > 0 {
-                        s.dungeon.postar(e.item_id, e.qtd, None, shared::loja::MOTIVO_CORREIO_LOJA, quando);
+                        s.dungeon.postar(
+                            e.item_id,
+                            e.qtd,
+                            None,
+                            shared::loja::MOTIVO_CORREIO_LOJA,
+                            quando,
+                        );
                         itens += 1;
                     }
                 }
                 if ouro > 0 {
-                    crate::telemetria::conta_de(&s.name, "loja_moeda", shared::item_id::GOLD.to_string(), ouro as i64);
+                    crate::telemetria::conta_de(
+                        &s.name,
+                        "loja_moeda",
+                        shared::item_id::GOLD.to_string(),
+                        ouro as i64,
+                    );
                 }
                 if energia > 0 {
                     s.skills_dirty = true;
@@ -727,11 +814,20 @@ impl GameWorld {
                     s.montando_ate = 0.0;
                     s.montado = true;
                     s.montaria_firmeza = cat::FIRMEZA_MAX;
-                    avisa(&s.handle.to_client, AvisoLoja::MontariaCombate {
-                        firmeza: 100, bloqueio_segundos: 0.0,
-                    });
+                    avisa(
+                        &s.handle.to_client,
+                        AvisoLoja::MontariaCombate {
+                            firmeza: 100,
+                            bloqueio_segundos: 0.0,
+                        },
+                    );
                     s.montado_em = agora;
-                    crate::telemetria::conta_de(&s.name, "montaria", s.montaria_vista.unwrap_or(0), 1);
+                    crate::telemetria::conta_de(
+                        &s.name,
+                        "montaria",
+                        s.montaria_vista.unwrap_or(0),
+                        1,
+                    );
                 }
             } else if !pode {
                 s.montado = false;
@@ -749,10 +845,7 @@ impl GameWorld {
 }
 
 fn pode_ficar_montado(s: &Session) -> bool {
-    !s.downed
-        && s.carrying.is_none()
-        && s.coleta_no.is_none()
-        && s.entity.is_some()
+    !s.downed && s.carrying.is_none() && s.coleta_no.is_none() && s.entity.is_some()
 }
 
 /// Pode comecar a montar agora? O texto e' o motivo pro jogador.
@@ -788,14 +881,28 @@ mod testes_combate_montado {
         let mut w = GameWorld::new(HashMap::new());
         let sid = SessionId(([127, 0, 0, 1], 19841).into());
         let (tx, _) = mpsc::unbounded_channel();
-        w.on_connect(SessionHandle { id: sid, to_client: tx });
-        let e = w.ecs.spawn((NetId(EntityId(904)), Position(Vec2::ZERO),
-            Velocity(Vec2::ZERO), EntityKind::Player, Health { current: 100, max: 100 }));
+        w.on_connect(SessionHandle {
+            id: sid,
+            to_client: tx,
+        });
+        let e = w.ecs.spawn((
+            NetId(EntityId(904)),
+            Position(Vec2::ZERO),
+            Velocity(Vec2::ZERO),
+            EntityKind::Player,
+            Health {
+                current: 100,
+                max: 100,
+            },
+        ));
         let s = w.sessions.get_mut(&sid).unwrap();
         s.logged_in = true;
         s.entity = Some(e);
         s.entity_id = EntityId(904);
-        s.equipment.montaria = Some(shared::item_id::montaria_no_grau(shared::item_id::MONTARIA_BASE, 1));
+        s.equipment.montaria = Some(shared::item_id::montaria_no_grau(
+            shared::item_id::MONTARIA_BASE,
+            1,
+        ));
         w.sim_time_s = 20.0;
         (w, sid)
     }
@@ -810,15 +917,24 @@ mod testes_combate_montado {
                     s.montado = true;
                     s.montado_em = 1.0;
                     s.equipment.montaria = Some(shared::item_id::montaria_no_grau(
-                        shared::item_id::MONTARIA_BASE, grau));
+                        shared::item_id::MONTARIA_BASE,
+                        grau,
+                    ));
                     s.stamina_current = 100.0;
                     if em_luta {
                         s.last_combat_at_s = 19.9;
                         s.combo_last_attack = 19.9;
                     }
                     s.pending_input = Some(shared::protocol::InputFrame {
-                        seq: 1, tick: 1, move_dir: Vec2::X, aim: Vec2::X,
-                        buttons: if sprint { shared::protocol::buttons::SPRINT } else { 0 },
+                        seq: 1,
+                        tick: 1,
+                        move_dir: Vec2::X,
+                        aim: Vec2::X,
+                        buttons: if sprint {
+                            shared::protocol::buttons::SPRINT
+                        } else {
+                            0
+                        },
                     });
                     let e = s.entity.unwrap();
                     w.step(1.0 / 30.0);
@@ -828,8 +944,10 @@ mod testes_combate_montado {
                 };
                 let normal = velocidade(false);
                 assert!(normal > 0.0);
-                assert!((velocidade(true) - normal).abs() < 0.001,
-                    "montaria grau {grau}, sprint {sprint}: combate reduziu velocidade");
+                assert!(
+                    (velocidade(true) - normal).abs() < 0.001,
+                    "montaria grau {grau}, sprint {sprint}: combate reduziu velocidade"
+                );
             }
         }
     }
@@ -887,8 +1005,15 @@ mod testes_combate_montado {
         let lutar = |montado| {
             let (mut w, sid) = mundo();
             w.safe_zone = false;
-            let alvo = w.ecs.spawn((NetId(EntityId(905)), Position(Vec2::new(1.0, 0.0)),
-                EntityKind::Enemy(1), Health { current: 10_000, max: 10_000 }));
+            let alvo = w.ecs.spawn((
+                NetId(EntityId(905)),
+                Position(Vec2::new(1.0, 0.0)),
+                EntityKind::Enemy(1),
+                Health {
+                    current: 10_000,
+                    max: 10_000,
+                },
+            ));
             {
                 let s = w.sessions.get_mut(&sid).unwrap();
                 s.montado = montado;
@@ -900,9 +1025,14 @@ mod testes_combate_montado {
                 s.stamina_current = 1000.0;
             }
             for n in 0..60 {
-                w.sessions.get_mut(&sid).unwrap().pending_input = Some(shared::protocol::InputFrame {
-                    seq: n, tick: n, move_dir: Vec2::ZERO, aim: Vec2::X, buttons: 0,
-                });
+                w.sessions.get_mut(&sid).unwrap().pending_input =
+                    Some(shared::protocol::InputFrame {
+                        seq: n,
+                        tick: n,
+                        move_dir: Vec2::ZERO,
+                        aim: Vec2::X,
+                        buttons: 0,
+                    });
                 w.step(1.0 / 30.0);
             }
             assert_eq!(w.sessions[&sid].montado, montado);
@@ -923,8 +1053,16 @@ mod testes_combate_montado {
         tag.is_boss = true;
         tag.stats.defense = 0;
         tag.stats.damage_reduction_pct = 0.0;
-        let alvo = w.ecs.spawn((NetId(EntityId(905)), Position(Vec2::X),
-            EntityKind::Enemy(7), Health { current: 10000, max: 10000 }, tag));
+        let alvo = w.ecs.spawn((
+            NetId(EntityId(905)),
+            Position(Vec2::X),
+            EntityKind::Enemy(7),
+            Health {
+                current: 10000,
+                max: 10000,
+            },
+            tag,
+        ));
         w.pedir_montar(sid);
         assert!(w.sessions[&sid].montando_ate > 0.0);
         w.sim_time_s += cat::MONTAR_S;
@@ -932,9 +1070,13 @@ mod testes_combate_montado {
         w.sessions.get_mut(&sid).unwrap().target = Some(EntityId(905));
         w.pending_skill_hits.push(PendingSkillHit {
             drain_tier: 0,
-            target_net: EntityId(905), attacker_net: EntityId(904),
-            damage: 100, hurt_dir: Vec2::X, is_crit: false,
-            from_player: true, knockback: 0.0,
+            target_net: EntityId(905),
+            attacker_net: EntityId(904),
+            damage: 100,
+            hurt_dir: Vec2::X,
+            is_crit: false,
+            from_player: true,
+            knockback: 0.0,
         });
         w.step(1.0 / 30.0);
         assert!(w.sessions[&sid].montado);
@@ -959,9 +1101,13 @@ mod testes_combate_montado {
         for _ in 0..7 {
             w.pending_skill_hits.push(PendingSkillHit {
                 drain_tier: 0,
-                target_net: EntityId(904), attacker_net: EntityId(999),
-                damage: 1, hurt_dir: Vec2::X, is_crit: false,
-                from_player: false, knockback: 0.0,
+                target_net: EntityId(904),
+                attacker_net: EntityId(999),
+                damage: 1,
+                hurt_dir: Vec2::X,
+                is_crit: false,
+                from_player: false,
+                knockback: 0.0,
             });
             w.step(1.0 / 30.0);
         }
@@ -978,9 +1124,18 @@ mod testes_combate_montado {
     /// the bag as itself, no longer turned into copper.
     fn teleporte_entra_na_bolsa_como_pergaminho() {
         let mut bolsa = vec![shared::InventorySlot::default(); shared::INVENTORY_SLOTS + 2];
-        assert!(add_to_inventory(&mut bolsa, shared::item_id::PERGAMINHO_TELEPORTE, 3, None));
+        assert!(add_to_inventory(
+            &mut bolsa,
+            shared::item_id::PERGAMINHO_TELEPORTE,
+            3,
+            None
+        ));
         assert_eq!(
-            bolsa.iter().filter(|i| i.item_id == shared::item_id::PERGAMINHO_TELEPORTE).map(|i| i.qty).sum::<u32>(),
+            bolsa
+                .iter()
+                .filter(|i| i.item_id == shared::item_id::PERGAMINHO_TELEPORTE)
+                .map(|i| i.qty)
+                .sum::<u32>(),
             3
         );
         assert!(!bolsa.iter().any(|i| i.item_id == shared::item_id::COPPER));

@@ -48,7 +48,10 @@ pub fn perda_de_xp_pk(xp: u64, mult: u64, pontos: u32) -> (u64, u64) {
     let piso = xp_for_level_with_mult(nivel, mult);
     let degrau = xp_for_level_with_mult(nivel + 1, mult).saturating_sub(piso);
     let extra = shared::progressao::no_ritmo((degrau as f64 * extra as f64).round() as u64, nivel);
-    (base, extra.min(xp.saturating_sub(piso).saturating_sub(base)))
+    (
+        base,
+        extra.min(xp.saturating_sub(piso).saturating_sub(base)),
+    )
 }
 
 /// Gold to recover a death once the day's free ones are gone: a floor that
@@ -165,7 +168,11 @@ mod testes {
         assert_eq!(perda_de_xp_pk(xp, MULT, 0), (degrau / 10, 0));
         let (base, extra) = perda_de_xp_pk(xp, MULT, 2);
         assert_eq!(base, degrau / 10);
-        assert_eq!(extra, (degrau as f64 * 0.10).round() as u64, "+5% per point");
+        assert_eq!(
+            extra,
+            (degrau as f64 * 0.10).round() as u64,
+            "+5% per point"
+        );
         // 8+ points: 50% in total.
         let (b, e) = perda_de_xp_pk(xp, MULT, 8);
         assert_eq!(b + e, (degrau as f64 * 0.5).round() as u64);

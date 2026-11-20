@@ -94,12 +94,30 @@ pub struct Distrito {
 
 /// The six districts, south to north. Index 0 is the arrival (the hub town).
 pub const DISTRITOS: [Distrito; 6] = [
-    Distrito { nome: "Harbor Docks", nivel: (80, 83) },
-    Distrito { nome: "Shibuya Crossing", nivel: (83, 86) },
-    Distrito { nome: "Shrine Forest", nivel: (86, 90) },
-    Distrito { nome: "Kabukicho Neon", nivel: (90, 94) },
-    Distrito { nome: "Nishi-Shinjuku Towers", nivel: (94, 97) },
-    Distrito { nome: "Tocho Spire", nivel: (97, 100) },
+    Distrito {
+        nome: "Harbor Docks",
+        nivel: (80, 83),
+    },
+    Distrito {
+        nome: "Shibuya Crossing",
+        nivel: (83, 86),
+    },
+    Distrito {
+        nome: "Shrine Forest",
+        nivel: (86, 90),
+    },
+    Distrito {
+        nome: "Kabukicho Neon",
+        nivel: (90, 94),
+    },
+    Distrito {
+        nome: "Nishi-Shinjuku Towers",
+        nivel: (94, 97),
+    },
+    Distrito {
+        nome: "Tocho Spire",
+        nivel: (97, 100),
+    },
 ];
 
 /// Which district `q` is in, by latitude (south is +z).
@@ -131,7 +149,11 @@ const RAIO_DO_CRUZAMENTO: f32 = 30.0;
 /// The giant robots' arenas (`bosses`, kinds 63-65), weakest first: a market
 /// plaza, a Kabukicho plaza, and the Tocho plaza on the boulevard.
 pub fn arenas() -> [Vec2; 3] {
-    [Vec2::new(-125.0, 315.0), Vec2::new(125.0, -60.0), Vec2::new(boulevard_x(-505.0), -505.0)]
+    [
+        Vec2::new(-125.0, 315.0),
+        Vec2::new(125.0, -60.0),
+        Vec2::new(boulevard_x(-505.0), -505.0),
+    ]
 }
 pub const RAIO_ARENA: f32 = 20.0;
 
@@ -184,7 +206,8 @@ pub fn ponto(p: u16) -> Option<Vec2> {
 }
 
 fn hash(x: i32, y: i32) -> f32 {
-    let mut h = (x as u32).wrapping_mul(73_856_093) ^ (y as u32).wrapping_mul(19_349_663) ^ 0x9E37_79B9;
+    let mut h =
+        (x as u32).wrapping_mul(73_856_093) ^ (y as u32).wrapping_mul(19_349_663) ^ 0x9E37_79B9;
     h ^= h >> 13;
     h = h.wrapping_mul(0x5bd1_e995);
     h ^= h >> 15;
@@ -196,8 +219,12 @@ fn hash(x: i32, y: i32) -> f32 {
 /// How far out `q` is: below 1 on land. A ragged superellipse.
 fn fora(q: Vec2) -> f32 {
     let ang = q.y.atan2(q.x);
-    let ruido = 1.0 + 0.045 * (ang * 5.0 + 0.3).sin() + 0.035 * (ang * 9.0 - 1.0).sin() + 0.02 * (ang * 17.0 + 2.0).sin();
-    ((q.x.abs() / COSTA_A).powf(COSTA_P) + (q.y.abs() / COSTA_B).powf(COSTA_P)).powf(1.0 / COSTA_P) / ruido
+    let ruido = 1.0
+        + 0.045 * (ang * 5.0 + 0.3).sin()
+        + 0.035 * (ang * 9.0 - 1.0).sin()
+        + 0.02 * (ang * 17.0 + 2.0).sin();
+    ((q.x.abs() / COSTA_A).powf(COSTA_P) + (q.y.abs() / COSTA_B).powf(COSTA_P)).powf(1.0 / COSTA_P)
+        / ruido
 }
 
 /// Units from `q` to the shore, along the ray from the centre.
@@ -232,7 +259,9 @@ fn rampas() -> [(Vec2, Vec2); 4] {
 /// Distance from `q` to the ring's centre line (signed: + outside).
 fn ao_anel(q: Vec2) -> f32 {
     let d = q - ANEL_CENTRO;
-    let e = ((d.x / ANEL_A).powi(2) + (d.y / ANEL_B).powi(2)).sqrt().max(1e-4);
+    let e = ((d.x / ANEL_A).powi(2) + (d.y / ANEL_B).powi(2))
+        .sqrt()
+        .max(1e-4);
     d.length() * (1.0 - 1.0 / e)
 }
 
@@ -246,7 +275,9 @@ pub fn deck_em(q: Vec2) -> Option<i32> {
         let t = (q - p).dot(n);
         let s = (q - p).perp_dot(n).abs();
         if (0.0..=RAMPA_COMPRIMENTO).contains(&t) && s <= RAMPA_MEIA {
-            let r = (DECK_ALTO as f32 * (1.0 - t / RAMPA_COMPRIMENTO)).round().max(1.0) as i32;
+            let r = (DECK_ALTO as f32 * (1.0 - t / RAMPA_COMPRIMENTO))
+                .round()
+                .max(1.0) as i32;
             h = Some(h.map_or(r, |v: i32| v.max(r)));
         }
     }
@@ -296,8 +327,14 @@ pub enum Marco {
 }
 
 impl Marco {
-    pub const TODOS: [Marco; 6] =
-        [Marco::Skytree, Marco::Prefeitura, Marco::TorreDeToquio, Marco::Casulo, Marco::Cilindro109, Marco::Pagoda];
+    pub const TODOS: [Marco; 6] = [
+        Marco::Skytree,
+        Marco::Prefeitura,
+        Marco::TorreDeToquio,
+        Marco::Casulo,
+        Marco::Cilindro109,
+        Marco::Pagoda,
+    ];
 
     pub fn nome(self) -> &'static str {
         match self {
@@ -465,7 +502,11 @@ fn subida_da_espiral(u: f32) -> i32 {
     let meia = u * 2.0;
     let i = meia.floor();
     let t = meia - i;
-    let g = if t < PATAMAR { 0.0 } else { (t - PATAMAR) / (1.0 - PATAMAR) };
+    let g = if t < PATAMAR {
+        0.0
+    } else {
+        (t - PATAMAR) / (1.0 - PATAMAR)
+    };
     ((i + g) * 0.5 * ESPIRAL_SUBIDA as f32).round() as i32
 }
 
@@ -497,7 +538,11 @@ pub fn espiral_em(q: Vec2) -> Option<(i32, bool)> {
     let h = subida_da_espiral(u);
     // The rail, on the outer edge; not where the first lap leaves the street.
     let grade = atraves * ESPIRAL_FAIXA < ESPIRAL_GRADE && u > 0.15;
-    Some(if grade { (h + ESPIRAL_GRADE_ALTA, true) } else { (h, false) })
+    Some(if grade {
+        (h + ESPIRAL_GRADE_ALTA, true)
+    } else {
+        (h, false)
+    })
 }
 
 /// A point on the ramp: `u` turns climbed, in the middle of the walk.
@@ -561,7 +606,11 @@ pub enum Chao {
     Orla(i32),
     /// A street; `avenida` for the wide ones, `faixa` on a lane marking,
     /// `zebra` on a crosswalk stripe of the scramble.
-    Rua { avenida: bool, faixa: bool, zebra: bool },
+    Rua {
+        avenida: bool,
+        faixa: bool,
+        zebra: bool,
+    },
     /// The sidewalk or a footpath.
     Calcada,
     /// Open paved ground: plazas and courtyards.
@@ -591,7 +640,11 @@ fn celula_da_quadra(q: Vec2) -> ((i32, i32), Vec2) {
 }
 
 fn largura_da_rua(i: i32) -> f32 {
-    if i.rem_euclid(AVENIDA_A_CADA) == 0 { AVENIDA } else { RUA }
+    if i.rem_euclid(AVENIDA_A_CADA) == 0 {
+        AVENIDA
+    } else {
+        RUA
+    }
 }
 
 /// The height (and look) of the Docks building at `local` in its lot of size
@@ -611,7 +664,11 @@ fn predio_das_docas(cx: i32, cz: i32, local: Vec2, tam: Vec2) -> Option<(i32, Es
     } else {
         Forma::Podio
     };
-    let estilo = if hash(cx - 5, cz + 13) < 0.5 { Estilo::Tijolo } else { Estilo::Concreto };
+    let estilo = if hash(cx - 5, cz + 13) < 0.5 {
+        Estilo::Tijolo
+    } else {
+        Estilo::Concreto
+    };
     let p = local - tam * 0.5;
     let f = (p.x.abs() / (tam.x * 0.5)).max(p.y.abs() / (tam.y * 0.5));
     let raio = p.length() / (tam.x.min(tam.y) * 0.5);
@@ -633,7 +690,10 @@ fn predio_das_docas(cx: i32, cz: i32, local: Vec2, tam: Vec2) -> Option<(i32, Es
             (20 + (hash(cx, cz + 3) * 10.0) as i32, Estilo::Gasometro)
         }
         Forma::Conteineres => {
-            let (i, j) = ((local.x / 7.0).floor() as i32, (local.y / 3.5).floor() as i32);
+            let (i, j) = (
+                (local.x / 7.0).floor() as i32,
+                (local.y / 3.5).floor() as i32,
+            );
             let (u, v) = (local.x.rem_euclid(7.0), local.y.rem_euclid(3.5));
             if u > 6.0 || v > 2.5 {
                 return None;
@@ -654,17 +714,30 @@ fn docas_em(q: Vec2) -> Chao {
         let faixa = avenida
             && ((local.x < lx && (local.x - lx * 0.5).abs() < 0.4 && q.y.rem_euclid(6.0) < 3.0)
                 || (local.y < lz && (local.y - lz * 0.5).abs() < 0.4 && q.x.rem_euclid(6.0) < 3.0));
-        return Chao::Rua { avenida, faixa, zebra: false };
+        return Chao::Rua {
+            avenida,
+            faixa,
+            zebra: false,
+        };
     }
     let dentro = Vec2::new(local.x - lx, local.y - lz);
     let tamanho = Vec2::new(QUADRA - lx, QUADRA - lz);
-    if dentro.x < CALCADA || dentro.y < CALCADA || dentro.x > tamanho.x - CALCADA || dentro.y > tamanho.y - CALCADA {
+    if dentro.x < CALCADA
+        || dentro.y < CALCADA
+        || dentro.x > tamanho.x - CALCADA
+        || dentro.y > tamanho.y - CALCADA
+    {
         return Chao::Calcada;
     }
     if hash(cx, cz) < 0.3 {
         return Chao::Praca;
     }
-    match predio_das_docas(cx, cz, dentro - Vec2::splat(CALCADA), tamanho - Vec2::splat(2.0 * CALCADA)) {
+    match predio_das_docas(
+        cx,
+        cz,
+        dentro - Vec2::splat(CALCADA),
+        tamanho - Vec2::splat(2.0 * CALCADA),
+    ) {
         Some((altura, estilo)) => Chao::Predio { altura, estilo },
         None => Chao::Praca,
     }
@@ -681,18 +754,30 @@ fn torcer(q: Vec2) -> Vec2 {
 /// `tam` across: the low ring of shops by the street, gaps to walk in, the
 /// courtyard behind, a setback tower only where the district allows it.
 fn predio_do_quarteirao(d: usize, cx: i32, cz: i32, local: Vec2, tam: Vec2, q: Vec2) -> Chao {
-    let borda = local.x.min(local.y).min(tam.x - local.x).min(tam.y - local.y);
+    let borda = local
+        .x
+        .min(local.y)
+        .min(tam.x - local.x)
+        .min(tam.y - local.y);
     let centro = local - tam * 0.5;
     // The skyline: by the coast in the north half, towers fill the block.
     let costa = ate_a_costa(q);
     if d >= 3 && costa < 55.0 {
         let h = 80 + (hash(cx * 7 + 3, cz * 5 + 1) * 120.0) as i32;
-        let estilo = if hash(cx + 9, cz - 4) < 0.35 { Estilo::Letreiros } else { Estilo::Vidro };
+        let estilo = if hash(cx + 9, cz - 4) < 0.35 {
+            Estilo::Letreiros
+        } else {
+            Estilo::Vidro
+        };
         return Chao::Predio { altura: h, estilo };
     }
     if borda < ANEL {
         // A gap every few shops: the courtyard is reached from the street.
-        let ao_longo = if local.x.min(tam.x - local.x) < local.y.min(tam.y - local.y) { local.y } else { local.x };
+        let ao_longo = if local.x.min(tam.x - local.x) < local.y.min(tam.y - local.y) {
+            local.y
+        } else {
+            local.x
+        };
         let segmento = (ao_longo / 13.0).floor() as i32;
         if ao_longo.rem_euclid(13.0) < 2.0 && hash(cx * 3 + segmento, cz * 5) < 0.5 {
             return Chao::Calcada;
@@ -713,8 +798,20 @@ fn predio_do_quarteirao(d: usize, cx: i32, cz: i32, local: Vec2, tam: Vec2, q: V
             Estilo::Letreiros
         } else {
             match d {
-                1 => if r < 0.7 { Estilo::Tijolo } else { Estilo::Branco },
-                4 | 5 => if r < 0.7 { Estilo::Vidro } else { Estilo::Branco },
+                1 => {
+                    if r < 0.7 {
+                        Estilo::Tijolo
+                    } else {
+                        Estilo::Branco
+                    }
+                }
+                4 | 5 => {
+                    if r < 0.7 {
+                        Estilo::Vidro
+                    } else {
+                        Estilo::Branco
+                    }
+                }
                 _ => Estilo::Concreto,
             }
         };
@@ -729,9 +826,16 @@ fn predio_do_quarteirao(d: usize, cx: i32, cz: i32, local: Vec2, tam: Vec2, q: V
         && hash(cx, cz + 7) < 0.55
     {
         let h = 70 + (hash(cx + 2, cz) * 90.0) as i32;
-        return Chao::Predio { altura: h, estilo: Estilo::Vidro };
+        return Chao::Predio {
+            altura: h,
+            estilo: Estilo::Vidro,
+        };
     }
-    if hash(cx + 5, cz + 3) < 0.35 { Chao::Parque } else { Chao::Praca }
+    if hash(cx + 5, cz + 3) < 0.35 {
+        Chao::Parque
+    } else {
+        Chao::Praca
+    }
 }
 
 /// What is at `q`.
@@ -746,10 +850,20 @@ pub fn chao_em(q: Vec2) -> Chao {
         return Chao::Orla((1.0 + (NIVEL_CHAO - 1) as f32 * t).round() as i32);
     }
     if let Some((m, h)) = marco_em(q) {
-        return Chao::Predio { altura: h, estilo: Estilo::Marco(m) };
+        return Chao::Predio {
+            altura: h,
+            estilo: Estilo::Marco(m),
+        };
     }
     if let Some((h, _)) = espiral_em(q) {
-        return if h > 0 { Chao::Predio { altura: h, estilo: Estilo::Espiral } } else { Chao::Praca };
+        return if h > 0 {
+            Chao::Predio {
+                altura: h,
+                estilo: Estilo::Espiral,
+            }
+        } else {
+            Chao::Praca
+        };
     }
     if q.distance(ESPIRAL_CENTRO) < ESPIRAL_RAIO + ESPIRAL_PATIO {
         return Chao::Praca;
@@ -761,7 +875,10 @@ pub fn chao_em(q: Vec2) -> Chao {
     if arenas().iter().any(|a| a.distance(q) < RAIO_ARENA) {
         return Chao::Praca;
     }
-    if Marco::TODOS.iter().any(|m| (q - m.centro()).length() < m.alcance() + 5.0) {
+    if Marco::TODOS
+        .iter()
+        .any(|m| (q - m.centro()).length() < m.alcance() + 5.0)
+    {
         return Chao::Praca;
     }
     // The scramble: the four crosswalks round the crossing and the two
@@ -772,13 +889,25 @@ pub fn chao_em(q: Vec2) -> Chao {
         let (ax, az) = (p.x.abs(), p.y.abs());
         let borda = (ax - 17.0).abs() < 3.0 && az < 17.0 || (az - 17.0).abs() < 3.0 && ax < 17.0;
         let diagonal = (ax - az).abs() < 2.4 && ax < 17.0;
-        let listra = if borda && (ax - 17.0).abs() < 3.0 { p.y.rem_euclid(1.6) < 0.8 } else { (p.x + p.y * 0.0).rem_euclid(1.6) < 0.8 };
+        let listra = if borda && (ax - 17.0).abs() < 3.0 {
+            p.y.rem_euclid(1.6) < 0.8
+        } else {
+            (p.x + p.y * 0.0).rem_euclid(1.6) < 0.8
+        };
         let zebra = (borda && listra) || (diagonal && (p.x + p.y).rem_euclid(1.6) < 0.8);
-        return Chao::Rua { avenida: true, faixa: false, zebra };
+        return Chao::Rua {
+            avenida: true,
+            faixa: false,
+            zebra,
+        };
     }
     // Under the ring road: street.
     if sob_o_deck(q) {
-        return Chao::Rua { avenida: true, faixa: false, zebra: false };
+        return Chao::Rua {
+            avenida: true,
+            faixa: false,
+            zebra: false,
+        };
     }
     if q.y >= DOCAS_DE {
         return docas_em(q);
@@ -786,7 +915,11 @@ pub fn chao_em(q: Vec2) -> Chao {
     if q.y >= AVENIDA_DO_CAIS {
         let meio = (AVENIDA_DO_CAIS + DOCAS_DE) * 0.5;
         let faixa = (q.y - meio).abs() < 0.4 && q.x.rem_euclid(6.0) < 3.0;
-        return Chao::Rua { avenida: true, faixa, zebra: false };
+        return Chao::Rua {
+            avenida: true,
+            faixa,
+            zebra: false,
+        };
     }
     // The grand boulevard and its sakura median.
     let db = (q.x - boulevard_x(q.y)).abs();
@@ -795,14 +928,22 @@ pub fn chao_em(q: Vec2) -> Chao {
     }
     if db <= BOULEVARD_MEIA {
         let faixa = (db - 7.2).abs() < 0.4 && q.y.rem_euclid(6.0) < 3.0;
-        return Chao::Rua { avenida: true, faixa, zebra: false };
+        return Chao::Rua {
+            avenida: true,
+            faixa,
+            zebra: false,
+        };
     }
     // The cross boulevards.
     for k in 0..CRUZES.len() {
         let dc = (q.y - cruz_z(k, q.x)).abs();
         if dc <= CRUZ_MEIA {
             let faixa = dc < 0.4 && q.x.rem_euclid(6.0) < 3.0;
-            return Chao::Rua { avenida: true, faixa, zebra: false };
+            return Chao::Rua {
+                avenida: true,
+                faixa,
+                zebra: false,
+            };
         }
         if dc <= CRUZ_MEIA + CALCADA {
             return Chao::Calcada;
@@ -824,7 +965,11 @@ pub fn chao_em(q: Vec2) -> Chao {
     }
     // The lanes, and their sidewalks.
     if local.x < LANE || local.y < LANE {
-        return Chao::Rua { avenida: false, faixa: false, zebra: false };
+        return Chao::Rua {
+            avenida: false,
+            faixa: false,
+            zebra: false,
+        };
     }
     let tam = Vec2::splat(LOTE - LANE - 2.0 * CALCADA);
     let dentro = local - Vec2::splat(LANE + CALCADA);
@@ -833,7 +978,11 @@ pub fn chao_em(q: Vec2) -> Chao {
     }
     // Kabukicho's alleys: one more down the middle of each block.
     if d == 3 && (dentro.x - tam.x * 0.5).abs() < 2.0 {
-        return Chao::Rua { avenida: false, faixa: false, zebra: false };
+        return Chao::Rua {
+            avenida: false,
+            faixa: false,
+            zebra: false,
+        };
     }
     // Some blocks are left open: a plaza or a garden.
     let aberto = match d {
@@ -843,7 +992,11 @@ pub fn chao_em(q: Vec2) -> Chao {
         _ => 0.25,
     };
     if hash(cx * 19 + 1, cz * 23 - 5) < aberto {
-        return if hash(cx, cz) < 0.5 { Chao::Praca } else { Chao::Parque };
+        return if hash(cx, cz) < 0.5 {
+            Chao::Praca
+        } else {
+            Chao::Parque
+        };
     }
     predio_do_quarteirao(d, cx, cz, dentro, tam, q)
 }
@@ -890,11 +1043,21 @@ pub fn caminhos_de_transito() -> Vec<(bool, f32, Vec<Vec2>)> {
     }
     corta(false, 7.0, pts, &mut v);
     for k in 0..CRUZES.len() {
-        let pts: Vec<Vec2> = (-80..=80).map(|i| i as f32 * 4.0).map(|x| Vec2::new(x, cruz_z(k, x))).collect();
+        let pts: Vec<Vec2> = (-80..=80)
+            .map(|i| i as f32 * 4.0)
+            .map(|x| Vec2::new(x, cruz_z(k, x)))
+            .collect();
         corta(false, 4.0, pts, &mut v);
     }
     let cais = (AVENIDA_DO_CAIS + DOCAS_DE) * 0.5;
-    corta(false, 3.5, (-80..=80).map(|i| Vec2::new(i as f32 * 4.0, cais)).collect(), &mut v);
+    corta(
+        false,
+        3.5,
+        (-80..=80)
+            .map(|i| Vec2::new(i as f32 * 4.0, cais))
+            .collect(),
+        &mut v,
+    );
     // The ring, closed, and the ramps.
     let anel: Vec<Vec2> = (0..=180)
         .map(|i| {
@@ -904,7 +1067,9 @@ pub fn caminhos_de_transito() -> Vec<(bool, f32, Vec<Vec2>)> {
         .collect();
     corta(true, 2.5, anel, &mut v);
     for (p, n) in rampas() {
-        let pts: Vec<Vec2> = (0..=14).map(|i| p + n * (i as f32 * RAMPA_COMPRIMENTO / 14.0)).collect();
+        let pts: Vec<Vec2> = (0..=14)
+            .map(|i| p + n * (i as f32 * RAMPA_COMPRIMENTO / 14.0))
+            .collect();
         corta(true, 2.0, pts, &mut v);
     }
     v
@@ -927,14 +1092,22 @@ fn cor_do_conteiner(c: u8) -> crate::terreno::Material {
 /// the biome's own (the parks' grass).
 pub fn pintura(q: Vec2) -> Option<crate::terreno::Material> {
     use crate::terreno::Material as M;
-    let quadriculado = |passo: f32| ((q.x / passo).floor() as i32 + (q.y / passo).floor() as i32).rem_euclid(2) == 0;
+    let quadriculado = |passo: f32| {
+        ((q.x / passo).floor() as i32 + (q.y / passo).floor() as i32).rem_euclid(2) == 0
+    };
     Some(match chao_em(q) {
         Chao::Mar => return None,
         Chao::Orla(_) => M::Concreto,
         Chao::Rua { zebra: true, .. } => M::Nuvem,
         Chao::Rua { faixa: true, .. } => M::FaixaDePista,
         Chao::Rua { .. } => M::Asfalto,
-        Chao::Calcada => if quadriculado(1.5) { M::Concreto } else { M::ConcretoEscuro },
+        Chao::Calcada => {
+            if quadriculado(1.5) {
+                M::Concreto
+            } else {
+                M::ConcretoEscuro
+            }
+        }
         // Plazas: dark paving with glowing lines every few units.
         Chao::Praca => {
             if q.x.rem_euclid(9.0) < 0.5 || q.y.rem_euclid(9.0) < 0.5 {
@@ -963,12 +1136,30 @@ pub fn pintura(q: Vec2) -> Option<crate::terreno::Material> {
                 // A neon rim round every roof: low roofs are what the camera
                 // sees, and the rim is what makes them read at night.
                 match (estilo, distrito_em(q)) {
-                    (Estilo::Letreiros, _) => if quadriculado(3.0) { M::NeonRosa } else { M::NeonAmarelo },
-                    (_, 3) => if quadriculado(3.0) { M::NeonRosa } else { M::NeonCiano },
+                    (Estilo::Letreiros, _) => {
+                        if quadriculado(3.0) {
+                            M::NeonRosa
+                        } else {
+                            M::NeonAmarelo
+                        }
+                    }
+                    (_, 3) => {
+                        if quadriculado(3.0) {
+                            M::NeonRosa
+                        } else {
+                            M::NeonCiano
+                        }
+                    }
                     (_, 5) => M::NeonCiano,
                     (_, 4) => M::NeonAmarelo,
                     _ if altura > 30 => M::NeonCiano,
-                    _ => if quadriculado(4.0) { M::NeonAmarelo } else { M::ConcretoEscuro },
+                    _ => {
+                        if quadriculado(4.0) {
+                            M::NeonAmarelo
+                        } else {
+                            M::ConcretoEscuro
+                        }
+                    }
                 }
             }
         },
@@ -979,7 +1170,9 @@ pub fn pintura(q: Vec2) -> Option<crate::terreno::Material> {
 /// edge, the landings striped, and rings on the roof.
 fn pintura_da_espiral(q: Vec2) -> crate::terreno::Material {
     use crate::terreno::Material as M;
-    let Some((u, volta, atraves)) = na_espiral(q) else { return M::ConcretoEscuro };
+    let Some((u, volta, atraves)) = na_espiral(q) else {
+        return M::ConcretoEscuro;
+    };
     if volta >= ESPIRAL_VOLTAS as i32 {
         let r = q.distance(ESPIRAL_CENTRO);
         return if r.rem_euclid(6.0) < 0.5 || r > espiral_raio_do_topo() + ESPIRAL_FAIXA - 1.0 {
@@ -1018,15 +1211,45 @@ pub fn fachada(q: Vec2, gx: i32, gz: i32, prof: i32, topo: i32) -> crate::terren
         _ => Estilo::Concreto,
     };
     let alto = topo - prof; // this voxel's height above the street, in blocks
-    // A storey every four blocks: two of window, two of wall.
+                            // A storey every four blocks: two of window, two of wall.
     let janela = prof % 4 == 1 || prof % 4 == 2;
     let acesa = |chance: f32| hash(gx / 2, gz / 2 + prof / 4 * 7) < chance;
-    let lit = |chance: f32| if acesa(chance) { M::JanelaAcesa } else { M::Vidro };
+    let lit = |chance: f32| {
+        if acesa(chance) {
+            M::JanelaAcesa
+        } else {
+            M::Vidro
+        }
+    };
     match estilo {
-        Estilo::Concreto => if janela { lit(0.45) } else { M::Concreto },
-        Estilo::Vidro => if janela || prof % 8 != 0 { lit(0.3) } else { M::ConcretoEscuro },
-        Estilo::Tijolo => if janela && (gx + gz).rem_euclid(3) != 0 { lit(0.55) } else { M::Arenito },
-        Estilo::Branco => if janela { lit(0.4) } else { M::Calcada },
+        Estilo::Concreto => {
+            if janela {
+                lit(0.45)
+            } else {
+                M::Concreto
+            }
+        }
+        Estilo::Vidro => {
+            if janela || prof % 8 != 0 {
+                lit(0.3)
+            } else {
+                M::ConcretoEscuro
+            }
+        }
+        Estilo::Tijolo => {
+            if janela && (gx + gz).rem_euclid(3) != 0 {
+                lit(0.55)
+            } else {
+                M::Arenito
+            }
+        }
+        Estilo::Branco => {
+            if janela {
+                lit(0.4)
+            } else {
+                M::Calcada
+            }
+        }
         Estilo::Letreiros => {
             let telas_ate = (topo * 2 / 3).clamp(6, 60);
             if alto > telas_ate {
@@ -1045,9 +1268,27 @@ pub fn fachada(q: Vec2, gx: i32, gz: i32, prof: i32, topo: i32) -> crate::terren
                 _ => M::Nuvem,
             }
         }
-        Estilo::Conteiner(c) => if prof % 5 == 0 { M::ConcretoEscuro } else { cor_do_conteiner(c) },
-        Estilo::Chamine => if (alto / 8) % 2 == 0 { M::PetalaVermelha } else { M::Nuvem },
-        Estilo::Gasometro => if (gx + gz).rem_euclid(4) == 0 { M::ConcretoEscuro } else { M::Concreto },
+        Estilo::Conteiner(c) => {
+            if prof % 5 == 0 {
+                M::ConcretoEscuro
+            } else {
+                cor_do_conteiner(c)
+            }
+        }
+        Estilo::Chamine => {
+            if (alto / 8) % 2 == 0 {
+                M::PetalaVermelha
+            } else {
+                M::Nuvem
+            }
+        }
+        Estilo::Gasometro => {
+            if (gx + gz).rem_euclid(4) == 0 {
+                M::ConcretoEscuro
+            } else {
+                M::Concreto
+            }
+        }
         // The spire: dark plating, a cyan band every lap-storey, pink seams.
         Estilo::Espiral => {
             if alto.rem_euclid(ESPIRAL_SUBIDA) >= ESPIRAL_SUBIDA - 2 {
@@ -1061,13 +1302,43 @@ pub fn fachada(q: Vec2, gx: i32, gz: i32, prof: i32, topo: i32) -> crate::terren
             }
         }
         Estilo::Marco(m) => match m {
-            Marco::Skytree => if (gx + gz + prof).rem_euclid(3) == 0 { M::NeonCiano } else { M::Nuvem },
-            Marco::Prefeitura => if janela && (gx + gz).rem_euclid(2) == 0 { lit(0.6) } else { M::ConcretoEscuro },
-            Marco::TorreDeToquio => if (alto / 16) % 2 == 0 { M::PetalaVermelha } else { M::Nuvem },
-            Marco::Casulo => {
-                if (gx + alto).rem_euclid(5) == 0 || (gz - alto).rem_euclid(5) == 0 { M::Nuvem } else { lit(0.3) }
+            Marco::Skytree => {
+                if (gx + gz + prof).rem_euclid(3) == 0 {
+                    M::NeonCiano
+                } else {
+                    M::Nuvem
+                }
             }
-            Marco::Cilindro109 => if prof < 4 { M::NeonRosa } else if janela { M::JanelaAcesa } else { M::Concreto },
+            Marco::Prefeitura => {
+                if janela && (gx + gz).rem_euclid(2) == 0 {
+                    lit(0.6)
+                } else {
+                    M::ConcretoEscuro
+                }
+            }
+            Marco::TorreDeToquio => {
+                if (alto / 16) % 2 == 0 {
+                    M::PetalaVermelha
+                } else {
+                    M::Nuvem
+                }
+            }
+            Marco::Casulo => {
+                if (gx + alto).rem_euclid(5) == 0 || (gz - alto).rem_euclid(5) == 0 {
+                    M::Nuvem
+                } else {
+                    lit(0.3)
+                }
+            }
+            Marco::Cilindro109 => {
+                if prof < 4 {
+                    M::NeonRosa
+                } else if janela {
+                    M::JanelaAcesa
+                } else {
+                    M::Concreto
+                }
+            }
             // The pagoda: red walls, glowing eaves at every tier's top.
             Marco::Pagoda => {
                 if alto.rem_euclid(14) >= 12 {
@@ -1135,7 +1406,11 @@ impl LuzDaCidade {
 /// The quarter turn that faces `d`.
 fn quarto_de(d: Vec2) -> u8 {
     if d.y.abs() >= d.x.abs() {
-        if d.y >= 0.0 { 0 } else { 2 }
+        if d.y >= 0.0 {
+            0
+        } else {
+            2
+        }
     } else if d.x >= 0.0 {
         1
     } else {
@@ -1159,7 +1434,9 @@ fn sem_luz(q: Vec2) -> bool {
 /// The boulevard's median props: (where, seed, a lantern? else a sakura).
 pub fn canteiro_do_boulevard() -> Vec<(Vec2, i32, bool)> {
     let livre = |p: Vec2| {
-        chao_em(p) == Chao::Parque && deck_em(p).is_none() && arenas().iter().all(|a| a.distance(p) > RAIO_ARENA + 6.0)
+        chao_em(p) == Chao::Parque
+            && deck_em(p).is_none()
+            && arenas().iter().all(|a| a.distance(p) > RAIO_ARENA + 6.0)
     };
     let mut v = Vec::new();
     let mut z = AVENIDA_DO_CAIS - 10.0;
@@ -1184,7 +1461,9 @@ pub fn luzes() -> &'static [LuzDaCidade] {
 fn gerar_luzes() -> Vec<LuzDaCidade> {
     let mut v: Vec<LuzDaCidade> = Vec::new();
     let longe = |v: &[LuzDaCidade], q: Vec2, tipo: TipoDeLuz, d: f32| {
-        v.iter().filter(|l| l.tipo == tipo).all(|l| l.pos.distance(q) >= d)
+        v.iter()
+            .filter(|l| l.tipo == tipo)
+            .all(|l| l.pos.distance(q) >= d)
     };
     let e_rua = |q: Vec2| matches!(chao_em(q), Chao::Rua { .. });
     let lados = [Vec2::X, -Vec2::X, Vec2::Y, -Vec2::Y];
@@ -1253,8 +1532,21 @@ fn gerar_luzes() -> Vec<LuzDaCidade> {
     }
     for (p, seed, lanterna) in canteiro_do_boulevard() {
         if lanterna {
-            let cor = if seed.rem_euclid(2) == 0 { SINAIS[0] } else { SINAIS[1] };
-            v.push(LuzDaCidade { tipo: TipoDeLuz::Lanterna, pos: p, yaw_q: 0, alto: 5.6, frente: 0.0, cor, raio: 8.0, seed });
+            let cor = if seed.rem_euclid(2) == 0 {
+                SINAIS[0]
+            } else {
+                SINAIS[1]
+            };
+            v.push(LuzDaCidade {
+                tipo: TipoDeLuz::Lanterna,
+                pos: p,
+                yaw_q: 0,
+                alto: 5.6,
+                frente: 0.0,
+                cor,
+                raio: 8.0,
+                seed,
+            });
         }
     }
     v
@@ -1315,14 +1607,36 @@ mod testes {
             x += 3.0;
         }
         for d in 0..6 {
-            assert!(ruas[d] > 100, "{}: {} street samples", DISTRITOS[d].nome, ruas[d]);
-            assert!(abertos[d] > 100, "{}: {} open samples", DISTRITOS[d].nome, abertos[d]);
+            assert!(
+                ruas[d] > 100,
+                "{}: {} street samples",
+                DISTRITOS[d].nome,
+                ruas[d]
+            );
+            assert!(
+                abertos[d] > 100,
+                "{}: {} open samples",
+                DISTRITOS[d].nome,
+                abertos[d]
+            );
             if d != 2 {
-                assert!(predios[d] > 100, "{}: {} building samples", DISTRITOS[d].nome, predios[d]);
+                assert!(
+                    predios[d] > 100,
+                    "{}: {} building samples",
+                    DISTRITOS[d].nome,
+                    predios[d]
+                );
             }
         }
-        assert_eq!(distrito_em(centro_da_cidade()), 0, "the hub is in the Docks");
-        assert!(!matches!(chao_em(centro_da_cidade()), Chao::Mar | Chao::Orla(_)));
+        assert_eq!(
+            distrito_em(centro_da_cidade()),
+            0,
+            "the hub is in the Docks"
+        );
+        assert!(!matches!(
+            chao_em(centro_da_cidade()),
+            Chao::Mar | Chao::Orla(_)
+        ));
     }
 
     /// LOW BY THE STREETS: wherever a building touches a street, it is at
@@ -1340,7 +1654,8 @@ mod testes {
                     let na_rua = [Vec2::X, -Vec2::X, Vec2::Y, -Vec2::Y]
                         .iter()
                         .any(|d| matches!(chao_em(q + *d * 1.5), Chao::Calcada | Chao::Rua { .. }));
-                    let excecao = matches!(estilo, Estilo::Marco(_) | Estilo::Espiral) || ate_a_costa(q) < 60.0;
+                    let excecao = matches!(estilo, Estilo::Marco(_) | Estilo::Espiral)
+                        || ate_a_costa(q) < 60.0;
                     if na_rua && !excecao {
                         assert!(altura <= 36, "a {altura}-block building on a street at {q}");
                     }
@@ -1361,7 +1676,10 @@ mod testes {
         };
         for m in Marco::TODOS {
             match chao_em(m.centro()) {
-                Chao::Predio { estilo: Estilo::Marco(k), altura } => {
+                Chao::Predio {
+                    estilo: Estilo::Marco(k),
+                    altura,
+                } => {
                     assert_eq!(k, m, "{} is covered by {:?}", m.nome(), k);
                     assert!(altura <= spire, "{} is taller than the Spire", m.nome());
                 }
@@ -1376,11 +1694,26 @@ mod testes {
     fn distritos_do_sul_ao_norte() {
         assert_eq!(distrito_em(centro_da_cidade()), 0);
         assert_eq!(distrito_em(cruzamento()), 1, "the scramble is in Shibuya");
-        assert_eq!(distrito_em(Marco::Pagoda.centro()), 2, "the pagoda is in the forest");
-        assert_eq!(distrito_em(arenas()[1]), 3, "the Kaiju's plaza is in Kabukicho");
-        assert_eq!(distrito_em(Marco::Casulo.centro()), 4, "the Cocoon is in the towers");
+        assert_eq!(
+            distrito_em(Marco::Pagoda.centro()),
+            2,
+            "the pagoda is in the forest"
+        );
+        assert_eq!(
+            distrito_em(arenas()[1]),
+            3,
+            "the Kaiju's plaza is in Kabukicho"
+        );
+        assert_eq!(
+            distrito_em(Marco::Casulo.centro()),
+            4,
+            "the Cocoon is in the towers"
+        );
         assert_eq!(distrito_em(Marco::Prefeitura.centro()), 5);
-        assert!(matches!(chao_em(cruzamento()), Chao::Rua { .. }), "the crossing is a street");
+        assert!(
+            matches!(chao_em(cruzamento()), Chao::Rua { .. }),
+            "the crossing is a street"
+        );
     }
 
     /// The ring road is a deck over the streets, with ramps down to them.
@@ -1399,8 +1732,15 @@ mod testes {
         assert!(n > 500, "only {n} deck samples");
         for (p, d) in rampas() {
             let pe = p + d * (RAMPA_COMPRIMENTO - 1.0);
-            assert_eq!(deck_em(pe), Some(1), "a ramp's foot at {pe} is not one block up");
-            assert!(matches!(chao_em(pe), Chao::Rua { .. }), "a ramp lands off the street at {pe}");
+            assert_eq!(
+                deck_em(pe),
+                Some(1),
+                "a ramp's foot at {pe} is not one block up"
+            );
+            assert!(
+                matches!(chao_em(pe), Chao::Rua { .. }),
+                "a ramp lands off the street at {pe}"
+            );
         }
     }
 
@@ -1416,7 +1756,13 @@ mod testes {
         for (a, c) in arenas().iter().zip(chefes) {
             let d = distrito_em(*a);
             let (lo, hi) = DISTRITOS[d].nivel;
-            assert!(c.nivel >= lo && c.nivel <= hi, "{} (level {}) stands in {}", c.nome, c.nivel, DISTRITOS[d].nome);
+            assert!(
+                c.nivel >= lo && c.nivel <= hi,
+                "{} (level {}) stands in {}",
+                c.nome,
+                c.nivel,
+                DISTRITOS[d].nome
+            );
             assert_eq!(chao_em(*a), Chao::Praca, "{}'s arena is not open", c.nome);
         }
     }
@@ -1441,7 +1787,11 @@ mod testes {
                 if pulo <= 0.0 && ilha.precisa_pular_na(p, dir * V, dt, R, c) {
                     pulo = crate::constants::PULO_DURACAO;
                 }
-                let degrau = if pulo > 0.0 { crate::terreno::PULO_BLOCOS } else { DEGRAU_BLOCOS };
+                let degrau = if pulo > 0.0 {
+                    crate::terreno::PULO_BLOCOS
+                } else {
+                    DEGRAU_BLOCOS
+                };
                 pulo -= dt;
                 (p, c) = ilha.mover_na_camada(p, dir * V, dt, R, degrau, c);
             }
@@ -1452,14 +1802,20 @@ mod testes {
         let pe = p0 + n0 * (RAMPA_COMPRIMENTO + 4.0);
         let topo = p0 + n0 * 6.0;
         let (p, c) = andar(pe, CAMADA_CHAO, topo, 20.0);
-        assert_eq!(c, CAMADA_DECK, "walked up the ramp but is not on the deck (at {p})");
+        assert_eq!(
+            c, CAMADA_DECK,
+            "walked up the ramp but is not on the deck (at {p})"
+        );
         assert!(p.distance(topo) < 1.5, "stopped on the ramp at {p}");
         // The rails: from the ramp's top, walking off sideways stops at the edge.
         let (p, c) = andar(topo, CAMADA_DECK, topo + n0.perp() * 30.0, 8.0);
         assert_eq!(c, CAMADA_DECK, "fell off the deck sideways (at {p})");
         assert!(deck_em(p).is_some(), "walked off the deck's edge to {p}");
         // Under it: the street.
-        assert_eq!(ilha.altura_na(topo.x, topo.y, CAMADA_CHAO), ilha.altura(topo.x, topo.y));
+        assert_eq!(
+            ilha.altura_na(topo.x, topo.y, CAMADA_CHAO),
+            ilha.altura(topo.x, topo.y)
+        );
         // A* from the street onto the deck, followed by the body.
         let alvo = ANEL_CENTRO + Vec2::new(0.0, -ANEL_B);
         let rota = ilha
@@ -1469,8 +1825,14 @@ mod testes {
         for a in &rota {
             (p, c) = andar(p, c, *a, 30.0);
         }
-        assert_eq!(c, CAMADA_DECK, "followed the route but ended on the street at {p}");
-        assert!(p.distance(alvo) < 2.5, "followed the route but stopped at {p}, short of {alvo}");
+        assert_eq!(
+            c, CAMADA_DECK,
+            "followed the route but ended on the street at {p}"
+        );
+        assert!(
+            p.distance(alvo) < 2.5,
+            "followed the route but stopped at {p}, short of {alvo}"
+        );
     }
 
     /// THE SPIRE: the ramp climbs from the street to the roof without a
@@ -1483,10 +1845,18 @@ mod testes {
         let ilha = Ilha::da_ilha(&DEF);
         let dt = 1.0 / 30.0;
         let (mut p, c) = (pe_da_espiral(), CAMADA_CHAO);
-        assert_eq!(ilha.altura(p.x, p.y), ilha.altura(rua_perto(p).x, rua_perto(p).y), "the foot is not at street level");
+        assert_eq!(
+            ilha.altura(p.x, p.y),
+            ilha.altura(rua_perto(p).x, rua_perto(p).y),
+            "the foot is not at street level"
+        );
         let mut u = 0.0;
         while u < ESPIRAL_VOLTAS as f32 + 0.3 {
-            let alvo = if u < ESPIRAL_VOLTAS as f32 { ponto_da_espiral(u) } else { topo_da_espiral() };
+            let alvo = if u < ESPIRAL_VOLTAS as f32 {
+                ponto_da_espiral(u)
+            } else {
+                topo_da_espiral()
+            };
             for _ in 0..(8.0 / dt) as u32 {
                 if p.distance(alvo) < 0.4 {
                     break;
@@ -1494,24 +1864,50 @@ mod testes {
                 let dir = (alvo - p).normalize_or_zero();
                 (p, _) = ilha.mover_na_camada(p, dir * V, dt, R, DEGRAU_BLOCOS, c);
             }
-            assert!(p.distance(alvo) < 1.0, "stuck on the ramp at {p} (u {u:.2}), short of {alvo}");
+            assert!(
+                p.distance(alvo) < 1.0,
+                "stuck on the ramp at {p} (u {u:.2}), short of {alvo}"
+            );
             u += 0.01;
         }
         let rua = rua_perto(pe_da_espiral());
         let topo = ilha.altura(rua.x, rua.y) + crate::terreno::BLOCO * espiral_topo() as f32;
-        assert!((ilha.altura(p.x, p.y) - topo).abs() < 0.01, "walked up but stands at {} not {topo}", ilha.altura(p.x, p.y));
-        assert!(espiral_topo() < 400, "the spire must stay under the Kōgen Spire");
-        assert!(espiral_raio_do_topo() >= 16.0, "the roof is too small for a boss: {}", espiral_raio_do_topo());
+        assert!(
+            (ilha.altura(p.x, p.y) - topo).abs() < 0.01,
+            "walked up but stands at {} not {topo}",
+            ilha.altura(p.x, p.y)
+        );
+        assert!(
+            espiral_topo() < 400,
+            "the spire must stay under the Kōgen Spire"
+        );
+        assert!(
+            espiral_raio_do_topo() >= 16.0,
+            "the roof is too small for a boss: {}",
+            espiral_raio_do_topo()
+        );
         let paradas = paradas_da_espiral();
-        assert_eq!(paradas.iter().filter(|p| p.2).count(), ESPIRAL_VOLTAS as usize, "an elite a lap");
+        assert_eq!(
+            paradas.iter().filter(|p| p.2).count(),
+            ESPIRAL_VOLTAS as usize,
+            "an elite a lap"
+        );
         for w in paradas.windows(2) {
-            assert!(w[1].1 >= w[0].1 && (94..=99).contains(&w[1].1), "levels must rise 94..99: {:?}", paradas);
+            assert!(
+                w[1].1 >= w[0].1 && (94..=99).contains(&w[1].1),
+                "levels must rise 94..99: {:?}",
+                paradas
+            );
         }
         for (q, _, _) in &paradas {
             let (h, grade) = espiral_em(*q).expect("a horde off the spire");
             assert!(!grade, "a horde on the rail at {q}");
             for d in [Vec2::X, Vec2::Y, -Vec2::X, -Vec2::Y] {
-                assert_eq!(espiral_em(*q + d * 1.5).map(|e| e.0), Some(h), "the landing at {q} is not flat");
+                assert_eq!(
+                    espiral_em(*q + d * 1.5).map(|e| e.0),
+                    Some(h),
+                    "the landing at {q} is not flat"
+                );
             }
         }
     }
@@ -1532,7 +1928,10 @@ mod testes {
             for _ in 0..(3.0 / dt) as u32 {
                 (p, _) = ilha.mover_na_camada(p, fora * V, dt, R, DEGRAU_BLOCOS, CAMADA_CHAO);
             }
-            assert!((ilha.altura(p.x, p.y) - h0).abs() < 0.6, "walked off the ramp at u {u}: {de} → {p}");
+            assert!(
+                (ilha.altura(p.x, p.y) - h0).abs() < 0.6,
+                "walked off the ramp at u {u}: {de} → {p}"
+            );
             // One hop: stop once the body has dropped.
             let mut p = de;
             for _ in 0..(3.0 / dt) as u32 {
@@ -1543,7 +1942,10 @@ mod testes {
             }
             let queda = (h0 - ilha.altura(p.x, p.y)) / crate::terreno::BLOCO;
             let lap = ESPIRAL_SUBIDA as f32;
-            assert!(queda > lap * 0.5 && queda < lap * 1.5, "jumping the rail at u {u} dropped {queda} blocks");
+            assert!(
+                queda > lap * 0.5 && queda < lap * 1.5,
+                "jumping the rail at u {u} dropped {queda} blocks"
+            );
         }
     }
 }
@@ -1569,7 +1971,10 @@ mod testes_de_rota {
         for (nome, alvo) in alvos {
             let rua = rua_perto(alvo);
             let fim = ilha.caminho(c, rua, 60_000).and_then(|r| r.last().copied());
-            assert!(fim.is_some_and(|f| f.distance(rua) < 1.5), "{nome}: the route from town stops at {fim:?}, short of {rua}");
+            assert!(
+                fim.is_some_and(|f| f.distance(rua) < 1.5),
+                "{nome}: the route from town stops at {fim:?}, short of {rua}"
+            );
         }
     }
 
@@ -1578,8 +1983,13 @@ mod testes_de_rota {
     fn a_espiral_se_roteia_ate_o_topo() {
         let ilha = crate::terreno::Ilha::da_ilha(&DEF);
         let topo = topo_da_espiral() + Vec2::new(4.0, 0.0);
-        let fim = ilha.caminho(pe_da_espiral(), topo, 400_000).and_then(|r| r.last().copied());
-        assert!(fim.is_some_and(|f| f.distance(topo) < 1.5), "the route up the spire stops at {fim:?}");
+        let fim = ilha
+            .caminho(pe_da_espiral(), topo, 400_000)
+            .and_then(|r| r.last().copied());
+        assert!(
+            fim.is_some_and(|f| f.distance(topo) < 1.5),
+            "the route up the spire stops at {fim:?}"
+        );
     }
 }
 
@@ -1593,12 +2003,23 @@ mod testes_de_luz {
     fn a_cidade_tem_postes_e_letreiros() {
         let l = luzes();
         let n = |t: TipoDeLuz| l.iter().filter(|x| x.tipo == t).count();
-        eprintln!("lamps {} signs {} lanterns {}", n(TipoDeLuz::Poste), n(TipoDeLuz::Letreiro), n(TipoDeLuz::Lanterna));
+        eprintln!(
+            "lamps {} signs {} lanterns {}",
+            n(TipoDeLuz::Poste),
+            n(TipoDeLuz::Letreiro),
+            n(TipoDeLuz::Lanterna)
+        );
         assert!(n(TipoDeLuz::Poste) > 200, "too few street lamps");
         assert!(n(TipoDeLuz::Letreiro) > 150, "too few signs");
         assert!(n(TipoDeLuz::Lanterna) > 10);
         for x in l {
-            assert_eq!(chao_em(x.pos) == Chao::Calcada, x.tipo != TipoDeLuz::Lanterna, "{:?} off the sidewalk at {}", x.tipo, x.pos);
+            assert_eq!(
+                chao_em(x.pos) == Chao::Calcada,
+                x.tipo != TipoDeLuz::Lanterna,
+                "{:?} off the sidewalk at {}",
+                x.tipo,
+                x.pos
+            );
         }
     }
 }

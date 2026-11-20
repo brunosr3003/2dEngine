@@ -10,8 +10,8 @@ use std::collections::{BTreeMap, HashMap};
 
 use serde_json::{json, Value};
 use sqlx::postgres::PgRow;
-use sqlx::Row;
 use sqlx::PgPool;
+use sqlx::Row;
 
 use crate::economia::campo;
 
@@ -612,10 +612,17 @@ pub async fn atividade(pool: &PgPool, horas: i32, realm: &str, personagem: &str)
     let mut series: BTreeMap<String, Vec<[i64; 2]>> = BTreeMap::new();
     if ligada {
         let sql = format!("SELECT tipo, chave, SUM(valor)::bigint FROM {tabela} WHERE {filtro} GROUP BY tipo, chave");
-        match sqlx::query(&sql).bind(horas).bind(realm).bind(personagem).fetch_all(pool).await {
+        match sqlx::query(&sql)
+            .bind(horas)
+            .bind(realm)
+            .bind(personagem)
+            .fetch_all(pool)
+            .await
+        {
             Ok(rs) => {
                 for r in rs {
-                    let (t, c, v): (String, String, i64) = (campo(&r, 0), campo(&r, 1), campo(&r, 2));
+                    let (t, c, v): (String, String, i64) =
+                        (campo(&r, 0), campo(&r, 1), campo(&r, 2));
                     let rot = rotulo(&t, &c, &itens, &receitas, &skills);
                     totais.push(json!({ "tipo": t, "chave": c, "rotulo": rot, "valor": v }));
                 }
@@ -626,9 +633,18 @@ pub async fn atividade(pool: &PgPool, horas: i32, realm: &str, personagem: &str)
             "SELECT tipo, EXTRACT(EPOCH FROM date_trunc('hour', minuto))::bigint, SUM(valor)::bigint FROM {tabela}
               WHERE {filtro} GROUP BY 1, 2 ORDER BY 2"
         );
-        if let Ok(rs) = sqlx::query(&sql).bind(horas).bind(realm).bind(personagem).fetch_all(pool).await {
+        if let Ok(rs) = sqlx::query(&sql)
+            .bind(horas)
+            .bind(realm)
+            .bind(personagem)
+            .fetch_all(pool)
+            .await
+        {
             for r in rs {
-                series.entry(campo(&r, 0)).or_default().push([campo(&r, 1), campo(&r, 2)]);
+                series
+                    .entry(campo(&r, 0))
+                    .or_default()
+                    .push([campo(&r, 1), campo(&r, 2)]);
             }
         }
     }
@@ -655,7 +671,12 @@ pub async fn atividade(pool: &PgPool, horas: i32, realm: &str, personagem: &str)
               FROM telemetria_personagem
              WHERE minuto > NOW() - make_interval(hours => $1) AND ($2 = '' OR canal LIKE $2 || '/%')
              GROUP BY personagem ORDER BY 2 DESC NULLS LAST";
-        if let Ok(rs) = sqlx::query(sql).bind(horas).bind(realm).fetch_all(pool).await {
+        if let Ok(rs) = sqlx::query(sql)
+            .bind(horas)
+            .bind(realm)
+            .fetch_all(pool)
+            .await
+        {
             for r in rs {
                 let online_s: Option<i64> = r.try_get(1).ok().flatten();
                 let ouro: Option<i64> = r.try_get(2).ok().flatten();
@@ -1336,8 +1357,16 @@ pub async fn financeiro(realm: &PgPool, central: Option<&PgPool>) -> Value {
         .unwrap_or(0.0);
     // Account id -> character names (realm DB).
     let mut nomes: HashMap<i64, Vec<String>> = HashMap::new();
-    for r in linhas(realm, "SELECT account_id, name FROM characters WHERE account_id IS NOT NULL ORDER BY name").await {
-        nomes.entry(campo::<i64>(&r, 0)).or_default().push(campo::<String>(&r, 1));
+    for r in linhas(
+        realm,
+        "SELECT account_id, name FROM characters WHERE account_id IS NOT NULL ORDER BY name",
+    )
+    .await
+    {
+        nomes
+            .entry(campo::<i64>(&r, 0))
+            .or_default()
+            .push(campo::<String>(&r, 1));
     }
     let pedidos = linhas(
         c,
@@ -1354,13 +1383,18 @@ pub async fn financeiro(realm: &PgPool, central: Option<&PgPool>) -> Value {
           ORDER BY p.criado_em DESC LIMIT 500",
     )
     .await;
-    let (mut bruto, mut imposto, mut recebe, mut vendas, mut sem_dados, mut testes) = (0i64, 0i64, 0i64, 0i64, 0i64, 0i64);
+    let (mut bruto, mut imposto, mut recebe, mut vendas, mut sem_dados, mut testes) =
+        (0i64, 0i64, 0i64, 0i64, 0i64, 0i64);
     let mut por_moeda: BTreeMap<String, (i64, i64, i64, i64)> = BTreeMap::new();
     let lista: Vec<Value> = pedidos
         .iter()
         .map(|r| {
             let conta: String = campo(r, 1);
-            let id: i64 = conta.rsplit(':').next().and_then(|s| s.parse().ok()).unwrap_or(-1);
+            let id: i64 = conta
+                .rsplit(':')
+                .next()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(-1);
             let tem: bool = campo(r, 6);
             let estado: String = campo(r, 15);
             let teste: bool = campo(r, 16);

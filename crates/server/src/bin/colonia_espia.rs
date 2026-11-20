@@ -383,7 +383,11 @@ async fn main() -> anyhow::Result<()> {
     println!("\n─────────────── o que deu ───────────────");
     println!(
         "relevo mandado .... {}",
-        if viu_terreno { "sim" } else { "NAO — a tela fica azul sem isto" }
+        if viu_terreno {
+            "sim"
+        } else {
+            "NAO — a tela fica azul sem isto"
+        }
     );
     match (partida, agora_em) {
         (Some(a), Some(b)) => {

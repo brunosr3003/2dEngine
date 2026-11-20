@@ -189,6 +189,9 @@ todo tick.
 Falta, em ordem de impacto:
 - **IA escalonada.** Mob decide 30 vezes por segundo. Mercado roda IA a 2–5 Hz
   em baldes distribuídos entre os ticks.
-- **Taxa por distância.** Todo mundo no AOI recebe na mesma frequência.
 - **`rapier2d`** pra 1000 mobs — este jogo precisa de círculo-contra-grade.
 - **Aggro e leash** continuam os da IA antiga.
+
+O cap de AOI, a histerese e a taxa por distância descritos na seção anterior
+estão implementados em `world.rs`; a antiga pendência de taxa por distância
+foi removida desta lista em 19/11/2026.

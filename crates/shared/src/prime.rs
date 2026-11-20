@@ -53,23 +53,56 @@ pub struct Linha {
 /// - Glittering Powder is left out too: it is expensive on purpose and the
 ///   Magic Island is its shop.
 pub const LINHAS: &[Linha] = &[
-    Linha { bases: &[item_id::XP_POTION], cores: None, limite_dia: 5 },
-    Linha { bases: &[item_id::ENERGIA_MIL], cores: None, limite_dia: 20 },
-    Linha { bases: &[item_id::DARKSTEEL], cores: None, limite_dia: 50_000 },
-    Linha { bases: &item_id::CHAVES, cores: Some((1, 4)), limite_dia: 3 },
-    Linha { bases: &crate::combinar::MATERIAIS, cores: Some((1, 3)), limite_dia: 500 },
+    Linha {
+        bases: &[item_id::XP_POTION],
+        cores: None,
+        limite_dia: 5,
+    },
+    Linha {
+        bases: &[item_id::ENERGIA_MIL],
+        cores: None,
+        limite_dia: 20,
+    },
+    Linha {
+        bases: &[item_id::DARKSTEEL],
+        cores: None,
+        limite_dia: 50_000,
+    },
+    Linha {
+        bases: &item_id::CHAVES,
+        cores: Some((1, 4)),
+        limite_dia: 3,
+    },
+    Linha {
+        bases: &crate::combinar::MATERIAIS,
+        cores: Some((1, 3)),
+        limite_dia: 500,
+    },
     // SHIP UPGRADES (owner, 16/11/2026: "o NPC prime tem que ter como
     // comprar as coisas para evoluir barco também"): the Shipwright's wood,
     // the purple Steel only the Man-o'-War asks for (the other purples stay
     // out, see above), and Wreck Planks, capped low so the sea stays the
     // cheaper source. Darksteel and Steel up to blue are already above.
     Linha {
-        bases: &[item_id::WOOD_T1, item_id::WOOD_T2, item_id::WOOD_T3, item_id::WOOD_T4],
+        bases: &[
+            item_id::WOOD_T1,
+            item_id::WOOD_T2,
+            item_id::WOOD_T3,
+            item_id::WOOD_T4,
+        ],
         cores: None,
         limite_dia: 500,
     },
-    Linha { bases: &[item_id::STEEL], cores: Some((4, 4)), limite_dia: 150 },
-    Linha { bases: &[item_id::PRANCHA_DE_NAUFRAGIO], cores: None, limite_dia: 30 },
+    Linha {
+        bases: &[item_id::STEEL],
+        cores: Some((4, 4)),
+        limite_dia: 150,
+    },
+    Linha {
+        bases: &[item_id::PRANCHA_DE_NAUFRAGIO],
+        cores: None,
+        limite_dia: 30,
+    },
 ];
 
 /// Units of each DUNGEON (Porão) key one character may buy per game day
@@ -80,7 +113,10 @@ pub const LIMITE_CHAVE_DE_PORAO: u32 = 3;
 
 /// Every Porão key, in the catalogue's order of contents.
 pub fn chaves_de_porao() -> Vec<u16> {
-    crate::dungeon::CONTEUDOS.iter().filter_map(crate::porao::chave_de).collect()
+    crate::dungeon::CONTEUDOS
+        .iter()
+        .filter_map(crate::porao::chave_de)
+        .collect()
 }
 
 /// One sellable item.
@@ -104,17 +140,26 @@ pub fn catalogo() -> Vec<ItemPrime> {
     for l in LINHAS {
         for &b in l.bases {
             match l.cores {
-                None => v.push(ItemPrime { item_id: b, limite_dia: l.limite_dia }),
+                None => v.push(ItemPrime {
+                    item_id: b,
+                    limite_dia: l.limite_dia,
+                }),
                 Some((de, ate)) => {
                     for cor in de..=ate {
-                        v.push(ItemPrime { item_id: na_cor(b, cor), limite_dia: l.limite_dia });
+                        v.push(ItemPrime {
+                            item_id: na_cor(b, cor),
+                            limite_dia: l.limite_dia,
+                        });
                     }
                 }
             }
         }
     }
     for id in chaves_de_porao() {
-        v.push(ItemPrime { item_id: id, limite_dia: LIMITE_CHAVE_DE_PORAO });
+        v.push(ItemPrime {
+            item_id: id,
+            limite_dia: LIMITE_CHAVE_DE_PORAO,
+        });
     }
     v
 }
@@ -171,13 +216,20 @@ impl Diario {
     /// Moves to `dia`, zeroing everything if it is a new day.
     fn no_dia(&mut self, dia: i64) {
         if self.dia != dia {
-            *self = Diario { dia, ..Default::default() };
+            *self = Diario {
+                dia,
+                ..Default::default()
+            };
         }
     }
 
     /// Free XP potions already paid on `dia`.
     pub fn pocoes_xp_hoje(&self, dia: i64) -> u32 {
-        if self.dia == dia { self.pocoes_xp } else { 0 }
+        if self.dia == dia {
+            self.pocoes_xp
+        } else {
+            0
+        }
     }
 
     /// Pays up to `qtd` free XP potions on `dia`, within the cap. Returns how
@@ -195,7 +247,10 @@ impl Diario {
         if self.dia != dia {
             return 0;
         }
-        self.compras.iter().find(|(i, _)| *i == id).map_or(0, |(_, q)| *q)
+        self.compras
+            .iter()
+            .find(|(i, _)| *i == id)
+            .map_or(0, |(_, q)| *q)
     }
 
     pub fn registrar_compra(&mut self, dia: i64, id: u16, qtd: u32) {
@@ -214,17 +269,26 @@ pub enum Recusa {
     SemPreco,
     Quantidade,
     /// Daily limit: how many are still allowed today.
-    Limite { resta: u32, limite: u32 },
+    Limite {
+        resta: u32,
+        limite: u32,
+    },
     /// The price went UP since the board was drawn: the current one.
-    PrecoMudou { agora: u64 },
-    OuroInsuficiente { falta: u64 },
+    PrecoMudou {
+        agora: u64,
+    },
+    OuroInsuficiente {
+        falta: u64,
+    },
 }
 
 impl Recusa {
     pub fn texto(&self) -> String {
         match self {
             Recusa::NaoVende => "The Prime Merchant does not sell that.".into(),
-            Recusa::SemPreco => "No market price for that yet. Try again after the next update.".into(),
+            Recusa::SemPreco => {
+                "No market price for that yet. Try again after the next update.".into()
+            }
             Recusa::Quantidade => "Choose a quantity.".into(),
             Recusa::Limite { resta: 0, limite } => {
                 format!("Daily limit reached ({limite}/{limite}). Come back tomorrow.")
@@ -269,16 +333,26 @@ pub fn validar(
     let preco_unit = preco_atual.ok_or(Recusa::SemPreco)?;
     let resta = item.limite_dia.saturating_sub(diario.comprado(dia, id));
     if qtd > resta {
-        return Err(Recusa::Limite { resta, limite: item.limite_dia });
+        return Err(Recusa::Limite {
+            resta,
+            limite: item.limite_dia,
+        });
     }
     if preco_unit > preco_visto {
         return Err(Recusa::PrecoMudou { agora: preco_unit });
     }
     let total = preco_unit.saturating_mul(qtd as u64);
     if total > ouro {
-        return Err(Recusa::OuroInsuficiente { falta: total - ouro });
+        return Err(Recusa::OuroInsuficiente {
+            falta: total - ouro,
+        });
     }
-    Ok(Compra { item, qtd, preco_unit, total })
+    Ok(Compra {
+        item,
+        qtd,
+        preco_unit,
+        total,
+    })
 }
 
 // ─────────────────────────────── wire ───────────────────────────────
@@ -289,7 +363,11 @@ pub enum PedidoPrime {
     /// Open (or refresh) the board. Only near the Prime Merchant.
     Abrir,
     /// Buy `qtd` of `item_id`; `preco_visto` = the unit price on the board.
-    Comprar { item_id: u16, qtd: u32, preco_visto: u64 },
+    Comprar {
+        item_id: u16,
+        qtd: u32,
+        preco_visto: u64,
+    },
 }
 
 /// One row of the board.
@@ -339,7 +417,11 @@ pub enum AvisoPrime {
     Quadro(QuadroPrime),
     Recusa(String),
     /// Bought: `total` gold left the purse.
-    Comprou { item_id: u16, qtd: u32, total: u64 },
+    Comprou {
+        item_id: u16,
+        qtd: u32,
+        total: u64,
+    },
 }
 
 #[cfg(test)]
@@ -371,9 +453,15 @@ mod testes {
         assert_eq!(com_markup(20), 23, "exact stays exact");
         assert_eq!(com_markup(1_000_001), 1_150_002, "1,150,001.15 -> up");
         // From the table: recommended rounds first (100.4 -> 100), then +15%.
-        let t: HashMap<u16, f64> = [(item_id::DARKSTEEL, 100.4), (item_id::XP_POTION, 0.2)].into_iter().collect();
+        let t: HashMap<u16, f64> = [(item_id::DARKSTEEL, 100.4), (item_id::XP_POTION, 0.2)]
+            .into_iter()
+            .collect();
         assert_eq!(preco(&t, item_id::DARKSTEEL), Some(115));
-        assert_eq!(preco(&t, item_id::XP_POTION), Some(2), "recommended floor 1 -> 1.15 -> 2");
+        assert_eq!(
+            preco(&t, item_id::XP_POTION),
+            Some(2),
+            "recommended floor 1 -> 1.15 -> 2"
+        );
         assert_eq!(preco(&t, item_id::STEEL), None, "no price: hidden");
     }
 
@@ -384,19 +472,28 @@ mod testes {
         assert!(ids.contains(&item_id::XP_POTION));
         assert!(ids.contains(&item_id::DARKSTEEL));
         assert!(ids.contains(&item_id::ENERGIA_MIL));
-        assert_eq!(c.len(), 3 + 4 * 4 + 8 * 3 + 4 + 1 + 1 + chaves_de_porao().len());
+        assert_eq!(
+            c.len(),
+            3 + 4 * 4 + 8 * 3 + 4 + 1 + 1 + chaves_de_porao().len()
+        );
         assert!(ids.contains(&item_id::PRANCHA_DE_NAUFRAGIO) && ids.contains(&item_id::WOOD_T4));
         for &k in &item_id::CHAVES {
             for cor in 1..=4 {
                 assert_eq!(item(item_id::chave_na_cor(k, cor)).unwrap().limite_dia, 3);
             }
-            assert!(item(item_id::chave_na_cor(k, 5)).is_none(), "legendary key on sale");
+            assert!(
+                item(item_id::chave_na_cor(k, 5)).is_none(),
+                "legendary key on sale"
+            );
         }
         for &m in &crate::combinar::MATERIAIS {
             assert_eq!(item(item_id::na_cor(m, 3)).unwrap().limite_dia, 500);
             // Purple Steel is the one exception: the Man-o'-War needs it.
             if m != item_id::STEEL {
-                assert!(item(item_id::na_cor(m, 4)).is_none(), "purple material on sale");
+                assert!(
+                    item(item_id::na_cor(m, 4)).is_none(),
+                    "purple material on sale"
+                );
             }
         }
         assert!(item(item_id::GLITTERING_POWDER).is_none());
@@ -417,7 +514,10 @@ mod testes {
         d.registrar_compra(t, item_id::XP_POTION, 2);
         assert_eq!(
             validar(&d, t, 1_000, item_id::XP_POTION, 1, Some(10), 10),
-            Err(Recusa::Limite { resta: 0, limite: 5 })
+            Err(Recusa::Limite {
+                resta: 0,
+                limite: 5
+            })
         );
         // Another item is untouched.
         assert!(validar(&d, t, 1_000, item_id::DARKSTEEL, 50, Some(10), 10).is_ok());
@@ -425,13 +525,20 @@ mod testes {
         assert_eq!(d.comprado(t + 1, item_id::XP_POTION), 0);
         assert!(validar(&d, t + 1, 1_000, item_id::XP_POTION, 5, Some(10), 10).is_ok());
         d.registrar_compra(t + 1, item_id::DARKSTEEL, 7);
-        assert_eq!(d.comprado(t + 1, item_id::XP_POTION), 0, "new day wiped yesterday");
+        assert_eq!(
+            d.comprado(t + 1, item_id::XP_POTION),
+            0,
+            "new day wiped yesterday"
+        );
         assert_eq!(d.comprado(t + 1, item_id::DARKSTEEL), 7);
         // Asking for more than what is left says how many remain.
         let k = item_id::chave_na_cor(item_id::CHAVES[0], 2);
         assert_eq!(
             validar(&d, t + 1, 1_000, k, 4, Some(10), 10),
-            Err(Recusa::Limite { resta: 3, limite: 3 })
+            Err(Recusa::Limite {
+                resta: 3,
+                limite: 3
+            })
         );
     }
 
@@ -450,10 +557,24 @@ mod testes {
             Err(Recusa::PrecoMudou { agora: 120 })
         );
         // Went down: charged at the lower current price.
-        assert_eq!(validar(&d, 0, 1_000, item_id::DARKSTEEL, 1, Some(100), 115).unwrap().total, 100);
-        assert_eq!(validar(&d, 0, 1_000, item_id::DARKSTEEL, 1, None, 115), Err(Recusa::SemPreco));
-        assert_eq!(validar(&d, 0, 1_000, item_id::GLITTERING_POWDER, 1, Some(1), 1), Err(Recusa::NaoVende));
-        assert_eq!(validar(&d, 0, 1_000, item_id::DARKSTEEL, 0, Some(1), 1), Err(Recusa::Quantidade));
+        assert_eq!(
+            validar(&d, 0, 1_000, item_id::DARKSTEEL, 1, Some(100), 115)
+                .unwrap()
+                .total,
+            100
+        );
+        assert_eq!(
+            validar(&d, 0, 1_000, item_id::DARKSTEEL, 1, None, 115),
+            Err(Recusa::SemPreco)
+        );
+        assert_eq!(
+            validar(&d, 0, 1_000, item_id::GLITTERING_POWDER, 1, Some(1), 1),
+            Err(Recusa::NaoVende)
+        );
+        assert_eq!(
+            validar(&d, 0, 1_000, item_id::DARKSTEEL, 0, Some(1), 1),
+            Err(Recusa::Quantidade)
+        );
     }
 
     #[test]
@@ -463,10 +584,18 @@ mod testes {
         assert_eq!(d.pagar_pocoes_xp(dia, 1), 1);
         assert_eq!(d.pagar_pocoes_xp(dia, 1), 1);
         assert_eq!(d.pagar_pocoes_xp(dia, 1), 1);
-        assert_eq!(d.pagar_pocoes_xp(dia, 1), 0, "4th daily of the day pays none");
+        assert_eq!(
+            d.pagar_pocoes_xp(dia, 1),
+            0,
+            "4th daily of the day pays none"
+        );
         assert_eq!(d.pocoes_xp_hoje(dia), 3);
         assert_eq!(d.pocoes_xp_hoje(dia + 1), 0);
-        assert_eq!(d.pagar_pocoes_xp(dia + 1, 5), 3, "never more than the cap at once");
+        assert_eq!(
+            d.pagar_pocoes_xp(dia + 1, 5),
+            3,
+            "never more than the cap at once"
+        );
         // Survives the save.
         let volta = Diario::de_json(&d.para_json());
         assert_eq!(volta, d);
@@ -475,7 +604,13 @@ mod testes {
 
     #[test]
     fn variacao_contra_a_atualizacao_anterior() {
-        let mut l = LinhaPrime { item_id: 1, preco: 110, historico: vec![100, 110], limite_dia: 5, comprado_hoje: 2 };
+        let mut l = LinhaPrime {
+            item_id: 1,
+            preco: 110,
+            historico: vec![100, 110],
+            limite_dia: 5,
+            comprado_hoje: 2,
+        };
         assert!((l.variacao_pct().unwrap() - 10.0).abs() < 1e-9);
         l.historico = vec![110];
         assert_eq!(l.variacao_pct(), None);

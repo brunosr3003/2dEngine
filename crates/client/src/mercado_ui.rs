@@ -10,7 +10,9 @@ use crate::ui::Toque as _;
 use std::collections::{HashMap, HashSet};
 
 use macroquad::prelude::*;
-use shared::mercado::{self as regras, AnuncioNet, CartaNet, Categoria, FiltroNet, PedidoNet, VendaNet};
+use shared::mercado::{
+    self as regras, AnuncioNet, CartaNet, Categoria, FiltroNet, PedidoNet, VendaNet,
+};
 use shared::protocol::ClientMessage;
 use shared::InventorySlot;
 
@@ -235,15 +237,26 @@ impl Mercado {
     /// From the bag's "Sell": the Sell tab with that slot picked, one unit
     /// and the recommended price filled in, and the same item searched for
     /// the price reference.
-    pub fn abrir_vendendo(&mut self, slot: usize, item_id: u16, inst: Option<&shared::ItemInstance>, nome: &str) -> Vec<ClientMessage> {
+    pub fn abrir_vendendo(
+        &mut self,
+        slot: usize,
+        item_id: u16,
+        inst: Option<&shared::ItemInstance>,
+        nome: &str,
+    ) -> Vec<ClientMessage> {
         let mut v = self.abrir();
         v.extend(self.trocar_aba(Aba::Vender));
         self.venda_slot = Some(slot);
         self.venda_qtd = 1;
-        self.venda_preco = shared::precos::recomendado(&self.precos, item_id, inst).unwrap_or(self.venda_preco.max(100));
+        self.venda_preco = shared::precos::recomendado(&self.precos, item_id, inst)
+            .unwrap_or(self.venda_preco.max(100));
         self.ultima_busca_tp = false;
         v.push(ClientMessage::MercadoBuscar {
-            filtro: FiltroNet { categoria: 0, texto: nome.to_string(), pagina: 0 },
+            filtro: FiltroNet {
+                categoria: 0,
+                texto: nome.to_string(),
+                pagina: 0,
+            },
         });
         v
     }
@@ -279,7 +292,10 @@ impl Mercado {
     /// being typed.
     pub fn foco_na_busca(&self) -> bool {
         self.aberto
-            && (self.foco_busca || self.pedidos.foco_busca || self.pedidos.foco_item || self.edicao.ativa())
+            && (self.foco_busca
+                || self.pedidos.foco_busca
+                || self.pedidos.foco_item
+                || self.edicao.ativa())
     }
 
     /// Escape: cancels the number being typed (the old value stays); with
@@ -368,7 +384,13 @@ impl Mercado {
         }
     }
 
-    pub fn meus(&mut self, anuncios: Vec<AnuncioNet>, historico: Vec<VendaNet>, tp: u64, compras_vagas: u8) {
+    pub fn meus(
+        &mut self,
+        anuncios: Vec<AnuncioNet>,
+        historico: Vec<VendaNet>,
+        tp: u64,
+        compras_vagas: u8,
+    ) {
         self.meus = anuncios;
         self.historico = historico;
         self.tp = Some(tp);
@@ -462,7 +484,12 @@ impl Mercado {
         // panel fills a phone's screen, so it may rise past the top: while
         // typing, the field matters more than the header.
         self.subida = if self.edicao.ativa() {
-            crate::teclado_virtual::deslocamento(c.teclado, screen_height(), f32::INFINITY, self.edicao.fundo + self.subida)
+            crate::teclado_virtual::deslocamento(
+                c.teclado,
+                screen_height(),
+                f32::INFINITY,
+                self.edicao.fundo + self.subida,
+            )
         } else {
             0.0
         };
@@ -557,8 +584,12 @@ impl Mercado {
         let cw = (faixa.w / n as f32).min(150.0 * f).max(maior + 24.0 * f);
         let largura = cw * n as f32;
         let toque_cat = if livre {
-            self.rolagem_categorias
-                .passo_horizontal(faixa, largura, cw, crate::rolagem::Entrada::agora())
+            self.rolagem_categorias.passo_horizontal(
+                faixa,
+                largura,
+                cw,
+                crate::rolagem::Entrada::agora(),
+            )
         } else {
             None
         };
@@ -789,14 +820,25 @@ impl Mercado {
         if let Some((leva, g)) = parte {
             let ate = regras::maximo_por(an.qtd, an.preco_total, g);
             let dica = if leva > compra.qtd {
-                Some(format!("{} gold buys all {} left: you get them all.", milhar(g), milhar(leva)))
+                Some(format!(
+                    "{} gold buys all {} left: you get them all.",
+                    milhar(g),
+                    milhar(leva)
+                ))
             } else if ate > compra.qtd {
                 Some(format!("{} gold buys up to {}.", milhar(g), milhar(ate)))
             } else {
                 None
             };
             if let Some(d) = dica {
-                estilo::texto_ajustado(&d, r.x + 18.0 * f, y - 14.0 * f, r.w - 36.0 * f, 12, estilo::OURO);
+                estilo::texto_ajustado(
+                    &d,
+                    r.x + 18.0 * f,
+                    y - 14.0 * f,
+                    r.w - 36.0 * f,
+                    12,
+                    estilo::OURO,
+                );
             }
         }
         estilo::texto(r.x + 18.0 * f, y, "Total", 15, estilo::SUAVE);
@@ -1050,7 +1092,10 @@ impl Mercado {
             y,
             w,
             "Each",
-            &format!("{} gold", regras::fmt_unitario(regras::preco_unitario(self.venda_qtd, bruto))),
+            &format!(
+                "{} gold",
+                regras::fmt_unitario(regras::preco_unitario(self.venda_qtd, bruto))
+            ),
             estilo::TEXTO,
             f,
         );
@@ -1082,7 +1127,10 @@ impl Mercado {
                 && an.tipo == regras::TIPO_ITEM
                 && (!peca
                     || match (an.instancia.as_ref(), slot.instance.as_ref()) {
-                        (Some(a), Some(b)) => (a.rarity, a.tier, a.refinement, a.estrelas) == (b.rarity, b.tier, b.refinement, b.estrelas),
+                        (Some(a), Some(b)) => {
+                            (a.rarity, a.tier, a.refinement, a.estrelas)
+                                == (b.rarity, b.tier, b.refinement, b.estrelas)
+                        }
                         _ => false,
                     })
         };
@@ -1095,21 +1143,29 @@ impl Mercado {
         // BOTH REFERENCES, FOR EVERY ITEM: the recommended price and the
         // market's lowest. A missing one says so instead of vanishing, so the
         // seller always knows what was looked at.
-        let recomendado = shared::precos::recomendado(&self.precos, slot.item_id, slot.instance.as_ref());
+        let recomendado =
+            shared::precos::recomendado(&self.precos, slot.item_id, slot.instance.as_ref());
         let pode_listar = livre && pode && self.meus.len() < self.max_anuncios();
         referencias_lote(
             &mut self.venda_preco,
             self.venda_qtd,
             recomendado.map(|r| r as f64),
             menor,
-            if peca { "Lowest (same piece): {} gold each" } else { "Lowest on the market: {} gold each" },
+            if peca {
+                "Lowest (same piece): {} gold each"
+            } else {
+                "Lowest on the market: {} gold each"
+            },
             (x, y, w, f),
             livre,
         );
         let bt = Rect::new(x, dir.y + dir.h - 58.0 * f, w, 44.0 * f);
         // The typed price against the recommended one: yellow past half the
         // alert threshold, red past it (the same red "My listings" shows).
-        if let Some(d) = regras::desvio(regras::preco_unitario(self.venda_qtd, self.venda_preco), recomendado) {
+        if let Some(d) = regras::desvio(
+            regras::preco_unitario(self.venda_qtd, self.venda_preco),
+            recomendado,
+        ) {
             let cor = if d.abs() > regras::DESVIO_ALERTA {
                 Some(estilo::VERMELHO)
             } else if d.abs() > regras::DESVIO_ALERTA * 0.5 {
@@ -1133,7 +1189,11 @@ impl Mercado {
         // unit pressed the gold one and listed the whole stack, and took X
         // for the total when it was the price of each.
         let total_lista = self.venda_preco;
-        let rotulo = format!("List ×{} for {} gold", milhar(self.venda_qtd), milhar(total_lista));
+        let rotulo = format!(
+            "List ×{} for {} gold",
+            milhar(self.venda_qtd),
+            milhar(total_lista)
+        );
         if botao(bt, &rotulo, pode_listar, true) {
             if let Some(i) = self.venda_slot {
                 saida.push(ClientMessage::MercadoAnunciar {
@@ -1148,7 +1208,11 @@ impl Mercado {
             let r = Rect::new(bt.x, bt.y - 52.0 * f, bt.w, 42.0 * f);
             let total_tudo = regras::total(slot.qty as u64, rec).unwrap_or(0);
             let rotulo = if slot.qty > 1 {
-                format!("Sell all ×{} for {} gold (recommended)", milhar(slot.qty as u64), milhar(total_tudo))
+                format!(
+                    "Sell all ×{} for {} gold (recommended)",
+                    milhar(slot.qty as u64),
+                    milhar(total_tudo)
+                )
             } else {
                 format!("Sell for {} gold (recommended)", milhar(total_tudo))
             };
@@ -1165,14 +1229,20 @@ impl Mercado {
         }
     }
 
-
     // ─────────────────────────────── Buy orders ───────────────────────────────
 
     /// BUY ORDERS: the open orders (or mine) on the left; on the right,
     /// selling to the one picked, or the form for a new order. The gold of an
     /// order leaves the buyer when it is placed; the seller's items leave the
     /// bag when sold; everything else arrives in Deliveries.
-    fn aba_pedidos(&mut self, a: Rect, c: &Contexto, f: f32, livre: bool, saida: &mut Vec<ClientMessage>) {
+    fn aba_pedidos(
+        &mut self,
+        a: Rect,
+        c: &Contexto,
+        f: f32,
+        livre: bool,
+        saida: &mut Vec<ClientMessage>,
+    ) {
         let m = Vec2::from(mouse_position());
         let clicou = crate::foco::clique();
         let esq = Rect::new(a.x, a.y, a.w * 0.56, a.h);
@@ -1182,14 +1252,24 @@ impl Mercado {
         let bw = 120.0 * f;
         let todos = Rect::new(esq.x, esq.y, bw, 38.0 * f);
         let meus = Rect::new(esq.x + bw + 6.0 * f, esq.y, bw + 20.0 * f, 38.0 * f);
-        let rotulo_meus = format!("My orders {}/{}", self.pedidos.meus.len(), regras::MAX_PEDIDOS);
+        let rotulo_meus = format!(
+            "My orders {}/{}",
+            self.pedidos.meus.len(),
+            regras::MAX_PEDIDOS
+        );
         for (r, modo, rotulo) in [
             (todos, ListaDePedidos::Todos, "All orders"),
             (meus, ListaDePedidos::Meus, rotulo_meus.as_str()),
         ] {
             let sel = self.pedidos.modo == modo;
             estilo::cartao(r, livre && r.toca(m), sel);
-            estilo::texto_centro(r.center().x, r.center().y + 5.0 * f, rotulo, 14, if sel { estilo::OURO } else { estilo::TEXTO });
+            estilo::texto_centro(
+                r.center().x,
+                r.center().y + 5.0 * f,
+                rotulo,
+                14,
+                if sel { estilo::OURO } else { estilo::TEXTO },
+            );
             if livre && clicou && r.toca(m) && !sel {
                 self.pedidos.modo = modo;
                 self.rolagem.zera();
@@ -1200,8 +1280,20 @@ impl Mercado {
             let bb = Rect::new(esq.x + esq.w - 90.0 * f, esq.y, 90.0 * f, 38.0 * f);
             let xb = meus.x + meus.w + 8.0 * f;
             let campo = Rect::new(xb, esq.y, (bb.x - 6.0 * f - xb).max(60.0 * f), 38.0 * f);
-            let digitado: &[char] = if self.pedidos.foco_busca { c.digitado } else { &[] };
-            if crate::ui::campo(campo, "", &mut self.pedidos.busca, self.pedidos.foco_busca, false, digitado) && livre {
+            let digitado: &[char] = if self.pedidos.foco_busca {
+                c.digitado
+            } else {
+                &[]
+            };
+            if crate::ui::campo(
+                campo,
+                "",
+                &mut self.pedidos.busca,
+                self.pedidos.foco_busca,
+                false,
+                digitado,
+            ) && livre
+            {
                 self.sem_foco();
                 self.pedidos.foco_busca = true;
             } else if clicou && !campo.toca(m) {
@@ -1209,10 +1301,17 @@ impl Mercado {
             }
             corta(&mut self.pedidos.busca);
             if self.pedidos.busca.is_empty() && !self.pedidos.foco_busca {
-                estilo::texto(campo.x + 10.0 * f, campo.center().y + 5.0 * f, "Search…", 14, estilo::SUAVE);
+                estilo::texto(
+                    campo.x + 10.0 * f,
+                    campo.center().y + 5.0 * f,
+                    "Search…",
+                    14,
+                    estilo::SUAVE,
+                );
             }
             let enter = self.pedidos.foco_busca
-                && (is_key_pressed(KeyCode::Enter) || c.digitado.iter().any(|ch| *ch == '\r' || *ch == '\n'));
+                && (is_key_pressed(KeyCode::Enter)
+                    || c.digitado.iter().any(|ch| *ch == '\r' || *ch == '\n'));
             if botao(bb, "Search", livre, true) || enter {
                 self.pedidos.foco_busca = false;
                 self.rolagem.zera();
@@ -1272,7 +1371,14 @@ impl Mercado {
     }
 
     /// Right panel: selling to the order picked on the left.
-    fn vender_ao_pedido(&mut self, dir: Rect, c: &Contexto, f: f32, livre: bool, saida: &mut Vec<ClientMessage>) {
+    fn vender_ao_pedido(
+        &mut self,
+        dir: Rect,
+        c: &Contexto,
+        f: f32,
+        livre: bool,
+        saida: &mut Vec<ClientMessage>,
+    ) {
         let Some((pd, qtd)) = &mut self.pedidos.venda else {
             return;
         };
@@ -1280,9 +1386,22 @@ impl Mercado {
         let mut y = dir.y + 32.0 * f;
         estilo::texto_forte(x, y, "Sell to buy order", 18, estilo::OURO);
         y += 16.0 * f;
-        crate::icones::icone_com_3d(pd.item_id, Rect::new(x, y, 48.0 * f, 48.0 * f), None, None, Some((c.vox, c.solido)));
+        crate::icones::icone_com_3d(
+            pd.item_id,
+            Rect::new(x, y, 48.0 * f, 48.0 * f),
+            None,
+            None,
+            Some((c.vox, c.solido)),
+        );
         let xn = x + 58.0 * f;
-        estilo::texto_ajustado(&nome_do_pedido(pd, c), xn, y + 20.0 * f, x + w - xn, 16, estilo::TEXTO);
+        estilo::texto_ajustado(
+            &nome_do_pedido(pd, c),
+            xn,
+            y + 20.0 * f,
+            x + w - xn,
+            16,
+            estilo::TEXTO,
+        );
         estilo::texto_ajustado(
             &format!(
                 "Wants {} for {} gold · {} gold each",
@@ -1304,17 +1423,54 @@ impl Mercado {
         } else {
             format!("You have {} in your bag", milhar(tem))
         };
-        estilo::texto(x, y, &tem_txt, 14, if tem > 0 { estilo::TEXTO } else { estilo::VERMELHO });
+        estilo::texto(
+            x,
+            y,
+            &tem_txt,
+            14,
+            if tem > 0 {
+                estilo::TEXTO
+            } else {
+                estilo::VERMELHO
+            },
+        );
         y += 34.0 * f;
         let max = tem.min(pd.qtd).max(1);
-        seletor(&mut self.edicao, "pedido_venda_qtd", c.digitado, Rect::new(x, y, w, 42.0 * f), "Quantity", qtd, 1, max, false, f);
+        seletor(
+            &mut self.edicao,
+            "pedido_venda_qtd",
+            c.digitado,
+            Rect::new(x, y, w, 42.0 * f),
+            "Quantity",
+            qtd,
+            1,
+            max,
+            false,
+            f,
+        );
         y += 60.0 * f;
         // Whole gold, rounded DOWN for a part (the order's escrow never
         // runs short); filling all it still wants takes all it holds.
         let bruto = pd.pagamento(*qtd).unwrap_or(0);
         linha_valor(x, y, w, "Total", &milhar(bruto), estilo::TEXTO, f);
-        linha_valor(x, y + 22.0 * f, w, &format!("Fee {}%", regras::TAXA_PCT), &format!("−{}", milhar(regras::taxa(bruto))), estilo::SUAVE, f);
-        linha_valor(x, y + 44.0 * f, w, "You receive", &milhar(regras::liquido(bruto)), estilo::OURO, f);
+        linha_valor(
+            x,
+            y + 22.0 * f,
+            w,
+            &format!("Fee {}%", regras::TAXA_PCT),
+            &format!("−{}", milhar(regras::taxa(bruto))),
+            estilo::SUAVE,
+            f,
+        );
+        linha_valor(
+            x,
+            y + 44.0 * f,
+            w,
+            "You receive",
+            &milhar(regras::liquido(bruto)),
+            estilo::OURO,
+            f,
+        );
         y += 74.0 * f;
         if bruto == 0 {
             estilo::texto_ajustado(
@@ -1329,7 +1485,10 @@ impl Mercado {
         let nivel_ok = c.nivel >= regras::NIVEL_PARA_VENDER;
         if !nivel_ok {
             estilo::texto_ajustado(
-                &format!("Selling on the market unlocks at level {}.", shared::progressao::texto_de_nivel(regras::NIVEL_PARA_VENDER)),
+                &format!(
+                    "Selling on the market unlocks at level {}.",
+                    shared::progressao::texto_de_nivel(regras::NIVEL_PARA_VENDER)
+                ),
                 x,
                 y,
                 w,
@@ -1339,13 +1498,22 @@ impl Mercado {
         }
         let yb = dir.y + dir.h - 58.0 * f;
         let voltar = Rect::new(x, yb, 100.0 * f, 44.0 * f);
-        let vende = Rect::new(voltar.x + voltar.w + 8.0 * f, yb, w - voltar.w - 8.0 * f, 44.0 * f);
+        let vende = Rect::new(
+            voltar.x + voltar.w + 8.0 * f,
+            yb,
+            w - voltar.w - 8.0 * f,
+            44.0 * f,
+        );
         if botao(voltar, "Back", livre, false) {
             self.pedidos.venda = None;
             return;
         }
         let pode = livre && nivel_ok && tem >= *qtd && *qtd <= pd.qtd && !pd.meu && bruto > 0;
-        let rotulo = format!("Sell ×{} for {} gold", milhar(*qtd), milhar(regras::liquido(bruto)));
+        let rotulo = format!(
+            "Sell ×{} for {} gold",
+            milhar(*qtd),
+            milhar(regras::liquido(bruto))
+        );
         if botao(vende, &rotulo, pode, true) {
             saida.push(ClientMessage::MercadoVenderAoPedido {
                 pedido: pd.id.clone(),
@@ -1357,7 +1525,8 @@ impl Mercado {
             let (id, vendida) = (pd.id.clone(), *qtd);
             if let Some(i) = self.pedidos.lista.iter().position(|p| p.id == id) {
                 self.pedidos.lista[i].qtd = self.pedidos.lista[i].qtd.saturating_sub(vendida);
-                self.pedidos.lista[i].preco_total = self.pedidos.lista[i].preco_total.saturating_sub(bruto);
+                self.pedidos.lista[i].preco_total =
+                    self.pedidos.lista[i].preco_total.saturating_sub(bruto);
                 if self.pedidos.lista[i].qtd == 0 {
                     self.pedidos.lista.remove(i);
                 }
@@ -1369,7 +1538,14 @@ impl Mercado {
 
     /// Right panel: a new buy order — pick an item, the quantity and the
     /// price each; the total is held from your gold right away.
-    fn novo_pedido(&mut self, dir: Rect, c: &Contexto, f: f32, livre: bool, saida: &mut Vec<ClientMessage>) {
+    fn novo_pedido(
+        &mut self,
+        dir: Rect,
+        c: &Contexto,
+        f: f32,
+        livre: bool,
+        saida: &mut Vec<ClientMessage>,
+    ) {
         let m = Vec2::from(mouse_position());
         let clicou = crate::foco::clique();
         let (x, w) = (dir.x + 16.0 * f, dir.w - 32.0 * f);
@@ -1388,9 +1564,20 @@ impl Mercado {
             // Picking the item: a search over what can be ordered.
             y += 14.0 * f;
             let campo = Rect::new(x, y, w, 38.0 * f);
-            let digitado: &[char] = if self.pedidos.foco_item { c.digitado } else { &[] };
+            let digitado: &[char] = if self.pedidos.foco_item {
+                c.digitado
+            } else {
+                &[]
+            };
             let antes = self.pedidos.busca_item.len();
-            let pediu = crate::ui::campo(campo, "Item", &mut self.pedidos.busca_item, self.pedidos.foco_item, false, digitado);
+            let pediu = crate::ui::campo(
+                campo,
+                "Item",
+                &mut self.pedidos.busca_item,
+                self.pedidos.foco_item,
+                false,
+                digitado,
+            );
             if self.pedidos.busca_item.len() != antes {
                 // A new search starts at the top.
                 self.pedidos.rolagem_item.zera();
@@ -1403,27 +1590,65 @@ impl Mercado {
             }
             corta(&mut self.pedidos.busca_item);
             if self.pedidos.busca_item.is_empty() && !self.pedidos.foco_item {
-                estilo::texto(campo.x + 10.0 * f, campo.center().y + 5.0 * f, "Type an item name…", 14, estilo::SUAVE);
+                estilo::texto(
+                    campo.x + 10.0 * f,
+                    campo.center().y + 5.0 * f,
+                    "Type an item name…",
+                    14,
+                    estilo::SUAVE,
+                );
             }
             y += 46.0 * f;
-            let achados = catalogo_pedivel(c.nomes, &self.vinculados, &self.equipaveis, &self.pedidos.busca_item, MAX_ACHADOS);
+            let achados = catalogo_pedivel(
+                c.nomes,
+                &self.vinculados,
+                &self.equipaveis,
+                &self.pedidos.busca_item,
+                MAX_ACHADOS,
+            );
             if achados.is_empty() && !self.pedidos.busca_item.trim().is_empty() {
-                estilo::texto(x, y + 20.0 * f, "No orderable item with that name.", 14, estilo::SUAVE);
+                estilo::texto(
+                    x,
+                    y + 20.0 * f,
+                    "No orderable item with that name.",
+                    14,
+                    estilo::SUAVE,
+                );
             }
             let alt = 40.0 * f;
             let area = Rect::new(x, y, w, (dir.y + dir.h - 8.0 * f - y).max(alt));
-            let toque = abre_lista(&mut self.pedidos.rolagem_item, area, achados.len(), alt, livre);
+            let toque = abre_lista(
+                &mut self.pedidos.rolagem_item,
+                area,
+                achados.len(),
+                alt,
+                livre,
+            );
             let arrastando = self.pedidos.rolagem_item.arrastando();
             let mut escolhido = None;
             for (k, (id, nome)) in achados.iter().enumerate() {
-                let Some(mut r) = linha_da_lista(&self.pedidos.rolagem_item, area, k, alt, f) else {
+                let Some(mut r) = linha_da_lista(&self.pedidos.rolagem_item, area, k, alt, f)
+                else {
                     continue;
                 };
                 r.h = alt - 4.0 * f;
                 let sobre = livre && !arrastando && r.toca(m) && area.toca(m);
                 estilo::cartao(r, sobre, false);
-                crate::icones::icone_com_3d(*id, Rect::new(r.x + 4.0 * f, r.y + 2.0 * f, r.h - 4.0 * f, r.h - 4.0 * f), None, None, Some((c.vox, c.solido)));
-                estilo::texto_ajustado(nome, r.x + r.h + 8.0 * f, r.center().y + 5.0 * f, r.w - r.h - 16.0 * f, 14, estilo::TEXTO);
+                crate::icones::icone_com_3d(
+                    *id,
+                    Rect::new(r.x + 4.0 * f, r.y + 2.0 * f, r.h - 4.0 * f, r.h - 4.0 * f),
+                    None,
+                    None,
+                    Some((c.vox, c.solido)),
+                );
+                estilo::texto_ajustado(
+                    nome,
+                    r.x + r.h + 8.0 * f,
+                    r.center().y + 5.0 * f,
+                    r.w - r.h - 16.0 * f,
+                    14,
+                    estilo::TEXTO,
+                );
                 if toque.is_some_and(|p| r.toca(p)) {
                     escolhido = Some(*id);
                 }
@@ -1440,11 +1665,32 @@ impl Mercado {
         let nome = if item == shared::item_id::ENERGIA_MIL {
             "Energy ×1,000".to_string()
         } else {
-            c.nomes.get(&item).cloned().unwrap_or_else(|| format!("Item {item}"))
+            c.nomes
+                .get(&item)
+                .cloned()
+                .unwrap_or_else(|| format!("Item {item}"))
         };
-        crate::icones::icone_com_3d(item, Rect::new(x, y, 44.0 * f, 44.0 * f), None, None, Some((c.vox, c.solido)));
-        estilo::texto_ajustado(&nome, x + 54.0 * f, y + 28.0 * f, w - 54.0 * f - 90.0 * f, 16, estilo::TEXTO);
-        if botao(Rect::new(x + w - 84.0 * f, y + 4.0 * f, 84.0 * f, 36.0 * f), "Change", livre, false) {
+        crate::icones::icone_com_3d(
+            item,
+            Rect::new(x, y, 44.0 * f, 44.0 * f),
+            None,
+            None,
+            Some((c.vox, c.solido)),
+        );
+        estilo::texto_ajustado(
+            &nome,
+            x + 54.0 * f,
+            y + 28.0 * f,
+            w - 54.0 * f - 90.0 * f,
+            16,
+            estilo::TEXTO,
+        );
+        if botao(
+            Rect::new(x + w - 84.0 * f, y + 4.0 * f, 84.0 * f, 36.0 * f),
+            "Change",
+            livre,
+            false,
+        ) {
             self.pedidos.item = None;
             return;
         }
@@ -1454,18 +1700,44 @@ impl Mercado {
         // quantity, the unit price may be a fraction, and changing the
         // quantity keeps the unit price.
         let antes = self.pedidos.qtd;
-        seletor(&mut self.edicao, "pedido_qtd", c.digitado, Rect::new(x, y, w, 42.0 * f), "Quantity", &mut self.pedidos.qtd, 1, regras::QTD_MAX_POR_PEDIDO, true, f);
+        seletor(
+            &mut self.edicao,
+            "pedido_qtd",
+            c.digitado,
+            Rect::new(x, y, w, 42.0 * f),
+            "Quantity",
+            &mut self.pedidos.qtd,
+            1,
+            regras::QTD_MAX_POR_PEDIDO,
+            true,
+            f,
+        );
         self.pedidos.preco = reescala_total(self.pedidos.preco, antes, self.pedidos.qtd);
         y += 66.0 * f;
-        seletor(&mut self.edicao, "pedido_preco", c.digitado, Rect::new(x, y, w, 42.0 * f), "Total price (gold)", &mut self.pedidos.preco, 1, self.pedidos.qtd.saturating_mul(regras::PRECO_MAX_UNIT), true, f);
+        seletor(
+            &mut self.edicao,
+            "pedido_preco",
+            c.digitado,
+            Rect::new(x, y, w, 42.0 * f),
+            "Total price (gold)",
+            &mut self.pedidos.preco,
+            1,
+            self.pedidos.qtd.saturating_mul(regras::PRECO_MAX_UNIT),
+            true,
+            f,
+        );
         y += 60.0 * f;
-        let total = Some(self.pedidos.preco).filter(|t| regras::preco_total_valido(self.pedidos.qtd, *t));
+        let total =
+            Some(self.pedidos.preco).filter(|t| regras::preco_total_valido(self.pedidos.qtd, *t));
         let cabe = total.is_some_and(|t| t <= c.ouro);
         linha_valor(
             x,
             y,
             w,
-            &format!("Each: {} gold · held now", regras::fmt_unitario(regras::preco_unitario(self.pedidos.qtd, self.pedidos.preco))),
+            &format!(
+                "Each: {} gold · held now",
+                regras::fmt_unitario(regras::preco_unitario(self.pedidos.qtd, self.pedidos.preco))
+            ),
             &total.map_or("—".to_string(), milhar),
             if cabe { estilo::OURO } else { estilo::VERMELHO },
             f,
@@ -1480,12 +1752,29 @@ impl Mercado {
             .map(|p| p.unitario())
             .max_by(|a, b| a.total_cmp(b));
         for (valor, com, sem, cor) in [
-            (recomendado, "Recommended: {} gold each", "Recommended: not enough data yet", estilo::OURO),
-            (maior, "Best buy order now: {} gold each", "No other buy order for this item", estilo::TEXTO),
+            (
+                recomendado,
+                "Recommended: {} gold each",
+                "Recommended: not enough data yet",
+                estilo::OURO,
+            ),
+            (
+                maior,
+                "Best buy order now: {} gold each",
+                "No other buy order for this item",
+                estilo::TEXTO,
+            ),
         ] {
             match valor {
                 Some(v) => {
-                    estilo::texto_ajustado(&com.replace("{}", &regras::fmt_unitario(v)), x, y, w - 80.0 * f, 14, cor);
+                    estilo::texto_ajustado(
+                        &com.replace("{}", &regras::fmt_unitario(v)),
+                        x,
+                        y,
+                        w - 80.0 * f,
+                        14,
+                        cor,
+                    );
                     let usar = Rect::new(x + w - 70.0 * f, y - 18.0 * f, 70.0 * f, 26.0 * f);
                     let alvo = total_de_unitario(v, self.pedidos.qtd);
                     if self.pedidos.preco != alvo && botao(usar, "Use", livre, false) {
@@ -1498,12 +1787,23 @@ impl Mercado {
         }
         let vagas = self.pedidos.meus.len() < regras::MAX_PEDIDOS;
         if !vagas {
-            estilo::texto_ajustado(&regras::Recusa::MuitosPedidos.texto(), x, y, w, 13, estilo::VERMELHO);
+            estilo::texto_ajustado(
+                &regras::Recusa::MuitosPedidos.texto(),
+                x,
+                y,
+                w,
+                13,
+                estilo::VERMELHO,
+            );
         } else if !cabe {
             estilo::texto(x, y, "Not enough gold.", 13, estilo::VERMELHO);
         }
         let bt = Rect::new(x, dir.y + dir.h - 58.0 * f, w, 44.0 * f);
-        let rotulo = format!("Place order ×{} for {} gold", milhar(self.pedidos.qtd), milhar(self.pedidos.preco));
+        let rotulo = format!(
+            "Place order ×{} for {} gold",
+            milhar(self.pedidos.qtd),
+            milhar(self.pedidos.preco)
+        );
         if botao(bt, &rotulo, livre && cabe && vagas, true) {
             saida.push(ClientMessage::MercadoPedirCompra {
                 item_id: item,
@@ -1537,10 +1837,19 @@ impl Mercado {
         let alt = 58.0 * f;
         // Listings far from today's recommended price (prices are recounted
         // every 5 min): red, with "Adjust price"; the header adjusts them all.
-        let ajustes: Vec<Option<(f64, u64)>> = self.meus.iter().map(|an| ajuste_do_anuncio(an, &self.precos)).collect();
+        let ajustes: Vec<Option<(f64, u64)>> = self
+            .meus
+            .iter()
+            .map(|an| ajuste_do_anuncio(an, &self.precos))
+            .collect();
         let longe = ajustes.iter().filter(|a| a.is_some()).count();
         if longe > 0 {
-            let b = Rect::new(esq.x + esq.w - 150.0 * f, esq.y - 6.0 * f, 150.0 * f, 30.0 * f);
+            let b = Rect::new(
+                esq.x + esq.w - 150.0 * f,
+                esq.y - 6.0 * f,
+                150.0 * f,
+                30.0 * f,
+            );
             if crate::ui::botao(b, &format!("Adjust all ({longe})"), livre) {
                 for (an, aj) in self.meus.iter().zip(&ajustes) {
                     if let Some((_, rec)) = aj {
@@ -1630,12 +1939,25 @@ impl Mercado {
 
     /// The listing slots box at the top of `dir`: how many are in use and the
     /// next +5, in TP or in gold. Returns where the box ends.
-    fn vagas(&self, dir: Rect, c: &Contexto, f: f32, livre: bool, saida: &mut Vec<ClientMessage>) -> f32 {
+    fn vagas(
+        &self,
+        dir: Rect,
+        c: &Contexto,
+        f: f32,
+        livre: bool,
+        saida: &mut Vec<ClientMessage>,
+    ) -> f32 {
         let (x, w) = (dir.x + 14.0 * f, dir.w - 28.0 * f);
         let mut y = dir.y + 26.0 * f;
         estilo::texto_forte(x, y, "Listing slots", 15, estilo::SUAVE);
         let uso = format!("{} / {}", self.meus.len(), self.max_anuncios());
-        estilo::texto_forte(x + w - estilo::medir_forte(&uso, 15), y, &uso, 15, estilo::OURO);
+        estilo::texto_forte(
+            x + w - estilo::medir_forte(&uso, 15),
+            y,
+            &uso,
+            15,
+            estilo::OURO,
+        );
         y += 14.0 * f;
         match regras::proxima_vaga(self.compras_vagas) {
             Some((tp, ouro)) => {
@@ -1654,16 +1976,34 @@ impl Mercado {
                 let tem_tp = self.tp.is_some_and(|t| t >= tp);
                 let r_tp = Rect::new(x, y, bw, 36.0 * f);
                 if botao(r_tp, &format!("{} TP", milhar(tp)), livre && tem_tp, false) {
-                    saida.push(ClientMessage::MercadoComprarVagas { compra, com_tp: true });
+                    saida.push(ClientMessage::MercadoComprarVagas {
+                        compra,
+                        com_tp: true,
+                    });
                 }
                 let r_ouro = Rect::new(x + bw + meio, y, bw, 36.0 * f);
-                if botao(r_ouro, &format!("{} gold", milhar(ouro)), livre && c.ouro >= ouro, false) {
-                    saida.push(ClientMessage::MercadoComprarVagas { compra, com_tp: false });
+                if botao(
+                    r_ouro,
+                    &format!("{} gold", milhar(ouro)),
+                    livre && c.ouro >= ouro,
+                    false,
+                ) {
+                    saida.push(ClientMessage::MercadoComprarVagas {
+                        compra,
+                        com_tp: false,
+                    });
                 }
                 y += 36.0 * f;
             }
             None => {
-                estilo::texto_ajustado("You have every slot there is.", x, y + 12.0 * f, w, 13, estilo::SUAVE);
+                estilo::texto_ajustado(
+                    "You have every slot there is.",
+                    x,
+                    y + 12.0 * f,
+                    w,
+                    13,
+                    estilo::SUAVE,
+                );
                 y += 18.0 * f;
             }
         }
@@ -1842,7 +2182,10 @@ impl Mercado {
         let mut y = dir.y + 92.0 * f;
         if c.nivel < regras::NIVEL_PARA_VENDER {
             estilo::texto_ajustado(
-                &format!("Selling TP unlocks at level {}.", shared::progressao::texto_de_nivel(regras::NIVEL_PARA_VENDER)),
+                &format!(
+                    "Selling TP unlocks at level {}.",
+                    shared::progressao::texto_de_nivel(regras::NIVEL_PARA_VENDER)
+                ),
                 x,
                 y,
                 w,
@@ -1909,8 +2252,20 @@ impl Mercado {
             estilo::OURO,
             f,
         );
-        let menor = self.lista_tp.iter().filter(|an| !an.meu).map(|an| an.unitario().ceil() as u64).min();
-        referencias(&mut self.tp_preco, recomendado, menor, "Lowest on the market: {} gold", (x, y, w, f), livre);
+        let menor = self
+            .lista_tp
+            .iter()
+            .filter(|an| !an.meu)
+            .map(|an| an.unitario().ceil() as u64)
+            .min();
+        referencias(
+            &mut self.tp_preco,
+            recomendado,
+            menor,
+            "Lowest on the market: {} gold",
+            (x, y, w, f),
+            livre,
+        );
         let bt = Rect::new(x, dir.y + dir.h - 58.0 * f, w, 44.0 * f);
         let pode = livre
             && c.nivel >= regras::NIVEL_PARA_VENDER
@@ -1929,10 +2284,23 @@ impl Mercado {
     /// ENERGY for gold, like the TP tab: the lots on sale on the left, the
     /// form on the right. A lot is 1,000 Energy (`ENERGIA_POR_LOTE`); it
     /// leaves the character when listed and arrives as Energy when bought.
-    fn aba_energia(&mut self, a: Rect, c: &Contexto, f: f32, livre: bool, saida: &mut Vec<ClientMessage>) {
+    fn aba_energia(
+        &mut self,
+        a: Rect,
+        c: &Contexto,
+        f: f32,
+        livre: bool,
+        saida: &mut Vec<ClientMessage>,
+    ) {
         let esq = Rect::new(a.x, a.y, a.w * 0.56, a.h);
         let dir = Rect::new(a.x + a.w * 0.59, a.y, a.w * 0.41, a.h);
-        estilo::texto_forte(esq.x, esq.y + 14.0 * f, "Energy for sale (gold per 1,000)", 14, estilo::SUAVE);
+        estilo::texto_forte(
+            esq.x,
+            esq.y + 14.0 * f,
+            "Energy for sale (gold per 1,000)",
+            14,
+            estilo::SUAVE,
+        );
         let alt = 58.0 * f;
         let lista = Rect::new(esq.x, esq.y + 26.0 * f, esq.w, esq.h - 26.0 * f);
         let lotes: Vec<AnuncioNet> = self
@@ -1943,20 +2311,38 @@ impl Mercado {
             .collect();
         let toque = abre_lista(&mut self.rolagem, lista, lotes.len(), alt, livre);
         if lotes.is_empty() {
-            estilo::texto(lista.x, lista.y + 30.0 * f, "Nobody selling Energy right now.", 15, estilo::SUAVE);
+            estilo::texto(
+                lista.x,
+                lista.y + 30.0 * f,
+                "Nobody selling Energy right now.",
+                15,
+                estilo::SUAVE,
+            );
         }
         let mut comprar = None;
         for (i, an) in lotes.iter().enumerate() {
             let Some(r) = linha_da_lista(&self.rolagem, lista, i, alt, f) else {
                 continue;
             };
-            if linha_de_anuncio(r, an, c, f, livre, if an.meu { "Yours" } else { "Buy" }, !an.meu, toque) {
+            if linha_de_anuncio(
+                r,
+                an,
+                c,
+                f,
+                livre,
+                if an.meu { "Yours" } else { "Buy" },
+                !an.meu,
+                toque,
+            ) {
                 comprar = Some(an.clone());
             }
         }
         fecha_lista(&self.rolagem, lista, lotes.len(), alt);
         if let Some(an) = comprar {
-            self.compra = Some(Compra { anuncio: an, qtd: 1 });
+            self.compra = Some(Compra {
+                anuncio: an,
+                qtd: 1,
+            });
         }
 
         estilo::painel(dir);
@@ -1965,12 +2351,28 @@ impl Mercado {
         estilo::texto_forte(x, dir.y + 32.0 * f, rotulo, 18, estilo::SUAVE);
         let ix = x + estilo::medir_forte(rotulo, 18) + 22.0 * f;
         estilo::icone_energia(vec2(ix, dir.y + 26.0 * f), 22.0 * f);
-        estilo::texto_forte(ix + 16.0 * f, dir.y + 32.0 * f, &milhar(c.energia), 18, estilo::OURO);
-        estilo::texto_ajustado("Sold in lots of 1,000. It leaves you when listed.", x, dir.y + 54.0 * f, w, 12, estilo::SUAVE);
+        estilo::texto_forte(
+            ix + 16.0 * f,
+            dir.y + 32.0 * f,
+            &milhar(c.energia),
+            18,
+            estilo::OURO,
+        );
+        estilo::texto_ajustado(
+            "Sold in lots of 1,000. It leaves you when listed.",
+            x,
+            dir.y + 54.0 * f,
+            w,
+            12,
+            estilo::SUAVE,
+        );
         let mut y = dir.y + 92.0 * f;
         if c.nivel < regras::NIVEL_PARA_VENDER {
             estilo::texto_ajustado(
-                &format!("Selling Energy unlocks at level {}.", shared::progressao::texto_de_nivel(regras::NIVEL_PARA_VENDER)),
+                &format!(
+                    "Selling Energy unlocks at level {}.",
+                    shared::progressao::texto_de_nivel(regras::NIVEL_PARA_VENDER)
+                ),
                 x,
                 y,
                 w,
@@ -2027,9 +2429,28 @@ impl Mercado {
             estilo::SUAVE,
             f,
         );
-        linha_valor(x, y + 44.0 * f, w, "You receive", &milhar(regras::liquido(bruto)), estilo::OURO, f);
-        let menor = lotes.iter().filter(|an| !an.meu).map(|an| an.unitario().ceil() as u64).min();
-        referencias(&mut self.energia_preco, recomendado, menor, "Lowest on the market: {} gold", (x, y, w, f), livre);
+        linha_valor(
+            x,
+            y + 44.0 * f,
+            w,
+            "You receive",
+            &milhar(regras::liquido(bruto)),
+            estilo::OURO,
+            f,
+        );
+        let menor = lotes
+            .iter()
+            .filter(|an| !an.meu)
+            .map(|an| an.unitario().ceil() as u64)
+            .min();
+        referencias(
+            &mut self.energia_preco,
+            recomendado,
+            menor,
+            "Lowest on the market: {} gold",
+            (x, y, w, f),
+            livre,
+        );
         let bt = Rect::new(x, dir.y + dir.h - 58.0 * f, w, 44.0 * f);
         let pode = livre
             && c.nivel >= regras::NIVEL_PARA_VENDER
@@ -2075,14 +2496,31 @@ fn referencias_lote(
     livre: bool,
 ) {
     let linhas = [
-        (recomendado, "Recommended: {} gold each", "Recommended: not enough data yet", estilo::OURO),
-        (menor, rotulo_menor, "Lowest on the market: nobody is selling this", estilo::TEXTO),
+        (
+            recomendado,
+            "Recommended: {} gold each",
+            "Recommended: not enough data yet",
+            estilo::OURO,
+        ),
+        (
+            menor,
+            rotulo_menor,
+            "Lowest on the market: nobody is selling this",
+            estilo::TEXTO,
+        ),
     ];
     for (k, (valor, com, sem, cor)) in linhas.into_iter().enumerate() {
         let ry = y + (80.0 + k as f32 * 36.0) * f;
         match valor {
             Some(v) => {
-                estilo::texto_ajustado(&com.replace("{}", &regras::fmt_unitario(v)), x, ry, w - 80.0 * f, 14, cor);
+                estilo::texto_ajustado(
+                    &com.replace("{}", &regras::fmt_unitario(v)),
+                    x,
+                    ry,
+                    w - 80.0 * f,
+                    14,
+                    cor,
+                );
                 let usar = Rect::new(x + w - 70.0 * f, ry - 18.0 * f, 70.0 * f, 26.0 * f);
                 let alvo = total_de_unitario(v, qtd);
                 if *total != alvo && botao(usar, "Use", livre, false) {
@@ -2103,14 +2541,31 @@ fn referencias(
     livre: bool,
 ) {
     let linhas = [
-        (recomendado, "Recommended: {} gold", "Recommended: not enough data yet", estilo::OURO),
-        (menor, rotulo_menor, "Lowest on the market: nobody is selling this", estilo::TEXTO),
+        (
+            recomendado,
+            "Recommended: {} gold",
+            "Recommended: not enough data yet",
+            estilo::OURO,
+        ),
+        (
+            menor,
+            rotulo_menor,
+            "Lowest on the market: nobody is selling this",
+            estilo::TEXTO,
+        ),
     ];
     for (k, (valor, com, sem, cor)) in linhas.into_iter().enumerate() {
         let ry = y + (80.0 + k as f32 * 36.0) * f;
         match valor {
             Some(v) => {
-                estilo::texto_ajustado(&com.replace("{}", &milhar(v)), x, ry, w - 80.0 * f, 14, cor);
+                estilo::texto_ajustado(
+                    &com.replace("{}", &milhar(v)),
+                    x,
+                    ry,
+                    w - 80.0 * f,
+                    14,
+                    cor,
+                );
                 let usar = Rect::new(x + w - 70.0 * f, ry - 18.0 * f, 70.0 * f, 26.0 * f);
                 if *preco != v && botao(usar, "Use", livre, false) {
                     *preco = v;
@@ -2237,40 +2692,76 @@ fn linha_de_anuncio(
         bw,
         38.0 * f,
     );
-    botao_na_lista(b, rotulo, livre && ativo, ativo && rotulo != "Cancel", toque)
+    botao_na_lista(
+        b,
+        rotulo,
+        livre && ativo,
+        ativo && rotulo != "Cancel",
+        toque,
+    )
 }
 
 /// (deviation, recommended price) of a listing far from the market value
 /// (`regras::longe_do_mercado`); `None` when it is close or has no price to compare.
-fn ajuste_do_anuncio(an: &AnuncioNet, precos: &std::collections::HashMap<u16, f64>) -> Option<(f64, u64)> {
+fn ajuste_do_anuncio(
+    an: &AnuncioNet,
+    precos: &std::collections::HashMap<u16, f64>,
+) -> Option<(f64, u64)> {
     if an.tipo != regras::TIPO_ITEM {
         return None;
     }
     let rec = shared::precos::recomendado(precos, an.item_id, an.instancia.as_ref())?;
     let rec = rec.clamp(1, regras::PRECO_MAX_UNIT);
     let unit = an.unitario();
-    regras::longe_do_mercado(unit, Some(rec)).then(|| (regras::desvio(unit, Some(rec)).unwrap_or(0.0), rec))
+    regras::longe_do_mercado(unit, Some(rec))
+        .then(|| (regras::desvio(unit, Some(rec)).unwrap_or(0.0), rec))
 }
 
 /// "+80%" / "−60%".
 fn texto_do_desvio(d: f64) -> String {
     let pct = (d * 100.0).round() as i64;
-    if pct >= 0 { format!("+{pct}%") } else { format!("−{}%", -pct) }
+    if pct >= 0 {
+        format!("+{pct}%")
+    } else {
+        format!("−{}%", -pct)
+    }
 }
 
 /// The far-from-market warning over a "my listing" row: red rim, the text
 /// on the second line, and an "Adjust price" button left of Cancel. `true`
 /// on the button's tap.
-fn alerta_de_preco(r: Rect, desvio: f64, rec: u64, f: f32, livre: bool, toque: Option<Vec2>) -> bool {
+fn alerta_de_preco(
+    r: Rect,
+    desvio: f64,
+    rec: u64,
+    f: f32,
+    livre: bool,
+    toque: Option<Vec2>,
+) -> bool {
     estilo::borda_arredondada(r, estilo::RAIO_PEQUENO, 2.0, estilo::VERMELHO);
     let icone = icone_do_anuncio(r, f);
     let x = icone.x + icone.w + 10.0 * f;
     let bw = 116.0 * f;
-    let b = Rect::new(r.x + r.w - 2.0 * bw - 12.0 * f, r.y + (r.h - 38.0 * f) * 0.5, bw, 38.0 * f);
+    let b = Rect::new(
+        r.x + r.w - 2.0 * bw - 12.0 * f,
+        r.y + (r.h - 38.0 * f) * 0.5,
+        bw,
+        38.0 * f,
+    );
     // Over the "realm · seller" line, which says nothing on my own listing.
-    draw_rectangle(x - 2.0, r.y + 29.0 * f, (b.x - x - 90.0 * f).max(0.0), 15.0 * f, estilo::FUNDO_BAIXO);
+    draw_rectangle(
+        x - 2.0,
+        r.y + 29.0 * f,
+        (b.x - x - 90.0 * f).max(0.0),
+        15.0 * f,
+        estilo::FUNDO_BAIXO,
+    );
     estilo::texto_ajustado(
-        &format!("Price far from market value ({}) · market {} gold", texto_do_desvio(desvio), milhar(rec)),
+        &format!(
+            "Price far from market value ({}) · market {} gold",
+            texto_do_desvio(desvio),
+            milhar(rec)
+        ),
         x,
         r.y + 40.0 * f,
         (b.x - x - 90.0 * f).max(40.0 * f),
@@ -2292,14 +2783,30 @@ fn margem_da_barra(f: f32) -> f32 {
 /// with glide, wheel and bar (`rolagem::Rolagem`), then clips the drawing to
 /// `lista`. Returns the TAP — a release that did not drag — which the rows'
 /// buttons answer instead of the press, so dragging over a button scrolls.
-fn abre_lista(rol: &mut crate::rolagem::Rolagem, lista: Rect, n: usize, alt: f32, livre: bool) -> Option<Vec2> {
-    let toque = if livre { rol.quadro(lista, n as f32 * alt, alt) } else { None };
+fn abre_lista(
+    rol: &mut crate::rolagem::Rolagem,
+    lista: Rect,
+    n: usize,
+    alt: f32,
+    livre: bool,
+) -> Option<Vec2> {
+    let toque = if livre {
+        rol.quadro(lista, n as f32 * alt, alt)
+    } else {
+        None
+    };
     crate::rolagem::recortar(Some(lista));
     toque
 }
 
 /// Row `i` of a scrolled list on screen, or `None` while it is out of sight.
-fn linha_da_lista(rol: &crate::rolagem::Rolagem, lista: Rect, i: usize, alt: f32, f: f32) -> Option<Rect> {
+fn linha_da_lista(
+    rol: &crate::rolagem::Rolagem,
+    lista: Rect,
+    i: usize,
+    alt: f32,
+    f: f32,
+) -> Option<Rect> {
     let r = Rect::new(
         lista.x,
         lista.y + i as f32 * alt - rol.pos,
@@ -2377,7 +2884,12 @@ fn catalogo_pedivel(
         .iter()
         .filter(|(id, nome)| {
             !nome.is_empty()
-                && regras::pode_pedir_item(**id, equipaveis.contains(id), vinculados.contains(id), u32::MAX)
+                && regras::pode_pedir_item(
+                    **id,
+                    equipaveis.contains(id),
+                    vinculados.contains(id),
+                    u32::MAX,
+                )
                 && nome.to_lowercase().contains(&t)
         })
         .map(|(id, nome)| (*id, nome.clone()))
@@ -2398,13 +2910,25 @@ fn nome_do_pedido(pd: &PedidoNet, c: &Contexto) -> String {
     if pd.item_id == shared::item_id::ENERGIA_MIL {
         return pd.nome.clone();
     }
-    c.nomes.get(&pd.item_id).cloned().unwrap_or_else(|| pd.nome.clone())
+    c.nomes
+        .get(&pd.item_id)
+        .cloned()
+        .unwrap_or_else(|| pd.nome.clone())
 }
 
 /// A buy order row: item, buyer, units still wanted, price each, a button.
 /// `toque` = the list's tap (`abre_lista`): the button answers it, not the press.
 #[allow(clippy::too_many_arguments)]
-fn linha_de_pedido(r: Rect, pd: &PedidoNet, c: &Contexto, f: f32, livre: bool, rotulo: &str, ativo: bool, toque: Option<Vec2>) -> bool {
+fn linha_de_pedido(
+    r: Rect,
+    pd: &PedidoNet,
+    c: &Contexto,
+    f: f32,
+    livre: bool,
+    rotulo: &str,
+    ativo: bool,
+    toque: Option<Vec2>,
+) -> bool {
     estilo::cartao(r, false, pd.meu);
     let icone = icone_do_anuncio(r, f);
     crate::icones::icone_com_3d(pd.item_id, icone, None, None, Some((c.vox, c.solido)));
@@ -2414,13 +2938,44 @@ fn linha_de_pedido(r: Rect, pd: &PedidoNet, c: &Contexto, f: f32, livre: bool, r
     let qtd = format!("×{}", milhar(pd.qtd));
     let xp = r.x + r.w - bw - 16.0 * f - estilo::medir_forte(&preco, 16);
     let largura_nome = (xp - x - 90.0 * f).max(60.0 * f);
-    estilo::texto_ajustado(&nome_do_pedido(pd, c), x, r.y + 22.0 * f, largura_nome, 16, estilo::TEXTO);
-    estilo::texto_ajustado(&format!("Wanted by {} · {}", pd.realm, pd.comprador), x, r.y + 40.0 * f, largura_nome, 12, estilo::SUAVE);
-    estilo::texto(xp, r.y + 48.0 * f, &format!("{} each", regras::fmt_unitario(pd.unitario())), 11, estilo::SUAVE);
+    estilo::texto_ajustado(
+        &nome_do_pedido(pd, c),
+        x,
+        r.y + 22.0 * f,
+        largura_nome,
+        16,
+        estilo::TEXTO,
+    );
+    estilo::texto_ajustado(
+        &format!("Wanted by {} · {}", pd.realm, pd.comprador),
+        x,
+        r.y + 40.0 * f,
+        largura_nome,
+        12,
+        estilo::SUAVE,
+    );
+    estilo::texto(
+        xp,
+        r.y + 48.0 * f,
+        &format!("{} each", regras::fmt_unitario(pd.unitario())),
+        11,
+        estilo::SUAVE,
+    );
     estilo::texto(xp - 70.0 * f, r.y + 32.0 * f, &qtd, 15, estilo::TEXTO);
     estilo::texto_forte(xp, r.y + 32.0 * f, &preco, 16, estilo::OURO);
-    let b = Rect::new(r.x + r.w - bw - 6.0 * f, r.y + (r.h - 38.0 * f) * 0.5, bw, 38.0 * f);
-    botao_na_lista(b, rotulo, livre && ativo, ativo && rotulo != "Cancel", toque)
+    let b = Rect::new(
+        r.x + r.w - bw - 6.0 * f,
+        r.y + (r.h - 38.0 * f) * 0.5,
+        bw,
+        38.0 * f,
+    );
+    botao_na_lista(
+        b,
+        rotulo,
+        livre && ativo,
+        ativo && rotulo != "Cancel",
+        toque,
+    )
 }
 
 /// A number being typed into a `seletor` (owner, 12/11/2026: "tap the number
@@ -2567,7 +3122,13 @@ pub(crate) fn seletor(
         *valor = valor_digitado(&ed.texto, min, max).unwrap_or(ed.original);
         if ed.texto.is_empty() {
             // The old value, faint, while nothing is typed.
-            estilo::texto_centro(meio.center().x, meio.center().y + 6.0 * f, &milhar(ed.original), 15, estilo::SUAVE);
+            estilo::texto_centro(
+                meio.center().x,
+                meio.center().y + 6.0 * f,
+                &milhar(ed.original),
+                15,
+                estilo::SUAVE,
+            );
         }
         let enter = is_key_pressed(KeyCode::Enter)
             || is_key_pressed(KeyCode::KpEnter)
@@ -2603,7 +3164,11 @@ pub(crate) fn seletor(
         meio,
         estilo::RAIO_PEQUENO,
         1.0,
-        if sobre { estilo::alfa(estilo::ACENTO, 0.85) } else { estilo::BORDA_FORTE },
+        if sobre {
+            estilo::alfa(estilo::ACENTO, 0.85)
+        } else {
+            estilo::BORDA_FORTE
+        },
     );
     let t = milhar(*valor);
     estilo::texto_centro_forte(
@@ -2627,19 +3192,41 @@ mod testes_do_ajuste {
         let mut precos = std::collections::HashMap::new();
         precos.insert(7u16, 100.0);
         let an = |preco_unit: u64, tipo: u8| AnuncioNet {
-            id: "a".into(), tipo, item_id: 7, nome: "Ore".into(), categoria: 0, instancia: None,
-            qtd: 1, preco_total: preco_unit, realm: "SA01".into(), vendedor: "Ana".into(), meu: true,
+            id: "a".into(),
+            tipo,
+            item_id: 7,
+            nome: "Ore".into(),
+            categoria: 0,
+            instancia: None,
+            qtd: 1,
+            preco_total: preco_unit,
+            realm: "SA01".into(),
+            vendedor: "Ana".into(),
+            meu: true,
         };
-        assert_eq!(ajuste_do_anuncio(&an(100, regras::TIPO_ITEM), &precos), None);
-        assert_eq!(ajuste_do_anuncio(&an(150, regras::TIPO_ITEM), &precos), None);
+        assert_eq!(
+            ajuste_do_anuncio(&an(100, regras::TIPO_ITEM), &precos),
+            None
+        );
+        assert_eq!(
+            ajuste_do_anuncio(&an(150, regras::TIPO_ITEM), &precos),
+            None
+        );
         let (d, rec) = ajuste_do_anuncio(&an(300, regras::TIPO_ITEM), &precos).unwrap();
         assert_eq!(rec, 100);
         assert_eq!(texto_do_desvio(d), "+200%");
         let (d, _) = ajuste_do_anuncio(&an(20, regras::TIPO_ITEM), &precos).unwrap();
         assert_eq!(texto_do_desvio(d), "−80%");
-        assert_eq!(ajuste_do_anuncio(&an(300, regras::TIPO_TP), &precos), None, "TP has no recommended price");
+        assert_eq!(
+            ajuste_do_anuncio(&an(300, regras::TIPO_TP), &precos),
+            None,
+            "TP has no recommended price"
+        );
         precos.clear();
-        assert_eq!(ajuste_do_anuncio(&an(300, regras::TIPO_ITEM), &precos), None);
+        assert_eq!(
+            ajuste_do_anuncio(&an(300, regras::TIPO_ITEM), &precos),
+            None
+        );
     }
 }
 
@@ -2665,13 +3252,33 @@ mod tests {
 
     #[test]
     fn numero_digitado_so_digitos_e_preso_aos_limites() {
-        assert_eq!(valor_digitado("", 1, 480), None, "nothing typed keeps the old value");
+        assert_eq!(
+            valor_digitado("", 1, 480),
+            None,
+            "nothing typed keeps the old value"
+        );
         assert_eq!(valor_digitado("250", 1, 480), Some(250));
-        assert_eq!(valor_digitado("9999", 1, 480), Some(480), "above max clamps to max");
-        assert_eq!(valor_digitado("0", 1, 480), Some(1), "below min clamps to min");
+        assert_eq!(
+            valor_digitado("9999", 1, 480),
+            Some(480),
+            "above max clamps to max"
+        );
+        assert_eq!(
+            valor_digitado("0", 1, 480),
+            Some(1),
+            "below min clamps to min"
+        );
         assert_eq!(valor_digitado("007", 1, 480), Some(7));
-        assert_eq!(valor_digitado("99999999999999999999999", 1, u64::MAX), Some(u64::MAX), "overflow is max");
-        assert_eq!(valor_digitado("5", 1, 0), Some(1), "an empty range still gives min");
+        assert_eq!(
+            valor_digitado("99999999999999999999999", 1, u64::MAX),
+            Some(u64::MAX),
+            "overflow is max"
+        );
+        assert_eq!(
+            valor_digitado("5", 1, 0),
+            Some(1),
+            "an empty range still gives min"
+        );
         assert_eq!(
             so_digitos(&['1', 'a', '-', '2', ' ', '\u{8}', '\r', '.', '3']),
             vec!['1', '2', '\u{8}', '3'],
@@ -2681,12 +3288,19 @@ mod tests {
 
     #[test]
     fn edicao_comeca_no_fim_do_quadro_e_some_sem_o_campo() {
-        let mut m = Mercado { aberto: true, foco_busca: true, ..Default::default() };
+        let mut m = Mercado {
+            aberto: true,
+            foco_busca: true,
+            ..Default::default()
+        };
         m.edicao.pedido = Some(("venda_qtd", 300.0, 7));
         m.fim_da_edicao();
         assert_eq!(m.edicao.id, Some("venda_qtd"));
         assert!(!m.foco_busca, "the search field gives up the keyboard");
-        assert!(m.foco_na_busca(), "a number being typed opens the on-screen keyboard");
+        assert!(
+            m.foco_na_busca(),
+            "a number being typed opens the on-screen keyboard"
+        );
         // Drawn this frame: it stays.
         m.edicao.visto = true;
         m.fim_da_edicao();
@@ -2711,13 +3325,24 @@ mod tests {
         let mut inst = shared::ItemInstance::vazia_de_grau(3);
         inst.tier = 2;
         inst.refinement = 3;
-        assert_eq!(nome_com_degrau("Twin Pistols", Some(&inst)), "Twin Pistols T II +3");
+        assert_eq!(
+            nome_com_degrau("Twin Pistols", Some(&inst)),
+            "Twin Pistols T II +3"
+        );
         inst.refinement = 0;
         inst.tier = 4;
         assert_eq!(nome_com_degrau("Katana", Some(&inst)), "Katana T IV");
         inst.tier = 0;
-        assert_eq!(nome_com_degrau("Wolf Cub", Some(&inst)), "Wolf Cub T I", "an old instance reads as tier I");
-        assert_eq!(nome_com_degrau("Copper", None), "Copper", "no instance, no tier");
+        assert_eq!(
+            nome_com_degrau("Wolf Cub", Some(&inst)),
+            "Wolf Cub T I",
+            "an old instance reads as tier I"
+        );
+        assert_eq!(
+            nome_com_degrau("Copper", None),
+            "Copper",
+            "no instance, no tier"
+        );
         // A listing row and the buy dialog name it through `nome_do_anuncio`.
         let nomes: HashMap<u16, String> = [(60, "Wood".to_string())].into_iter().collect();
         let mut an = anuncio(regras::TIPO_ITEM);
@@ -2728,7 +3353,10 @@ mod tests {
         assert_eq!(nome_do_anuncio_com(&an, &nomes), "Wood T III +5");
         an.instancia = None;
         assert_eq!(nome_do_anuncio_com(&an, &nomes), "Wood");
-        assert_eq!(nome_do_anuncio_com(&anuncio(regras::TIPO_TP), &nomes), "Tempest Points");
+        assert_eq!(
+            nome_do_anuncio_com(&anuncio(regras::TIPO_TP), &nomes),
+            "Tempest Points"
+        );
     }
 
     #[test]
@@ -2770,7 +3398,10 @@ mod tests {
         let mut m = Mercado::default();
         m.abrir();
         let pedidos = m.trocar_aba(Aba::Pedidos);
-        assert!(matches!(pedidos[0], ClientMessage::MercadoBuscarPedidos { item_id: None, .. }));
+        assert!(matches!(
+            pedidos[0],
+            ClientMessage::MercadoBuscarPedidos { item_id: None, .. }
+        ));
         assert!(matches!(pedidos[1], ClientMessage::MercadoMeusPedidos));
         let pd = PedidoNet {
             id: "p".into(),
@@ -2786,7 +3417,11 @@ mod tests {
         };
         m.pedidos(vec![pd.clone()], true);
         m.pedidos(vec![pd.clone(), pd], false);
-        assert_eq!((m.pedidos.meus.len(), m.pedidos.lista.len()), (1, 2), "the two lists stay apart");
+        assert_eq!(
+            (m.pedidos.meus.len(), m.pedidos.lista.len()),
+            (1, 2),
+            "the two lists stay apart"
+        );
     }
 
     #[test]
@@ -2802,7 +3437,10 @@ mod tests {
         .collect();
         let vinculados: HashSet<u16> = [it::XP_POTION].into_iter().collect();
         let equipaveis: HashSet<u16> = [it::KATANA].into_iter().collect();
-        let achados: Vec<u16> = catalogo_pedivel(&nomes, &vinculados, &equipaveis, "dark", 6).iter().map(|(id, _)| *id).collect();
+        let achados: Vec<u16> = catalogo_pedivel(&nomes, &vinculados, &equipaveis, "dark", 6)
+            .iter()
+            .map(|(id, _)| *id)
+            .collect();
         assert_eq!(achados, vec![it::DARKSTEEL], "no gear, nothing bound");
         assert!(catalogo_pedivel(&nomes, &vinculados, &equipaveis, "", 6).is_empty());
         let energia = catalogo_pedivel(&nomes, &vinculados, &equipaveis, "energy", 6);
@@ -2827,15 +3465,46 @@ pub async fn previa(vox: &crate::vox::VoxCache) {
     katana.refinement = 7;
     let pet_id = it::pet_no_grau(it::PETS[0], 2);
     let mut pet = shared::ItemInstance::vazia_de_grau(2);
-    pet.pet = Some(shared::items::PetData { skills: [it::SKILL_PET_FARO, 0, 0], ..Default::default() });
+    pet.pet = Some(shared::items::PetData {
+        skills: [it::SKILL_PET_FARO, 0, 0],
+        ..Default::default()
+    });
     let mut slots = vec![InventorySlot::default(); 12];
-    slots[0] = InventorySlot { item_id: it::KATANA, qty: 1, instance: Some(katana) };
-    slots[1] = InventorySlot { item_id: pet_id, qty: 1, instance: Some(pet) };
-    slots[2] = InventorySlot { item_id: it::montaria_no_grau(it::MONTARIAS[0], 3), qty: 1, instance: None };
-    slots[3] = InventorySlot { item_id: it::na_cor(it::STEEL, 2), qty: 480, instance: None };
-    slots[4] = InventorySlot { item_id: it::COPPER, qty: 250_000, instance: None };
-    slots[5] = InventorySlot { item_id: it::WOOD_T4, qty: 10, instance: None };
-    slots[6] = InventorySlot { item_id: it::RACAO_DE_PET, qty: 20, instance: None };
+    slots[0] = InventorySlot {
+        item_id: it::KATANA,
+        qty: 1,
+        instance: Some(katana),
+    };
+    slots[1] = InventorySlot {
+        item_id: pet_id,
+        qty: 1,
+        instance: Some(pet),
+    };
+    slots[2] = InventorySlot {
+        item_id: it::montaria_no_grau(it::MONTARIAS[0], 3),
+        qty: 1,
+        instance: None,
+    };
+    slots[3] = InventorySlot {
+        item_id: it::na_cor(it::STEEL, 2),
+        qty: 480,
+        instance: None,
+    };
+    slots[4] = InventorySlot {
+        item_id: it::COPPER,
+        qty: 250_000,
+        instance: None,
+    };
+    slots[5] = InventorySlot {
+        item_id: it::WOOD_T4,
+        qty: 10,
+        instance: None,
+    };
+    slots[6] = InventorySlot {
+        item_id: it::RACAO_DE_PET,
+        qty: 20,
+        instance: None,
+    };
     let estoque = shared::precos::Estoque {
         ouro: 227_850,
         unidades: [
@@ -2853,10 +3522,21 @@ pub async fn previa(vox: &crate::vox::VoxCache) {
         tp: 5_716,
     };
     let mut nomes: HashMap<u16, String> = HashMap::new();
-    for (id, n) in [(it::KATANA, "Katana"), (pet_id, "Wolf Cub"), (it::na_cor(it::STEEL, 2), "Green Steel"), (it::COPPER, "Copper"), (it::RACAO_DE_PET, "Pet Feed")] {
+    for (id, n) in [
+        (it::KATANA, "Katana"),
+        (pet_id, "Wolf Cub"),
+        (it::na_cor(it::STEEL, 2), "Green Steel"),
+        (it::COPPER, "Copper"),
+        (it::RACAO_DE_PET, "Pet Feed"),
+    ] {
         nomes.insert(id, n.into());
     }
-    let mut m = Mercado { aberto: true, aba: Aba::Vender, precos: shared::precos::calcular(&estoque).mapa(), ..Default::default() };
+    let mut m = Mercado {
+        aberto: true,
+        aba: Aba::Vender,
+        precos: shared::precos::calcular(&estoque).mapa(),
+        ..Default::default()
+    };
     // On the market: the same Rare IV +7 for less, and a +0 for far less
     // (which must NOT count as the same piece).
     let mut zero = katana;
@@ -2876,7 +3556,23 @@ pub async fn previa(vox: &crate::vox::VoxCache) {
             meu: false,
         });
     }
-    for (nome, slot) in [("katana", 0usize), ("pet", 1), ("montaria", 2), ("aco", 3), ("madeira", 5), ("racao", 6), ("tp", 0), ("energia", 0), ("comprar", 0), ("vagas", 0), ("vagas-cheio", 0), ("pedidos", 0), ("compra-digitando", 3), ("compra-teclado", 3), ("venda-digitando", 3)] {
+    for (nome, slot) in [
+        ("katana", 0usize),
+        ("pet", 1),
+        ("montaria", 2),
+        ("aco", 3),
+        ("madeira", 5),
+        ("racao", 6),
+        ("tp", 0),
+        ("energia", 0),
+        ("comprar", 0),
+        ("vagas", 0),
+        ("vagas-cheio", 0),
+        ("pedidos", 0),
+        ("compra-digitando", 3),
+        ("compra-teclado", 3),
+        ("venda-digitando", 3),
+    ] {
         m.aba = match nome {
             "pedidos" => Aba::Pedidos,
             "comprar" | "compra-digitando" | "compra-teclado" => Aba::Comprar,
@@ -2887,15 +3583,37 @@ pub async fn previa(vox: &crate::vox::VoxCache) {
         };
         if nome == "pedidos" {
             let p = |id: &str, item: u16, n: &str, qtd: u64, preco: u64, quem: &str| PedidoNet {
-                id: id.into(), item_id: item, nome: n.into(), categoria: regras::Categoria::Material as u8,
-                qtd_total: qtd, qtd, preco_total: qtd * preco, realm: "SA01".into(), comprador: quem.into(), meu: quem == "Navegante",
+                id: id.into(),
+                item_id: item,
+                nome: n.into(),
+                categoria: regras::Categoria::Material as u8,
+                qtd_total: qtd,
+                qtd,
+                preco_total: qtd * preco,
+                realm: "SA01".into(),
+                comprador: quem.into(),
+                meu: quem == "Navegante",
             };
             m.pedidos.lista = vec![
                 p("a", it::DARKSTEEL, "Darksteel", 5_000, 3, "Lenda"),
-                p("b", it::na_cor(it::STEEL, 2), "Green Steel", 40, 120, "Anubis"),
+                p(
+                    "b",
+                    it::na_cor(it::STEEL, 2),
+                    "Green Steel",
+                    40,
+                    120,
+                    "Anubis",
+                ),
                 p("c", it::ENERGIA_MIL, "Energy ×1,000", 10, 45, "OldSchool"),
             ];
-            m.pedidos.meus = vec![p("d", it::na_cor(it::QUINTESSENCE, 1), "Grey Quintessence", 200, 18, "Navegante")];
+            m.pedidos.meus = vec![p(
+                "d",
+                it::na_cor(it::QUINTESSENCE, 1),
+                "Grey Quintessence",
+                200,
+                18,
+                "Navegante",
+            )];
         }
         if nome == "energia" {
             m.lista.push(AnuncioNet {
@@ -2916,9 +3634,31 @@ pub async fn previa(vox: &crate::vox::VoxCache) {
         if nome.starts_with("vagas") {
             // My listings with one slot purchase made (25 slots), then at the cap.
             m.tp = Some(1_000);
-            m.compras_vagas = if nome == "vagas" { 1 } else { regras::CUSTO_VAGAS_TP.len() as u8 };
-            m.meus = m.lista.iter().cloned().cycle().take(7).map(|mut an| { an.meu = true; an }).collect();
-            m.historico = vec![VendaNet { nome: "Green Steel".into(), qtd: 40, preco_unit: 120, taxa: 240, liquido: 4_560, quando: 0, vendi: true }];
+            m.compras_vagas = if nome == "vagas" {
+                1
+            } else {
+                regras::CUSTO_VAGAS_TP.len() as u8
+            };
+            m.meus = m
+                .lista
+                .iter()
+                .cloned()
+                .cycle()
+                .take(7)
+                .map(|mut an| {
+                    an.meu = true;
+                    an
+                })
+                .collect();
+            m.historico = vec![VendaNet {
+                nome: "Green Steel".into(),
+                qtd: 40,
+                preco_unit: 120,
+                taxa: 240,
+                liquido: 4_560,
+                quando: 0,
+                vendi: true,
+            }];
         }
         if nome == "tp" {
             m.tp = Some(1_000);
@@ -2938,7 +3678,12 @@ pub async fn previa(vox: &crate::vox::VoxCache) {
         }
         m.venda_slot = Some(slot);
         m.venda_qtd = 1;
-        m.venda_preco = shared::precos::recomendado(&m.precos, slots[slot].item_id, slots[slot].instance.as_ref()).unwrap_or(100);
+        m.venda_preco = shared::precos::recomendado(
+            &m.precos,
+            slots[slot].item_id,
+            slots[slot].instance.as_ref(),
+        )
+        .unwrap_or(100);
         // Typing a number: the buy dialog's quantity (on a stack of 480; with
         // the phone keyboard up, the dialog rises), and the sell price.
         m.compra = nome.starts_with("compra-").then(|| Compra {
@@ -2966,13 +3711,25 @@ pub async fn previa(vox: &crate::vox::VoxCache) {
         m.edicao.id = edita;
         m.edicao.texto = texto.into();
         let teclado = nome == "compra-teclado";
-        let c = Contexto { slots: &slots, nomes: &nomes, ouro: 50_000, nivel: 40, digitado: &[], vox, solido: &solido, energia: 254_300, teclado };
+        let c = Contexto {
+            slots: &slots,
+            nomes: &nomes,
+            ouro: 50_000,
+            nivel: 40,
+            digitado: &[],
+            vox,
+            solido: &solido,
+            energia: 254_300,
+            teclado,
+        };
         for _ in 0..3 {
             crate::render3d::camera_padrao();
             clear_background(Color::new(0.08, 0.12, 0.16, 1.));
             let _ = m.desenha(&c, get_time());
             unsafe { get_internal_gl().flush() };
-            rt.texture.get_texture_data().export_png(&format!("{saida}/{nome}.png"));
+            rt.texture
+                .get_texture_data()
+                .export_png(&format!("{saida}/{nome}.png"));
             next_frame().await;
         }
     }
@@ -2982,11 +3739,31 @@ pub async fn previa(vox: &crate::vox::VoxCache) {
     let mut presa = katana;
     presa.vinculado = true;
     let celulas = [
-        InventorySlot { item_id: it::XP_POTION, qty: 3, instance: None },
-        InventorySlot { item_id: 490, qty: 1, instance: None },
-        InventorySlot { item_id: it::KATANA, qty: 1, instance: Some(presa) },
-        InventorySlot { item_id: it::KATANA, qty: 1, instance: Some(katana) },
-        InventorySlot { item_id: it::na_cor(it::STEEL, 2), qty: 480, instance: None },
+        InventorySlot {
+            item_id: it::XP_POTION,
+            qty: 3,
+            instance: None,
+        },
+        InventorySlot {
+            item_id: 490,
+            qty: 1,
+            instance: None,
+        },
+        InventorySlot {
+            item_id: it::KATANA,
+            qty: 1,
+            instance: Some(presa),
+        },
+        InventorySlot {
+            item_id: it::KATANA,
+            qty: 1,
+            instance: Some(katana),
+        },
+        InventorySlot {
+            item_id: it::na_cor(it::STEEL, 2),
+            qty: 480,
+            instance: None,
+        },
     ];
     for _ in 0..3 {
         crate::render3d::camera_padrao();
@@ -3000,7 +3777,9 @@ pub async fn previa(vox: &crate::vox::VoxCache) {
             crate::bolsa::celula_do_slot(r, c, Some((vox, &solido)));
         }
         unsafe { get_internal_gl().flush() };
-        rt.texture.get_texture_data().export_png(&format!("{saida}/selo.png"));
+        rt.texture
+            .get_texture_data()
+            .export_png(&format!("{saida}/selo.png"));
         next_frame().await;
     }
 }
