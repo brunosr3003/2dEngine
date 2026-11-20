@@ -1,6 +1,9 @@
 //! Server: the notices that arrive over the protocol and the text the server builds.
 
 pub const VERBETES: &[(&str, &str)] = &[
+    // navio.rs — upgrade de tier sem barco duplicado
+    ("Not enough materials for this upgrade.", "Faltam materiais para esta melhoria."),
+    ("This upgrade costs {c} gold.", "Esta melhoria custa {c} de ouro."),
     // ─────────────────────────── servidor: correio oficial ───────────────────────────
     ("Invalid letter.", "Carta inválida."),
     ("Staff · {} ({})", "Equipe · {} ({})"),

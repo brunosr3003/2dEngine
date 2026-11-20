@@ -819,41 +819,51 @@ impl EstaleiroUi {
             6.0 * f,
             Color::new(0.12, 0.09, 0.05, 0.8),
         );
+        let materiais = nv::tipo_novo(d)
+            .map(|t| nv::materiais_upgrade(t, d.tier))
+            .unwrap_or_default();
         if let Some(custo) = nv::custo_upgrade(d.tier) {
-            let duplicados = ctx
-                .slots
-                .iter()
-                .filter(|slot| {
-                    slot.qty > 0
-                        && item_id::e_navio(slot.item_id)
-                        && nv::dados(slot.instance.as_ref(), slot.item_id).tipo_novo == d.tipo_novo
-                        && nv::dados(slot.instance.as_ref(), slot.item_id).tier == d.tier
-                })
-                .count();
+            let ouro_ok = ctx.ouro >= custo;
             estilo::texto_forte(
                 r.x + 10.0 * f,
-                tier_y + 22.0 * f,
+                tier_y + 20.0 * f,
                 &format!("Tier upgrade: T{} › T{}", d.tier, d.tier + 1),
                 14,
                 LATAO,
             );
             estilo::texto(
-                r.x + 10.0 * f,
-                tier_y + 42.0 * f,
-                &format!(
-                    "Duplicate {duplicados}/1 · {custo} gold (you: {})",
-                    ctx.ouro
-                ),
+                r.x + r.w * 0.55,
+                tier_y + 20.0 * f,
+                &format!("{custo} gold"),
                 12,
-                if duplicados > 0 && ctx.ouro >= custo {
-                    estilo::VERDE
-                } else {
-                    estilo::VERMELHO
-                },
+                if ouro_ok { estilo::VERDE } else { estilo::VERMELHO },
             );
-            let ok = duplicados > 0 && ctx.ouro >= custo;
-            let b = Rect::new(r.x + 10.0 * f, tier_y + 52.0 * f, r.w - 20.0 * f, 38.0 * f);
-            estilo::botao(b, "Combine ships", estilo::estado_de(b, !ok, false), ok);
+            // The materials, with what you have (no second ship needed).
+            let mut ok = ouro_ok;
+            let iy = tier_y + 28.0 * f;
+            let ic = 22.0 * f;
+            let cw = (r.w - 20.0 * f) / materiais.len().max(1) as f32;
+            for (k, (item, q)) in materiais.iter().enumerate() {
+                let tem = (ctx.conta)(*item);
+                let tem_ok = tem >= *q as u64;
+                ok &= tem_ok;
+                let ix = r.x + 10.0 * f + k as f32 * cw;
+                let rr = Rect::new(ix, iy, ic, ic);
+                crate::icones::icone(*item, rr, None, None);
+                if !tem_ok && crate::onde_obter::lupa_no_icone(rr) {
+                    escolha = Some(Escolha::OndeObter(*item));
+                }
+                estilo::texto(
+                    ix + ic + 4.0 * f,
+                    iy + 16.0 * f,
+                    &format!("{}/{}", curto(tem.min(*q as u64)), curto(*q as u64)),
+                    11,
+                    if tem_ok { estilo::VERDE } else { estilo::VERMELHO },
+                );
+            }
+            let fundo = (r.y + r.h).max(tier_y + 92.0 * f);
+            let b = Rect::new(r.x + 10.0 * f, fundo - 40.0 * f, r.w - 20.0 * f, 36.0 * f);
+            estilo::botao(b, "Upgrade tier", estilo::estado_de(b, !ok, false), ok);
             if clicou && ok && b.toca(m) {
                 escolha = Some(Escolha::UpgradeTier);
             }

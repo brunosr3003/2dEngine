@@ -2653,6 +2653,8 @@ pub const VERBETES: &[(&str, &str)] = &[
     // estaleiro_ui.rs — galeria dos 9 barcos: papel de cada variante
     ("Firepower", "Poder de fogo"),
     ("Armor", "Blindagem"),
+    ("Tier upgrade: T{a} › T{b}", "Melhoria de tier: T{a} › T{b}"),
+    ("Upgrade tier", "Melhorar tier"),
     ("{n} crew · T1", "{n} tripulantes · T1"),
     ("Hull {h} · {v} u/s", "Casco {h} · {v} u/s"),
     ("Cannon ×{d} · Turn {g}°/s", "Canhão ×{d} · Giro {g}°/s"),

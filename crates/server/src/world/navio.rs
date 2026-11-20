@@ -1508,35 +1508,24 @@ impl GameWorld {
         let Some(s) = self.sessions.get(&sid) else {
             return;
         };
-        let duplicado = s.inventory.iter().position(|slot| {
-            slot.qty > 0
-                && item_id::e_navio(slot.item_id)
-                && slot
-                    .instance
-                    .is_some_and(|inst| inst.navio.is_some_and(|n| n.conves.is_none()))
-                && nv::dados(slot.instance.as_ref(), slot.item_id)
-                    .tipo_novo
-                    .and_then(nv::TipoBarco::de_id)
-                    == Some(tipo)
-                && nv::dados(slot.instance.as_ref(), slot.item_id).tier == d.tier
-        });
-        let Some(duplicado) = duplicado else {
-            self.avisa_missao(
-                sid,
-                format!("You need another {} T{} in your bag.", tipo.nome(), d.tier),
-            );
+        // No duplicate ship: the upgrade takes the materials the duplicate
+        // would have cost (`nv::materiais_upgrade`) plus the gold.
+        let materiais = nv::materiais_upgrade(tipo, d.tier);
+        if materiais
+            .iter()
+            .any(|(item, q)| crate::craft::tem(&s.inventory, *item) < *q)
+        {
+            self.avisa_missao(sid, "Not enough materials for this upgrade.".into());
             return;
-        };
+        }
         if s.gold < custo {
             self.avisa_missao(sid, format!("This upgrade costs {custo} gold."));
             return;
         }
         let s = self.sessions.get_mut(&sid).unwrap();
         s.gold -= custo;
-        let slot = &mut s.inventory[duplicado];
-        slot.qty -= 1;
-        if slot.qty == 0 {
-            *slot = shared::InventorySlot::default();
+        for (item, q) in &materiais {
+            crate::craft::consumir(&mut s.inventory, *item, *q);
         }
         s.inventory_dirty = true;
         d.tier += 1;

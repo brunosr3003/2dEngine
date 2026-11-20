@@ -578,6 +578,21 @@ pub fn custo_upgrade(tier: u8) -> Option<u64> {
     }
 }
 
+/// Materiais do upgrade de tier, SEM precisar de outro barco: a receita do
+/// casco T1 vezes 2^(tier-1), o mesmo que custaria craftar o barco duplicado
+/// (T1→T2 = 1 casco, T2→T3 = 2, T3→T4 = 4). Vazio no T4.
+pub fn materiais_upgrade(tipo: TipoBarco, tier: u8) -> Vec<(u16, u32)> {
+    if custo_upgrade(tier).is_none() {
+        return Vec::new();
+    }
+    let mult = 1u32 << (tier.clamp(1, 4) - 1);
+    receita_tipo(tipo)
+        .into_iter()
+        .filter(|(_, q)| *q > 0)
+        .map(|(item, q)| (item, q * mult))
+        .collect()
+}
+
 /// Materiais de um casco T1. A variante escolhe os stats; o tamanho escolhe
 /// a receita. Todo barco criado aqui usa o item 470 e guarda tipo/tier na instância.
 pub fn receita_tipo(tipo: TipoBarco) -> [(u16, u32); 4] {
