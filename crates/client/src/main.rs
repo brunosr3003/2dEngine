@@ -5156,7 +5156,8 @@ impl Jogo {
             // The rail's glow sits at the hull's side (the walkable deck's
             // sizes, `shared::conves`).
             .map_or(1.0, |i| {
-                shared::conves::meia_boca(shared::navio::classe(i)) / 1.2
+                let d = shared::navio::dados(self.bolsa.equip.navio_inst.as_ref(), i);
+                shared::conves::meia_boca(shared::navio::classe_do_navio(i, &d)) / 1.2
             });
         mar_combate_ui::Prontos {
             bordada: pronto(0),
@@ -7508,7 +7509,10 @@ impl Jogo {
                     .equip
                     .navio
                     .filter(|i| shared::item_id::e_navio(*i))
-                    .map_or(0, shared::navio::classe);
+                    .map_or(0, |i| {
+                        let d = shared::navio::dados(self.bolsa.equip.navio_inst.as_ref(), i);
+                        shared::navio::classe_do_navio(i, &d)
+                    });
                 let retrato = screen_height() > screen_width();
                 let quer = mar_camera::enquadramento(
                     centro,

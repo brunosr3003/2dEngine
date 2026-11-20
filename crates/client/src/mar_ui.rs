@@ -495,6 +495,41 @@ pub fn desenha_marca(p: Vec3, yaw: f32, semente: u64, v: Visual) {
     }
 }
 
+/// The ship's icon for hull class `classe` (`nv::classe_do_navio`): the
+/// new line's ships share one item id, so the class comes from the instance.
+pub fn icone_do_navio(classe: usize, r: Rect, alfa: f32) {
+    let c = r.center();
+    let s = r.w.min(r.h) * 0.42;
+    let a = |cor: Color| Color::new(cor.r, cor.g, cor.b, cor.a * alfa);
+    let madeira = a(Color::from_rgba(122, 80, 44, 255));
+    let escura = a(Color::from_rgba(70, 44, 24, 255));
+    // Hull: a trapezoid of two triangles; masts and sails by class.
+    let base = c.y + s * 0.45;
+    draw_triangle(
+        vec2(c.x - s, base - s * 0.35),
+        vec2(c.x + s, base - s * 0.35),
+        vec2(c.x + s * 0.7, base),
+        madeira,
+    );
+    draw_triangle(
+        vec2(c.x - s, base - s * 0.35),
+        vec2(c.x + s * 0.7, base),
+        vec2(c.x - s * 0.7, base),
+        madeira,
+    );
+    let mastros = nv::CASCOS[classe].mastros as usize;
+    for k in 0..mastros {
+        let x = c.x + (k as f32 - (mastros as f32 - 1.0) * 0.5) * s * 0.6;
+        draw_line(x, base - s * 0.35, x, c.y - s * 0.95, s * 0.08, escura);
+        draw_triangle(
+            vec2(x + s * 0.04, c.y - s * 0.85),
+            vec2(x + s * 0.04, c.y - s * 0.05),
+            vec2(x + s * 0.4, c.y - s * 0.1),
+            a(Color::from_rgba(236, 228, 206, 255)),
+        );
+    }
+}
+
 /// FLAT ICONS for the sea's items (no atlas art for them): the four hull
 /// classes, the Wreck Plank, the sails in their colour and the figureheads.
 /// `false` = not a sea item.
@@ -505,32 +540,7 @@ pub fn icone_do_item(id: u16, r: Rect, alfa: f32) -> bool {
     let madeira = a(Color::from_rgba(122, 80, 44, 255));
     let escura = a(Color::from_rgba(70, 44, 24, 255));
     if shared::item_id::e_navio(id) {
-        let classe = nv::classe(id);
-        // Hull: a trapezoid of two triangles; masts and sails by class.
-        let base = c.y + s * 0.45;
-        draw_triangle(
-            vec2(c.x - s, base - s * 0.35),
-            vec2(c.x + s, base - s * 0.35),
-            vec2(c.x + s * 0.7, base),
-            madeira,
-        );
-        draw_triangle(
-            vec2(c.x - s, base - s * 0.35),
-            vec2(c.x + s * 0.7, base),
-            vec2(c.x - s * 0.7, base),
-            madeira,
-        );
-        let mastros = nv::CASCOS[classe].mastros as usize;
-        for k in 0..mastros {
-            let x = c.x + (k as f32 - (mastros as f32 - 1.0) * 0.5) * s * 0.6;
-            draw_line(x, base - s * 0.35, x, c.y - s * 0.95, s * 0.08, escura);
-            draw_triangle(
-                vec2(x + s * 0.04, c.y - s * 0.85),
-                vec2(x + s * 0.04, c.y - s * 0.05),
-                vec2(x + s * 0.4, c.y - s * 0.1),
-                a(Color::from_rgba(236, 228, 206, 255)),
-            );
-        }
+        icone_do_navio(nv::classe(id), r, alfa);
         return true;
     }
     if id == shared::item_id::PRANCHA_DE_NAUFRAGIO {

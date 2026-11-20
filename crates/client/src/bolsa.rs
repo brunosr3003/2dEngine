@@ -573,6 +573,19 @@ impl Bolsa {
             .unwrap_or_else(|| format!("item {id}"))
     }
 
+    /// The name of THIS piece: a ship of the new line is one item id (the
+    /// Sloop's) with its type and tier in the instance, so its name comes
+    /// from there ("Swift Galleon T2"), never from the catalog.
+    pub(crate) fn nome_da_peca(&self, id: u16, inst: Option<&ItemInstance>) -> String {
+        if item_id::e_navio(id) {
+            let d = shared::navio::dados(inst, id);
+            if let Some(t) = shared::navio::tipo_novo(&d) {
+                return format!("{} T{}", t.nome(), d.tier);
+            }
+        }
+        self.nome(id)
+    }
+
     fn acao_padrao(&self, s: Sel) -> Option<Acao> {
         match s {
             Sel::Equip(slot) => Some(Acao::Desequipar(slot)),
@@ -897,7 +910,7 @@ impl Bolsa {
                 Some((vox, solido)),
             );
             crate::hud_estilo::texto_ajustado(
-                &self.nome(item.item_id),
+                &self.nome_da_peca(item.item_id, item.instance.as_ref()),
                 linha.x + u(58.0),
                 linha.y + u(29.0),
                 linha.w - u(100.0),
@@ -1222,7 +1235,7 @@ impl Bolsa {
         let ic = Rect::new(r.x + u(16.0), r.y + u(18.0), u(64.0), u(64.0));
         celula(ic, Some(peca), false, None, palco);
         let tx = ic.x + ic.w + u(14.0);
-        let nome = self.nome(peca.id);
+        let nome = self.nome_da_peca(peca.id, peca.inst.as_ref());
         let titulo = if peca.refino() > 0 {
             format!("+{} {nome}", peca.refino())
         } else {
@@ -1712,7 +1725,7 @@ impl Bolsa {
         ui::texto(
             r.x + u(18.0),
             r.y + u(62.0),
-            &self.nome(peca.id),
+            &self.nome_da_peca(peca.id, peca.inst.as_ref()),
             17,
             crate::hud_estilo::TEXTO,
         );
@@ -1834,7 +1847,11 @@ fn celula(
             crate::hud_estilo::slot(r, Some(cor), sobre, selecionada);
             // O icone do PET e da MONTARIA e' o modelo 3D dele
             // (docs/PETS.md, docs/MONTARIAS.md).
-            if !icone_de_bicho(r, p.id, palco) {
+            if item_id::e_navio(p.id) {
+                // One item id for the whole new line: the class is the instance's.
+                let d = shared::navio::dados(p.inst.as_ref(), p.id);
+                crate::mar_ui::icone_do_navio(shared::navio::classe_do_navio(p.id, &d), r, 1.0);
+            } else if !icone_de_bicho(r, p.id, palco) {
                 icone_do_item(r, p.id, 1.0);
             }
             let fonte = (r.w * 0.26).clamp(u(11.0), u(16.0)) as u16;
