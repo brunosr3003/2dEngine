@@ -18,9 +18,16 @@ nada a ver com as ilhas principais, que os clãs ocupam, fortificam e disputam.
    geradas de forma determinística em água PvP, longe das ilhas principais,
    das rotas e umas das outras. Relevo pelo mesmo gerador do mar (o cliente
    desenha sozinho), sem cais, sem bicho e sem baú em cima. Nome próprio.
-2. **Desembarque**: ponto de praia de cada ilhota; ancorar perto, descer e
-   andar em terra no processo do mar (colisão por `mar::altura`), voltar
-   pro convés. Ilhota livre: qualquer um anda.
+2. **Desembarque** (feito 20/11/2026): com o navio parado (≤ 1,5 u/s) e a
+   praia a até 8 u do corpo (`mar::praia_perto`), o botão do leme vira
+   "Go ashore" (`PedidoNavio::Desembarcar`). Em terra: `Session::em_terra`
+   (ilhota + navio ancorado), o corpo anda pelo mover de terra sobre o
+   relevo do mar, o toque usa o A* de terra, o cliente recebe
+   `ServerMessage::EmTerra` e segue as regras de terra (não é leme). O
+   navio do capitão fica ancorado (não vira autônomo, não é relançado).
+   Perto do navio: "Board ship" (`PedidoNavio::VoltarAoNavio`; navio meu
+   ou do grupo). Sem navio por perto e na beira d'água: "Set sail" lança o
+   meu. Morrer em terra leva o navio ancorado junto (`largar_terra`).
 3. **Ocupação e clã nômade**: tabela `territorios` (ilhota, clã, desde),
    reivindicar ilhota livre (ritual no núcleo), vantagens do clã travadas
    sem território, aviso pros clãs existentes.

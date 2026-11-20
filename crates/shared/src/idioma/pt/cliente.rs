@@ -2667,6 +2667,13 @@ pub const VERBETES: &[(&str, &str)] = &[
     ("Kestrel Isle", "Ilha do Falcão"),
     ("Wreckers' Rest", "Repouso dos Naufragadores"),
     ("Sunken Bell", "Sino Afundado"),
+    // mar_ui.rs — desembarque nas ilhotas (docs/TERRITORIOS.md, fase 2)
+    ("Go ashore", "Desembarcar"),
+    ("ASHORE", "DESCER"),
+    ("Board ship", "Embarcar"),
+    ("BOARD", "EMBARCAR"),
+    ("Set sail", "Zarpar"),
+    ("SAIL", "ZARPAR"),
     ("Tier upgrade: T{a} › T{b}", "Melhoria de tier: T{a} › T{b}"),
     ("Upgrade tier", "Melhorar tier"),
     ("{n} crew · T1", "{n} tripulantes · T1"),

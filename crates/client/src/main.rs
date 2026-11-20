@@ -2819,6 +2819,7 @@ impl Jogo {
             }
             ServerMessage::Navio { estado } => self.estaleiro.define_navio(estado),
             ServerMessage::Conves { lista } => self.world.aplica_conves(&lista),
+            ServerMessage::EmTerra { ilhota } => self.world.em_terra = ilhota.is_some(),
             ServerMessage::AbrirEstaleiro { estado } => {
                 // The Captain may open with a quest offer in front: the
                 // Shipyard waits for the dialogue to close.

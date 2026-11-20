@@ -237,7 +237,37 @@ pub fn acao_do_leme(
     tem_navio: bool,
 ) -> Option<(&'static str, &'static str, nv::PedidoNavio)> {
     let eu_id = w.self_id?;
+    // TERRITORIES (docs/TERRITORIOS.md): ashore on an islet, the button
+    // takes me back aboard — a ship beside me, or my own launched off the
+    // shore when I stand by the water.
+    if w.em_terra {
+        let eu = w.ents.get(&eu_id)?;
+        let alcance = shared::mar::ALCANCE_DO_DESEMBARQUE;
+        let navio_perto = w.ents.values().any(|e| {
+            e.meta.tag == shared::EntityTag::Navio && e.state.hp > 0 && {
+                let classe = nv::Visual::do_fio(e.meta.skins).classe as usize;
+                e.render_pos.distance(eu.render_pos)
+                    <= alcance + shared::conves::meio_comp(classe)
+            }
+        });
+        if navio_perto {
+            return Some(("Board ship", "BOARD", nv::PedidoNavio::VoltarAoNavio));
+        }
+        let agua_perto = (0..16).any(|k| {
+            let a = k as f32 / 16.0 * std::f32::consts::TAU;
+            let q = eu.render_pos + vec2(a.cos(), a.sin()) * (alcance * 0.75);
+            shared::mar::navegavel(q.x, q.y)
+        });
+        return (agua_perto && tem_navio)
+            .then_some(("Set sail", "SAIL", nv::PedidoNavio::VoltarAoNavio));
+    }
     let (n, navio) = (w.meu_conves()?, w.navio_do_eu()?);
+    // Beside a territory islet's shore with the ship (nearly) still.
+    let pode_descer = || {
+        let parado = navio.state.vel_f32().length() <= 1.5;
+        let corpo = w.ents.get(&eu_id).map(|e| e.render_pos);
+        parado && corpo.is_some_and(|p| shared::mar::praia_perto(::glam::Vec2::new(p.x, p.y)).is_some())
+    };
     if w.eu_capitao() {
         if n.leme {
             return Some((
@@ -254,7 +284,13 @@ pub fn acao_do_leme(
                 nv::PedidoNavio::Leme { pegar: true },
             ));
         }
+        if pode_descer() {
+            return Some(("Go ashore", "ASHORE", nv::PedidoNavio::Desembarcar));
+        }
         return None;
+    }
+    if pode_descer() {
+        return Some(("Go ashore", "ASHORE", nv::PedidoNavio::Desembarcar));
     }
     tem_navio.then_some((
         "Back to my ship",

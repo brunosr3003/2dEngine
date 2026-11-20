@@ -184,6 +184,9 @@ pub struct World {
     /// THE WALKABLE DECK (`ServerMessage::Conves`): who stands on which ship,
     /// in deck space. Drawn at `ship × local` (`tick`).
     pub conves: HashMap<EntityId, shared::conves::NoConves>,
+    /// TERRITORIES (`ServerMessage::EmTerra`): ashore on a territory islet
+    /// at sea — the land's rules, not the helm's.
+    pub em_terra: bool,
 }
 
 /// Distancia, em unidades, de um ciclo inteiro de passo (dois passos).
@@ -945,7 +948,7 @@ impl World {
     /// At the helm of my ship (at sea with no deck row yet = at the helm: the
     /// server launches the captain at the wheel).
     pub fn eu_no_leme(&self) -> bool {
-        self.meu_conves().is_none_or(|n| n.leme)
+        !self.em_terra && self.meu_conves().is_none_or(|n| n.leme)
     }
 
     /// I am the captain of the ship I stand on (its name is the captain's).

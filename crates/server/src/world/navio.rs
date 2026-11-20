@@ -205,6 +205,8 @@ impl GameWorld {
             PedidoNavio::Afundar => self.afundar_derrotado(sid, true),
             PedidoNavio::RepararVela { iniciar } => self.reparar_vela(sid, iniciar),
             PedidoNavio::Saquear => self.saquear_navio_derrotado(sid),
+            PedidoNavio::Desembarcar => self.desembarcar(sid),
+            PedidoNavio::VoltarAoNavio => self.voltar_do_desembarque(sid),
         }
     }
 

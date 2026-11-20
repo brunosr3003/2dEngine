@@ -476,6 +476,55 @@ pub fn ilhotas() -> &'static [IlhaVista] {
     })
 }
 
+/// How far from the body the islet's shore may be to step ashore (and how
+/// near the ship must be to step back aboard), units.
+pub const ALCANCE_DO_DESEMBARQUE: f32 = 8.0;
+
+/// Dry land of a territory islet a body fits on: above the sea, and the
+/// four points round it too.
+pub fn chao_de_ilhota(q: Vec2) -> bool {
+    const FOLGA: f32 = 0.6;
+    ilhota_em(q).is_some()
+        && [Vec2::ZERO, Vec2::X, -Vec2::X, Vec2::Y, -Vec2::Y]
+            .iter()
+            .all(|d| altura(q.x + d.x * FOLGA, q.y + d.y * FOLGA) > NIVEL_DO_MAR)
+}
+
+/// THE LANDING: the nearest islet ground within `ALCANCE_DO_DESEMBARQUE` of
+/// `p`, if any (server and client ask the same question).
+pub fn praia_perto(p: Vec2) -> Option<Vec2> {
+    let perto = ilhotas()
+        .iter()
+        .any(|i| p.distance(i.centro) <= i.raio + ALCANCE_DO_DESEMBARQUE + 2.0);
+    if !perto {
+        return None;
+    }
+    const ANGULOS: usize = 24;
+    let mut r = 0.5;
+    while r <= ALCANCE_DO_DESEMBARQUE {
+        let mut melhor: Option<Vec2> = None;
+        for k in 0..ANGULOS {
+            let a = k as f32 / ANGULOS as f32 * std::f32::consts::TAU;
+            let q = p + Vec2::from_angle(a) * r;
+            if chao_de_ilhota(q) && melhor.is_none_or(|m| q.distance(p) < m.distance(p)) {
+                melhor = Some(q);
+            }
+        }
+        if melhor.is_some() {
+            return melhor;
+        }
+        r += 0.5;
+    }
+    None
+}
+
+/// The index (in `ilhotas`) of the islet at `p`.
+pub fn indice_da_ilhota(p: Vec2) -> Option<usize> {
+    ilhotas()
+        .iter()
+        .position(|i| p.distance(i.centro) <= i.raio + PLATAFORMA)
+}
+
 /// The territory islet whose land (or shelf) is at `p`.
 pub fn ilhota_em(p: Vec2) -> Option<&'static IlhaVista> {
     ilhotas()

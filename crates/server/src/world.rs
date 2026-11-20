@@ -2612,6 +2612,9 @@ pub struct Session {
     /// THE WALKABLE DECK (`world/conves.rs`): aboard a ship at sea — whose,
     /// where on its deck, at the helm or not. `None` on land.
     pub conves: Option<conves::ABordo>,
+    /// TERRITORIES (docs/TERRITORIOS.md): ASHORE on a territory islet at
+    /// sea, off any deck — the land's rules, the ship (if mine) anchored.
+    pub em_terra: Option<conves::EmTerra>,
     /// The deck rows this session's client already has (`Conves` deltas).
     pub conves_enviado: HashMap<EntityId, shared::conves::NoConves>,
     /// LETHAL FURY (Assassin active): until when, and its factor (1.0, or
@@ -6563,8 +6566,10 @@ impl GameWorld {
             s.rota_pedida_em = agora;
             s.rota.limpa();
         }
-        // AT SEA: the water A* over the whole chart (`navio::caminho_no_mar`).
-        if self.no_mar() && destino.is_finite() {
+        // AT SEA: the water A* over the whole chart (`navio::caminho_no_mar`)
+        // — unless ashore on a territory islet, where the land's A* walks.
+        let em_terra = self.sessions.get(&sid).is_some_and(|s| s.em_terra.is_some());
+        if self.no_mar() && !em_terra && destino.is_finite() {
             // Only the captain sets the course; the ship sails from where IT
             // is (the walkable deck).
             if self.capitao_de(sid) != sid {
@@ -8566,6 +8571,7 @@ impl GameWorld {
                 piloto: Default::default(),
                 leme_do_mar: Default::default(),
                 conves: None,
+                em_terra: None,
                 conves_enviado: HashMap::new(),
                 furia_ate: 0.0,
                 furia_fator: 0.0,
@@ -12471,6 +12477,13 @@ impl GameWorld {
             .filter(|s| s.conves.is_some())
             .filter_map(|s| s.entity)
             .collect();
+        // TERRITORIES: a body ashore on an islet walks the land, not the water.
+        let corpos_em_terra: std::collections::HashSet<Entity> = self
+            .sessions
+            .values()
+            .filter(|s| s.em_terra.is_some())
+            .filter_map(|s| s.entity)
+            .collect();
         let mut bateu_na_barreira: Vec<Entity> = Vec::new();
         let mut corpos: Vec<(Entity, Vec2, f32)> = Vec::new();
         // Instancia de dungeon de cada corpo (0 = mundo): corpos de fases
@@ -12526,7 +12539,7 @@ impl GameWorld {
                 // A hull grazing the coast scrapes along it (`mover_raspando`).
                 // A PK hull: the peaceful waters are land to it; one past
                 // its grace inside is pushed out.
-                Some(_) if no_mar => {
+                Some(_) if no_mar && !corpos_em_terra.contains(&e) => {
                     let (barrado, empurra) = barreira.get(&e).copied().unwrap_or((false, None));
                     let v = empurra.unwrap_or(vel.0);
                     let livre = |x: f32, z: f32| shared::mar::navegavel(x, z);
@@ -14275,6 +14288,16 @@ impl GameWorld {
             self.free_entity_body(entity);
             let _ = self.ecs.despawn(entity);
             self.removed_this_tick.push(eid);
+            // TERRITORIES: died ashore on an islet: the anchored ship goes too
+            // (the respawn sails out on a fresh one, `tick_conves`).
+            let em_terra = self
+                .sessions
+                .iter()
+                .find(|(_, s)| s.entity_id == eid && s.em_terra.is_some())
+                .map(|(id, _)| *id);
+            if let Some(sid) = em_terra {
+                self.largar_terra(sid);
+            }
 
             // Libera carry se o morto estava sendo carregado ou carregando
             let (was_carried_by, was_carrying) = self

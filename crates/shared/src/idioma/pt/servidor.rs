@@ -4,6 +4,12 @@ pub const VERBETES: &[(&str, &str)] = &[
     // navio.rs — upgrade de tier sem barco duplicado
     ("Not enough materials for this upgrade.", "Faltam materiais para esta melhoria."),
     ("This upgrade costs {c} gold.", "Esta melhoria custa {c} de ouro."),
+    // conves.rs — desembarque nas ilhotas
+    ("You go ashore on {n}.", "Você desembarca em {n}."),
+    ("Stop the ship to go ashore.", "Pare o navio para desembarcar."),
+    ("Too far from the shore.", "Longe demais da praia."),
+    ("Walk up to your ship to board it.", "Chegue perto do seu navio para embarcar."),
+    ("Your crew is aboard: they go ashore first.", "Sua tripulação está a bordo: ela desembarca primeiro."),
     // ─────────────────────────── servidor: correio oficial ───────────────────────────
     ("Invalid letter.", "Carta inválida."),
     ("Staff · {} ({})", "Equipe · {} ({})"),

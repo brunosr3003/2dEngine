@@ -1720,6 +1720,12 @@ pub enum PedidoNavio {
     RepararVela { iniciar: bool },
     /// Loot the defeated enemy hull whose deck I am standing on.
     Saquear,
+    /// TERRITORIES: step off the deck onto the territory islet's shore
+    /// beside it (the ship near still). Appended.
+    Desembarcar,
+    /// TERRITORIES: from the islet's shore back onto my ship (or a party
+    /// ship) beside it. Appended.
+    VoltarAoNavio,
 }
 
 /// The ship's state, for the Captain's buttons and the hull bar.

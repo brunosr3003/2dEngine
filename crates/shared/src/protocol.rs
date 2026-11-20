@@ -1577,6 +1577,13 @@ pub enum ServerMessage {
         items: Vec<ShopItem>,
         vendor_id: u32,
     },
+    /// TERRITORIES (docs/TERRITORIOS.md, phase 2): I am ASHORE on territory
+    /// islet `ilhota` (index in `mar::ilhotas`), off any deck; `None` = not
+    /// ashore any more. At sea, ashore means the land's rules, not the
+    /// helm's. Appended.
+    EmTerra {
+        ilhota: Option<u8>,
+    },
 }
 
 /// Quantos espacos a barra de itens tem: C, 8, 9 e 0.

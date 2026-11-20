@@ -22,6 +22,9 @@ use super::*;
 use shared::conves as cv;
 use shared::navio as nv;
 
+/// The ship must lie this still (units/s) to step ashore.
+pub const VELOCIDADE_PARA_DESEMBARCAR: f32 = 1.5;
+
 /// Aboard a ship: whose, where on deck (units, `shared::conves`), and at the
 /// helm or not.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -35,6 +38,14 @@ pub struct ABordo {
     /// stand on that ship, but I am not its captain's crew: my own hull (if
     /// any) is still mine and the ship's owner still commands the wreck.
     pub hostil: bool,
+}
+
+/// ASHORE on a territory islet (docs/TERRITORIOS.md, phase 2): the islet,
+/// and my own ship anchored off it (`None` when I came as someone's crew).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct EmTerra {
+    pub ilhota: u8,
+    pub navio: Option<hecs::Entity>,
 }
 
 /// The ship entity's own data. Its hull is the entity's `Health`.
@@ -308,6 +319,7 @@ impl GameWorld {
         if !self.no_mar() {
             for s in self.sessions.values_mut() {
                 s.conves = None;
+                s.em_terra = None;
                 s.conves_enviado.clear();
             }
             return;
@@ -327,7 +339,9 @@ impl GameWorld {
                         s.logged_in
                             && s.entity.is_some()
                             && !self.saindo_da_zona(s)
-                            && s.conves.is_some_and(|c| c.navio == e && c.capitao == dono),
+                            && (s.conves.is_some_and(|c| c.navio == e && c.capitao == dono)
+                                // Ashore on an islet: the ship waits at anchor.
+                                || s.em_terra.is_some_and(|t| t.navio == Some(e))),
                         self.saindo_da_zona(s),
                         true,
                     )
@@ -404,6 +418,7 @@ impl GameWorld {
                 s.logged_in
                     && s.entity.is_some()
                     && s.conves.is_none()
+                    && s.em_terra.is_none()
                     && !self.zona_de_saida.contains_key(&s.name)
             })
             .map(|(id, _)| *id)
@@ -839,6 +854,168 @@ impl GameWorld {
     /// cooperatively as crew; anyone else may board a DEFEATED or abandoned
     /// hull within boarding range (naval PvP). Their own ship stays nearby
     /// under automatic command. `capitao` = my OWN entity: back to my ship.
+    /// TERRITORIES (docs/TERRITORIOS.md, phase 2): STEP ASHORE from the deck
+    /// onto the territory islet beside it. The ship must lie nearly still;
+    /// the body lands on the nearest dry ground (`mar::praia_perto`). A
+    /// captain leaves the ship at anchor (it waits, `tick_conves`); crew
+    /// simply step off.
+    pub(crate) fn desembarcar(&mut self, sid: SessionId) {
+        if !self.no_mar() {
+            return;
+        }
+        let Some(s) = self.sessions.get(&sid) else {
+            return;
+        };
+        let (Some(c), Some(corpo)) = (s.conves, s.entity) else {
+            return;
+        };
+        if c.hostil {
+            return;
+        }
+        if c.capitao == sid && !self.tripulacao_de(sid).is_empty() {
+            // The crew would be left on a ship nobody can sail.
+            self.avisa_missao(sid, "Your crew is aboard: they go ashore first.".into());
+            return;
+        }
+        let vel = self
+            .ecs
+            .get::<&Velocity>(c.navio)
+            .map_or(0.0, |v| v.0.length());
+        if vel > VELOCIDADE_PARA_DESEMBARCAR {
+            self.avisa_missao(sid, "Stop the ship to go ashore.".into());
+            return;
+        }
+        let Some(aqui) = self.ecs.get::<&Position>(corpo).ok().map(|p| p.0) else {
+            return;
+        };
+        let Some(praia) = shared::mar::praia_perto(aqui) else {
+            self.avisa_missao(sid, "Too far from the shore.".into());
+            return;
+        };
+        let Some(ilhota) = shared::mar::indice_da_ilhota(praia) else {
+            return;
+        };
+        let capitao = c.capitao == sid;
+        if capitao {
+            if let Ok(mut v) = self.ecs.get::<&mut Velocity>(c.navio) {
+                v.0 = Vec2::ZERO;
+            }
+        }
+        if let Ok(mut p) = self.ecs.get::<&mut Position>(corpo) {
+            p.0 = praia;
+        }
+        if let Some(s) = self.sessions.get_mut(&sid) {
+            s.conves = None;
+            s.em_terra = Some(EmTerra {
+                ilhota: ilhota as u8,
+                navio: capitao.then_some(c.navio),
+            });
+            s.rota.limpa();
+            if capitao {
+                s.leme_do_mar.vel = 0.0;
+            }
+            let _ = s.handle.to_client.send(ServerMessage::EmTerra {
+                ilhota: Some(ilhota as u8),
+            });
+        }
+        let nome = shared::mar::ilhotas()[ilhota].nome;
+        self.send_chat_to(sid, &format!("You go ashore on {nome}."));
+    }
+
+    /// TERRITORIES: from the islet's shore BACK ABOARD — my anchored ship if
+    /// it is near, else a party ship near; with neither, my own ship is
+    /// launched off the shore if I stand by the water.
+    pub(crate) fn voltar_do_desembarque(&mut self, sid: SessionId) {
+        if !self.no_mar() {
+            return;
+        }
+        let Some(s) = self.sessions.get(&sid) else {
+            return;
+        };
+        let (Some(t), Some(corpo), grupo) = (s.em_terra, s.entity, s.party_id) else {
+            return;
+        };
+        let Some(aqui) = self.ecs.get::<&Position>(corpo).ok().map(|p| p.0) else {
+            return;
+        };
+        // The ships I may step onto: mine, or a party member's.
+        let navios: Vec<(hecs::Entity, EntityId, SessionId, usize, Vec2, Vec2)> = self
+            .ecs
+            .query::<(&NetId, &Position, &NavioEnt)>()
+            .iter()
+            .filter(|(e, (_, _, n))| {
+                Some(*e) == t.navio
+                    || (n.dono != sid
+                        && grupo.is_some()
+                        && self.sessions.get(&n.dono).is_some_and(|d| d.party_id == grupo))
+            })
+            .map(|(e, (net, p, n))| (e, net.0, n.dono, n.classe, p.0, n.rumo))
+            .collect();
+        let perto = navios
+            .into_iter()
+            .map(|x| {
+                let alvo = AlvoNoMar {
+                    centro: x.4,
+                    rumo: x.5,
+                    vel: Vec2::ZERO,
+                    classe: x.3,
+                };
+                (casco_mais_perto(&alvo, aqui).distance(aqui), x)
+            })
+            .filter(|(d, _)| *d <= shared::mar::ALCANCE_DO_DESEMBARQUE)
+            .min_by(|a, b| a.0.total_cmp(&b.0))
+            .map(|(_, x)| x);
+        let Some((navio, navio_eid, dono, classe, centro, rumo)) = perto else {
+            // No ship beside me: launch mine, if I stand by the water.
+            if t.navio.is_none() {
+                let agua = self.agua_no_mar(aqui);
+                if agua.distance(aqui) <= shared::mar::ALCANCE_DO_DESEMBARQUE {
+                    if let Some(s) = self.sessions.get_mut(&sid) {
+                        s.em_terra = None;
+                        let _ = s.handle.to_client.send(ServerMessage::EmTerra { ilhota: None });
+                    }
+                    if self.lancar_navio(sid, None) {
+                        return;
+                    }
+                    if let Some(s) = self.sessions.get_mut(&sid) {
+                        s.em_terra = Some(t);
+                    }
+                }
+            }
+            self.avisa_missao(sid, "Walk up to your ship to board it.".into());
+            return;
+        };
+        let local = cv::ponto_livre(classe, cv::para_local(centro, rumo, aqui));
+        if let Some(s) = self.sessions.get_mut(&sid) {
+            s.em_terra = None;
+            s.rota.limpa();
+            s.conves = Some(ABordo {
+                navio,
+                navio_eid,
+                capitao: dono,
+                local,
+                leme: false,
+                hostil: false,
+            });
+            let _ = s.handle.to_client.send(ServerMessage::EmTerra { ilhota: None });
+        }
+        self.por_no_conves(sid);
+    }
+
+    /// Ashore → the anchored ship has no captain left at sea (death, a
+    /// teleport): it goes with them.
+    pub(crate) fn largar_terra(&mut self, sid: SessionId) {
+        let Some(t) = self.sessions.get_mut(&sid).and_then(|s| s.em_terra.take()) else {
+            return;
+        };
+        if let Some(s) = self.sessions.get(&sid) {
+            let _ = s.handle.to_client.send(ServerMessage::EmTerra { ilhota: None });
+        }
+        if let Some(e) = t.navio.filter(|e| self.ecs.contains(*e)) {
+            self.despachar_navio(e);
+        }
+    }
+
     pub(crate) fn embarcar_no_navio(&mut self, sid: SessionId, capitao: EntityId) {
         if !self.no_mar() {
             return;
@@ -1244,6 +1421,84 @@ mod testes {
             }
         }
         z
+    }
+
+    /// TERRITORIES, phase 2 (docs/TERRITORIOS.md): beside a territory
+    /// islet with the ship still, the captain steps ashore, walks the land
+    /// (not the water), the ship waits at anchor (never autonomous, never
+    /// relaunched), and back by the ship the captain boards it again. Dying
+    /// ashore takes the anchored ship with it.
+    #[test]
+    fn desembarca_na_ilhota_anda_e_volta_ao_navio() {
+        let (mut w, sid, _rx) = mundo();
+        w.step(shared::TICK_DT);
+        let ilha = &shared::mar::ilhotas()[0];
+        // Open water off the islet whose deck edge reaches its shore.
+        let (agua, terra) = (0..72)
+            .find_map(|k| {
+                let d = Vec2::from_angle(k as f32 / 72.0 * std::f32::consts::TAU);
+                let mut r = ilha.raio * 0.6;
+                while r < ilha.raio + 40.0 {
+                    let q = ilha.centro + d * r;
+                    if shared::mar::navegavel(q.x, q.y) {
+                        let casco = q + d * (nv::RAIO_DO_CASCO + 1.0);
+                        let praia = shared::mar::praia_perto(q)?;
+                        return Some((casco, praia));
+                    }
+                    r += 1.0;
+                }
+                None
+            })
+            .expect("water beside the islet's shore");
+        w.por_navio_em(sid, agua);
+        w.handle_navio(sid, PedidoNavio::Leme { pegar: false });
+        let c = conves(&w, sid);
+        let (rumo, classe) = {
+            let n = w.ecs.get::<&NavioEnt>(c.navio).unwrap();
+            (n.rumo, n.classe)
+        };
+        let local = cv::ponto_livre(classe, cv::para_local(agua, rumo, terra));
+        w.sessions.get_mut(&sid).unwrap().conves.as_mut().unwrap().local = local;
+        w.por_no_conves(sid);
+        assert!(
+            shared::mar::praia_perto(corpo(&w, sid)).is_some(),
+            "the deck's edge is within reach of the shore"
+        );
+        let navio = c.navio;
+        w.handle_navio(sid, PedidoNavio::Desembarcar);
+        let s = &w.sessions[&sid];
+        assert!(s.conves.is_none(), "off the deck");
+        assert_eq!(s.em_terra.map(|t| t.navio), Some(Some(navio)));
+        assert!(shared::mar::chao_de_ilhota(corpo(&w, sid)), "on the islet's ground");
+        // Walk inland: the land's rules, a body on the ground.
+        let antes = corpo(&w, sid);
+        let dentro = (ilha.centro - antes).normalize();
+        anda(&mut w, sid, dentro, 2.0);
+        let depois = corpo(&w, sid);
+        assert!(
+            depois.distance(ilha.centro) < antes.distance(ilha.centro) - 2.0,
+            "walked inland: {antes} -> {depois}"
+        );
+        assert!(shared::mar::altura(depois.x, depois.y) > shared::terreno::NIVEL_DO_MAR);
+        // Long enough for the autonomous clock: the ship just waits.
+        anda(&mut w, sid, Vec2::ZERO, 5.0);
+        let s = &w.sessions[&sid];
+        assert!(s.conves.is_none() && s.em_terra.is_some(), "still ashore");
+        assert!(w.ecs.contains(navio), "the anchored ship is still there");
+        assert_eq!(w.ecs.get::<&NavioEnt>(navio).unwrap().autonomo_desde, 0.0);
+        assert_eq!(w.ecs.query::<&NavioEnt>().iter().count(), 1, "no second ship launched");
+        // Back to the ship and aboard.
+        anda(&mut w, sid, -dentro, 2.5);
+        w.handle_navio(sid, PedidoNavio::VoltarAoNavio);
+        let s = &w.sessions[&sid];
+        assert!(s.em_terra.is_none(), "not ashore any more");
+        assert_eq!(s.conves.map(|c| c.navio), Some(navio), "back on my ship");
+        // Ashore again, then dead ashore: the anchored ship goes with me.
+        w.handle_navio(sid, PedidoNavio::Desembarcar);
+        assert!(w.sessions[&sid].em_terra.is_some());
+        w.largar_terra(sid);
+        assert!(w.sessions[&sid].em_terra.is_none());
+        assert!(!w.ecs.contains(navio), "the anchored ship left with its captain");
     }
 
     /// Arriving at sea puts the captain on its own ship's deck, at the
