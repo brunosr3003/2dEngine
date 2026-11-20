@@ -18,9 +18,11 @@ nada a ver com as ilhas principais, que os clãs ocupam, fortificam e disputam.
    geradas de forma determinística em água PvP, longe das ilhas principais,
    das rotas e umas das outras. Relevo pelo mesmo gerador do mar (o cliente
    desenha sozinho), sem cais, sem bicho e sem baú em cima. Nome próprio.
-2. **Desembarque** (feito 20/11/2026): com o navio parado (≤ 1,5 u/s) e a
-   praia a até 8 u do corpo (`mar::praia_perto`), o botão do leme vira
-   "Go ashore" (`PedidoNavio::Desembarcar`). Em terra: `Session::em_terra`
+2. **Desembarque** (feito 20/11/2026): com a praia a até 8 u do corpo ou
+   da borda do casco (`mar::praia_perto` / `praia_perto_de`), o botão do
+   leme vira "Go ashore" (`PedidoNavio::Desembarcar`), com prioridade sobre
+   o leme (dá pra descer direto da roda). Sem exigir navio parado: ele é
+   parado na hora. Em terra: `Session::em_terra`
    (ilhota + navio ancorado), o corpo anda pelo mover de terra sobre o
    relevo do mar, o toque usa o A* de terra, o cliente recebe
    `ServerMessage::EmTerra` e segue as regras de terra (não é leme). O

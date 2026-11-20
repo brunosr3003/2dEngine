@@ -493,27 +493,30 @@ pub fn chao_de_ilhota(q: Vec2) -> bool {
 /// THE LANDING: the nearest islet ground within `ALCANCE_DO_DESEMBARQUE` of
 /// `p`, if any (server and client ask the same question).
 pub fn praia_perto(p: Vec2) -> Option<Vec2> {
+    praia_perto_de(p, ALCANCE_DO_DESEMBARQUE)
+}
+
+/// The nearest islet ground within `alcance` of `p` (a ship asks from its
+/// centre with its half length added: the hull's whole edge reaches).
+pub fn praia_perto_de(p: Vec2, alcance: f32) -> Option<Vec2> {
     let perto = ilhotas()
         .iter()
-        .any(|i| p.distance(i.centro) <= i.raio + ALCANCE_DO_DESEMBARQUE + 2.0);
+        .any(|i| p.distance(i.centro) <= i.raio + alcance + 2.0);
     if !perto {
         return None;
     }
     const ANGULOS: usize = 24;
     let mut r = 0.5;
-    while r <= ALCANCE_DO_DESEMBARQUE {
-        let mut melhor: Option<Vec2> = None;
+    while r <= alcance {
         for k in 0..ANGULOS {
             let a = k as f32 / ANGULOS as f32 * std::f32::consts::TAU;
             let q = p + Vec2::from_angle(a) * r;
-            if chao_de_ilhota(q) && melhor.is_none_or(|m| q.distance(p) < m.distance(p)) {
-                melhor = Some(q);
+            // One height first: the open water around costs a single lookup.
+            if altura(q.x, q.y) > NIVEL_DO_MAR && chao_de_ilhota(q) {
+                return Some(q);
             }
         }
-        if melhor.is_some() {
-            return melhor;
-        }
-        r += 0.5;
+        r += if alcance > ALCANCE_DO_DESEMBARQUE { 1.0 } else { 0.5 };
     }
     None
 }

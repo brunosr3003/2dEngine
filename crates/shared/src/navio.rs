@@ -376,6 +376,43 @@ pub fn receita_depois_de(de: u16) -> Option<&'static Receita> {
     RECEITAS.iter().find(|r| r.de == de)
 }
 
+/// THE COAST'S PUSH (owner, 20/11/2026: "precisa ter um sistema que
+/// empurra um pouco o barco de volta pro mar"): a hull may nose onto a beach
+/// (its collision is a small circle at the centre), but it does not stay
+/// buried there. Units/s, out to sea.
+pub const EMPURRAO_DA_COSTA: f32 = 4.0;
+
+/// Which way the coast pushes a hull of `classe` at `centro` heading `rumo`:
+/// the unit sum of "away from each outline point on land" (bow, stern, both
+/// sides, the four shoulders); zero when the whole outline floats.
+pub fn empurrao_da_costa(
+    centro: glam::Vec2,
+    rumo: glam::Vec2,
+    classe: usize,
+    agua: &dyn Fn(f32, f32) -> bool,
+) -> glam::Vec2 {
+    let mc = crate::conves::meio_comp(classe) * 0.9;
+    let mb = crate::conves::meia_boca(classe) * 0.9;
+    let locais = [
+        (0.0, mc),
+        (0.0, -mc),
+        (mb, 0.0),
+        (-mb, 0.0),
+        (mb * 0.7, mc * 0.5),
+        (-mb * 0.7, mc * 0.5),
+        (mb * 0.7, -mc * 0.5),
+        (-mb * 0.7, -mc * 0.5),
+    ];
+    let mut soma = glam::Vec2::ZERO;
+    for (x, y) in locais {
+        let p = crate::conves::do_mundo(centro, rumo, glam::Vec2::new(x, y));
+        if !agua(p.x, p.y) {
+            soma += (centro - p).normalize_or_zero();
+        }
+    }
+    soma.normalize_or_zero()
+}
+
 /// The hull's radius for the water test. Larger than a body on foot: a ship
 /// grazing the coast has to stop before it looks inside the rock.
 pub const RAIO_DO_CASCO: f32 = 1.4;

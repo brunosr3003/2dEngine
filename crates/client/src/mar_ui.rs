@@ -262,12 +262,11 @@ pub fn acao_do_leme(
             .then_some(("Set sail", "SAIL", nv::PedidoNavio::VoltarAoNavio));
     }
     let (n, navio) = (w.meu_conves()?, w.navio_do_eu()?);
-    // Beside a territory islet's shore with the ship (nearly) still.
-    let pode_descer = || {
-        let parado = navio.state.vel_f32().length() <= 1.5;
-        let corpo = w.ents.get(&eu_id).map(|e| e.render_pos);
-        parado && corpo.is_some_and(|p| shared::mar::praia_perto(::glam::Vec2::new(p.x, p.y)).is_some())
-    };
+    // Beside a territory islet's shore (from the body or the hull's edge):
+    // GO ASHORE comes first, even at the wheel (owner, 20/11/2026).
+    if praia_ao_alcance(w, eu_id, navio) {
+        return Some(("Go ashore", "ASHORE", nv::PedidoNavio::Desembarcar));
+    }
     if w.eu_capitao() {
         if n.leme {
             return Some((
@@ -284,19 +283,38 @@ pub fn acao_do_leme(
                 nv::PedidoNavio::Leme { pegar: true },
             ));
         }
-        if pode_descer() {
-            return Some(("Go ashore", "ASHORE", nv::PedidoNavio::Desembarcar));
-        }
         return None;
-    }
-    if pode_descer() {
-        return Some(("Go ashore", "ASHORE", nv::PedidoNavio::Desembarcar));
     }
     tem_navio.then_some((
         "Back to my ship",
         "MY SHIP",
         nv::PedidoNavio::Embarcar { capitao: eu_id },
     ))
+}
+
+/// Is a territory islet's shore within reach of my body or my ship's hull?
+/// Asked a few times a second, not every frame (the search reads heights).
+fn praia_ao_alcance(w: &crate::world::World, eu_id: shared::EntityId, navio: &crate::world::Ent) -> bool {
+    use std::cell::Cell;
+    thread_local! {
+        static CACHE: Cell<(f64, bool)> = const { Cell::new((-1.0, false)) };
+    }
+    let agora = get_time();
+    let (quando, valor) = CACHE.with(|c| c.get());
+    if agora - quando < 0.25 {
+        return valor;
+    }
+    let g = |p: Vec2| ::glam::Vec2::new(p.x, p.y);
+    let corpo = w.ents.get(&eu_id).map(|e| g(e.render_pos));
+    let classe = nv::Visual::do_fio(navio.meta.skins).classe as usize;
+    let sim = corpo.is_some_and(|p| shared::mar::praia_perto(p).is_some())
+        || shared::mar::praia_perto_de(
+            g(navio.render_pos),
+            shared::mar::ALCANCE_DO_DESEMBARQUE + shared::conves::meio_comp(classe),
+        )
+        .is_some();
+    CACHE.with(|c| c.set((agora, sim)));
+    sim
 }
 
 /// "Board <name>'s ship" beside a party ship; "Board <name>'s wreck" beside

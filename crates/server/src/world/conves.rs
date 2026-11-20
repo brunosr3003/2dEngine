@@ -22,8 +22,6 @@ use super::*;
 use shared::conves as cv;
 use shared::navio as nv;
 
-/// The ship must lie this still (units/s) to step ashore.
-pub const VELOCIDADE_PARA_DESEMBARCAR: f32 = 1.5;
 
 /// Aboard a ship: whose, where on deck (units, `shared::conves`), and at the
 /// helm or not.
@@ -693,6 +691,20 @@ impl GameWorld {
             } else {
                 nv::mover_raspando(&livre, pos, v, dt, nv::RAIO_DO_CASCO)
             };
+            // THE COAST'S PUSH: a hull nosed onto land eases back out to
+            // sea (never inside a harbour corridor: the docks are land).
+            let novo = match antes.get(&e).zip(self.ecs.get::<&NavioEnt>(e).ok().map(|n| n.classe)) {
+                Some((&(_, rumo), classe)) if !shared::mar::no_corredor(novo) => {
+                    let d = nv::empurrao_da_costa(novo, rumo, classe, &livre);
+                    let q = novo + d * nv::EMPURRAO_DA_COSTA * dt;
+                    if d != Vec2::ZERO && livre(q.x, q.y) {
+                        q
+                    } else {
+                        novo
+                    }
+                }
+                _ => novo,
+            };
             let rumo = (!derrotado)
                 .then(|| self.sessions.get(&dono).and_then(|s| s.leme_do_mar.rumo()))
                 .flatten();
@@ -877,18 +889,21 @@ impl GameWorld {
             self.avisa_missao(sid, "Your crew is aboard: they go ashore first.".into());
             return;
         }
-        let vel = self
-            .ecs
-            .get::<&Velocity>(c.navio)
-            .map_or(0.0, |v| v.0.length());
-        if vel > VELOCIDADE_PARA_DESEMBARCAR {
-            self.avisa_missao(sid, "Stop the ship to go ashore.".into());
-            return;
-        }
         let Some(aqui) = self.ecs.get::<&Position>(corpo).ok().map(|p| p.0) else {
             return;
         };
-        let Some(praia) = shared::mar::praia_perto(aqui) else {
+        // From the body, else from anywhere along the hull (a ship nosed
+        // into the beach, the captain still at the wheel: owner, 20/11/2026,
+        // "não tô conseguindo andar na terra").
+        let do_casco = || {
+            let centro = self.ecs.get::<&Position>(c.navio).ok()?.0;
+            let classe = self.ecs.get::<&NavioEnt>(c.navio).ok()?.classe;
+            shared::mar::praia_perto_de(
+                centro,
+                shared::mar::ALCANCE_DO_DESEMBARQUE + cv::meio_comp(classe),
+            )
+        };
+        let Some(praia) = shared::mar::praia_perto(aqui).or_else(do_casco) else {
             self.avisa_missao(sid, "Too far from the shore.".into());
             return;
         };
@@ -1499,6 +1514,137 @@ mod testes {
         w.largar_terra(sid);
         assert!(w.sessions[&sid].em_terra.is_none());
         assert!(!w.ecs.contains(navio), "the anchored ship left with its captain");
+    }
+
+    /// On EVERY islet, from every side: step ashore and the body walks
+    /// inland (owner, 20/11/2026: "não tô conseguindo andar na terra").
+    #[test]
+    fn em_toda_ilhota_da_pra_andar_em_terra() {
+        let mut falhas = Vec::new();
+        for (k, ilha) in shared::mar::ilhotas().iter().enumerate() {
+            for lado in 0..8 {
+                let d = Vec2::from_angle(lado as f32 / 8.0 * std::f32::consts::TAU);
+                let mut achou = None;
+                let mut r = ilha.raio * 0.6;
+                while r < ilha.raio + 40.0 {
+                    let q = ilha.centro + d * r;
+                    if shared::mar::navegavel(q.x, q.y) {
+                        achou = shared::mar::praia_perto(q)
+                            .map(|praia| (q + d * (nv::RAIO_DO_CASCO + 1.0), praia));
+                        break;
+                    }
+                    r += 1.0;
+                }
+                let Some((agua, terra)) = achou else {
+                    falhas.push(format!("{} lado {lado}: no water by the shore", ilha.nome));
+                    continue;
+                };
+                let (mut w, sid, _rx) = mundo();
+                w.step(shared::TICK_DT);
+                w.por_navio_em(sid, agua);
+                w.handle_navio(sid, PedidoNavio::Leme { pegar: false });
+                let c = conves(&w, sid);
+                let (rumo, classe) = {
+                    let n = w.ecs.get::<&NavioEnt>(c.navio).unwrap();
+                    (n.rumo, n.classe)
+                };
+                let local = cv::ponto_livre(classe, cv::para_local(agua, rumo, terra));
+                w.sessions.get_mut(&sid).unwrap().conves.as_mut().unwrap().local = local;
+                w.por_no_conves(sid);
+                w.handle_navio(sid, PedidoNavio::Desembarcar);
+                if w.sessions[&sid].em_terra.is_none() {
+                    falhas.push(format!("{} lado {lado}: could not go ashore", ilha.nome));
+                    continue;
+                }
+                let antes = corpo(&w, sid);
+                let dentro = (ilha.centro - antes).normalize();
+                anda(&mut w, sid, dentro, 2.0);
+                let depois = corpo(&w, sid);
+                let andou = antes.distance(depois);
+                if andou < 2.0 || w.sessions[&sid].em_terra.is_none() {
+                    falhas.push(format!(
+                        "{} (#{k}) lado {lado}: walked {andou:.2} from {antes} (h {:.2}), ashore={}",
+                        ilha.nome,
+                        shared::mar::altura(antes.x, antes.y),
+                        w.sessions[&sid].em_terra.is_some()
+                    ));
+                }
+            }
+        }
+        assert!(falhas.is_empty(), "{} stuck:\n{}", falhas.len(), falhas.join("\n"));
+    }
+
+    /// The owner's case (20/11/2026): the ship nosed against the beach, the
+    /// captain still at the WHEEL, far from the rail. Going ashore works
+    /// from the hull's reach, at once, without leaving the helm first.
+    #[test]
+    fn desembarca_direto_do_leme_com_o_navio_na_praia() {
+        let (mut w, sid, _rx) = mundo();
+        w.step(shared::TICK_DT);
+        let ilha = &shared::mar::ilhotas()[1];
+        let agua = (0..72)
+            .find_map(|k| {
+                let d = Vec2::from_angle(k as f32 / 72.0 * std::f32::consts::TAU);
+                let mut r = ilha.raio * 0.6;
+                while r < ilha.raio + 40.0 {
+                    let q = ilha.centro + d * r;
+                    if shared::mar::navegavel(q.x, q.y) {
+                        return Some(q + d * (nv::RAIO_DO_CASCO + 1.0));
+                    }
+                    r += 1.0;
+                }
+                None
+            })
+            .expect("water off the islet");
+        w.por_navio_em(sid, agua);
+        assert!(conves(&w, sid).leme, "still at the wheel");
+        w.handle_navio(sid, PedidoNavio::Desembarcar);
+        let s = &w.sessions[&sid];
+        assert!(s.em_terra.is_some() && s.conves.is_none(), "ashore from the wheel");
+        assert!(shared::mar::chao_de_ilhota(corpo(&w, sid)));
+        let antes = corpo(&w, sid);
+        anda(&mut w, sid, (ilha.centro - antes).normalize(), 2.0);
+        assert!(corpo(&w, sid).distance(antes) > 2.0, "and walks");
+    }
+
+    /// THE COAST'S PUSH (owner, 20/11/2026): a hull with its bow buried in
+    /// an islet's beach eases back out until its whole outline floats.
+    #[test]
+    fn a_costa_empurra_o_casco_de_volta_pro_mar() {
+        let (mut w, sid, _rx) = mundo();
+        w.step(shared::TICK_DT);
+        let ilha = &shared::mar::ilhotas()[2];
+        let (agua, para_dentro) = (0..72)
+            .find_map(|k| {
+                let d = Vec2::from_angle(k as f32 / 72.0 * std::f32::consts::TAU);
+                let mut r = ilha.raio * 0.6;
+                while r < ilha.raio + 40.0 {
+                    let q = ilha.centro + d * r;
+                    if shared::mar::navegavel(q.x, q.y) {
+                        return Some((q + d * 0.5, -d));
+                    }
+                    r += 0.5;
+                }
+                None
+            })
+            .expect("water at the islet's edge");
+        w.por_navio_em(sid, agua);
+        let navio = conves(&w, sid).navio;
+        let classe = w.ecs.get::<&NavioEnt>(navio).unwrap().classe;
+        w.ecs.get::<&mut NavioEnt>(navio).unwrap().rumo = para_dentro;
+        w.sessions.get_mut(&sid).unwrap().leme_do_mar.proa = para_dentro.y.atan2(para_dentro.x);
+        let livre = |x: f32, z: f32| shared::mar::navegavel(x, z);
+        let em_terra = |w: &GameWorld| {
+            let p = w.ecs.get::<&Position>(navio).unwrap().0;
+            let r = w.ecs.get::<&NavioEnt>(navio).unwrap().rumo;
+            nv::empurrao_da_costa(p, r, classe, &livre) != Vec2::ZERO
+        };
+        assert!(em_terra(&w), "the bow starts on the beach");
+        let antes = w.ecs.get::<&Position>(navio).unwrap().0;
+        anda(&mut w, sid, Vec2::ZERO, 3.0);
+        let depois = w.ecs.get::<&Position>(navio).unwrap().0;
+        assert!(!em_terra(&w), "the whole hull floats again: {antes} -> {depois}");
+        assert!(depois.distance(ilha.centro) > antes.distance(ilha.centro), "pushed out to sea");
     }
 
     /// Arriving at sea puts the captain on its own ship's deck, at the
