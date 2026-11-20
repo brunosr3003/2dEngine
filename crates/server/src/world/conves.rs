@@ -322,6 +322,23 @@ impl GameWorld {
             }
             return;
         }
+        // TERRITORIES (diagnostics, 20/11/2026): who is ashore, where, and
+        // with what input, every 2 s.
+        if self.tick % (shared::TICK_RATE_HZ as u32 * 2) == 0 {
+            for s in self.sessions.values().filter(|s| s.em_terra.is_some()) {
+                let p = s.entity.and_then(|e| self.ecs.get::<&Position>(e).ok().map(|p| p.0));
+                let v = s.entity.and_then(|e| self.ecs.get::<&Velocity>(e).ok().map(|v| v.0));
+                tracing::info!(
+                    "em terra: {} pos={p:?} vel={v:?} conves={} rota_vazia={} hurt={} downed={} carry={:?}",
+                    s.name,
+                    s.conves.is_some(),
+                    s.rota.vazia(),
+                    s.hurt_until > self.sim_time_s,
+                    s.downed,
+                    s.carrying,
+                );
+            }
+        }
         // 1. A captain away leaves the hull under automatic command for two
         // minutes. Leaving the sea process is different: the entity goes at once.
         let navios: Vec<(hecs::Entity, SessionId)> = self
@@ -904,9 +921,11 @@ impl GameWorld {
             )
         };
         let Some(praia) = shared::mar::praia_perto(aqui).or_else(do_casco) else {
+            tracing::info!("desembarque: {} longe da praia em {aqui}", self.nome_de(sid));
             self.avisa_missao(sid, "Too far from the shore.".into());
             return;
         };
+        tracing::info!("desembarque: {} {aqui} -> praia {praia}", self.nome_de(sid));
         let Some(ilhota) = shared::mar::indice_da_ilhota(praia) else {
             return;
         };

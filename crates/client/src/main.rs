@@ -439,6 +439,8 @@ struct Jogo {
     sem_visada: Option<(shared::EntityId, f64)>,
     input_seq: u32,
     ultimo_input: f64,
+    /// Last `MMO_LOG_MAR` status line (once a second).
+    log_mar_em: f64,
     tick: u32,
     /// Medicao de rede mostrada no HUD. Latencia e banda sao as duas contas
     /// que dizem se o jogo esta jogavel no celular do jogador, e nenhuma das
@@ -1145,6 +1147,7 @@ async fn main() {
         sem_visada: None,
         input_seq: 0,
         ultimo_input: 0.0,
+        log_mar_em: 0.0,
         tick: 0,
         pedacos_desenhados: 0,
         cam_yaw: 0.0,
@@ -1973,6 +1976,11 @@ impl Jogo {
     }
 
     fn envia(&self, msg: ClientMessage) {
+        if log_mar() {
+            if let ClientMessage::Navio { pedido } = &msg {
+                eprintln!("[mar {:.2}] -> pedido {pedido:?}", get_time());
+            }
+        }
         if let Some(n) = &self.net {
             n.send(msg);
         }
@@ -2818,8 +2826,20 @@ impl Jogo {
                 }
             }
             ServerMessage::Navio { estado } => self.estaleiro.define_navio(estado),
-            ServerMessage::Conves { lista } => self.world.aplica_conves(&lista),
-            ServerMessage::EmTerra { ilhota } => self.world.em_terra = ilhota.is_some(),
+            ServerMessage::Conves { lista } => {
+                if log_mar() {
+                    for n in lista.iter().filter(|n| Some(n.id) == self.world.self_id) {
+                        eprintln!("[mar {:.2}] <- conves eu: {n:?}", get_time());
+                    }
+                }
+                self.world.aplica_conves(&lista)
+            }
+            ServerMessage::EmTerra { ilhota } => {
+                if log_mar() {
+                    eprintln!("[mar {:.2}] <- EmTerra {ilhota:?}", get_time());
+                }
+                self.world.em_terra = ilhota.is_some()
+            }
             ServerMessage::AbrirEstaleiro { estado } => {
                 // The Captain may open with a quest offer in front: the
                 // Shipyard waits for the dialogue to close.
@@ -7313,6 +7333,21 @@ impl Jogo {
         if (!self.teclado_bloqueado() && is_key_pressed(desktop::PULO)) || tocou_pulo {
             self.world.pular_local();
         }
+        if log_mar() && mar_ui::no_mar() && agora - self.log_mar_em >= 1.0 {
+            self.log_mar_em = agora;
+            let eu = self.world.self_id.and_then(|id| self.world.ents.get(&id));
+            let acao = mar_ui::acao_do_leme(&self.world, true).map(|a| a.0);
+            eprintln!(
+                "[mar {agora:.2}] servidor={:?} desenho={:?} em_terra={} conves={:?} navegando={} dir=({:.2},{:.2}) botao={acao:?}",
+                eu.map(|e| e.state.pos_f32()),
+                eu.map(|e| e.render_pos),
+                self.world.em_terra,
+                self.world.meu_conves(),
+                mar_ui::navegando(),
+                dir.x,
+                dir.y,
+            );
+        }
         self.input_seq += 1;
         self.envia(ClientMessage::Input {
             input: InputFrame {
@@ -10102,4 +10137,12 @@ mod testes_lotacao {
         assert_eq!(super::lotacao(181, 200).0, "Full");
         assert_eq!(super::lotacao(5, 0).0, "Available");
     }
+}
+
+
+/// `MMO_LOG_MAR=1`: the sea's deck / ashore / input trace on stderr
+/// (docs/TERRITORIOS.md diagnostics, 20/11/2026).
+fn log_mar() -> bool {
+    static L: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *L.get_or_init(|| std::env::var("MMO_LOG_MAR").is_ok())
 }
