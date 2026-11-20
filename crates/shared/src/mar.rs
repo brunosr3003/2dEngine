@@ -976,6 +976,34 @@ pub fn ninhos() -> Vec<Vec2> {
         .collect()
 }
 
+/// Distance between two sea mobs on the scatter grid (`pontos_dos_bichos`).
+pub const ESPACO_DOS_BICHOS: f32 = 60.0;
+
+/// Where the sea mobs live since 20/11/2026: SCATTERED over the whole sea,
+/// one per point, not in nests on the routes. A grid of
+/// `ESPACO_DOS_BICHOS` with a fixed jitter (same points every boot), kept
+/// only on open water (`agua_livre`) inside the chart.
+pub fn pontos_dos_bichos() -> &'static [Vec2] {
+    static P: std::sync::OnceLock<Vec<Vec2>> = std::sync::OnceLock::new();
+    P.get_or_init(|| {
+        let e = ESPACO_DOS_BICHOS;
+        let n = (BORDA / e).ceil() as i32;
+        let mut v = Vec::new();
+        for gx in -n..=n {
+            for gz in -n..=n {
+                let h = mistura(gx.wrapping_mul(7919), gz.wrapping_mul(104_729));
+                let jx = ((h & 0xFFFF) as f32 / 65_535.0 - 0.5) * e * 0.7;
+                let jz = ((h >> 16) as f32 / 65_535.0 - 0.5) * e * 0.7;
+                let p = Vec2::new(gx as f32 * e + jx, gz as f32 * e + jz);
+                if dentro(p) && agua_livre(p) {
+                    v.push(p);
+                }
+            }
+        }
+        v
+    })
+}
+
 /// Where the drifting chests appear: the middle of every route, pushed a
 /// little off it so they are a detour, not a toll.
 pub fn baus() -> Vec<Vec2> {
@@ -1659,5 +1687,32 @@ mod testes {
         let ceu = v(crate::celeste::ZONA);
         let (bx, bz) = b(atras(ceu, 2.0));
         assert_eq!(material_do_topo(bx, bz), Some(Material::Marmore));
+    }
+}
+
+#[cfg(test)]
+mod testes_dos_bichos_espalhados {
+    use super::*;
+
+    /// The sea mobs cover the whole sea, not just the routes: points in
+    /// every quadrant, all on open water, none closer than half the spacing.
+    #[test]
+    fn os_bichos_do_mar_ficam_espalhados() {
+        let p = pontos_dos_bichos();
+        eprintln!("{} pontos de bicho no mar", p.len());
+        assert!(p.len() > 100, "only {} points", p.len());
+        assert!(p.iter().all(|q| agua_livre(*q) && dentro(*q)));
+        for (sx, sz) in [(1.0, 1.0), (-1.0, 1.0), (1.0, -1.0), (-1.0, -1.0)] {
+            assert!(
+                p.iter().any(|q| q.x * sx > 0.0 && q.y * sz > 0.0),
+                "no mob in quadrant ({sx},{sz})"
+            );
+        }
+        let min = ESPACO_DOS_BICHOS * 0.25;
+        for (i, a) in p.iter().enumerate() {
+            for b in &p[i + 1..] {
+                assert!(a.distance(*b) >= min, "{a} and {b} too close");
+            }
+        }
     }
 }

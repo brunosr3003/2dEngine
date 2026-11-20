@@ -1179,29 +1179,16 @@ impl GameWorld {
     /// chests. The sibling of `povoar_ilha`; on the sea the places come from
     /// the routes, because the routes are the map.
     pub fn povoar_mar(&mut self) {
-        const POR_NINHO: usize = 3;
+        // Scattered over the whole sea (20/11/2026): ONE mob per point of
+        // `mar::pontos_dos_bichos`, each its own zone, so nothing clumps.
         const RAIO: f32 = 9.0;
         let mut zonas = Vec::new();
-        for (k, centro) in shared::mar::ninhos().into_iter().enumerate() {
-            let mut slots: Vec<SpawnSlot> = Vec::new();
-            for j in 0..POR_NINHO * 4 {
-                if slots.len() >= POR_NINHO {
-                    break;
-                }
-                let a = j as f32 / (POR_NINHO * 4) as f32 * std::f32::consts::TAU;
-                let p = centro + Vec2::new(a.cos(), a.sin()) * RAIO;
-                if !shared::mar::agua_livre(p) || slots.iter().any(|s| s.pos.distance(p) < 5.0) {
-                    continue;
-                }
-                slots.push(SpawnSlot {
-                    pos: p,
-                    occupant: None,
-                    respawn_at: 0.0,
-                });
-            }
-            if slots.is_empty() {
-                continue;
-            }
+        for (k, centro) in shared::mar::pontos_dos_bichos().iter().copied().enumerate() {
+            let slots = vec![SpawnSlot {
+                pos: centro,
+                occupant: None,
+                respawn_at: 0.0,
+            }];
             let nivel = shared::mar::nivel_em(centro);
             let n = slots.len() as u32;
             zonas.push(ServerSpawnZone {
@@ -3084,11 +3071,14 @@ pub const ELITE_DO_MAR_DANO: f32 = 1.4;
 pub const ELITE_DO_MAR_XP: f32 = 4.0;
 pub const ELITE_DO_MAR_VOLTA_S: f32 = 180.0;
 
-/// Is nest zone `zone_id` an ELITE nest? Every route has two nests (a
-/// third and two thirds of the way, `mar::ninhos`); the second holds the
-/// route's elite in its first slot.
+/// One sea mob in this many is an elite (the old ratio: one per route of
+/// two nests of three).
+pub const UM_ELITE_A_CADA: u32 = 6;
+
+/// Is sea zone `zone_id` an ELITE? The mobs are scattered one per zone
+/// (`mar::pontos_dos_bichos`); every `UM_ELITE_A_CADA`-th one is an elite.
 pub(crate) fn e_ninho_de_elite(zone_id: u32) -> bool {
-    zone_id >= ZONA_DO_MAR_ID && (zone_id - ZONA_DO_MAR_ID) % 2 == 1
+    zone_id >= ZONA_DO_MAR_ID && (zone_id - ZONA_DO_MAR_ID) % UM_ELITE_A_CADA == UM_ELITE_A_CADA - 1
 }
 
 /// A cannon's reach dressed as a `Skill`, so the targets come from the same
@@ -4120,16 +4110,16 @@ mod testes {
             crate::craft::tem(&w.sessions[&sid].inventory, item_id::PRANCHA_DE_NAUFRAGIO),
             nv::pranchas_do_bau(shared::mar::nivel_em(p))
         );
-        // One elite nest per route.
+        // Scattered: one mob per zone, one elite in UM_ELITE_A_CADA.
+        let total = w.spawn_zones.len();
         let elites = w
             .spawn_zones
             .iter()
             .filter(|z| e_ninho_de_elite(z.id))
             .count();
-        assert!(
-            elites >= 5 && elites <= shared::mar::rotas().len(),
-            "{elites} elite nests"
-        );
+        assert_eq!(total, shared::mar::pontos_dos_bichos().len());
+        assert!(w.spawn_zones.iter().all(|z| z.slots.len() == 1));
+        assert_eq!(elites, total / UM_ELITE_A_CADA as usize, "{elites} elites of {total}");
     }
 
     // ───────────────────── phase 2 ─────────────────────
@@ -4574,7 +4564,7 @@ mod testes {
         );
         w.recompensa_do_bicho(eu, false, 0.99, nv::CHANCE_TOKEN_DO_BICHO * 0.5);
         assert_eq!(tem(&w, sid, item_id::NAVAL_TOKEN), nv::TOKENS_DO_ELITE + 1);
-        assert!(e_ninho_de_elite(ZONA_DO_MAR_ID + 1) && !e_ninho_de_elite(ZONA_DO_MAR_ID));
+        assert!(e_ninho_de_elite(ZONA_DO_MAR_ID + 5) && !e_ninho_de_elite(ZONA_DO_MAR_ID));
     }
 
     /// A SHIP COSMETIC from the bag dresses the ship and is spent; with no
