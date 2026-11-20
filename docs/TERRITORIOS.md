@@ -39,6 +39,14 @@ nada a ver com as ilhas principais, que os clãs ocupam, fortificam e disputam.
    (canhão do navio e ataque a pé), captura do núcleo, recompensa e trava
    de re-ataque.
 
+## Armadilha
+
+O relevo do mar tem CACHE em disco (servidor `data/ilhas/*-marN.alt`, e o
+cliente também), com o nome vindo de `mar::REVISAO`. Mexeu no relevo (ilhota
+nova, tamanho, posição): **suba `mar::REVISAO`**. Sem isso o mover de terra lê
+o relevo velho (água embaixo da ilhota) e ninguém anda em terra, enquanto o
+navio (que usa `mar::navegavel` direto) parece certo. Foi o bug de 20/11/2026.
+
 ## Onde está no código
 
 - `crates/shared/src/mar.rs`: `ilhotas()`, `IlhaVista::territorio`,

@@ -50,7 +50,9 @@ use crate::terreno::{suave, Bioma, DefIlha, Material, ARQUIPELAGO, BLOCO, NIVEL_
 
 pub const ZONA: &str = "mar_aberto";
 /// Bump when the relief changes: it names the height caches.
-pub const REVISAO: u32 = 4;
+/// 5 (20/11/2026): the territory islets (`ilhotas`) — with the old cache the
+/// land mover saw water under them and no one could walk ashore.
+pub const REVISAO: u32 = 5;
 pub const SEMENTE: i32 = 0x0005_EA01;
 /// The square the height field covers: ±1,150 u (16/11/2026, every island
 /// on the sea; it was ±900 with four islands, ±700 with domes). ~42 MB of
