@@ -1111,6 +1111,8 @@ fn caixa_de_longe(verts: &mut Vec<Vertex>, idx: &mut Vec<u16>, a: Vec3, b: Vec3,
 /// few to a few tens of milliseconds): entering the sea never hitches.
 fn prepara(perto: Vec2) {
     let ilhas = mar::ilhas();
+    // The far meshes cover every land, the territory islets too.
+    let terras = mar::terras();
     let passo = match qualidade() {
         0 => 5.0,
         1 => 4.0,
@@ -1118,16 +1120,16 @@ fn prepara(perto: Vec2) {
     };
     let feito = LODS.with(|l| {
         let mut l = l.borrow_mut();
-        if l.len() != ilhas.len() {
+        if l.len() != terras.len() {
             l.clear();
-            l.resize_with(ilhas.len(), || None);
+            l.resize_with(terras.len(), || None);
         }
-        if let Some(k) = (0..ilhas.len()).find(|k| l[*k].is_none()) {
-            let (mut ms, n) = constroi_lod(&ilhas[k], passo);
+        if let Some(k) = (0..terras.len()).find(|k| l[*k].is_none()) {
+            let (mut ms, n) = constroi_lod(&terras[k], passo);
             let (arvores, n_arvores) = if sem_fix() {
                 (Vec::new(), 0)
             } else {
-                arvores_de_longe(&ilhas[k])
+                arvores_de_longe(&terras[k])
             };
             // The trees go in the ground's own mesh where they fit (the same
             // draw calls, whole or by tile).
@@ -1149,10 +1151,15 @@ fn prepara(perto: Vec2) {
                 .flat_map(fatia)
                 .map(|(m, a, b)| (MalhaEstatica::nova(m), a, b))
                 .collect();
-            let i = &ilhas[k];
+            let i = &terras[k];
             let r = Vec2::splat(i.raio + 18.0);
             let c = mq(i.centro);
-            let marcos = crate::mar_temas::malha_de_longe(i, &crate::mar_temas::tema(i));
+            // A territory islet has no dock landmarks (lighthouse, quay).
+            let marcos = if i.territorio {
+                Vec::new()
+            } else {
+                crate::mar_temas::malha_de_longe(i, &crate::mar_temas::tema(i))
+            };
             let vertices_marcos = marcos.iter().map(|m| m.vertices.len()).sum();
             l[k] = Some(Lod {
                 malhas: ms.into_iter().map(MalhaEstatica::nova).collect(),
@@ -1258,7 +1265,7 @@ pub fn desenha_ilhas_de_longe(t: &crate::terreno::Terreno, cam: &Camera3D) {
     }
     LODS.with(|l| {
         for (k, lod) in l.borrow().iter().enumerate() {
-            let (Some(lod), Some(i)) = (lod, mar::ilhas().get(k)) else {
+            let (Some(lod), Some(i)) = (lod, mar::terras().get(k)) else {
                 continue;
             };
             if !visivel(cam, mq(i.centro), i.raio + 18.0, fim) {

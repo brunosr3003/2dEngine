@@ -351,12 +351,13 @@ impl RotaDoMar {
         true
     }
 
-    /// AUTO COMBAT AT SEA WITH NOTHING IN SIGHT: the nearest mob nest not
-    /// found empty lately. The nests are where the sea mobs live
-    /// (`mar::ninhos`, the same function the server spawns from), so the
-    /// hunt goes where there is something to hunt.
+    /// AUTO COMBAT AT SEA WITH NOTHING IN SIGHT: the nearest mob spot not
+    /// found empty lately. The spots are where the sea mobs live
+    /// (`mar::pontos_dos_bichos`, the same function the server spawns from
+    /// since the sea was scattered on 20/11/2026), so the hunt goes where
+    /// there is something to hunt.
     pub fn proximo_ninho(&mut self, eu: Vec2, agora: f64) -> Option<Vec2> {
-        let ninhos = shared::mar::ninhos();
+        let ninhos = shared::mar::pontos_dos_bichos();
         // Standing on a nest with nothing around: mark it empty.
         if let Some((k, _)) = ninhos
             .iter()

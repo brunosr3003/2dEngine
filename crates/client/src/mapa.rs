@@ -1191,11 +1191,28 @@ fn aguas_sem_lei(
             estilo::texto_centro(q.x, q.y + u(8.0), "Lawless waters", tamanho, vermelho);
         }
     }
-    for n in shared::mar::ninhos() {
-        let q = ponto(vec2(n.x, n.y));
-        // A nest: a faint red dot (the live mobs are the solid fins).
-        if dentro(q, 4.0) {
-            draw_circle(q.x, q.y, 2.2 * k, Color::new(1.0, 0.36, 0.3, 0.45));
+    // (The nest dots went with the nests on 20/11/2026: the sea mobs are
+    // scattered now, and the live ones are the solid fins.)
+    // THE TERRITORY ISLETS (docs/TERRITORIOS.md): a flag and the name.
+    for i in shared::mar::ilhotas() {
+        let q = ponto(vec2(i.centro.x, i.centro.y));
+        let r = 7.0 * k;
+        if !dentro(q, r) {
+            continue;
+        }
+        let cor = Color::new(0.95, 0.78, 0.36, 1.0);
+        draw_line(q.x - r * 0.35, q.y + r, q.x - r * 0.35, q.y - r, 1.6 * k, cor);
+        draw_triangle(
+            vec2(q.x - r * 0.35, q.y - r),
+            vec2(q.x + r * 0.75, q.y - r * 0.55),
+            vec2(q.x - r * 0.35, q.y - r * 0.1),
+            cor,
+        );
+        if !mini {
+            let rotulo = format!("{} · Territory", i.nome);
+            let (dx, dy) = (q.x + r * 1.2, q.y + r * 0.45);
+            estilo::texto(dx + 1.0, dy + 1.0, &rotulo, tamanho, Color::new(0.0, 0.0, 0.0, 0.85));
+            estilo::texto(dx, dy, &rotulo, tamanho, cor);
         }
     }
     for i in shared::mar::ilhas() {

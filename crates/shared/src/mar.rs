@@ -177,6 +177,9 @@ pub struct IlhaVista {
     pub fase: f32,
     /// The Waste's mesas: (centre, radius, height). Radius 0 = none.
     pub mesas: [(Vec2, f32, f32); 3],
+    /// A CLAN TERRITORY islet (`ilhotas`, docs/TERRITORIOS.md): no pier,
+    /// no quay, no zone, no route; only its land.
+    pub territorio: bool,
 }
 
 impl IlhaVista {
@@ -345,6 +348,7 @@ pub fn ilhas() -> &'static [IlhaVista] {
                     feitio,
                     fase: i as f32 * 2.399 + 0.7,
                     mesas: [(Vec2::ZERO, 0.0, 0.0); 3],
+                    territorio: false,
                 };
                 let ang = rumo.y.atan2(rumo.x);
                 v.raiz = centro + rumo * (v.costa(ang) - 3.0);
@@ -367,6 +371,116 @@ pub fn ilhas() -> &'static [IlhaVista] {
             })
             .collect()
     })
+}
+
+/// Every land of the sea: the dock islands and the territory islets.
+pub fn todas_as_terras() -> impl Iterator<Item = &'static IlhaVista> {
+    ilhas().iter().chain(ilhotas().iter())
+}
+
+/// The same as `todas_as_terras`, as one slice (dock islands first, so an
+/// index below `ilhas().len()` is the same island in both).
+pub fn terras() -> &'static [IlhaVista] {
+    static T: std::sync::OnceLock<Vec<IlhaVista>> = std::sync::OnceLock::new();
+    T.get_or_init(|| todas_as_terras().copied().collect())
+}
+
+/// How many territory islets the sea has (docs/TERRITORIOS.md).
+pub const N_ILHOTAS: usize = 12;
+
+/// The islets' names, in placement order.
+pub const NOMES_DAS_ILHOTAS: [&str; N_ILHOTAS] = [
+    "Gull Rock",
+    "Ember Key",
+    "Saltmarsh Isle",
+    "Driftwood Cay",
+    "Thornreef",
+    "Lantern Isle",
+    "Coral Crown",
+    "Stormwatch",
+    "Black Sand Cay",
+    "Kestrel Isle",
+    "Wreckers' Rest",
+    "Sunken Bell",
+];
+
+/// Distance from `p` to the segment `a`-`b`.
+fn dist_ao_segmento(p: Vec2, a: Vec2, b: Vec2) -> f32 {
+    let ab = b - a;
+    let t = ((p - a).dot(ab) / ab.length_squared().max(1e-6)).clamp(0.0, 1.0);
+    p.distance(a + ab * t)
+}
+
+/// THE TERRITORY ISLETS (docs/TERRITORIOS.md): `N_ILHOTAS` small islands
+/// the clans occupy and fight over. Placed once, deterministically, by
+/// geometry only (never `navegavel`/`agua_livre`, which read this list):
+/// in PvP waters, well off the dock islands, the routes and each other.
+pub fn ilhotas() -> &'static [IlhaVista] {
+    static I: std::sync::OnceLock<Vec<IlhaVista>> = std::sync::OnceLock::new();
+    I.get_or_init(|| {
+        const PASSO: f32 = 30.0;
+        let margem = 70.0;
+        let n = ((BORDA - margem) / PASSO).floor() as i32;
+        let rotas = rotas();
+        // Candidates on a grid, visited in a scrambled (but fixed) order.
+        let mut cands: Vec<(u32, Vec2)> = Vec::new();
+        for gx in -n..=n {
+            for gz in -n..=n {
+                let c = Vec2::new(gx as f32 * PASSO, gz as f32 * PASSO);
+                cands.push((mistura(gx ^ 0x7E44, gz ^ 0x11E7), c));
+            }
+        }
+        cands.sort_by_key(|(h, _)| *h);
+        let mut feitas: Vec<IlhaVista> = Vec::new();
+        for (h, c) in cands {
+            if feitas.len() == N_ILHOTAS {
+                break;
+            }
+            let raio = 48.0 + 24.0 * ((h >> 8) & 0xFF) as f32 / 255.0;
+            let longe_das_ilhas = ilhas()
+                .iter()
+                .all(|i| c.distance(i.centro) > i.raio + raio + 140.0);
+            let longe_das_rotas = rotas
+                .iter()
+                .all(|(a, b)| dist_ao_segmento(c, *a, *b) > raio + 70.0);
+            let longe_das_outras = feitas
+                .iter()
+                .all(|o| c.distance(o.centro) > o.raio + raio + 110.0);
+            let na_carta = c.x.abs() + raio + margem < BORDA && c.y.abs() + raio + margem < BORDA;
+            if !(longe_das_ilhas
+                && longe_das_rotas
+                && longe_das_outras
+                && na_carta
+                && !aguas_pacificas(c))
+            {
+                continue;
+            }
+            let k = feitas.len();
+            let perto = ilha_mais_perto(c);
+            feitas.push(IlhaVista {
+                ilha: 1000 + k,
+                zona: ZONA,
+                nome: NOMES_DAS_ILHOTAS[k],
+                centro: c,
+                raio,
+                raiz: c,
+                ponta: c,
+                nivel: perto.nivel,
+                feitio: if k % 3 == 1 { Feitio::Ermo } else { Feitio::Bosque },
+                fase: k as f32 * 1.913 + 0.3,
+                mesas: [(Vec2::ZERO, 0.0, 0.0); 3],
+                territorio: true,
+            });
+        }
+        feitas
+    })
+}
+
+/// The territory islet whose land (or shelf) is at `p`.
+pub fn ilhota_em(p: Vec2) -> Option<&'static IlhaVista> {
+    ilhotas()
+        .iter()
+        .find(|i| p.distance(i.centro) <= i.raio + PLATAFORMA)
 }
 
 /// The island of `zona` on the sea, if it has a dock (the Magic Island has
@@ -488,7 +602,7 @@ fn semente_da(i: &IlhaVista) -> u32 {
 /// the coast. Never in front of the pier (the way in stays open) and never
 /// past `raio + 14` (`agua_livre` starts at `raio + 15`).
 fn feicao_no_mar(i: &IlhaVista, p: Vec2, fora: f32, d: f32, s: u32) -> Option<f32> {
-    if d > i.raio + 14.0 {
+    if d > i.raio + 14.0 || i.territorio {
         return None;
     }
     let (ao_longo, de_lado) = i.no_cais(p);
@@ -535,7 +649,7 @@ fn feicao_no_mar(i: &IlhaVista, p: Vec2, fora: f32, d: f32, s: u32) -> Option<f3
 
 /// The land at `p` (sea coordinates), if any.
 pub fn terra_em(p: Vec2) -> Option<Terra> {
-    for i in ilhas() {
+    for i in todas_as_terras() {
         let r = p - i.centro;
         let d = r.length();
         if d > i.raio + PLATAFORMA {
@@ -567,10 +681,12 @@ fn terra_da(i: &'static IlhaVista, p: Vec2, d: f32, costa: f32) -> Option<Terra>
     }
     let (ao_longo, lado) = i.no_cais(p);
     let de_lado = lado.abs();
-    // THE PIER: a tongue of planks, and the T of its head.
-    let cais = ((-3.0..=CAIS_COMP).contains(&ao_longo) && de_lado <= CAIS_LARG * 0.5)
-        || ((CAIS_COMP - CABECA_COMP..=CAIS_COMP).contains(&ao_longo)
-            && de_lado <= CABECA_LARG * 0.5);
+    // THE PIER: a tongue of planks, and the T of its head (none on a
+    // territory islet).
+    let cais = !i.territorio
+        && (((-3.0..=CAIS_COMP).contains(&ao_longo) && de_lado <= CAIS_LARG * 0.5)
+            || ((CAIS_COMP - CABECA_COMP..=CAIS_COMP).contains(&ao_longo)
+                && de_lado <= CABECA_LARG * 0.5));
     if cais && e <= 0.0 {
         return Some(Terra {
             ilha: i,
@@ -652,7 +768,7 @@ fn terra_da(i: &'static IlhaVista, p: Vec2, d: f32, costa: f32) -> Option<Terra>
     };
     // THE QUAY: carved flat out of whatever the island is, at the pier's root.
     let mut molhe = 0.0;
-    if ao_longo > -MOLHE_FUNDO - 4.0 && ao_longo < 6.0 && de_lado < MOLHE_LARG + 4.0 {
+    if !i.territorio && ao_longo > -MOLHE_FUNDO - 4.0 && ao_longo < 6.0 && de_lado < MOLHE_LARG + 4.0 {
         molhe = (1.0 - suave((de_lado - MOLHE_LARG) / 4.0))
             * (1.0 - suave((-ao_longo - MOLHE_FUNDO) / 4.0));
         h += (ALTURA_DO_MOLHE - h) * molhe;
@@ -675,7 +791,7 @@ pub fn bloco_da_coluna(bx: i32, bz: i32) -> i32 {
     let mut alto = f32::MIN;
     let mut fundo = FUNDO as f32 * BLOCO;
     let mut lagoa: Option<f32> = None;
-    for i in ilhas() {
+    for i in todas_as_terras() {
         let r = p - i.centro;
         let d = r.length();
         if d > i.raio + PLATAFORMA {
@@ -962,9 +1078,7 @@ pub fn rotas() -> Vec<(Vec2, Vec2)> {
 pub fn agua_livre(p: Vec2) -> bool {
     navegavel(p.x, p.y)
         && !no_corredor(p)
-        && ilhas()
-            .iter()
-            .all(|i| p.distance(i.centro) > i.raio + PLATAFORMA * 0.5)
+        && todas_as_terras().all(|i| p.distance(i.centro) > i.raio + PLATAFORMA * 0.5)
 }
 
 /// Where the sea mobs live: along every route, at a third and two thirds.
@@ -1713,6 +1827,49 @@ mod testes_dos_bichos_espalhados {
             for b in &p[i + 1..] {
                 assert!(a.distance(*b) >= min, "{a} and {b} too close");
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod testes_das_ilhotas {
+    use super::*;
+
+    /// The territory islets: all of them placed, in PvP waters, apart from
+    /// the dock islands, the routes and each other, real land in the middle,
+    /// no pier, and no sea mob or chest on top of them.
+    #[test]
+    fn as_ilhotas_existem_e_ficam_no_lugar_certo() {
+        let v = ilhotas();
+        for i in v {
+            eprintln!("{} centro=({:.0},{:.0}) raio={:.0} nivel={:?}", i.nome, i.centro.x, i.centro.y, i.raio, i.nivel);
+        }
+        assert_eq!(v.len(), N_ILHOTAS, "only {} islets fit", v.len());
+        for (k, i) in v.iter().enumerate() {
+            assert!(i.territorio);
+            assert!(!aguas_pacificas(i.centro), "{} in peaceful waters", i.nome);
+            assert!(dentro(i.centro));
+            let t = terra_em(i.centro).expect("land in the middle of an islet");
+            assert!(t.h > NIVEL_DO_MAR && !t.cais, "{}", i.nome);
+            assert!(!navegavel(i.centro.x, i.centro.y));
+            for o in &v[k + 1..] {
+                assert!(i.centro.distance(o.centro) > i.raio + o.raio + 100.0);
+            }
+            for d in ilhas() {
+                assert!(i.centro.distance(d.centro) > i.raio + d.raio + 100.0);
+            }
+            assert!(ilhota_em(i.centro).is_some_and(|x| x.nome == i.nome));
+            // The water all round is sailable again.
+            let fora = i.centro + Vec2::X * (i.raio + PLATAFORMA + 5.0);
+            assert!(navegavel(fora.x, fora.y), "{} has no water round it", i.nome);
+        }
+        // Off the land and its beach (the same rule as `agua_livre`).
+        let em_cima = |p: Vec2| v.iter().any(|i| p.distance(i.centro) <= i.raio + PLATAFORMA * 0.5);
+        for p in pontos_dos_bichos() {
+            assert!(!em_cima(*p), "a sea mob on an islet at {p}");
+        }
+        for p in baus() {
+            assert!(!em_cima(p), "a chest on an islet at {p}");
         }
     }
 }
