@@ -888,7 +888,9 @@ impl EstaleiroUi {
             let y = r.y + (id / 3) as f32 * (ch + gap);
             let card = Rect::new(x, y, cw, ch);
             estilo::cartao(card, card.toca(m), id == self.tipo_selecionado);
-            let base = nv::stats_base(tipo);
+            // What the T1 hull you would craft really has (base × tier 1).
+            let base = nv::stats_finais_novo(tipo, 1, [0; 4]);
+            let (papel, cor_papel, _) = papel_da_variante(tipo.variante);
             let nome = match (tipo.tamanho, tipo.variante) {
                 (nv::Tamanho::Pequeno, nv::Variante::Veloz) => "Swift Sloop",
                 (nv::Tamanho::Pequeno, nv::Variante::Ataque) => "Corsair Sloop",
@@ -901,8 +903,9 @@ impl EstaleiroUi {
                 (nv::Tamanho::Grande, nv::Variante::Tanque) => "Iron Galleon",
             };
             estilo::texto_forte(x + 6.0 * f, y + 17.0 * f, nome, 11, LATAO);
+            estilo::texto_forte(x + 6.0 * f, y + 35.0 * f, papel, 10, cor_papel);
             estilo::texto(
-                x + 6.0 * f,
+                x + 6.0 * f + estilo::medir_forte(&shared::idioma::tr(papel), 10) + 6.0 * f,
                 y + 35.0 * f,
                 &format!("{} crew · T1", tipo.capacidade()),
                 10,
@@ -911,16 +914,20 @@ impl EstaleiroUi {
             estilo::texto(
                 x + 6.0 * f,
                 y + 52.0 * f,
-                &format!("{:.0} HP · {:.1} u/s", base.hp, base.velocidade),
+                &format!("Hull {:.0} · {:.1} u/s", base.hp, base.velocidade),
                 10,
                 estilo::TEXTO,
             );
             estilo::texto(
                 x + 6.0 * f,
                 y + 68.0 * f,
-                &format!("×{:.2} damage", base.dano),
+                &format!(
+                    "Cannon ×{:.2} · Turn {:.0}°/s",
+                    base.dano,
+                    base.virada.to_degrees()
+                ),
                 10,
-                estilo::SUAVE,
+                estilo::TEXTO,
             );
             if clicou && card.toca(m) {
                 self.tipo_selecionado = id;
@@ -952,13 +959,14 @@ impl EstaleiroUi {
                 escolha = Some(Escolha::OndeObter(*item));
             }
         }
-        estilo::texto(
-            r.x,
-            y + 44.0 * f,
-            &format!("Craft {} T1 · points and tiers come next", tipo.nome()),
-            12,
-            LATAO,
-        );
+        // What sets this one apart from its two siblings of the same size.
+        let (_, cor_papel, resumo) = papel_da_variante(tipo.variante);
+        let resumo_tr = shared::idioma::tr(resumo);
+        let tam = [12u16, 11, 10]
+            .into_iter()
+            .find(|&t| estilo::medir(&resumo_tr, t) <= r.w)
+            .unwrap_or(9);
+        estilo::texto(r.x, y + 44.0 * f, resumo, tam, cor_papel);
         let b = Rect::new(r.x, r.y + r.h - 44.0 * f, r.w, 42.0 * f);
         estilo::botao(b, "Craft ship", estilo::estado_de(b, !ok, false), ok);
         if clicou && ok && b.toca(m) {
@@ -1400,6 +1408,29 @@ fn classe_e_estrelas(id: u16, d: &shared::items::NavioData) -> String {
         )
     } else {
         format!("{nome} · legacy hull")
+    }
+}
+
+/// The role of each variant in the gallery: a short tag, its colour, and
+/// one line that says what it trades against its two siblings of the same
+/// size (true for all three sizes, see `nv::stats_base`).
+fn papel_da_variante(v: nv::Variante) -> (&'static str, Color, &'static str) {
+    match v {
+        nv::Variante::Veloz => (
+            "Speed",
+            estilo::AZUL,
+            "Swift: fastest and nimblest of its size, but the thinnest hull and lightest guns.",
+        ),
+        nv::Variante::Ataque => (
+            "Firepower",
+            estilo::VERMELHO,
+            "Corsair: the heaviest guns of its size, with middle speed and hull.",
+        ),
+        nv::Variante::Tanque => (
+            "Armor",
+            estilo::VERDE,
+            "Iron: the toughest hull of its size, but the slowest and heaviest to turn.",
+        ),
     }
 }
 

@@ -2650,6 +2650,24 @@ pub const VERBETES: &[(&str, &str)] = &[
     ("Turning", "Manobra"),
     ("Agile", "Ágil"),
     ("Steady", "Firme"),
+    // estaleiro_ui.rs — galeria dos 9 barcos: papel de cada variante
+    ("Firepower", "Poder de fogo"),
+    ("Armor", "Blindagem"),
+    ("{n} crew · T1", "{n} tripulantes · T1"),
+    ("Hull {h} · {v} u/s", "Casco {h} · {v} u/s"),
+    ("Cannon ×{d} · Turn {g}°/s", "Canhão ×{d} · Giro {g}°/s"),
+    (
+        "Swift: fastest and nimblest of its size, but the thinnest hull and lightest guns.",
+        "Veloz: o mais rápido e ágil do seu tamanho, mas com o casco mais fino e os canhões mais leves.",
+    ),
+    (
+        "Corsair: the heaviest guns of its size, with middle speed and hull.",
+        "Corsário: os canhões mais pesados do seu tamanho, com velocidade e casco medianos.",
+    ),
+    (
+        "Iron: the toughest hull of its size, but the slowest and heaviest to turn.",
+        "Ferro: o casco mais resistente do seu tamanho, mas o mais lento e pesado pra virar.",
+    ),
     ("Heavy", "Pesada"),
     // ── the Island Portal (17/11/2026) ──
     ("Island Portal", "Portal das Ilhas"),

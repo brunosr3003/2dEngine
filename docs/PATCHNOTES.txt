@@ -2,6 +2,7 @@ Nov 20, 2026 — New ships and naval PvP
 
 - Choose from nine ship designs across three sizes and three roles, then improve your ship from T1 to T4 and spend points on speed, hull, cannons and turning.
 - The Shipyard now has a ship gallery, stat previews, point allocation, respec and upgrades.
+- The ship gallery now explains each role: Swift ships are the fastest and nimblest, Corsairs carry the heaviest guns, and Iron ships have the toughest hulls. Each card shows the real T1 hull, speed, cannon and turning.
 - New Chain Shot: slow an enemy ship's hull for a few seconds. Broadsides now fire a spread of cannonballs, and Long Gun shots fly faster.
 - A defeated ship remains as a burning wreck for a while. Repair its sails to return to the fight, or board and loot an enemy wreck.
 - Earn Naval Tokens and naval fragments from wreck loot and sea creatures, then spend them at the Naval Quartermaster.
