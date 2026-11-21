@@ -153,6 +153,7 @@ pub async fn run_world_loop(
                 }
                 Ok(IncomingMessage::ClaDosPresentes(v)) => world.on_cla_dos_presentes(v),
                 Ok(IncomingMessage::Territorios(v)) => world.on_territorios(v),
+                Ok(IncomingMessage::Bandeiras(v)) => world.on_bandeiras(v),
                 Ok(IncomingMessage::Reivindicacao { sid, resultado }) => {
                     world.on_reivindicacao(sid, resultado)
                 }
@@ -205,6 +206,7 @@ pub async fn run_world_loop(
                 }
                 Ok(IncomingMessage::ClaDosPresentes(v)) => world.on_cla_dos_presentes(v),
                 Ok(IncomingMessage::Territorios(v)) => world.on_territorios(v),
+                Ok(IncomingMessage::Bandeiras(v)) => world.on_bandeiras(v),
                 Ok(IncomingMessage::Reivindicacao { sid, resultado }) => {
                     world.on_reivindicacao(sid, resultado)
                 }

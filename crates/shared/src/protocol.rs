@@ -1594,6 +1594,11 @@ pub enum ServerMessage {
     Tomadas {
         lista: Vec<crate::territorio::TomadaInfo>,
     },
+    /// CLAN FLAGS: every clan's flag (preset, approved image), on entering
+    /// the sea and whenever one changes. Appended.
+    Bandeiras {
+        lista: Vec<crate::bandeira::BandeiraDoCla>,
+    },
 }
 
 /// Quantos espacos a barra de itens tem: C, 8, 9 e 0.

@@ -1984,6 +1984,18 @@ pub fn draw_entities_com_sombras(
 
     // Get my position to filter nearby ghosts
     let my_pos = self_id.and_then(|sid| world.ents.get(&sid).map(|e| e.render_pos));
+    // CLAN FLAGS: a ship flies its captain's clan flag (the ship carries the
+    // captain's name; the captain's body carries the clan tag).
+    let tag_do_capitao: std::collections::HashMap<String, String> = if crate::mar_ui::no_mar() {
+        world
+            .ents
+            .values()
+            .filter(|e| e.meta.tag == shared::EntityTag::Player && !e.meta.cla.is_empty())
+            .filter_map(|e| Some((e.meta.name.clone()?, e.meta.cla.clone())))
+            .collect()
+    } else {
+        Default::default()
+    };
 
     for id in order {
         let Some(e) = world.ents.get_mut(&id) else {
@@ -2034,6 +2046,29 @@ pub fn draw_entities_com_sombras(
                     e.meta.id.0 as u64,
                     shared::navio::Visual::do_fio(e.meta.skins),
                     vel,
+                );
+            }
+            // CLAN FLAGS: the captain's clan flag on the mainmast, flying aft.
+            if let Some(tex) = e
+                .meta
+                .name
+                .as_ref()
+                .and_then(|n| tag_do_capitao.get(n))
+                .and_then(|tag| crate::bandeiras::da_tag(tag))
+            {
+                let v = shared::navio::Visual::do_fio(e.meta.skins);
+                let topo = crate::mar_casco::topo_do_mastro(p, e.yaw, e.meta.id.0 as u64, v)
+                    - vec3(0.0, 0.6, 0.0);
+                let atras = -vec3(e.yaw.sin(), 0.0, e.yaw.cos());
+                crate::mar_cena::pano(
+                    topo,
+                    atras,
+                    2.1,
+                    1.4,
+                    WHITE,
+                    Some(tex),
+                    get_time() as f32,
+                    e.meta.id.0 as f32,
                 );
             }
             // Phase 4: a marked ship (treasure on deck) flies the skull.

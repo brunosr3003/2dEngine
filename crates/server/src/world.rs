@@ -78,6 +78,8 @@ pub enum IncomingMessage {
     ClaDosPresentes(Vec<(String, i64, String)>),
     /// TERRITORIES: the held islets, read from the database.
     Territorios(Vec<shared::territorio::Dono>),
+    /// CLAN FLAGS: every clan's flag, read from the database.
+    Bandeiras(Vec<shared::bandeira::BandeiraDoCla>),
     /// TERRITORIES: a claim's outcome (the new owner, or why not).
     Reivindicacao {
         sid: SessionId,
@@ -2633,6 +2635,8 @@ pub struct Session {
     pub em_terra: Option<conves::EmTerra>,
     /// TERRITORIES: this client has the held-islets list (`Territorios`).
     pub territorios_enviados: bool,
+    /// CLAN FLAGS: this client has the flags list (`Bandeiras`).
+    pub bandeiras_enviadas: bool,
     /// The deck rows this session's client already has (`Conves` deltas).
     pub conves_enviado: HashMap<EntityId, shared::conves::NoConves>,
     /// LETHAL FURY (Assassin active): until when, and its factor (1.0, or
@@ -3177,6 +3181,8 @@ pub struct GameWorld {
     pub(crate) territorios: HashMap<u8, shared::territorio::Dono>,
     /// TERRITORIES: the claims under way (islet -> claim).
     pub(crate) tomadas: HashMap<u8, territorios::Tomada>,
+    /// CLAN FLAGS: every clan's flag (clan id -> flag), loaded at sea.
+    pub(crate) bandeiras: HashMap<i64, shared::bandeira::BandeiraDoCla>,
     /// Open direct trades, one entry per side (`world/troca.rs`).
     pub(crate) trocas: HashMap<SessionId, troca::Mesa>,
     /// Pending trade invites: invited -> (who invited, until sim_time_s).
@@ -3694,6 +3700,7 @@ impl GameWorld {
             social_pendentes: HashMap::new(),
             territorios: HashMap::new(),
             tomadas: HashMap::new(),
+            bandeiras: HashMap::new(),
             trocas: HashMap::new(),
             troca_convites: HashMap::new(),
             enemy_spawn_timer: 0.0,
@@ -3895,6 +3902,7 @@ impl GameWorld {
             social_pendentes: HashMap::new(),
             territorios: HashMap::new(),
             tomadas: HashMap::new(),
+            bandeiras: HashMap::new(),
             trocas: HashMap::new(),
             troca_convites: HashMap::new(),
             enemy_spawn_timer: 0.0,
@@ -8600,6 +8608,7 @@ impl GameWorld {
                 conves: None,
                 em_terra: None,
                 territorios_enviados: false,
+                bandeiras_enviadas: false,
                 conves_enviado: HashMap::new(),
                 furia_ate: 0.0,
                 furia_fator: 0.0,

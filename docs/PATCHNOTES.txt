@@ -11,6 +11,7 @@ Nov 20, 2026 — New ships and naval PvP
 - Dying on an islet now brings you back aboard your anchored ship, with the respawn delay growing on each death, as on deck.
 - An anchored ship broken while its crew fights ashore now burns as a wreck like any other: fall on the islet and you still come back aboard it. If it sinks while you are ashore, you stay on the islet without a ship, and falling there sends you to the dock.
 - Each islet's heart is marked by a flagpole with a waving cloth flag and a glowing ring on the ground: gold when free, green when your clan holds it, red when another clan does. The islets are now bare land, ready for forts.
+- Clan flags: every clan flies a flag on its ships' mainmasts, on the islet it holds and on the world map. The leader (and officers allowed to edit the tag) designs it in the clan panel: field colour, pattern, second colour, emblem and emblem colour.
 - Clans without a territory are now nomad clans, limited to 10 members. Holding an islet lets a clan grow to 50.
 - Fixed: the clan member list could fail to load for clans with officers or members.
 - Fixed: a newly built Brig or Galleon showed up as a Sloop in your bag; ships now show their real name, tier and icon.

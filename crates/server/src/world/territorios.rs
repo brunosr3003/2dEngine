@@ -32,11 +32,42 @@ impl GameWorld {
         if self.tick % (shared::TICK_RATE_HZ as u32 * RECARREGA_A_CADA_S) == 1 {
             self.carregar_territorios();
         }
+        let bandeiras = self.lista_de_bandeiras();
+        for s in self.sessions.values_mut() {
+            if s.logged_in && !s.bandeiras_enviadas && !bandeiras.is_empty() {
+                s.bandeiras_enviadas = true;
+                let _ = s.handle.to_client.send(ServerMessage::Bandeiras {
+                    lista: bandeiras.clone(),
+                });
+            }
+        }
         let lista = self.lista_de_territorios();
         for s in self.sessions.values_mut() {
             if s.logged_in && !s.territorios_enviados {
                 s.territorios_enviados = true;
                 let _ = s.handle.to_client.send(ServerMessage::Territorios {
+                    lista: lista.clone(),
+                });
+            }
+        }
+    }
+
+    fn lista_de_bandeiras(&self) -> Vec<shared::bandeira::BandeiraDoCla> {
+        let mut v: Vec<_> = self.bandeiras.values().cloned().collect();
+        v.sort_by_key(|b| b.cla_id);
+        v
+    }
+
+    /// CLAN FLAGS: the database's list arrived; when it changed, everyone at
+    /// sea gets it again.
+    pub fn on_bandeiras(&mut self, v: Vec<shared::bandeira::BandeiraDoCla>) {
+        let novo: HashMap<i64, _> = v.into_iter().map(|b| (b.cla_id, b)).collect();
+        if novo != self.bandeiras {
+            self.bandeiras = novo;
+            let lista = self.lista_de_bandeiras();
+            for s in self.sessions.values_mut().filter(|s| s.logged_in) {
+                s.bandeiras_enviadas = true;
+                let _ = s.handle.to_client.send(ServerMessage::Bandeiras {
                     lista: lista.clone(),
                 });
             }
@@ -61,6 +92,12 @@ impl GameWorld {
                     let _ = ctx.tx.send(IncomingMessage::Territorios(v));
                 }
                 Err(e) => tracing::warn!("territorios: falha ao carregar: {e:#}"),
+            }
+            match crate::social::bandeiras(&ctx.pool).await {
+                Ok(v) => {
+                    let _ = ctx.tx.send(IncomingMessage::Bandeiras(v));
+                }
+                Err(e) => tracing::warn!("bandeiras: falha ao carregar: {e:#}"),
             }
         });
     }

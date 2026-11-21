@@ -52,6 +52,8 @@ pub struct Social {
     aviso_cla: String,
     /// The clan tag being typed (create / change).
     tag_cla: String,
+    /// CLAN FLAGS: the flag being edited (`None` = the clan's current one).
+    bandeira_edit: Option<u32>,
     /// Clan tab: the member list or the management page.
     cla_gerir: bool,
     /// The member whose actions are showing.
@@ -1655,6 +1657,8 @@ impl Social {
             );
             y += 30.0 * k;
         }
+        // ── CLAN FLAG: flown on the clan's ships, its islet and the map ──
+        y = self.editor_de_bandeira(c, social::pode_no_cla(meu, A::Tag, 0), dir.x, y, dir.w, fh, k, s);
         // Ranks, for whoever wonders what an officer can do.
         texto_em_linhas(
             "Leader: everything. Officers: invite, kick members, edit the notice. Select a member in Members to see their actions.",
@@ -2146,7 +2150,7 @@ pub async fn previa() {
         amigos:vec!["MaréAlta".into(),"Navegante".into()],recebidos:vec!["Corsair".into()],enviados:vec!["Captain".into()],
         neste_canal:vec!["brunji".into(),"MaréAlta".into()],
         cartas:vec![social::Carta{id:1,de:"MaréAlta".into(),assunto:"Ready for the next adventure?".into(),texto:"Vamos reunir o grupo na vila e explorar as dungeons. Se precisar de ajuda, mande uma carta!".into(),quando:0,lida:false,oficial:false,anexos:vec![],resgatada:false}],
-        cla:Some(social::Cla{id:1,nome:"Tide Corsairs".into(),lider:"brunji".into(),aviso:"Meet at the village for the next expedition.".into(),membros:vec!["brunji".into(),"MaréAlta".into(),"Navegante".into(),"Captain".into()],tag:"TIDE".into(),oficiais:vec!["MaréAlta".into()],territorio:Some(1)}),
+        cla:Some(social::Cla{id:1,nome:"Tide Corsairs".into(),lider:"brunji".into(),aviso:"Meet at the village for the next expedition.".into(),membros:vec!["brunji".into(),"MaréAlta".into(),"Navegante".into(),"Captain".into()],tag:"TIDE".into(),oficiais:vec!["MaréAlta".into()],territorio:Some(1),bandeira:0x1_1040}),
         convites_cla:vec![], cargo:Some("admin".into()),destinatarios:42,oficiais:vec![],
         contatos: previa_contatos(),
         lista_negra: vec![
@@ -2294,6 +2298,7 @@ mod testes {
             tag: "TIDE".into(),
             oficiais: vec!["Bia".into()],
             territorio: None,
+            bandeira: 0,
         }
     }
 
@@ -2459,5 +2464,90 @@ mod testes {
                 c.id
             );
         }
+    }
+}
+
+
+impl Social {
+    /// CLAN FLAGS: the flag preview and, for who may edit it, five cyclers
+    /// (field, pattern, second colour, emblem, emblem colour) and Save.
+    /// Returns the next free `y`.
+    #[allow(clippy::too_many_arguments)]
+    fn editor_de_bandeira(
+        &mut self,
+        c: &social::Cla,
+        pode: bool,
+        x: f32,
+        y: f32,
+        w: f32,
+        fh: f32,
+        k: f32,
+        s: &mut Vec<ClientMessage>,
+    ) -> f32 {
+        use crate::hud_estilo as e;
+        use shared::bandeira::{Bandeira, NOMES_DAS_CORES, NOMES_DOS_EMBLEMAS, NOMES_DOS_PADROES};
+        let atual = self.bandeira_edit.unwrap_or(c.bandeira);
+        let (pw, ph) = (84.0 * k, 56.0 * k);
+        e::texto(x, y + 2.0, "Clan flag", 14, e::OURO);
+        let tex = crate::bandeiras::do_preset(atual);
+        draw_rectangle(x - 1.0, y + 10.0 * k - 1.0, pw + 2.0, ph + 2.0, Color::new(0.0, 0.0, 0.0, 0.8));
+        draw_texture_ex(
+            &tex,
+            x,
+            y + 10.0 * k,
+            WHITE,
+            DrawTextureParams {
+                dest_size: Some(vec2(pw, ph)),
+                ..Default::default()
+            },
+        );
+        if !pode {
+            return y + ph + 24.0 * k;
+        }
+        let mut b = Bandeira::desempacota(atual);
+        let campos: [(&str, &[&str], u8); 5] = [
+            ("Field", &NOMES_DAS_CORES, b.fundo),
+            ("Pattern", &NOMES_DOS_PADROES, b.padrao),
+            ("Second", &NOMES_DAS_CORES, b.cor2),
+            ("Emblem", &NOMES_DOS_EMBLEMAS, b.emblema),
+            ("Emblem colour", &NOMES_DAS_CORES, b.cor_emblema),
+        ];
+        let gx = x + pw + 10.0 * k;
+        let gw = (w - pw - 10.0 * k - 6.0 * k) / 2.0;
+        let lh = (fh * 0.78).max(22.0 * k);
+        let bt = lh;
+        let mut novos = [b.fundo, b.padrao, b.cor2, b.emblema, b.cor_emblema];
+        for (n, (rotulo, nomes, v)) in campos.iter().enumerate() {
+            let cx = gx + (n % 2) as f32 * (gw + 6.0 * k);
+            let cy = y + 10.0 * k + (n / 2) as f32 * (lh + 4.0 * k);
+            let total = nomes.len() as u8;
+            if crate::ui::botao(Rect::new(cx, cy, bt, lh), "<", true) {
+                novos[n] = (v + total - 1) % total;
+            }
+            if crate::ui::botao(Rect::new(cx + gw - bt, cy, bt, lh), ">", true) {
+                novos[n] = (v + 1) % total;
+            }
+            let texto = format!("{}: {}", shared::idioma::tr(rotulo), shared::idioma::tr(nomes[*v as usize]));
+            e::texto_ajustado(&texto, cx + bt + 4.0 * k, cy + lh * 0.68, gw - 2.0 * bt - 8.0 * k, 12, e::TEXTO);
+        }
+        b = Bandeira {
+            fundo: novos[0],
+            padrao: novos[1],
+            cor2: novos[2],
+            emblema: novos[3],
+            cor_emblema: novos[4],
+        };
+        let novo = b.empacota();
+        if novo != atual {
+            self.bandeira_edit = Some(novo);
+        }
+        let salvar = Rect::new(gx + gw + 6.0 * k, y + 10.0 * k + 2.0 * (lh + 4.0 * k), gw, lh);
+        let mudou = self.bandeira_edit.is_some_and(|v| v != c.bandeira);
+        if crate::ui::botao(salvar, "Save flag", mudou) {
+            if let Some(v) = self.bandeira_edit.take() {
+                self.enviar(Pedido::BandeiraCla { bandeira: v }, s);
+            }
+        }
+        y + 10.0 * k + 3.0 * (lh + 4.0 * k) + 14.0 * k
     }
 }

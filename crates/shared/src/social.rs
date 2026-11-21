@@ -91,6 +91,11 @@ pub enum Pedido {
     RemoverListaNegra {
         nome: String,
     },
+    /// CLAN FLAGS: set the clan's preset flag (`bandeira::Bandeira`
+    /// packed). Same rank as the tag. Appended.
+    BandeiraCla {
+        bandeira: u32,
+    },
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -234,6 +239,9 @@ pub struct Cla {
     /// TERRITORIES: the islet the clan holds (`mar::ilhotas` index); `None`
     /// = a NOMAD clan (`territorio::MAX_NOMADE` members). Appended.
     pub territorio: Option<u8>,
+    /// CLAN FLAGS: the preset (`bandeira::Bandeira` packed; the clan's
+    /// default until one is picked). Appended.
+    pub bandeira: u32,
 }
 
 /// A friend or clan member, as the social panel shows them.

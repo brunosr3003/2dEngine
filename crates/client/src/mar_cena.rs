@@ -3690,7 +3690,8 @@ pub fn nucleos_das_ilhotas() {
             // The flag: a two-sided cloth that ripples and shades with its
             // folds (owner, 20/11/2026: it was flat and see-through from
             // behind).
-            bandeira_da_ilhota(*base, cor, t, n as f32);
+            let tex = dono.as_ref().and_then(|d| crate::bandeiras::do_cla(d.cla_id));
+            bandeira_da_ilhota(*base, cor, tex, t, n as f32);
             // THE CLAIM RING (owner, 20/11/2026: "mais nítido, com um efeito
             // brilhante na borda"): a solid band on the ground, and over its
             // edge a wall of light fading upward (additive), with a shimmer
@@ -3744,16 +3745,31 @@ fn anel_de_tomada(centro: Vec3, anel: &[Vec3], cor: Color, t: f32) {
 }
 
 
-/// A flag of `cor` on the pole at `base`: a grid cloth, fixed at the pole and
-/// rippling more towards its free edge, lit by its own folds (a crest faces
-/// the light, a trough falls in shade), with a darker hem. Two-sided.
-fn bandeira_da_ilhota(base: Vec3, cor: Color, t: f32, fase: f32) {
+/// A flag of `cor` on the pole at `base`, flying along +x (the islets).
+fn bandeira_da_ilhota(base: Vec3, cor: Color, tex: Option<Texture2D>, t: f32, fase: f32) {
+    pano(base + vec3(0.12, 6.35, 0.0), vec3(1.0, 0.0, 0.0), 2.4, 1.5, cor, tex, t, fase);
+}
+
+/// A CLOTH FLAG hanging from `topo` (its top corner at the pole) and flying
+/// along `dir` (horizontal, unit): a grid fixed at the pole and rippling
+/// more towards its free edge, lit by its own folds, two-sided. With a
+/// texture (a clan's flag) the image is the cloth; without, `cor` with a
+/// darker hem.
+#[allow(clippy::too_many_arguments)]
+pub fn pano(
+    topo: Vec3,
+    dir: Vec3,
+    largura: f32,
+    altura: f32,
+    cor: Color,
+    tex: Option<Texture2D>,
+    t: f32,
+    fase: f32,
+) {
     const NX: u16 = 8;
     const NY: u16 = 5;
-    const LARGURA: f32 = 2.4;
-    const ALTURA: f32 = 1.5;
-    const TOPO: f32 = 6.35;
     let byte = |v: f32| (v.clamp(0.0, 1.0) * 255.0) as u8;
+    let lado = vec3(-dir.z, 0.0, dir.x);
     let mut verts: Vec<Vertex> = Vec::with_capacity(((NX + 1) * (NY + 1)) as usize);
     for j in 0..=NY {
         for i in 0..=NX {
@@ -3762,17 +3778,27 @@ fn bandeira_da_ilhota(base: Vec3, cor: Color, t: f32, fase: f32) {
             let onda = t * 3.2 - u * 5.0 + fase;
             let solto = u * u;
             let z = onda.sin() * 0.28 * solto + (t * 1.7 + v * 2.0 + fase).sin() * 0.05 * solto;
-            let p = base
-                + vec3(
-                    0.12 + u * LARGURA,
-                    TOPO - (1.0 - v) * ALTURA - solto * 0.12,
-                    z,
-                );
+            let p = topo + dir * (u * largura) + lado * z
+                - vec3(0.0, (1.0 - v) * altura + solto * 0.12, 0.0);
             // Light from the folds: the slope of the wave.
             let luz = 0.78 + 0.22 * onda.cos() * solto.sqrt() + 0.08 * v;
-            let barra = i == NX || j == 0 || j == NY;
-            let k = if barra { luz * 0.6 } else { luz };
-            verts.push(vert(p, [byte(cor.r * k), byte(cor.g * k), byte(cor.b * k), 255]));
+            let c = match tex {
+                Some(_) => {
+                    let k = byte(luz);
+                    [k, k, k, 255]
+                }
+                None => {
+                    let barra = i == NX || j == 0 || j == NY;
+                    let k = if barra { luz * 0.6 } else { luz };
+                    [byte(cor.r * k), byte(cor.g * k), byte(cor.b * k), 255]
+                }
+            };
+            verts.push(Vertex {
+                position: p,
+                uv: vec2(u, 1.0 - v),
+                color: c,
+                normal: Vec4::ZERO,
+            });
         }
     }
     let mut idx: Vec<u16> = Vec::with_capacity((NX * NY * 12) as usize);
@@ -3786,6 +3812,6 @@ fn bandeira_da_ilhota(base: Vec3, cor: Color, t: f32, fase: f32) {
     draw_mesh(&Mesh {
         vertices: verts,
         indices: idx,
-        texture: None,
+        texture: tex,
     });
 }

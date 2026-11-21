@@ -1211,19 +1211,38 @@ fn aguas_sem_lei(
             Some(_) => Color::new(0.95, 0.36, 0.36, 1.0),
         };
         draw_line(q.x - r * 0.35, q.y + r, q.x - r * 0.35, q.y - r, 1.6 * k, cor);
-        draw_triangle(
-            vec2(q.x - r * 0.35, q.y - r),
-            vec2(q.x + r * 0.75, q.y - r * 0.55),
-            vec2(q.x - r * 0.35, q.y - r * 0.1),
-            cor,
-        );
+        // The holder's own flag; a free islet keeps the gold pennant.
+        match dono.as_ref().and_then(|d| crate::bandeiras::do_cla(d.cla_id)) {
+            Some(tex) => {
+                let (w, h) = (r * 2.1, r * 1.4);
+                let x0 = q.x - r * 0.35;
+                draw_rectangle(x0 - 1.0, q.y - r - 1.0, w + 2.0, h + 2.0, Color::new(0.0, 0.0, 0.0, 0.7));
+                draw_texture_ex(
+                    &tex,
+                    x0,
+                    q.y - r,
+                    WHITE,
+                    DrawTextureParams {
+                        dest_size: Some(vec2(w, h)),
+                        ..Default::default()
+                    },
+                );
+                draw_rectangle_lines(x0, q.y - r, w, h, 1.2 * k, cor);
+            }
+            None => draw_triangle(
+                vec2(q.x - r * 0.35, q.y - r),
+                vec2(q.x + r * 0.75, q.y - r * 0.55),
+                vec2(q.x - r * 0.35, q.y - r * 0.1),
+                cor,
+            ),
+        }
         if !mini {
             let rotulo = match &dono {
                 None => format!("{} · Free territory", i.nome),
                 Some(d) if !d.tag.is_empty() => format!("{} · [{}] {}", i.nome, d.tag, d.cla),
                 Some(d) => format!("{} · {}", i.nome, d.cla),
             };
-            let (dx, dy) = (q.x + r * 1.2, q.y + r * 0.45);
+            let (dx, dy) = (q.x + r * 2.0, q.y + r * 0.45);
             estilo::texto(dx + 1.0, dy + 1.0, &rotulo, tamanho, Color::new(0.0, 0.0, 0.0, 0.85));
             estilo::texto(dx, dy, &rotulo, tamanho, cor);
         }

@@ -4,6 +4,7 @@
 //! target (native + wasm + headless) to keep the protocol canonical.
 
 pub mod abissal;
+pub mod bandeira;
 pub mod acessorios;
 pub mod ajuda;
 pub mod aparencia;

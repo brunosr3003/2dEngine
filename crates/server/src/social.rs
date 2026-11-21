@@ -34,6 +34,9 @@ pub async fn init(pool: &PgPool) -> Result<()> {
         // TERRITORIES (docs/TERRITORIOS.md): which clan holds which islet
         // (`mar::ilhotas` index). One islet per clan; a dissolved clan frees it.
         "CREATE TABLE IF NOT EXISTS territorios (ilhota SMALLINT PRIMARY KEY, cla BIGINT NOT NULL UNIQUE REFERENCES social_clas(id) ON DELETE CASCADE, desde BIGINT NOT NULL)",
+        // CLAN FLAGS: the preset (`bandeira::Bandeira` packed); NULL = the
+        // clan's default (`Bandeira::do_cla`). Read as Option, never NOT NULL.
+        "ALTER TABLE social_clas ADD COLUMN IF NOT EXISTS bandeira INTEGER",
     ] {
         sqlx::query(sql).execute(pool).await?;
     }
@@ -567,6 +570,15 @@ pub async fn executar(pool: &PgPool, eu: &str, pedido: &Pedido) -> Result<()> {
                 bail!("That name is not on your blacklist.");
             }
         }
+        Pedido::BandeiraCla { bandeira } => {
+            let id = permitido(&mut tx, eu, AcaoCla::Tag, 0).await?;
+            let b = shared::bandeira::Bandeira::desempacota(*bandeira).empacota();
+            sqlx::query("UPDATE social_clas SET bandeira=$1 WHERE id=$2")
+                .bind(b as i32)
+                .bind(id)
+                .execute(&mut *tx)
+                .await?;
+        }
         Pedido::TagCla { tag } => {
             let id = permitido(&mut tx, eu, AcaoCla::Tag, 0).await?;
             let tag = validar_tag(&mut tx, tag, id).await?;
@@ -588,6 +600,25 @@ pub async fn territorio_do_cla(tx: &mut PgConnection, cla: i64) -> Result<Option
         .fetch_optional(&mut *tx)
         .await?;
     Ok(v.map(|i| i as u8))
+}
+
+/// CLAN FLAGS: every clan's flag (the approved image comes with part 2).
+pub async fn bandeiras(pool: &PgPool) -> Result<Vec<shared::bandeira::BandeiraDoCla>> {
+    let linhas: Vec<(i64, String, Option<i32>)> =
+        sqlx::query_as("SELECT id, tag, bandeira FROM social_clas ORDER BY id")
+            .fetch_all(pool)
+            .await?;
+    Ok(linhas
+        .into_iter()
+        .map(|(cla_id, tag, b)| shared::bandeira::BandeiraDoCla {
+            cla_id,
+            tag,
+            preset: b
+                .map(|b| b as u32)
+                .unwrap_or_else(|| shared::bandeira::Bandeira::do_cla(cla_id).empacota()),
+            imagem: None,
+        })
+        .collect())
 }
 
 /// TERRITORIES: every held islet, with its clan's tag and name.
@@ -726,7 +757,7 @@ pub async fn estado(pool: &PgPool, eu: &str) -> Result<Estado> {
         e.cartas.push(Carta { id:r.get("id"), de:r.get("de"), assunto:r.get("assunto"), texto:r.get("texto"), quando:r.get("quando"), lida:r.get("lida"), oficial:false, anexos:vec![], resgatada:false });
     }
     if let Some((id, chefe)) = meu_cla(&mut tx, eu).await? {
-        let r = sqlx::query("SELECT nome,aviso,tag FROM social_clas WHERE id=$1")
+        let r = sqlx::query("SELECT nome,aviso,tag,bandeira FROM social_clas WHERE id=$1")
             .bind(id)
             .fetch_one(&mut *tx)
             .await?;
@@ -750,6 +781,10 @@ pub async fn estado(pool: &PgPool, eu: &str) -> Result<Estado> {
             tag: r.get("tag"),
             oficiais,
             territorio,
+            bandeira: r
+                .get::<Option<i32>, _>("bandeira")
+                .map(|b| b as u32)
+                .unwrap_or_else(|| shared::bandeira::Bandeira::do_cla(id).empacota()),
         });
     }
     e.contatos = contatos(&mut tx, &e).await?;
@@ -1402,6 +1437,15 @@ mod tests {
         // Another clan cannot take a held islet.
         executar(p, "Gil", &Pedido::CriarCla { nome: "Outros".into(), tag: "OUT".into() }).await?;
         assert!(reivindicar(p, "Gil", 3).await.is_err(), "the islet is held");
+        // CLAN FLAGS: the default until one is picked; leader or officer sets
+        // it (a plain member cannot); the sea's list carries it.
+        let padrao = shared::bandeira::Bandeira::do_cla(estado(p, "Eva").await?.cla.unwrap().id).empacota();
+        assert_eq!(estado(p, "Eva").await?.cla.unwrap().bandeira, padrao);
+        let minha = shared::bandeira::Bandeira { fundo: 0, padrao: 4, cor2: 2, emblema: 1, cor_emblema: 1 }.empacota();
+        assert!(executar(p, "M1", &Pedido::BandeiraCla { bandeira: minha }).await.is_err(), "a member cannot");
+        executar(p, "Eva", &Pedido::BandeiraCla { bandeira: minha }).await?;
+        assert_eq!(estado(p, "Fabi").await?.cla.unwrap().bandeira, minha);
+        assert!(bandeiras(p).await?.iter().any(|b| b.tag == "MAR" && b.preset == minha));
         // Dissolving frees it.
         executar(p, "Eva", &Pedido::DissolverCla).await?;
         assert!(territorios(p).await?.is_empty());

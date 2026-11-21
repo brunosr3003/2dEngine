@@ -153,6 +153,7 @@ mod loja_tp;
 mod magica_ui;
 mod map;
 mod mapa;
+mod bandeiras;
 mod menu_missoes;
 mod montarias_ui;
 mod morte;
@@ -2848,6 +2849,7 @@ impl Jogo {
                 mar_ui::define_territorios(lista)
             }
             ServerMessage::Tomadas { lista } => mar_ui::define_tomadas(lista),
+            ServerMessage::Bandeiras { lista } => bandeiras::define(lista),
             ServerMessage::EmTerra { ilhota } => {
                 if log_mar() {
                     eprintln!("[mar {:.2}] <- EmTerra {ilhota:?}", get_time());
