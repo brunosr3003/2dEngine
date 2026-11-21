@@ -1972,6 +1972,10 @@ pub fn draw_entities_com_sombras(
     if sombras != crate::config_graficos::Sombras::Desligadas {
         desenha_sombras(world, &order, vista, sombras);
     }
+    // TERRITORIES: the islets' hearts (flag and claim ring).
+    if crate::mar_ui::no_mar() {
+        crate::mar_cena::nucleos_das_ilhotas();
+    }
     // Os rastros sao transparentes: vao depois de tudo que e' solido, senao
     // o que fosse desenhado atras deles depois nao apareceria atraves.
     let mut rastros = Vec::new();

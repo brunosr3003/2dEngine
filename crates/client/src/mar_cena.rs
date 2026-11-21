@@ -601,6 +601,11 @@ pub fn prop_da_coluna(bx: i32, bz: i32, forracao: u8) -> Option<(usize, f32, u8)
     if t.cais || t.molhe > 0.02 || t.dentro < 0.0 {
         return None;
     }
+    // TERRITORY ISLETS are bare ground, whatever their biome (owner,
+    // 20/11/2026: "tira os props dessas ilhotas... deixa somente a terra").
+    if t.ilha.territorio {
+        return None;
+    }
     let sorte = ((h >> 10) % 1000) as f32 / 1000.0;
     let sorte = sorte / (forracao.max(1) as f32 / 100.0);
     let escolha = (h >> 20) as usize;
@@ -3449,6 +3454,25 @@ mod testes {
         );
     }
 
+    /// TERRITORY ISLETS are bare: no tree, rock or prop on any of them, near
+    /// or far (owner, 20/11/2026).
+    #[test]
+    fn as_ilhotas_nao_tem_props() {
+        for i in mar::ilhotas() {
+            let r = ((i.raio + 4.0) / BLOCO) as i32;
+            let (cx, cz) = ((i.centro.x / BLOCO) as i32, (i.centro.y / BLOCO) as i32);
+            for bx in (cx - r..=cx + r).step_by(1) {
+                for bz in (cz - r..=cz + r).step_by(3) {
+                    assert!(
+                        prop_da_coluna(bx, bz, 100).is_none(),
+                        "a prop on {} at {bx},{bz}",
+                        i.nome
+                    );
+                }
+            }
+        }
+    }
+
     /// The far island mesh never stands ABOVE the voxel terrain (or the near
     /// chunks would not cover it) and stays within a phone's budget.
     #[test]
@@ -3607,4 +3631,69 @@ mod testes {
             assert!(vec2(ponta.x, ponta.z).distance(mq(i.ponta)) < 0.01);
         }
     }
+}
+
+
+/// TERRITORIES (docs/TERRITORIOS.md): each islet's HEART, where it is
+/// claimed — a flagpole in the owner's colour (gold free, green mine, red
+/// another clan's) and a ring of `territorio::RAIO_DO_NUCLEO` on the ground.
+/// The geometry follows the relief and is computed once.
+pub fn nucleos_das_ilhotas() {
+    use std::cell::RefCell;
+    thread_local! {
+        static GEOMETRIA: RefCell<Option<Vec<(Vec3, Vec<Vec3>)>>> = const { RefCell::new(None) };
+    }
+    let minha = crate::mapa::minha_tag_de_cla();
+    let t = get_time() as f32;
+    GEOMETRIA.with(|g| {
+        let mut g = g.borrow_mut();
+        let geo = g.get_or_insert_with(|| {
+            let r = shared::territorio::RAIO_DO_NUCLEO;
+            mar::ilhotas()
+                .iter()
+                .map(|i| {
+                    let (cx, cz) = (i.centro.x, i.centro.y);
+                    let base = vec3(cx, mar::altura(cx, cz), cz);
+                    let anel = (0..=48)
+                        .map(|k| {
+                            let a = k as f32 / 48.0 * std::f32::consts::TAU;
+                            let (x, z) = (cx + a.cos() * r, cz + a.sin() * r);
+                            vec3(x, mar::altura(x, z).max(shared::terreno::NIVEL_DO_MAR) + 0.1, z)
+                        })
+                        .collect();
+                    (base, anel)
+                })
+                .collect()
+        });
+        for (n, (base, anel)) in geo.iter().enumerate() {
+            let dono = crate::mar_ui::dono_da_ilhota(n as u8);
+            let cor = match &dono {
+                None => Color::new(0.95, 0.78, 0.36, 1.0),
+                Some(d) if !d.tag.is_empty() && minha.as_deref() == Some(d.tag.as_str()) => {
+                    Color::new(0.42, 0.88, 0.52, 1.0)
+                }
+                Some(_) => Color::new(0.95, 0.36, 0.36, 1.0),
+            };
+            // The pole.
+            draw_cylinder(*base, 0.12, 0.12, 6.5, None, Color::from_rgba(92, 64, 38, 255));
+            draw_sphere(*base + vec3(0.0, 6.6, 0.0), 0.2, None, Color::from_rgba(214, 176, 92, 255));
+            // The flag, rippling in four strips.
+            for k in 0..4 {
+                let x = 0.38 + k as f32 * 0.5;
+                let onda = (t * 3.0 - k as f32 * 0.9).sin() * 0.12 * (k as f32 + 1.0) / 4.0;
+                draw_cube(
+                    *base + vec3(x, 5.6 + onda, onda * 0.6),
+                    vec3(0.52, 1.3, 0.06),
+                    None,
+                    cor,
+                );
+            }
+            // The claim ring, twice for a thicker line.
+            let fraco = Color::new(cor.r, cor.g, cor.b, 0.85);
+            for par in anel.windows(2) {
+                draw_line_3d(par[0], par[1], fraco);
+                draw_line_3d(par[0] + vec3(0.0, 0.06, 0.0), par[1] + vec3(0.0, 0.06, 0.0), fraco);
+            }
+        }
+    });
 }

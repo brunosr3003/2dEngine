@@ -8,6 +8,7 @@ Nov 20, 2026 — New ships and naval PvP
 - Ships that nose onto a beach now ease back out to the waterline instead of sitting inside the land.
 - Fixed: after going ashore on an islet you could not walk; the islets' ground is now solid underfoot.
 - Clan territories: a clan leader or officer can claim a free islet by walking to its heart and tapping Claim island. One islet per clan; the map shows who holds each one.
+- Each islet's heart is marked by a flagpole and a ring on the ground: gold when free, green when your clan holds it, red when another clan does. The islets are now bare land, ready for forts.
 - Clans without a territory are now nomad clans, limited to 10 members. Holding an islet lets a clan grow to 50.
 - Fixed: the clan member list could fail to load for clans with officers or members.
 - Fixed: a newly built Brig or Galleon showed up as a Sloop in your bag; ships now show their real name, tier and icon.
