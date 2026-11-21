@@ -61,6 +61,15 @@ nada a ver com as ilhas principais, que os clãs ocupam, fortificam e disputam.
    bandeira** (os 2 minutos no anel sem inimigo). Afundar os barcos do
    outro lado tira o ponto de volta dele.
 
+   **Barcos no cerco (implementado 20/11/2026):** navio ancorado com o
+   capitão em terra que chega a 0 vira destroço em chamas como qualquer
+   outro (`dano_no_casco` acha o navio por `navio_do_capitao`); morrer na
+   ilha enquanto ele queima volta pro destroço (`morte_em_terra`, respawn
+   crescente); quando o destroço afunda (12 min ou abandono) com o capitão
+   vivo em terra, ele fica na ilha sem navio e sem penalidade
+   (`afundar_derrotado`); morrer na ilha sem navio = morte naval de verdade
+   (navio avariado) e volta pro cais, só voltando ao mar depois do reparo.
+
 ## Armadilha
 
 O relevo do mar tem CACHE em disco (servidor `data/ilhas/*-marN.alt`, e o

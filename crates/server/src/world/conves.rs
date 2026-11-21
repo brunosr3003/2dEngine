@@ -301,7 +301,7 @@ impl GameWorld {
         self.zona_de_saida.contains_key(&s.name)
     }
 
-    fn despachar_navio(&mut self, e: hecs::Entity) {
+    pub(crate) fn despachar_navio(&mut self, e: hecs::Entity) {
         if let Ok(n) = self.ecs.get::<&NetId>(e).map(|n| n.0) {
             self.removed_this_tick.push(n);
         }
@@ -1745,6 +1745,47 @@ mod testes {
         let c = s.conves.expect("back aboard");
         assert!(c.navio == navio && c.leme && c.capitao == sid);
         assert!(w.ecs.contains(navio), "the ship stays");
+    }
+
+    /// THE SIEGE'S SHIPS (owner, 20/11/2026): an anchored ship broken to 0
+    /// while its captain fights ashore BURNS as a wreck (the captain stays
+    /// ashore); dying ashore then comes back on the wreck; when the wreck
+    /// sinks with the captain alive ashore, they stay ashore, stranded,
+    /// with no ship (falling then is the real death and the dock).
+    #[test]
+    fn o_navio_ancorado_queima_afunda_e_o_capitao_fica_na_ilha() {
+        let (mut w, sid, _rx) = mundo();
+        w.step(shared::TICK_DT);
+        let navio = conves(&w, sid).navio;
+        let ilha = &shared::mar::ilhotas()[0];
+        let corpo_e = w.sessions[&sid].entity.unwrap();
+        let em_terra = |w: &mut GameWorld| {
+            let s = w.sessions.get_mut(&sid).unwrap();
+            s.conves = None;
+            s.em_terra = Some(EmTerra { ilhota: 0, navio: Some(navio) });
+            w.ecs.get::<&mut Position>(corpo_e).unwrap().0 = ilha.centro;
+        };
+        em_terra(&mut w);
+        // Broken to 0 at anchor: a burning wreck, the captain still ashore.
+        w.dano_no_casco(sid, 1_000_000, None);
+        assert!(w.ecs.get::<&NavioEnt>(navio).unwrap().derrotado_ate > 0.0, "it burns");
+        assert!(w.sessions[&sid].em_terra.is_some(), "the captain stays ashore");
+        // Dying ashore while it burns: back on the wreck.
+        w.morte_em_terra(sid);
+        assert_eq!(w.sessions[&sid].conves.map(|c| c.navio), Some(navio));
+        // Ashore again; the wreck's time runs out.
+        em_terra(&mut w);
+        w.afundar_derrotado(sid, true);
+        let s = &w.sessions[&sid];
+        assert!(!w.ecs.contains(navio), "the wreck went down");
+        assert_eq!(s.em_terra.map(|t| t.navio), Some(None), "stranded, no ship");
+        assert!(s.conves.is_none());
+        assert_eq!(corpo(&w, sid), ilha.centro, "still on the islet");
+        let (_, d) = w.navio_equipado(sid).unwrap();
+        assert!(d.avariado, "the ship needs the dock's repair");
+        // A tick later nobody relaunched or washed them away.
+        w.step(shared::TICK_DT);
+        assert!(w.sessions[&sid].em_terra.is_some() && w.sessions[&sid].conves.is_none());
     }
 
     /// THE CLAIM TAKES TWO MINUTES (owner, 20/11/2026): only the clan in the

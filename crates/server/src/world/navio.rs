@@ -460,11 +460,15 @@ impl GameWorld {
             if let Some(a) = atacante {
                 self.registrar_morte_pk(a, vitima, lado, marcado_antes);
             }
+            // The captain's ship: the one under their feet, or the one at
+            // anchor while they fight ashore on an islet (it burns all the
+            // same: owner, 20/11/2026).
             let navio = self
                 .sessions
                 .get(&sid)
                 .and_then(|s| s.conves)
-                .map(|c| c.navio);
+                .map(|c| c.navio)
+                .or_else(|| self.navio_do_capitao(sid));
             if let Some(e) = navio {
                 let rumo = self.ecs.get::<&NavioEnt>(e).map_or(Vec2::Y, |n| n.rumo);
                 if let Ok(mut n) = self.ecs.get::<&mut NavioEnt>(e) {
@@ -538,8 +542,17 @@ impl GameWorld {
         if let Some(t) = tesouro {
             self.tesouro_perdido(sid, t, None, onde);
         }
+        // The captain alive ASHORE on an islet with this ship at anchor
+        // (owner, 20/11/2026): they stay on the islet, stranded — no penalty
+        // now; falling there without a ship is what sends them to the dock.
+        let em_terra = self
+            .sessions
+            .get(&sid)
+            .is_some_and(|s| s.em_terra.is_some_and(|t| t.navio == Some(e)));
         if penalizar {
-            self.aplicar_morte_naval(sid);
+            if !em_terra {
+                self.aplicar_morte_naval(sid);
+            }
             for tripulante in self.tripulacao_de(sid) {
                 self.aplicar_morte_naval(tripulante);
             }
@@ -549,6 +562,20 @@ impl GameWorld {
             let mut rng = fastrand::f32;
             let (ouro, tokens, fragmentos) = nv::saque_naval(nivel, &mut rng);
             self.poe_barril_do_mar(onde, ouro, tokens, fragmentos);
+        }
+        if em_terra {
+            for t in self.tripulacao_de(sid) {
+                self.levar_ao_cais(t, "Your ship went down. You wash up at the dock.");
+            }
+            self.despachar_navio(e);
+            if let Some(t) = self.sessions.get_mut(&sid).and_then(|s| s.em_terra.as_mut()) {
+                t.navio = None;
+            }
+            self.avisa_missao(
+                sid,
+                "Your ship sank. You are stranded on the islet: fall here and you wash up at the dock.".into(),
+            );
+            return;
         }
         self.naufragio(sid);
     }
