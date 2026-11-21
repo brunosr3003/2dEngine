@@ -63,6 +63,7 @@ pub mod receitas;
 pub mod renascimento;
 pub mod skills;
 pub mod terreno;
+pub mod territorio;
 pub mod troca;
 pub mod viagem;
 pub mod vila;

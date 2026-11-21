@@ -7,6 +7,9 @@ Nov 20, 2026 — New ships and naval PvP
 - Go ashore on the islets: sail up to the beach and the helm button becomes Go ashore, even from the wheel. Walk the island while your ship waits at anchor; walk back to it and tap Board ship.
 - Ships that nose onto a beach now ease back out to the waterline instead of sitting inside the land.
 - Fixed: after going ashore on an islet you could not walk; the islets' ground is now solid underfoot.
+- Clan territories: a clan leader or officer can claim a free islet by walking to its heart and tapping Claim island. One islet per clan; the map shows who holds each one.
+- Clans without a territory are now nomad clans, limited to 10 members. Holding an islet lets a clan grow to 50.
+- Fixed: the clan member list could fail to load for clans with officers or members.
 - Fixed: a newly built Brig or Galleon showed up as a Sloop in your bag; ships now show their real name, tier and icon.
 - The Shipyard now has a ship gallery, stat previews, point allocation, respec and upgrades.
 - The ship gallery now explains each role: Swift ships are the fastest and nimblest, Corsairs carry the heaviest guns, and Iron ships have the toughest hulls. Each card shows the real T1 hull, speed, cannon and turning.

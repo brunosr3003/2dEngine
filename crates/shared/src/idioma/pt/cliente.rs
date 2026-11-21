@@ -2674,6 +2674,12 @@ pub const VERBETES: &[(&str, &str)] = &[
     ("BOARD", "EMBARCAR"),
     ("Set sail", "Zarpar"),
     ("SAIL", "ZARPAR"),
+    // ocupação das ilhotas (docs/TERRITORIOS.md, fase 3)
+    ("Claim island", "Tomar a ilha"),
+    ("CLAIM", "TOMAR"),
+    ("{n} · Free territory", "{n} · Território livre"),
+    ("Territory: {n}", "Território: {n}"),
+    ("Nomad clan", "Clã nômade"),
     ("Tier upgrade: T{a} › T{b}", "Melhoria de tier: T{a} › T{b}"),
     ("Upgrade tier", "Melhorar tier"),
     ("{n} crew · T1", "{n} tripulantes · T1"),

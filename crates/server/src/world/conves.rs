@@ -322,6 +322,9 @@ impl GameWorld {
             }
             return;
         }
+        // TERRITORIES: the held islets — loaded at sea every 30 s, and sent
+        // to each client once (then on every change).
+        self.tick_territorios();
         // TERRITORIES (diagnostics, 20/11/2026): who is ashore, where, and
         // with what input, every 2 s.
         if self.tick % (shared::TICK_RATE_HZ as u32 * 2) == 0 {
@@ -1624,6 +1627,73 @@ mod testes {
         let antes = corpo(&w, sid);
         anda(&mut w, sid, (ilha.centro - antes).normalize(), 2.0);
         assert!(corpo(&w, sid).distance(antes) > 2.0, "and walks");
+    }
+
+    /// TERRITORIES, phase 3: the sea's claim rules (ashore, at the heart,
+    /// in a clan, the islet free, the clan without one), the list every
+    /// client gets on arrival, and a claim's outcome reaching everyone.
+    #[test]
+    fn as_regras_da_ocupacao_no_mar() {
+        use shared::territorio::Dono;
+        let (mut w, sid, mut rx) = mundo();
+        w.step(shared::TICK_DT);
+        let chegou = |rx: &mut mpsc::UnboundedReceiver<ServerMessage>| {
+            let mut ultima = None;
+            while let Ok(m) = rx.try_recv() {
+                if let ServerMessage::Territorios { lista } = m {
+                    ultima = Some(lista);
+                }
+            }
+            ultima
+        };
+        assert_eq!(chegou(&mut rx), Some(vec![]), "the list arrives with the sea");
+        {
+            let s = w.sessions.get_mut(&sid).unwrap();
+            s.cla_id = 7;
+            s.cla_tag = "MAR".into();
+        }
+        assert!(w.pode_reivindicar(sid).is_err(), "not ashore");
+        let ilha = &shared::mar::ilhotas()[0];
+        let corpo_e = w.sessions[&sid].entity.unwrap();
+        {
+            let s = w.sessions.get_mut(&sid).unwrap();
+            s.conves = None;
+            s.em_terra = Some(EmTerra { ilhota: 0, navio: None });
+        }
+        w.ecs.get::<&mut Position>(corpo_e).unwrap().0 = ilha.centro;
+        assert_eq!(w.pode_reivindicar(sid), Ok(0));
+        w.ecs.get::<&mut Position>(corpo_e).unwrap().0 = ilha.centro + Vec2::X * 20.0;
+        assert!(w.pode_reivindicar(sid).is_err(), "away from the heart");
+        w.ecs.get::<&mut Position>(corpo_e).unwrap().0 = ilha.centro;
+        w.sessions.get_mut(&sid).unwrap().cla_id = 0;
+        assert!(w.pode_reivindicar(sid).is_err(), "no clan");
+        w.sessions.get_mut(&sid).unwrap().cla_id = 7;
+        let dono = |ilhota: u8, cla_id: i64| Dono {
+            ilhota,
+            cla_id,
+            tag: "X".into(),
+            cla: "X".into(),
+        };
+        w.territorios.insert(0, dono(0, 9));
+        assert!(w.pode_reivindicar(sid).is_err(), "held by another clan");
+        w.territorios.clear();
+        w.territorios.insert(5, dono(5, 7));
+        assert!(w.pode_reivindicar(sid).is_err(), "my clan already holds one");
+        w.territorios.clear();
+        // The database said yes: everyone at sea learns it.
+        let novo = Dono {
+            ilhota: 0,
+            cla_id: 7,
+            tag: "MAR".into(),
+            cla: "Mares".into(),
+        };
+        w.on_reivindicacao(sid, Ok(novo.clone()));
+        assert_eq!(w.territorios.get(&0), Some(&novo));
+        assert_eq!(chegou(&mut rx), Some(vec![novo]));
+        // A reload where the clan is gone (dissolved elsewhere) frees it.
+        w.on_territorios(vec![]);
+        assert!(w.territorios.is_empty());
+        assert_eq!(chegou(&mut rx), Some(vec![]));
     }
 
     /// THE COAST'S PUSH (owner, 20/11/2026): a hull with its bow buried in

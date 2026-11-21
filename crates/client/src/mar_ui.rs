@@ -31,6 +31,24 @@ pub fn no_mar() -> bool {
 /// rows (`world::World::eu_no_leme`).
 static NO_LEME: AtomicBool = AtomicBool::new(true);
 
+/// TERRITORIES: the held islets (`ServerMessage::Territorios`).
+static TERRITORIOS: std::sync::Mutex<Vec<shared::territorio::Dono>> =
+    std::sync::Mutex::new(Vec::new());
+
+pub fn define_territorios(v: Vec<shared::territorio::Dono>) {
+    if let Ok(mut t) = TERRITORIOS.lock() {
+        *t = v;
+    }
+}
+
+/// Who holds territory islet `ilhota` (`None` = free).
+pub fn dono_da_ilhota(ilhota: u8) -> Option<shared::territorio::Dono> {
+    TERRITORIOS
+        .lock()
+        .ok()
+        .and_then(|t| t.iter().find(|d| d.ilhota == ilhota).cloned())
+}
+
 pub fn define_no_leme(sim: bool) {
     NO_LEME.store(sim, Ordering::Relaxed);
 }
@@ -242,6 +260,17 @@ pub fn acao_do_leme(
     // shore when I stand by the water.
     if w.em_terra {
         let eu = w.ents.get(&eu_id)?;
+        // At the heart of a FREE islet: claim it (the server checks the clan
+        // and the rank).
+        let p = ::glam::Vec2::new(eu.render_pos.x, eu.render_pos.y);
+        if let Some(k) = shared::mar::indice_da_ilhota(p) {
+            let centro = shared::mar::ilhotas()[k].centro;
+            if p.distance(centro) <= shared::territorio::RAIO_DO_NUCLEO
+                && dono_da_ilhota(k as u8).is_none()
+            {
+                return Some(("Claim island", "CLAIM", nv::PedidoNavio::ReivindicarIlhota));
+            }
+        }
         let alcance = shared::mar::ALCANCE_DO_DESEMBARQUE;
         let navio_perto = w.ents.values().any(|e| {
             e.meta.tag == shared::EntityTag::Navio && e.state.hp > 0 && {

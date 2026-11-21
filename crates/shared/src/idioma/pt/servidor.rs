@@ -10,6 +10,15 @@ pub const VERBETES: &[(&str, &str)] = &[
     ("Too far from the shore.", "Longe demais da praia."),
     ("Walk up to your ship to board it.", "Chegue perto do seu navio para embarcar."),
     ("Your crew is aboard: they go ashore first.", "Sua tripulação está a bordo: ela desembarca primeiro."),
+    // territorios.rs / social.rs — ocupação das ilhotas
+    ("Go ashore on a territory islet first.", "Desembarque numa ilhota de território primeiro."),
+    ("Walk to the heart of the islet to claim it.", "Vá até o centro da ilhota para tomá-la."),
+    ("Only a clan can claim a territory islet.", "Só um clã pode tomar uma ilhota de território."),
+    ("This islet already belongs to a clan.", "Esta ilhota já pertence a um clã."),
+    ("Your clan already holds a territory islet.", "Seu clã já tem uma ilhota de território."),
+    ("Only the clan leader or an officer can claim an islet.", "Só o líder ou um oficial do clã pode tomar uma ilhota."),
+    ("{i} now belongs to {c}.", "{i} agora pertence a {c}."),
+    ("This nomad clan is full (10 members): it grows once it holds a territory islet.", "Este clã nômade está cheio (10 membros): ele cresce quando tiver uma ilhota de território."),
     // ─────────────────────────── servidor: correio oficial ───────────────────────────
     ("Invalid letter.", "Carta inválida."),
     ("Staff · {} ({})", "Equipe · {} ({})"),

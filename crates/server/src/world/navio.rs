@@ -207,6 +207,7 @@ impl GameWorld {
             PedidoNavio::Saquear => self.saquear_navio_derrotado(sid),
             PedidoNavio::Desembarcar => self.desembarcar(sid),
             PedidoNavio::VoltarAoNavio => self.voltar_do_desembarque(sid),
+            PedidoNavio::ReivindicarIlhota => self.reivindicar_ilhota(sid),
         }
     }
 

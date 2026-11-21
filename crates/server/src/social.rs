@@ -31,6 +31,9 @@ pub async fn init(pool: &PgPool) -> Result<()> {
         // A body left in the world by a character with PK (`shared::pk::PERMANENCIA_S`):
         // logging in on another channel is sent to this one, to take it back.
         "CREATE TABLE IF NOT EXISTS pk_permanencia (nome TEXT PRIMARY KEY, zona TEXT NOT NULL, canal TEXT NOT NULL, host TEXT NOT NULL, ate BIGINT NOT NULL)",
+        // TERRITORIES (docs/TERRITORIOS.md): which clan holds which islet
+        // (`mar::ilhotas` index). One islet per clan; a dissolved clan frees it.
+        "CREATE TABLE IF NOT EXISTS territorios (ilhota SMALLINT PRIMARY KEY, cla BIGINT NOT NULL UNIQUE REFERENCES social_clas(id) ON DELETE CASCADE, desde BIGINT NOT NULL)",
     ] {
         sqlx::query(sql).execute(pool).await?;
     }
@@ -429,8 +432,14 @@ pub async fn executar(pool: &PgPool, eu: &str, pedido: &Pedido) -> Result<()> {
                     .bind(id)
                     .fetch_one(&mut *tx)
                     .await?;
-                if n >= MAX_CLA as i64 {
-                    bail!("Clan full (50 members).");
+                // A NOMAD clan (no territory islet) stays small.
+                let tem_ilha = territorio_do_cla(&mut tx, *id).await?.is_some();
+                let teto = shared::territorio::max_membros(tem_ilha);
+                if n >= teto as i64 {
+                    if tem_ilha {
+                        bail!("Clan full (50 members).");
+                    }
+                    bail!("This nomad clan is full (10 members): it grows once it holds a territory islet.");
                 }
                 sqlx::query("INSERT INTO social_membros(nome,cla) VALUES($1,$2)")
                     .bind(eu)
@@ -572,6 +581,76 @@ pub async fn executar(pool: &PgPool, eu: &str, pedido: &Pedido) -> Result<()> {
     Ok(())
 }
 
+/// TERRITORIES: the islet clan `cla` holds, if any.
+pub async fn territorio_do_cla(tx: &mut PgConnection, cla: i64) -> Result<Option<u8>> {
+    let v: Option<i16> = sqlx::query_scalar("SELECT ilhota FROM territorios WHERE cla=$1")
+        .bind(cla)
+        .fetch_optional(&mut *tx)
+        .await?;
+    Ok(v.map(|i| i as u8))
+}
+
+/// TERRITORIES: every held islet, with its clan's tag and name.
+pub async fn territorios(pool: &PgPool) -> Result<Vec<shared::territorio::Dono>> {
+    let linhas: Vec<(i16, i64, String, String)> = sqlx::query_as(
+        "SELECT t.ilhota, c.id, c.tag, c.nome FROM territorios t JOIN social_clas c ON c.id=t.cla ORDER BY t.ilhota",
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(linhas
+        .into_iter()
+        .map(|(i, cla_id, tag, cla)| shared::territorio::Dono {
+            ilhota: i as u8,
+            cla_id,
+            tag,
+            cla,
+        })
+        .collect())
+}
+
+/// TERRITORIES: `eu` claims free islet `ilhota` for their clan. Leader or
+/// officer only; one islet per clan; the islet must be free.
+pub async fn reivindicar(pool: &PgPool, eu: &str, ilhota: u8) -> Result<shared::territorio::Dono> {
+    let mut tx = pool.begin().await?;
+    let Some((cla, lider)) = meu_cla(&mut tx, eu).await? else {
+        bail!("Only a clan can claim a territory islet.");
+    };
+    let cargo_meu: Option<i16> =
+        sqlx::query_scalar("SELECT cargo FROM social_membros WHERE nome=$1")
+            .bind(eu)
+            .fetch_optional(&mut *tx)
+            .await?;
+    if lider != eu && cargo_meu != Some(cargo::OFICIAL as i16) {
+        bail!("Only the clan leader or an officer can claim an islet.");
+    }
+    if territorio_do_cla(&mut tx, cla).await?.is_some() {
+        bail!("Your clan already holds a territory islet.");
+    }
+    let feito = sqlx::query(
+        "INSERT INTO territorios(ilhota,cla,desde) VALUES($1,$2,extract(epoch from now())::bigint) ON CONFLICT DO NOTHING",
+    )
+    .bind(ilhota as i16)
+    .bind(cla)
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
+    if feito == 0 {
+        bail!("This islet already belongs to a clan.");
+    }
+    let (tag, nome): (String, String) =
+        sqlx::query_as("SELECT tag,nome FROM social_clas WHERE id=$1")
+            .bind(cla)
+            .fetch_one(&mut *tx)
+            .await?;
+    tx.commit().await?;
+    Ok(shared::territorio::Dono {
+        ilhota,
+        cla_id: cla,
+        tag,
+        cla: nome,
+    })
+}
+
 pub async fn estado(pool: &PgPool, eu: &str) -> Result<Estado> {
     let mut tx = pool.begin().await?;
     sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
@@ -623,6 +702,7 @@ pub async fn estado(pool: &PgPool, eu: &str) -> Result<Estado> {
             .filter(|(n, c)| *c == cargo::OFICIAL as i16 && *n != chefe)
             .map(|(n, _)| n.clone())
             .collect();
+        let territorio = territorio_do_cla(&mut tx, id).await?;
         e.cla = Some(Cla {
             id,
             nome: r.get("nome"),
@@ -631,6 +711,7 @@ pub async fn estado(pool: &PgPool, eu: &str) -> Result<Estado> {
             membros: linhas.into_iter().map(|(n, _)| n).collect(),
             tag: r.get("tag"),
             oficiais,
+            territorio,
         });
     }
     e.contatos = contatos(&mut tx, &e).await?;
@@ -705,7 +786,7 @@ async fn contatos(db: &mut PgConnection, e: &Estado) -> Result<Vec<Contato>> {
         .fetch_one(&mut *db)
         .await?;
     let linhas = sqlx::query(
-        "SELECT n.nome, coalesce(c.tag,'') AS tag, coalesce(m.cargo,0) AS cargo, (c.lider=n.nome) AS lider, m.cla,
+        "SELECT n.nome, coalesce(c.tag,'') AS tag, coalesce(m.cargo,0::smallint) AS cargo, (c.lider=n.nome) AS lider, m.cla,
                 p.zona, p.canal, p.nivel, p.conjunto, p.online, p.visto
            FROM unnest($1::text[]) AS n(nome)
            LEFT JOIN social_membros m ON m.nome=n.nome
@@ -1239,6 +1320,54 @@ mod tests {
         .await
         .is_err());
         assert_eq!(estado(p, "Dani").await?.cartas.len(), 100);
+        territorios_e_cla_nomade(p).await?;
+        Ok(())
+    }
+
+    /// TERRITORIES (docs/TERRITORIOS.md, phase 3): a NOMAD clan stops at
+    /// `MAX_NOMADE` members; only the leader or an officer claims; one islet
+    /// per clan, one clan per islet; the clan panel shows it; holding an
+    /// islet lifts the cap; dissolving frees the islet.
+    async fn territorios_e_cla_nomade(p: &PgPool) -> Result<()> {
+        let nomes: Vec<String> = (1..=9).map(|k| format!("M{k}")).collect();
+        for n in ["Eva", "Fabi", "Gil"].iter().map(|s| s.to_string()).chain(nomes.clone()) {
+            sqlx::query("INSERT INTO characters VALUES($1,1)").bind(&n).execute(p).await?;
+        }
+        executar(p, "Eva", &Pedido::CriarCla { nome: "Mares".into(), tag: "MAR".into() }).await?;
+        assert!(reivindicar(p, "Fabi", 3).await.is_err(), "no clan, no claim");
+        executar(p, "Eva", &Pedido::ConvidarCla { nome: "Fabi".into() }).await?;
+        let id = estado(p, "Fabi").await?.convites_cla[0].id;
+        executar(p, "Fabi", &Pedido::ResponderCla { id, aceitar: true }).await?;
+        assert!(reivindicar(p, "Fabi", 3).await.is_err(), "a plain member cannot claim");
+        // Nomad: Eva + Fabi + M1..M8 = 10; M9 is refused.
+        for n in &nomes {
+            executar(p, "Eva", &Pedido::ConvidarCla { nome: n.clone() }).await?;
+        }
+        for n in &nomes[..8] {
+            executar(p, n, &Pedido::ResponderCla { id, aceitar: true }).await?;
+        }
+        assert_eq!(estado(p, "Eva").await?.cla.unwrap().membros.len(), 10);
+        assert!(
+            executar(p, "M9", &Pedido::ResponderCla { id, aceitar: true }).await.is_err(),
+            "a nomad clan stops at 10"
+        );
+        assert_eq!(estado(p, "Eva").await?.cla.unwrap().territorio, None);
+        // The leader claims islet 3; a second islet is refused.
+        let d = reivindicar(p, "Eva", 3).await?;
+        assert_eq!((d.ilhota, d.tag.as_str(), d.cla.as_str()), (3, "MAR", "Mares"));
+        assert!(reivindicar(p, "Eva", 4).await.is_err(), "one islet per clan");
+        assert_eq!(estado(p, "Fabi").await?.cla.unwrap().territorio, Some(3));
+        assert_eq!(territorios(p).await?, vec![d.clone()]);
+        // With an islet the clan grows: M9's invite is still there.
+        executar(p, "M9", &Pedido::ResponderCla { id, aceitar: true }).await?;
+        assert_eq!(estado(p, "Eva").await?.cla.unwrap().membros.len(), 11);
+        // Another clan cannot take a held islet.
+        executar(p, "Gil", &Pedido::CriarCla { nome: "Outros".into(), tag: "OUT".into() }).await?;
+        assert!(reivindicar(p, "Gil", 3).await.is_err(), "the islet is held");
+        // Dissolving frees it.
+        executar(p, "Eva", &Pedido::DissolverCla).await?;
+        assert!(territorios(p).await?.is_empty());
+        assert_eq!(reivindicar(p, "Gil", 3).await?.tag, "OUT");
         Ok(())
     }
 }

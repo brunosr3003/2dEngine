@@ -1584,6 +1584,11 @@ pub enum ServerMessage {
     EmTerra {
         ilhota: Option<u8>,
     },
+    /// TERRITORIES: every held islet (the whole list, on entering the sea
+    /// and whenever it changes). Islets not listed are free. Appended.
+    Territorios {
+        lista: Vec<crate::territorio::Dono>,
+    },
 }
 
 /// Quantos espacos a barra de itens tem: C, 8, 9 e 0.

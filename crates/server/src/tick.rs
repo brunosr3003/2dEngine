@@ -152,6 +152,10 @@ pub async fn run_world_loop(
                     world.on_social(sid, nome, avisos)
                 }
                 Ok(IncomingMessage::ClaDosPresentes(v)) => world.on_cla_dos_presentes(v),
+                Ok(IncomingMessage::Territorios(v)) => world.on_territorios(v),
+                Ok(IncomingMessage::Reivindicacao { sid, resultado }) => {
+                    world.on_reivindicacao(sid, resultado)
+                }
                 Ok(IncomingMessage::CorreioEntrega(e)) => world.on_correio_entrega(e),
                 Ok(IncomingMessage::CorreioFim { sid, nome, texto }) => {
                     world.on_correio_fim(sid, nome, texto)
@@ -197,6 +201,10 @@ pub async fn run_world_loop(
                     world.on_social(sid, nome, avisos)
                 }
                 Ok(IncomingMessage::ClaDosPresentes(v)) => world.on_cla_dos_presentes(v),
+                Ok(IncomingMessage::Territorios(v)) => world.on_territorios(v),
+                Ok(IncomingMessage::Reivindicacao { sid, resultado }) => {
+                    world.on_reivindicacao(sid, resultado)
+                }
                 Ok(IncomingMessage::CorreioEntrega(e)) => world.on_correio_entrega(e),
                 Ok(IncomingMessage::CorreioFim { sid, nome, texto }) => {
                     world.on_correio_fim(sid, nome, texto)

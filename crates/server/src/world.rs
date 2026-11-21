@@ -76,6 +76,13 @@ pub enum IncomingMessage {
     },
     /// Presence heartbeat answer: (character, clan id, clan tag).
     ClaDosPresentes(Vec<(String, i64, String)>),
+    /// TERRITORIES: the held islets, read from the database.
+    Territorios(Vec<shared::territorio::Dono>),
+    /// TERRITORIES: a claim's outcome (the new owner, or why not).
+    Reivindicacao {
+        sid: SessionId,
+        resultado: Result<shared::territorio::Dono, String>,
+    },
     CorreioEntrega(crate::correio_admin::Entrega),
     CorreioFim {
         sid: SessionId,
@@ -130,6 +137,7 @@ mod oficina;
 mod permanencia;
 mod pets;
 pub(crate) mod piloto_do_mar;
+pub(crate) mod territorios;
 mod presenca;
 mod prime;
 pub(crate) mod ranking;
@@ -2615,6 +2623,8 @@ pub struct Session {
     /// TERRITORIES (docs/TERRITORIOS.md): ASHORE on a territory islet at
     /// sea, off any deck — the land's rules, the ship (if mine) anchored.
     pub em_terra: Option<conves::EmTerra>,
+    /// TERRITORIES: this client has the held-islets list (`Territorios`).
+    pub territorios_enviados: bool,
     /// The deck rows this session's client already has (`Conves` deltas).
     pub conves_enviado: HashMap<EntityId, shared::conves::NoConves>,
     /// LETHAL FURY (Assassin active): until when, and its factor (1.0, or
@@ -3154,6 +3164,9 @@ pub struct GameWorld {
     loja_pedido_em: HashMap<SessionId, f32>,
     social_pedido_em: HashMap<SessionId, f32>,
     social_pendentes: HashMap<SessionId, String>,
+    /// TERRITORIES (docs/TERRITORIOS.md): held islets (`mar::ilhotas`
+    /// index -> owner), loaded from the database at sea.
+    pub(crate) territorios: HashMap<u8, shared::territorio::Dono>,
     /// Open direct trades, one entry per side (`world/troca.rs`).
     pub(crate) trocas: HashMap<SessionId, troca::Mesa>,
     /// Pending trade invites: invited -> (who invited, until sim_time_s).
@@ -3669,6 +3682,7 @@ impl GameWorld {
             loja_pedido_em: HashMap::new(),
             social_pedido_em: HashMap::new(),
             social_pendentes: HashMap::new(),
+            territorios: HashMap::new(),
             trocas: HashMap::new(),
             troca_convites: HashMap::new(),
             enemy_spawn_timer: 0.0,
@@ -3868,6 +3882,7 @@ impl GameWorld {
             loja_pedido_em: HashMap::new(),
             social_pedido_em: HashMap::new(),
             social_pendentes: HashMap::new(),
+            territorios: HashMap::new(),
             trocas: HashMap::new(),
             troca_convites: HashMap::new(),
             enemy_spawn_timer: 0.0,
@@ -8572,6 +8587,7 @@ impl GameWorld {
                 leme_do_mar: Default::default(),
                 conves: None,
                 em_terra: None,
+                territorios_enviados: false,
                 conves_enviado: HashMap::new(),
                 furia_ate: 0.0,
                 furia_fator: 0.0,

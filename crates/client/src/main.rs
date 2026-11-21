@@ -1685,6 +1685,13 @@ impl Jogo {
             // THE WALKABLE DECK: at the helm = sailing (camera, ship bar,
             // pilot); off it, on deck, the land's rules.
             mar_ui::define_no_leme(self.world.eu_no_leme());
+            mapa::define_minha_tag_de_cla(
+                self.world
+                    .self_id
+                    .and_then(|id| self.world.ents.get(&id))
+                    .map(|e| e.meta.cla.clone())
+                    .filter(|t| !t.is_empty()),
+            );
             {
                 let terreno = self.terreno.as_ref();
                 self.world.tick(get_frame_time(), &|x, z, camada| {
@@ -2833,6 +2840,12 @@ impl Jogo {
                     }
                 }
                 self.world.aplica_conves(&lista)
+            }
+            ServerMessage::Territorios { lista } => {
+                if log_mar() {
+                    eprintln!("[mar {:.2}] <- Territorios {lista:?}", get_time());
+                }
+                mar_ui::define_territorios(lista)
             }
             ServerMessage::EmTerra { ilhota } => {
                 if log_mar() {

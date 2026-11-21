@@ -1763,6 +1763,9 @@ pub enum PedidoNavio {
     /// TERRITORIES: from the islet's shore back onto my ship (or a party
     /// ship) beside it. Appended.
     VoltarAoNavio,
+    /// TERRITORIES (phase 3): claim the free islet I stand on, at its
+    /// centre, for my clan (leader or officer). Appended.
+    ReivindicarIlhota,
 }
 
 /// The ship's state, for the Captain's buttons and the hull bar.

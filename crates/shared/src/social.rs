@@ -231,6 +231,9 @@ pub struct Cla {
     pub tag: String,
     /// Officers (subset of `membros`).
     pub oficiais: Vec<String>,
+    /// TERRITORIES: the islet the clan holds (`mar::ilhotas` index); `None`
+    /// = a NOMAD clan (`territorio::MAX_NOMADE` members). Appended.
+    pub territorio: Option<u8>,
 }
 
 /// A friend or clan member, as the social panel shows them.

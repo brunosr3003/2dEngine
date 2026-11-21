@@ -1323,11 +1323,16 @@ impl Social {
         } else {
             format!("[{}]", c.tag)
         };
+        // TERRITORIES: a clan with an islet, or a NOMAD one (smaller cap).
+        let terra = match c.territorio.and_then(|i| shared::mar::ilhotas().get(i as usize)) {
+            Some(i) => format!("Territory: {}", i.nome),
+            None => "Nomad clan".to_string(),
+        };
         e::texto_ajustado(
             &format!(
-                "{tag} · {} / {} members · {online} online · You: {}",
+                "{tag} · {} / {} members · {online} online · You: {} · {terra}",
                 c.membros.len(),
-                social::MAX_CLA,
+                shared::territorio::max_membros(c.territorio.is_some()),
                 social::cargo::nome(meu)
             ),
             tx,
@@ -2141,7 +2146,7 @@ pub async fn previa() {
         amigos:vec!["MaréAlta".into(),"Navegante".into()],recebidos:vec!["Corsair".into()],enviados:vec!["Captain".into()],
         neste_canal:vec!["brunji".into(),"MaréAlta".into()],
         cartas:vec![social::Carta{id:1,de:"MaréAlta".into(),assunto:"Ready for the next adventure?".into(),texto:"Vamos reunir o grupo na vila e explorar as dungeons. Se precisar de ajuda, mande uma carta!".into(),quando:0,lida:false,oficial:false,anexos:vec![],resgatada:false}],
-        cla:Some(social::Cla{id:1,nome:"Tide Corsairs".into(),lider:"brunji".into(),aviso:"Meet at the village for the next expedition.".into(),membros:vec!["brunji".into(),"MaréAlta".into(),"Navegante".into(),"Captain".into()],tag:"TIDE".into(),oficiais:vec!["MaréAlta".into()]}),
+        cla:Some(social::Cla{id:1,nome:"Tide Corsairs".into(),lider:"brunji".into(),aviso:"Meet at the village for the next expedition.".into(),membros:vec!["brunji".into(),"MaréAlta".into(),"Navegante".into(),"Captain".into()],tag:"TIDE".into(),oficiais:vec!["MaréAlta".into()],territorio:Some(1)}),
         convites_cla:vec![], cargo:Some("admin".into()),destinatarios:42,oficiais:vec![],
         contatos: previa_contatos(),
         lista_negra: vec![
@@ -2288,6 +2293,7 @@ mod testes {
             membros: vec!["Ana".into(), "Bia".into(), "Caio".into()],
             tag: "TIDE".into(),
             oficiais: vec!["Bia".into()],
+            territorio: None,
         }
     }
 

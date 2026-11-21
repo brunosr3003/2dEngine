@@ -1194,13 +1194,22 @@ fn aguas_sem_lei(
     // (The nest dots went with the nests on 20/11/2026: the sea mobs are
     // scattered now, and the live ones are the solid fins.)
     // THE TERRITORY ISLETS (docs/TERRITORIOS.md): a flag and the name.
-    for i in shared::mar::ilhotas() {
+    let minha_tag = crate::mapa::minha_tag_de_cla();
+    for (n, i) in shared::mar::ilhotas().iter().enumerate() {
         let q = ponto(vec2(i.centro.x, i.centro.y));
         let r = 7.0 * k;
         if !dentro(q, r) {
             continue;
         }
-        let cor = Color::new(0.95, 0.78, 0.36, 1.0);
+        // Gold = free; green = my clan's; red = another clan's.
+        let dono = crate::mar_ui::dono_da_ilhota(n as u8);
+        let cor = match &dono {
+            None => Color::new(0.95, 0.78, 0.36, 1.0),
+            Some(d) if !d.tag.is_empty() && minha_tag.as_deref() == Some(d.tag.as_str()) => {
+                Color::new(0.42, 0.88, 0.52, 1.0)
+            }
+            Some(_) => Color::new(0.95, 0.36, 0.36, 1.0),
+        };
         draw_line(q.x - r * 0.35, q.y + r, q.x - r * 0.35, q.y - r, 1.6 * k, cor);
         draw_triangle(
             vec2(q.x - r * 0.35, q.y - r),
@@ -1209,7 +1218,11 @@ fn aguas_sem_lei(
             cor,
         );
         if !mini {
-            let rotulo = format!("{} · Territory", i.nome);
+            let rotulo = match &dono {
+                None => format!("{} · Free territory", i.nome),
+                Some(d) if !d.tag.is_empty() => format!("{} · [{}] {}", i.nome, d.tag, d.cla),
+                Some(d) => format!("{} · {}", i.nome, d.cla),
+            };
             let (dx, dy) = (q.x + r * 1.2, q.y + r * 0.45);
             estilo::texto(dx + 1.0, dy + 1.0, &rotulo, tamanho, Color::new(0.0, 0.0, 0.0, 0.85));
             estilo::texto(dx, dy, &rotulo, tamanho, cor);
@@ -4933,4 +4946,18 @@ mod testes_do_mapa_da_colonia {
         // E o centro da ilha tem que ser terra pelo teste que o mapa usa.
         assert!(m.terra(Vec2::ZERO), "o centro da ilha deu água no mapa");
     }
+}
+
+/// My clan's tag as the world shows it (my own entity's), for the map's
+/// territory colours. `None` = no clan.
+thread_local! {
+    static MINHA_TAG: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
+}
+
+pub fn define_minha_tag_de_cla(tag: Option<String>) {
+    MINHA_TAG.with(|t| *t.borrow_mut() = tag);
+}
+
+pub fn minha_tag_de_cla() -> Option<String> {
+    MINHA_TAG.with(|t| t.borrow().clone())
 }

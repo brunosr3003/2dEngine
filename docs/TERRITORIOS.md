@@ -30,9 +30,19 @@ nada a ver com as ilhas principais, que os clãs ocupam, fortificam e disputam.
    Perto do navio: "Board ship" (`PedidoNavio::VoltarAoNavio`; navio meu
    ou do grupo). Sem navio por perto e na beira d'água: "Set sail" lança o
    meu. Morrer em terra leva o navio ancorado junto (`largar_terra`).
-3. **Ocupação e clã nômade**: tabela `territorios` (ilhota, clã, desde),
-   reivindicar ilhota livre (ritual no núcleo), vantagens do clã travadas
-   sem território, aviso pros clãs existentes.
+3. **Ocupação e clã nômade** (feito 20/11/2026): tabela `territorios`
+   (ilhota PK, clã UNIQUE com ON DELETE CASCADE, desde). Em terra, a até
+   `territorio::RAIO_DO_NUCLEO` (12 u) do centro de uma ilhota livre, o
+   botão vira "Claim island" (`PedidoNavio::ReivindicarIlhota`): o mar
+   checa em terra/centro/clã/livre/clã sem ilha (`pode_reivindicar`), o
+   banco checa líder ou oficial e grava (`social::reivindicar`). O mar
+   guarda a cópia (`GameWorld::territorios`), recarrega a cada 30 s e manda
+   `ServerMessage::Territorios` pros clientes (mapa: dourado livre, verde
+   meu, vermelho de outro clã). **Clã nômade** = sem ilhota: no máximo
+   `territorio::MAX_NOMADE` (10) membros; com ilhota, 50. Loja, banco e
+   passivas do clã, quando existirem, exigem território. Painel do clã
+   mostra "Territory: X" ou "Nomad clan". Ainda sem abandonar ilhota pela
+   UI (dissolver o clã libera).
 4. **Fortes**: lotes por ilhota, módulos com nível e custo, render no
    cliente, armazém do clã.
 5. **Cerco**: declaração, janela agendada pelo dono, estruturas com HP
