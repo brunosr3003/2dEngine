@@ -3687,23 +3687,105 @@ pub fn nucleos_das_ilhotas() {
             // The pole.
             draw_cylinder(*base, 0.12, 0.12, 6.5, None, Color::from_rgba(92, 64, 38, 255));
             draw_sphere(*base + vec3(0.0, 6.6, 0.0), 0.2, None, Color::from_rgba(214, 176, 92, 255));
-            // The flag, rippling in four strips.
-            for k in 0..4 {
-                let x = 0.38 + k as f32 * 0.5;
-                let onda = (t * 3.0 - k as f32 * 0.9).sin() * 0.12 * (k as f32 + 1.0) / 4.0;
-                draw_cube(
-                    *base + vec3(x, 5.6 + onda, onda * 0.6),
-                    vec3(0.52, 1.3, 0.06),
-                    None,
-                    cor,
-                );
-            }
-            // The claim ring, twice for a thicker line.
-            let fraco = Color::new(cor.r, cor.g, cor.b, 0.85);
-            for par in anel.windows(2) {
-                draw_line_3d(par[0], par[1], fraco);
-                draw_line_3d(par[0] + vec3(0.0, 0.06, 0.0), par[1] + vec3(0.0, 0.06, 0.0), fraco);
-            }
+            // The flag: a two-sided cloth that ripples and shades with its
+            // folds (owner, 20/11/2026: it was flat and see-through from
+            // behind).
+            bandeira_da_ilhota(*base, cor, t, n as f32);
+            // THE CLAIM RING (owner, 20/11/2026: "mais nítido, com um efeito
+            // brilhante na borda"): a solid band on the ground, and over its
+            // edge a wall of light fading upward (additive), with a shimmer
+            // running round it.
+            anel_de_tomada(*base, anel, cor, t);
         }
+    });
+}
+
+
+/// The claim ring of one islet: a band `LARGURA` wide on the ground and a
+/// glowing wall `ALTURA_DO_BRILHO` high over it, fading to nothing.
+fn anel_de_tomada(centro: Vec3, anel: &[Vec3], cor: Color, t: f32) {
+    const LARGURA: f32 = 0.35;
+    const ALTURA_DO_BRILHO: f32 = 1.6;
+    let byte = |v: f32| (v.clamp(0.0, 1.0) * 255.0) as u8;
+    let mut faixa: Vec<Vertex> = Vec::with_capacity(anel.len() * 2);
+    let mut luz: Vec<Vertex> = Vec::with_capacity(anel.len() * 2);
+    let n = anel.len().saturating_sub(1).max(1) as f32;
+    for (k, p) in anel.iter().enumerate() {
+        let dir = vec3(p.x - centro.x, 0.0, p.z - centro.z).normalize_or_zero();
+        let a = k as f32 / n * std::f32::consts::TAU;
+        // The shimmer: six bright crests running round the ring.
+        let brilho = 0.7 + 0.3 * (a * 6.0 - t * 2.5).sin();
+        let c = [byte(cor.r * brilho + 0.15), byte(cor.g * brilho + 0.15), byte(cor.b * brilho + 0.15), 255];
+        faixa.push(vert(*p - dir * LARGURA, c));
+        faixa.push(vert(*p + dir * LARGURA, c));
+        let forte = [byte(cor.r * brilho), byte(cor.g * brilho), byte(cor.b * brilho), 255];
+        luz.push(vert(*p, forte));
+        luz.push(vert(*p + vec3(0.0, ALTURA_DO_BRILHO, 0.0), [0, 0, 0, 0]));
+    }
+    let mut idx: Vec<u16> = Vec::with_capacity(anel.len() * 12);
+    for k in 0..anel.len().saturating_sub(1) as u16 {
+        let (a, b, c, d) = (k * 2, k * 2 + 1, k * 2 + 2, k * 2 + 3);
+        // Both windings: seen from inside and outside alike.
+        idx.extend_from_slice(&[a, b, c, b, d, c, a, c, b, b, c, d]);
+    }
+    draw_mesh(&Mesh {
+        vertices: faixa,
+        indices: idx.clone(),
+        texture: None,
+    });
+    com_material(true, || {
+        draw_mesh(&Mesh {
+            vertices: luz,
+            indices: idx,
+            texture: None,
+        })
+    });
+    gl_use_default_material();
+}
+
+
+/// A flag of `cor` on the pole at `base`: a grid cloth, fixed at the pole and
+/// rippling more towards its free edge, lit by its own folds (a crest faces
+/// the light, a trough falls in shade), with a darker hem. Two-sided.
+fn bandeira_da_ilhota(base: Vec3, cor: Color, t: f32, fase: f32) {
+    const NX: u16 = 8;
+    const NY: u16 = 5;
+    const LARGURA: f32 = 2.4;
+    const ALTURA: f32 = 1.5;
+    const TOPO: f32 = 6.35;
+    let byte = |v: f32| (v.clamp(0.0, 1.0) * 255.0) as u8;
+    let mut verts: Vec<Vertex> = Vec::with_capacity(((NX + 1) * (NY + 1)) as usize);
+    for j in 0..=NY {
+        for i in 0..=NX {
+            let u = i as f32 / NX as f32;
+            let v = j as f32 / NY as f32;
+            let onda = t * 3.2 - u * 5.0 + fase;
+            let solto = u * u;
+            let z = onda.sin() * 0.28 * solto + (t * 1.7 + v * 2.0 + fase).sin() * 0.05 * solto;
+            let p = base
+                + vec3(
+                    0.12 + u * LARGURA,
+                    TOPO - (1.0 - v) * ALTURA - solto * 0.12,
+                    z,
+                );
+            // Light from the folds: the slope of the wave.
+            let luz = 0.78 + 0.22 * onda.cos() * solto.sqrt() + 0.08 * v;
+            let barra = i == NX || j == 0 || j == NY;
+            let k = if barra { luz * 0.6 } else { luz };
+            verts.push(vert(p, [byte(cor.r * k), byte(cor.g * k), byte(cor.b * k), 255]));
+        }
+    }
+    let mut idx: Vec<u16> = Vec::with_capacity((NX * NY * 12) as usize);
+    let at = |i: u16, j: u16| j * (NX + 1) + i;
+    for j in 0..NY {
+        for i in 0..NX {
+            let (a, b, c, d) = (at(i, j), at(i + 1, j), at(i, j + 1), at(i + 1, j + 1));
+            idx.extend_from_slice(&[a, b, c, b, d, c, a, c, b, b, c, d]);
+        }
+    }
+    draw_mesh(&Mesh {
+        vertices: verts,
+        indices: idx,
+        texture: None,
     });
 }
