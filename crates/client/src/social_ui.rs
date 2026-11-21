@@ -54,6 +54,10 @@ pub struct Social {
     tag_cla: String,
     /// CLAN FLAGS: the flag being edited (`None` = the clan's current one).
     bandeira_edit: Option<u32>,
+    /// CLAN FLAGS: an upload code was asked for; open the site when it comes.
+    pediu_upload: bool,
+    /// The code there was before asking (a new one must differ).
+    codigo_antes: String,
     /// Clan tab: the member list or the management page.
     cla_gerir: bool,
     /// The member whose actions are showing.
@@ -2150,7 +2154,7 @@ pub async fn previa() {
         amigos:vec!["MaréAlta".into(),"Navegante".into()],recebidos:vec!["Corsair".into()],enviados:vec!["Captain".into()],
         neste_canal:vec!["brunji".into(),"MaréAlta".into()],
         cartas:vec![social::Carta{id:1,de:"MaréAlta".into(),assunto:"Ready for the next adventure?".into(),texto:"Vamos reunir o grupo na vila e explorar as dungeons. Se precisar de ajuda, mande uma carta!".into(),quando:0,lida:false,oficial:false,anexos:vec![],resgatada:false}],
-        cla:Some(social::Cla{id:1,nome:"Tide Corsairs".into(),lider:"brunji".into(),aviso:"Meet at the village for the next expedition.".into(),membros:vec!["brunji".into(),"MaréAlta".into(),"Navegante".into(),"Captain".into()],tag:"TIDE".into(),oficiais:vec!["MaréAlta".into()],territorio:Some(1),bandeira:0x1_1040}),
+        cla:Some(social::Cla{id:1,nome:"Tide Corsairs".into(),lider:"brunji".into(),aviso:"Meet at the village for the next expedition.".into(),membros:vec!["brunji".into(),"MaréAlta".into(),"Navegante".into(),"Captain".into()],tag:"TIDE".into(),oficiais:vec!["MaréAlta".into()],territorio:Some(1),bandeira:0x1_1040,imagem_bandeira:0}),
         convites_cla:vec![], cargo:Some("admin".into()),destinatarios:42,oficiais:vec![],
         contatos: previa_contatos(),
         lista_negra: vec![
@@ -2158,6 +2162,7 @@ pub async fn previa() {
             social::Inimigo::visivel("Captain".into(), true, false, String::new(), String::new(), 0.0, 0.0),
         ],
         matadores: vec![],
+        codigo_bandeira: String::new(),
     }));
     ui.grupo = vec!["brunji".into(), "MaréAlta".into()];
     ui.grupo_tags = vec!["TIDE".into(), "TIDE".into()];
@@ -2299,6 +2304,7 @@ mod testes {
             oficiais: vec!["Bia".into()],
             territorio: None,
             bandeira: 0,
+            imagem_bandeira: 0,
         }
     }
 
@@ -2548,6 +2554,33 @@ impl Social {
                 self.enviar(Pedido::BandeiraCla { bandeira: v }, s);
             }
         }
-        y + 10.0 * k + 3.0 * (lh + 4.0 * k) + 14.0 * k
+        // THE CUSTOM IMAGE: uploaded on the site with a one-time code, it
+        // flies once the team approves it (it wins over the preset).
+        let ry = y + 10.0 * k + 3.0 * (lh + 4.0 * k) + 4.0 * k;
+        let estado = match c.imagem_bandeira {
+            shared::bandeira::IMAGEM_PENDENTE => ("Custom image: waiting for review", e::OURO),
+            shared::bandeira::IMAGEM_APROVADA => ("Custom image: approved, flying", e::VERDE),
+            shared::bandeira::IMAGEM_RECUSADA => ("Custom image: refused, the preset flies", e::VERMELHO),
+            _ => ("Custom image: none (the preset flies)", e::SUAVE),
+        };
+        let bw = 150.0 * k;
+        e::texto_ajustado(estado.0, x, ry + lh * 0.68, w - bw - 8.0 * k, 12, estado.1);
+        if crate::ui::botao(Rect::new(x + w - bw, ry, bw, lh), "Upload image", !self.pediu_upload) {
+            self.pediu_upload = true;
+            self.codigo_antes = self.estado.codigo_bandeira.clone();
+            self.enviar(Pedido::CodigoBandeira, s);
+        }
+        // The code came back: open the site's upload page with it.
+        if self.pediu_upload
+            && !self.estado.codigo_bandeira.is_empty()
+            && self.estado.codigo_bandeira != self.codigo_antes
+        {
+            self.pediu_upload = false;
+            let url = crate::api::url_do_site(&format!("/bandeira?c={}", self.estado.codigo_bandeira));
+            if !crate::nativo::abrir_url(&url) {
+                self.aviso = format!("Open {url} in your browser.");
+            }
+        }
+        ry + lh + 14.0 * k
     }
 }

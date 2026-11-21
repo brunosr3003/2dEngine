@@ -37,6 +37,12 @@ pub async fn init(pool: &PgPool) -> Result<()> {
         // CLAN FLAGS: the preset (`bandeira::Bandeira` packed); NULL = the
         // clan's default (`Bandeira::do_cla`). Read as Option, never NOT NULL.
         "ALTER TABLE social_clas ADD COLUMN IF NOT EXISTS bandeira INTEGER",
+        // CLAN FLAGS, the uploaded image: one per clan, already LARG x ALT
+        // RGBA (the site reduces it); estado = bandeira::IMAGEM_* (1 pending,
+        // 2 approved, 3 refused). Shown only once approved in the Panopticon.
+        "CREATE TABLE IF NOT EXISTS cla_bandeira_imagem (cla BIGINT PRIMARY KEY REFERENCES social_clas(id) ON DELETE CASCADE, pixels BYTEA NOT NULL, estado SMALLINT NOT NULL, enviada BIGINT NOT NULL, enviada_por TEXT NOT NULL, revisada_por TEXT)",
+        // One-time upload codes (the game asks, the site spends).
+        "CREATE TABLE IF NOT EXISTS cla_bandeira_codigos (codigo TEXT PRIMARY KEY, cla BIGINT NOT NULL REFERENCES social_clas(id) ON DELETE CASCADE, nome TEXT NOT NULL, expira BIGINT NOT NULL)",
     ] {
         sqlx::query(sql).execute(pool).await?;
     }
@@ -570,6 +576,24 @@ pub async fn executar(pool: &PgPool, eu: &str, pedido: &Pedido) -> Result<()> {
                 bail!("That name is not on your blacklist.");
             }
         }
+        Pedido::CodigoBandeira => {
+            let id = permitido(&mut tx, eu, AcaoCla::Tag, 0).await?;
+            const LETRAS: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+            let codigo: String = (0..8)
+                .map(|_| LETRAS[fastrand::usize(..LETRAS.len())] as char)
+                .collect();
+            sqlx::query("DELETE FROM cla_bandeira_codigos WHERE cla=$1 OR expira < extract(epoch from now())::bigint")
+                .bind(id)
+                .execute(&mut *tx)
+                .await?;
+            sqlx::query("INSERT INTO cla_bandeira_codigos(codigo,cla,nome,expira) VALUES($1,$2,$3,extract(epoch from now())::bigint + $4)")
+                .bind(&codigo)
+                .bind(id)
+                .bind(eu)
+                .bind(shared::bandeira::CODIGO_S)
+                .execute(&mut *tx)
+                .await?;
+        }
         Pedido::BandeiraCla { bandeira } => {
             let id = permitido(&mut tx, eu, AcaoCla::Tag, 0).await?;
             let b = shared::bandeira::Bandeira::desempacota(*bandeira).empacota();
@@ -604,19 +628,21 @@ pub async fn territorio_do_cla(tx: &mut PgConnection, cla: i64) -> Result<Option
 
 /// CLAN FLAGS: every clan's flag (the approved image comes with part 2).
 pub async fn bandeiras(pool: &PgPool) -> Result<Vec<shared::bandeira::BandeiraDoCla>> {
-    let linhas: Vec<(i64, String, Option<i32>)> =
-        sqlx::query_as("SELECT id, tag, bandeira FROM social_clas ORDER BY id")
-            .fetch_all(pool)
-            .await?;
+    let linhas: Vec<(i64, String, Option<i32>, Option<Vec<u8>>)> = sqlx::query_as(
+        "SELECT c.id, c.tag, c.bandeira, i.pixels FROM social_clas c \
+         LEFT JOIN cla_bandeira_imagem i ON i.cla = c.id AND i.estado = 2 ORDER BY c.id",
+    )
+    .fetch_all(pool)
+    .await?;
     Ok(linhas
         .into_iter()
-        .map(|(cla_id, tag, b)| shared::bandeira::BandeiraDoCla {
+        .map(|(cla_id, tag, b, imagem)| shared::bandeira::BandeiraDoCla {
             cla_id,
             tag,
             preset: b
                 .map(|b| b as u32)
                 .unwrap_or_else(|| shared::bandeira::Bandeira::do_cla(cla_id).empacota()),
-            imagem: None,
+            imagem: imagem.filter(|p| p.len() == shared::bandeira::LARG * shared::bandeira::ALT * 4),
         })
         .collect())
 }
@@ -772,6 +798,19 @@ pub async fn estado(pool: &PgPool, eu: &str) -> Result<Estado> {
             .map(|(n, _)| n.clone())
             .collect();
         let territorio = territorio_do_cla(&mut tx, id).await?;
+        let imagem_bandeira: Option<i16> =
+            sqlx::query_scalar("SELECT estado FROM cla_bandeira_imagem WHERE cla=$1")
+                .bind(id)
+                .fetch_optional(&mut *tx)
+                .await?;
+        e.codigo_bandeira = sqlx::query_scalar(
+            "SELECT codigo FROM cla_bandeira_codigos WHERE nome=$1 AND cla=$2 AND expira > extract(epoch from now())::bigint",
+        )
+        .bind(eu)
+        .bind(id)
+        .fetch_optional(&mut *tx)
+        .await?
+        .unwrap_or_default();
         e.cla = Some(Cla {
             id,
             nome: r.get("nome"),
@@ -785,6 +824,7 @@ pub async fn estado(pool: &PgPool, eu: &str) -> Result<Estado> {
                 .get::<Option<i32>, _>("bandeira")
                 .map(|b| b as u32)
                 .unwrap_or_else(|| shared::bandeira::Bandeira::do_cla(id).empacota()),
+            imagem_bandeira: imagem_bandeira.map_or(0, |e| e as u8),
         });
     }
     e.contatos = contatos(&mut tx, &e).await?;
@@ -1446,6 +1486,27 @@ mod tests {
         executar(p, "Eva", &Pedido::BandeiraCla { bandeira: minha }).await?;
         assert_eq!(estado(p, "Fabi").await?.cla.unwrap().bandeira, minha);
         assert!(bandeiras(p).await?.iter().any(|b| b.tag == "MAR" && b.preset == minha));
+        // The uploaded image: a code for the leader, pending until approved,
+        // then it flies (the sea's list carries the pixels).
+        assert!(executar(p, "M1", &Pedido::CodigoBandeira).await.is_err(), "a member cannot");
+        executar(p, "Eva", &Pedido::CodigoBandeira).await?;
+        let codigo = estado(p, "Eva").await?.codigo_bandeira;
+        assert_eq!(codigo.len(), 8);
+        let cla: i64 = sqlx::query_scalar("SELECT cla FROM cla_bandeira_codigos WHERE codigo=$1")
+            .bind(&codigo)
+            .fetch_one(p)
+            .await?;
+        let px = vec![7u8; shared::bandeira::LARG * shared::bandeira::ALT * 4];
+        sqlx::query("INSERT INTO cla_bandeira_imagem(cla,pixels,estado,enviada,enviada_por) VALUES($1,$2,1,0,'Eva')")
+            .bind(cla)
+            .bind(&px)
+            .execute(p)
+            .await?;
+        assert_eq!(estado(p, "Eva").await?.cla.unwrap().imagem_bandeira, shared::bandeira::IMAGEM_PENDENTE);
+        assert!(bandeiras(p).await?.iter().all(|b| b.imagem.is_none()), "pending does not fly");
+        sqlx::query("UPDATE cla_bandeira_imagem SET estado=2 WHERE cla=$1").bind(cla).execute(p).await?;
+        assert!(bandeiras(p).await?.iter().any(|b| b.cla_id == cla && b.imagem.as_deref() == Some(&px[..])));
+        assert_eq!(estado(p, "Fabi").await?.cla.unwrap().imagem_bandeira, shared::bandeira::IMAGEM_APROVADA);
         // Dissolving frees it.
         executar(p, "Eva", &Pedido::DissolverCla).await?;
         assert!(territorios(p).await?.is_empty());

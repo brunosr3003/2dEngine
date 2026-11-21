@@ -174,6 +174,14 @@ const EMBLEMAS: [[&str; 12]; 8] = [
     ],
 ];
 
+/// The uploaded image's state (`social::Cla::imagem_bandeira`).
+pub const IMAGEM_NENHUMA: u8 = 0;
+pub const IMAGEM_PENDENTE: u8 = 1;
+pub const IMAGEM_APROVADA: u8 = 2;
+pub const IMAGEM_RECUSADA: u8 = 3;
+/// How long an upload code lives, seconds.
+pub const CODIGO_S: i64 = 15 * 60;
+
 /// A preset flag.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Bandeira {

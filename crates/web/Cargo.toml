@@ -27,4 +27,4 @@ base64 = "0.22"
 jsonwebtoken = "9"
 # PKCE S256 e hash do token de sessao do login com Google.
 sha2 = "0.10"
-image = { version = "0.25", default-features = false, features = ["png"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }

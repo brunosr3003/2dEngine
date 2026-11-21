@@ -59,6 +59,12 @@ fn endereco() -> String {
         .unwrap_or_else(|_| option_env!("MMO_API_PADRAO").unwrap_or(PADRAO).into())
 }
 
+/// A page of the site (`web`), for the browser: the same host the game's API
+/// uses (the test server's on a test build).
+pub fn url_do_site(caminho: &str) -> String {
+    format!("http://{}{caminho}", endereco())
+}
+
 /// Fires the lookup. The result (or the error) arrives on the receiver.
 pub fn buscar_canais() -> Receiver<Result<Vec<Canal>, String>> {
     em_thread(|| get("/api/channels").map(|(_, corpo)| parse(&corpo)))

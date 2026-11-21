@@ -2681,6 +2681,12 @@ pub const VERBETES: &[(&str, &str)] = &[
     ("Territory: {n}", "Território: {n}"),
     ("Nomad clan", "Clã nômade"),
     // social_ui.rs — editor da bandeira do clã
+    ("Upload image", "Enviar imagem"),
+    ("Custom image: waiting for review", "Imagem própria: aguardando revisão"),
+    ("Custom image: approved, flying", "Imagem própria: aprovada, hasteada"),
+    ("Custom image: refused, the preset flies", "Imagem própria: recusada, vale a bandeira preset"),
+    ("Custom image: none (the preset flies)", "Imagem própria: nenhuma (vale a bandeira preset)"),
+    ("Open {u} in your browser.", "Abra {u} no navegador."),
     ("Clan flag", "Bandeira do clã"),
     ("Save flag", "Salvar bandeira"),
     ("Field", "Fundo"),

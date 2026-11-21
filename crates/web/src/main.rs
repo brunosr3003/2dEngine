@@ -9,6 +9,7 @@
 //! `accounts` para contas; `characters` continua sendo do server).
 
 mod auth;
+mod bandeira;
 mod contas;
 mod db;
 mod econ_admin;
@@ -108,6 +109,7 @@ async fn main() -> Result<()> {
     );
 
     let pool_arc2 = pool_arc.clone();
+    let bandeira_pool = pool_arc.clone();
     let econ_state = econ_admin::EconState::from_env(pool_arc);
     tracing::info!("econ admin: pronto (POST /api/econ/login)");
 
@@ -125,6 +127,9 @@ async fn main() -> Result<()> {
                     email: mail,
                 }),
         )
+        .merge(bandeira::router(bandeira::Estado {
+            pool: bandeira_pool,
+        }))
         .nest("/api/pixel", pixel::router(pixel_state))
         .nest("/api/econ", econ_admin::router(econ_state))
         .fallback_service(ServeDir::new(&static_dir).append_index_html_on_directories(true))

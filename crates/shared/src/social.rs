@@ -96,6 +96,10 @@ pub enum Pedido {
     BandeiraCla {
         bandeira: u32,
     },
+    /// CLAN FLAGS: a one-time code (15 min) to upload the clan's flag image
+    /// on the site (`Estado::codigo_bandeira`). Same rank as the tag.
+    /// Appended.
+    CodigoBandeira,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -120,6 +124,9 @@ pub struct Estado {
     /// Kill letters (official ids, negative) and who killed me in each: the
     /// letter's "Add to blacklist" button. Appended.
     pub matadores: Vec<(i64, String)>,
+    /// CLAN FLAGS: my live upload code ("" = none), from `CodigoBandeira`.
+    /// Appended.
+    pub codigo_bandeira: String,
 }
 
 /// One name on the blacklist. The location is filled by the server ONLY
@@ -242,6 +249,9 @@ pub struct Cla {
     /// CLAN FLAGS: the preset (`bandeira::Bandeira` packed; the clan's
     /// default until one is picked). Appended.
     pub bandeira: u32,
+    /// CLAN FLAGS: the uploaded image's state (`bandeira::IMAGEM_*`).
+    /// Appended.
+    pub imagem_bandeira: u8,
 }
 
 /// A friend or clan member, as the social panel shows them.

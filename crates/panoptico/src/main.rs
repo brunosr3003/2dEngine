@@ -38,6 +38,7 @@ use axum::Form;
 use tokio::sync::RwLock;
 
 mod agendados;
+mod bandeiras;
 mod auth;
 mod economia;
 mod mapa;
@@ -162,6 +163,8 @@ async fn main() -> anyhow::Result<()> {
         .route(&p("/api/eventos/cancelar"), post(evento_cancelar))
         .route(&p("/api/ofertas"), get(ofertas::lista).post(ofertas::criar))
         .route(&p("/api/ofertas/encerrar"), post(ofertas::encerrar))
+        .route(&p("/api/bandeiras"), get(bandeiras::lista))
+        .route(&p("/api/bandeiras/acao"), post(bandeiras::acao))
         .route(&p("/api/chat"), get(chat_lista))
         .route(&p("/api/chat/palavras"), post(chat_palavra))
         .route(&p("/api/chat/acao"), post(chat_acao))

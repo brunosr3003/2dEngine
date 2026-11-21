@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Clan flag</title>
+<style>
+body{margin:0;background:#16110c;color:#f2e8d2;font:16px system-ui,sans-serif;display:flex;justify-content:center}
+main{max-width:460px;width:100%;padding:24px 16px}
+h1{color:#e8bf75;font-size:22px;margin:0 0 6px}
+p{color:#bfae8d;line-height:1.45}
+.caixa{background:#22190f;border:1px solid #6b4f2a;border-radius:10px;padding:16px;margin-top:16px}
+canvas{width:240px;height:160px;image-rendering:pixelated;border:2px solid #d9a95a;background:#000;display:block;margin:12px auto}
+button{background:#d9a95a;color:#1b130b;border:0;border-radius:8px;padding:12px 18px;font-weight:700;font-size:16px;width:100%;margin-top:10px}
+button:disabled{opacity:.45}
+input[type=file]{width:100%;color:#f2e8d2}
+.ok{color:#7be08c}.erro{color:#f26b6b}
+</style></head><body><main>
+<h1>Clan flag</h1>
+<p>Pick an image for your clan's flag. It is cut to 3:2 and shown small, so a bold, simple picture works best.
+It flies on your ships, your islet and the map <b>after the Tempest team reviews it</b>.</p>
+<div class="caixa">
+<input id="arquivo" type="file" accept="image/png,image/jpeg">
+<canvas id="previa" width="48" height="32"></canvas>
+<button id="enviar" disabled>Send for review</button>
+<p id="estado"></p>
+</div>
+<p style="font-size:13px">No offensive, hateful or copyrighted images: a refused flag can cost the clan its custom image.</p>
+</main>
+<script>
+const codigo = new URLSearchParams(location.search).get('c') || '';
+const estado = document.getElementById('estado');
+const btn = document.getElementById('enviar');
+const cv = document.getElementById('previa'), cx = cv.getContext('2d');
+let dados = null;
+if (!codigo) { estado.textContent = 'Open this page from the clan panel in the game.'; estado.className = 'erro'; }
+document.getElementById('arquivo').onchange = (ev) => {
+  const f = ev.target.files[0]; if (!f) return;
+  if (f.size > 3 * 1024 * 1024) { estado.textContent = 'The file is too big (3 MB at most).'; estado.className = 'erro'; return; }
+  const leitor = new FileReader();
+  leitor.onload = () => {
+    dados = leitor.result.split(',')[1];
+    const img = new Image();
+    img.onload = () => {
+      const w = img.width, h = img.height;
+      const cw = w * 2 > h * 3 ? h * 3 / 2 : w, ch = w * 2 > h * 3 ? h : w * 2 / 3;
+      cx.imageSmoothingEnabled = true;
+      cx.fillStyle = '#000'; cx.fillRect(0, 0, 48, 32);
+      cx.drawImage(img, (w - cw) / 2, (h - ch) / 2, cw, ch, 0, 0, 48, 32);
+      btn.disabled = !codigo;
+      estado.textContent = 'This is how it will look.'; estado.className = '';
+    };
+    img.src = leitor.result;
+  };
+  leitor.readAsDataURL(f);
+};
+btn.onclick = async () => {
+  btn.disabled = true; estado.textContent = 'Sending…'; estado.className = '';
+  try {
+    const r = await fetch('/api/bandeira', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ codigo, imagem: dados }) });
+    const d = await r.json();
+    if (d.ok) { estado.textContent = 'Sent! It will fly once the team approves it. You can close this page.'; estado.className = 'ok'; }
+    else { estado.textContent = d.erro || 'Could not send.'; estado.className = 'erro'; btn.disabled = false; }
+  } catch (e) { estado.textContent = 'Could not reach the server.'; estado.className = 'erro'; btn.disabled = false; }
+};
+</script></body></html>

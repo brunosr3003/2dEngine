@@ -143,6 +143,7 @@
     <button class="aba" data-aba="eventos">eventos</button>
     <button class="aba" data-aba="ofertas">ofertas</button>
     <button class="aba" data-aba="chat">chat</button>
+    <button class="aba" data-aba="bandeiras">bandeiras</button>
     <button class="aba" data-aba="hud">hud</button>
     <button class="aba" data-aba="rede">rede</button>
     <button class="aba" data-aba="pvp">pvp</button>
@@ -583,6 +584,15 @@
   <div id="of-lista" class="nota"></div>
 </div>
 
+<div class="aba-painel" id="aba-bandeiras" hidden>
+  <h2>Bandeiras de clã</h2>
+  <p class="nota">
+    Imagens que líderes de clã enviaram pelo site. Só aparecem no jogo (mastro dos
+    navios, ilhota e mapa) depois de <b>aprovadas</b>; o jogo pega em até 30 s.
+    Recusada, o clã volta pra bandeira preset.
+  </p>
+  <div id="bd-lista"></div>
+</div>
 <div class="aba-painel" id="aba-chat" hidden>
   <h2>Chat global</h2>
   <p class="nota">
@@ -2320,6 +2330,28 @@ document.getElementById('ch-palavra-add').onclick = () => {
   if (p) { chPalavra(p, document.getElementById('ch-palavra-acao').value); document.getElementById('ch-palavra').value = ''; }
 };
 PUXA.chat = chCarrega;
+// ── bandeiras de clã ──────────────────────────────────────────────────
+const BD_ESTADO = { 1: 'pendente', 2: 'aprovada', 3: 'recusada' };
+async function bdCarrega() {
+  const d = await api('api/bandeiras'); if (!d) return;
+  const el = document.getElementById('bd-lista');
+  if (!d.bandeiras.length) { el.innerHTML = '<p class="nota">Nenhuma imagem enviada.</p>'; return; }
+  el.innerHTML = d.bandeiras.map(b => `
+    <div style="display:flex;gap:14px;align-items:center;padding:10px;border-bottom:1px solid #333">
+      <img src="${b.imagem}" width="144" height="96" style="image-rendering:pixelated;border:1px solid #777;background:#000">
+      <div style="flex:1">
+        <b>${b.tag ? '[' + esc(b.tag) + '] ' : ''}${esc(b.nome)}</b><br>
+        <span class="nota">enviada por ${esc(b.por)} em ${esc(b.quando)} · <b>${BD_ESTADO[b.estado] || b.estado}</b>${b.revisor ? ' por ' + esc(b.revisor) : ''}</span>
+      </div>
+      <button class="acao" onclick="bdAcao(${b.cla}, true)">aprovar</button>
+      <button class="acao" onclick="bdAcao(${b.cla}, false)">recusar</button>
+    </div>`).join('');
+}
+async function bdAcao(cla, aprovar) {
+  await fetch('api/bandeiras/acao', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ cla, aprovar }) });
+  bdCarrega();
+}
+PUXA.bandeiras = bdCarrega;
 document.querySelectorAll('[data-av]').forEach(b => b.onclick = () => {
   const min = Math.max(1, parseInt(document.getElementById('av-min').value, 10) || 10);
   const t = b.dataset.av === 'manut'

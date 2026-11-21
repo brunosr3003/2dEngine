@@ -70,6 +70,26 @@ nada a ver com as ilhas principais, que os clãs ocupam, fortificam e disputam.
    (`afundar_derrotado`); morrer na ilha sem navio = morte naval de verdade
    (navio avariado) e volta pro cais, só voltando ao mar depois do reparo.
 
+## Bandeiras de clã (21/11/2026)
+
+Cada clã tem uma bandeira, que vai no mastro principal dos navios do clã (o
+cliente acha o clã pelo capitão: nome do navio = nome do capitão, tag na
+entidade do capitão), no mastro da ilhota que o clã domina e no mapa.
+
+- **Preset** (`shared::bandeira::Bandeira`, 5 campos de 4 bits num `u32`):
+  cor de fundo, padrão (9), segunda cor, emblema (9, bitmaps 12×12) e cor
+  do emblema; rasterizado em 48×32 RGBA igual em servidor e cliente.
+  `social_clas.bandeira` (NULL = `Bandeira::do_cla(id)`). Editor no painel
+  do clã (mesma permissão da tag), `Pedido::BandeiraCla`.
+- **Imagem própria**: "Upload image" no painel → `Pedido::CodigoBandeira`
+  gera código de uso único (15 min, `cla_bandeira_codigos`) → o jogo abre
+  `<site>/bandeira?c=CÓDIGO` (página em `crates/web/estatico`) → `POST
+  /api/bandeira` (PNG/JPEG até 3 MB) corta 3:2, reduz pra 48×32 RGBA e
+  grava PENDENTE em `cla_bandeira_imagem` → aprovar/recusar no Panóptico
+  (aba "bandeiras") → aprovada ganha do preset em até 30 s.
+- O mar manda `ServerMessage::Bandeiras` (todas, com a imagem aprovada) a
+  cada mudança; o cliente faz uma textura por bandeira (`bandeiras.rs`).
+
 ## Armadilha
 
 O relevo do mar tem CACHE em disco (servidor `data/ilhas/*-marN.alt`, e o
