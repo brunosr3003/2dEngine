@@ -24,8 +24,9 @@ pub struct Estado {
 
 pub fn router(st: Estado) -> Router {
     Router::new()
-        .route("/bandeira", get(pagina))
-        .route("/api/bandeira", post(enviar))
+        // Under /api: the proxies in front of `web` (production's nginx, the
+        // test server's Caddy) only pass /api/* through.
+        .route("/api/bandeira", get(pagina).post(enviar))
         // A 3 MB file in base64 is past axum's 2 MB default.
         .layer(axum::extract::DefaultBodyLimit::max(5 * 1024 * 1024))
         .with_state(st)

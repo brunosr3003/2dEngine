@@ -83,7 +83,7 @@ entidade do capitão), no mastro da ilhota que o clã domina e no mapa.
   do clã (mesma permissão da tag), `Pedido::BandeiraCla`.
 - **Imagem própria**: "Upload image" no painel → `Pedido::CodigoBandeira`
   gera código de uso único (15 min, `cla_bandeira_codigos`) → o jogo abre
-  `<site>/bandeira?c=CÓDIGO` (página em `crates/web/estatico`) → `POST
+  `<site>/api/bandeira?c=CÓDIGO` (página em `crates/web/estatico`; sob /api porque os proxies só repassam /api/*) → `POST
   /api/bandeira` (PNG/JPEG até 3 MB) corta 3:2, reduz pra 48×32 RGBA e
   grava PENDENTE em `cla_bandeira_imagem` → aprovar/recusar no Panóptico
   (aba "bandeiras") → aprovada ganha do preset em até 30 s.

@@ -2576,7 +2576,7 @@ impl Social {
             && self.estado.codigo_bandeira != self.codigo_antes
         {
             self.pediu_upload = false;
-            let url = crate::api::url_do_site(&format!("/bandeira?c={}", self.estado.codigo_bandeira));
+            let url = crate::api::url_do_site(&format!("/api/bandeira?c={}", self.estado.codigo_bandeira));
             if !crate::nativo::abrir_url(&url) {
                 self.aviso = format!("Open {url} in your browser.");
             }
