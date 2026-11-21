@@ -83,6 +83,14 @@ pub enum IncomingMessage {
         sid: SessionId,
         resultado: Result<shared::territorio::Dono, String>,
     },
+    /// TERRITORIES: the database's yes/no BEFORE a claim's two minutes
+    /// start (rank, the clan without an islet, the islet free).
+    TomadaAutorizada {
+        sid: SessionId,
+        ilhota: u8,
+        /// The clan's name, or why not.
+        resultado: Result<String, String>,
+    },
     CorreioEntrega(crate::correio_admin::Entrega),
     CorreioFim {
         sid: SessionId,
@@ -3167,6 +3175,8 @@ pub struct GameWorld {
     /// TERRITORIES (docs/TERRITORIOS.md): held islets (`mar::ilhotas`
     /// index -> owner), loaded from the database at sea.
     pub(crate) territorios: HashMap<u8, shared::territorio::Dono>,
+    /// TERRITORIES: the claims under way (islet -> claim).
+    pub(crate) tomadas: HashMap<u8, territorios::Tomada>,
     /// Open direct trades, one entry per side (`world/troca.rs`).
     pub(crate) trocas: HashMap<SessionId, troca::Mesa>,
     /// Pending trade invites: invited -> (who invited, until sim_time_s).
@@ -3683,6 +3693,7 @@ impl GameWorld {
             social_pedido_em: HashMap::new(),
             social_pendentes: HashMap::new(),
             territorios: HashMap::new(),
+            tomadas: HashMap::new(),
             trocas: HashMap::new(),
             troca_convites: HashMap::new(),
             enemy_spawn_timer: 0.0,
@@ -3883,6 +3894,7 @@ impl GameWorld {
             social_pedido_em: HashMap::new(),
             social_pendentes: HashMap::new(),
             territorios: HashMap::new(),
+            tomadas: HashMap::new(),
             trocas: HashMap::new(),
             troca_convites: HashMap::new(),
             enemy_spawn_timer: 0.0,
@@ -14172,7 +14184,11 @@ impl GameWorld {
                     // aboard a ship. The escalating naval respawn and the
                     // real penalty happen if the sailor has no ship to return
                     // to (`pending_real_death` / `respawn_player`).
-                    let morte_naval = no_mar && session.instancia == 0 && session.conves.is_some();
+                    // TERRITORIES: dying ashore on an islet is a sea death too
+                    // (owner, 20/11/2026: back to the ship, the delay growing).
+                    let morte_naval = no_mar
+                        && session.instancia == 0
+                        && (session.conves.is_some() || session.em_terra.is_some());
                     if !morte_naval {
                         session.perder_proficiencias_na_morte();
                     }
@@ -14281,8 +14297,16 @@ impl GameWorld {
                     .values()
                     .find(|s| s.entity_id == *eid)
                     .map(|s| {
-                        let naval = self.no_mar() && s.instancia == 0 && s.conves.is_some();
-                        let volta_ao_conves = naval && s.conves.is_some_and(|c| !c.hostil);
+                        let naval = self.no_mar()
+                            && s.instancia == 0
+                            && (s.conves.is_some() || s.em_terra.is_some());
+                        // Ashore with my ship at anchor: back onto its deck.
+                        let ancorado = s
+                            .em_terra
+                            .and_then(|t| t.navio)
+                            .is_some_and(|e| self.ecs.contains(e));
+                        let volta_ao_conves =
+                            naval && (s.conves.is_some_and(|c| !c.hostil) || ancorado);
                         let tem_navio = volta_ao_conves
                             || self
                                 .navio_equipado(s.handle.id)
@@ -14304,15 +14328,17 @@ impl GameWorld {
             self.free_entity_body(entity);
             let _ = self.ecs.despawn(entity);
             self.removed_this_tick.push(eid);
-            // TERRITORIES: died ashore on an islet: the anchored ship goes too
-            // (the respawn sails out on a fresh one, `tick_conves`).
+            // TERRITORIES: died ashore on an islet. With my ship at anchor I
+            // come back on its deck (the naval respawn, its delay growing with
+            // each death); as someone's crew, ashore ends and the respawn
+            // sails out on my own ship.
             let em_terra = self
                 .sessions
                 .iter()
                 .find(|(_, s)| s.entity_id == eid && s.em_terra.is_some())
-                .map(|(id, _)| *id);
-            if let Some(sid) = em_terra {
-                self.largar_terra(sid);
+                .map(|(id, s)| (*id, s.em_terra));
+            if let Some((sid, Some(_))) = em_terra {
+                self.morte_em_terra(sid);
             }
 
             // Libera carry se o morto estava sendo carregado ou carregando

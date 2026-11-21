@@ -2680,6 +2680,8 @@ pub const VERBETES: &[(&str, &str)] = &[
     ("{n} · Free territory", "{n} · Território livre"),
     ("Territory: {n}", "Território: {n}"),
     ("Nomad clan", "Clã nômade"),
+    ("{i} · Contested: enemies in the ring", "{i} · Contestada: inimigos no anel"),
+    ("Claiming {i} for {q} · {m}:{s}", "Tomando {i} para {q} · {m}:{s}"),
     ("Tier upgrade: T{a} › T{b}", "Melhoria de tier: T{a} › T{b}"),
     ("Upgrade tier", "Melhorar tier"),
     ("{n} crew · T1", "{n} tripulantes · T1"),

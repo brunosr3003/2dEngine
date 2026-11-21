@@ -41,6 +41,74 @@ pub fn define_territorios(v: Vec<shared::territorio::Dono>) {
     }
 }
 
+/// TERRITORIES: the claims under way (`ServerMessage::Tomadas`).
+static TOMADAS: std::sync::Mutex<Vec<shared::territorio::TomadaInfo>> =
+    std::sync::Mutex::new(Vec::new());
+
+pub fn define_tomadas(v: Vec<shared::territorio::TomadaInfo>) {
+    if let Ok(mut t) = TOMADAS.lock() {
+        *t = v;
+    }
+}
+
+/// The claim under way on islet `ilhota`, if any.
+pub fn tomada_da_ilhota(ilhota: u8) -> Option<shared::territorio::TomadaInfo> {
+    TOMADAS
+        .lock()
+        .ok()
+        .and_then(|t| t.iter().find(|d| d.ilhota == ilhota).cloned())
+}
+
+/// THE CLAIM BANNER: near an islet being claimed (within 120 u of its
+/// heart), a line at the top: who claims it and the time left, or that it
+/// is contested.
+pub fn faixa_da_tomada(w: &crate::world::World) {
+    let Some(eu) = w.self_id.and_then(|id| w.ents.get(&id)) else {
+        return;
+    };
+    let p = ::glam::Vec2::new(eu.render_pos.x, eu.render_pos.y);
+    let lista = TOMADAS.lock().map(|t| t.clone()).unwrap_or_default();
+    let Some((t, ilha)) = lista.iter().find_map(|t| {
+        let i = shared::mar::ilhotas().get(t.ilhota as usize)?;
+        (i.centro.distance(p) <= 120.0).then_some((t, i))
+    }) else {
+        return;
+    };
+    let quem = if t.tag.is_empty() {
+        t.cla.clone()
+    } else {
+        format!("[{}] {}", t.tag, t.cla)
+    };
+    let falta = (shared::territorio::TEMPO_DE_TOMADA_S - t.feito_s).max(0.0) as u32;
+    let (texto, cor) = if t.contestada {
+        (
+            format!("{} · Contested: enemies in the ring", ilha.nome),
+            crate::hud_estilo::VERMELHO,
+        )
+    } else {
+        (
+            format!(
+                "Claiming {} for {quem} · {}:{:02}",
+                ilha.nome,
+                falta / 60,
+                falta % 60
+            ),
+            crate::hud_estilo::OURO,
+        )
+    };
+    let s = (screen_height().min(screen_width()) / 800.0).clamp(0.8, 1.6);
+    let y = 96.0 * s;
+    let tam = (18.0 * s) as u16;
+    let x = screen_width() * 0.5;
+    crate::hud_estilo::texto_centro(x + 1.5, y + 1.5, &texto, tam, Color::new(0.0, 0.0, 0.0, 0.85));
+    crate::hud_estilo::texto_centro(x, y, &texto, tam, cor);
+    // The bar under it.
+    let (bw, bh) = (260.0 * s, 6.0 * s);
+    let frac = (t.feito_s / shared::territorio::TEMPO_DE_TOMADA_S).clamp(0.0, 1.0);
+    draw_rectangle(x - bw / 2.0, y + 10.0 * s, bw, bh, Color::new(0.0, 0.0, 0.0, 0.6));
+    draw_rectangle(x - bw / 2.0, y + 10.0 * s, bw * frac, bh, cor);
+}
+
 /// Who holds territory islet `ilhota` (`None` = free).
 pub fn dono_da_ilhota(ilhota: u8) -> Option<shared::territorio::Dono> {
     TERRITORIOS
@@ -267,6 +335,7 @@ pub fn acao_do_leme(
             let centro = shared::mar::ilhotas()[k].centro;
             if p.distance(centro) <= shared::territorio::RAIO_DO_NUCLEO
                 && dono_da_ilhota(k as u8).is_none()
+                && tomada_da_ilhota(k as u8).is_none()
             {
                 return Some(("Claim island", "CLAIM", nv::PedidoNavio::ReivindicarIlhota));
             }

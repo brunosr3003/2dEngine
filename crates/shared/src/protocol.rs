@@ -1589,6 +1589,11 @@ pub enum ServerMessage {
     Territorios {
         lista: Vec<crate::territorio::Dono>,
     },
+    /// TERRITORIES: the claims under way (every second while any runs, and
+    /// an empty list when the last one ends). Appended.
+    Tomadas {
+        lista: Vec<crate::territorio::TomadaInfo>,
+    },
 }
 
 /// Quantos espacos a barra de itens tem: C, 8, 9 e 0.

@@ -3667,13 +3667,23 @@ pub fn nucleos_das_ilhotas() {
         });
         for (n, (base, anel)) in geo.iter().enumerate() {
             let dono = crate::mar_ui::dono_da_ilhota(n as u8);
-            let cor = match &dono {
+            let mut cor = match &dono {
                 None => Color::new(0.95, 0.78, 0.36, 1.0),
                 Some(d) if !d.tag.is_empty() && minha.as_deref() == Some(d.tag.as_str()) => {
                     Color::new(0.42, 0.88, 0.52, 1.0)
                 }
                 Some(_) => Color::new(0.95, 0.36, 0.36, 1.0),
             };
+            // A claim under way: the ring pulses (red while contested).
+            if let Some(tm) = crate::mar_ui::tomada_da_ilhota(n as u8) {
+                let pulso = 0.55 + 0.45 * (t * 5.0).sin().abs();
+                let base = if tm.contestada {
+                    Color::new(0.95, 0.36, 0.36, 1.0)
+                } else {
+                    Color::new(1.0, 0.95, 0.75, 1.0)
+                };
+                cor = Color::new(base.r * pulso, base.g * pulso, base.b * pulso, 1.0);
+            }
             // The pole.
             draw_cylinder(*base, 0.12, 0.12, 6.5, None, Color::from_rgba(92, 64, 38, 255));
             draw_sphere(*base + vec3(0.0, 6.6, 0.0), 0.2, None, Color::from_rgba(214, 176, 92, 255));

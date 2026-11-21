@@ -35,7 +35,14 @@ nada a ver com as ilhas principais, que os clãs ocupam, fortificam e disputam.
    `territorio::RAIO_DO_NUCLEO` (12 u) do centro de uma ilhota livre, o
    botão vira "Claim island" (`PedidoNavio::ReivindicarIlhota`): o mar
    checa em terra/centro/clã/livre/clã sem ilha (`pode_reivindicar`), o
-   banco checa líder ou oficial e grava (`social::reivindicar`). O mar
+   banco pré-checa líder ou oficial (`social::pode_reivindicar`) e começa
+   a TOMADA: 2 minutos (`TEMPO_DE_TOMADA_S`) com pelo menos um membro do
+   clã no anel e ninguém de fora. Alguém de fora no anel pausa
+   ("Contested"); nenhum membro do clã dentro cancela. No fim o banco
+   recheca e grava (`social::reivindicar`). `ServerMessage::Tomadas` a cada
+   mudança: faixa no topo da tela pra quem está a 120 u, anel pulsando.
+   Mastro com bandeira e anel no centro de cada ilhota (cor do dono);
+   ilhotas sem props (só terra). O mar
    guarda a cópia (`GameWorld::territorios`), recarrega a cada 30 s e manda
    `ServerMessage::Territorios` pros clientes (mapa: dourado livre, verde
    meu, vermelho de outro clã). **Clã nômade** = sem ilhota: no máximo
@@ -47,7 +54,12 @@ nada a ver com as ilhas principais, que os clãs ocupam, fortificam e disputam.
    cliente, armazém do clã.
 5. **Cerco**: declaração, janela agendada pelo dono, estruturas com HP
    (canhão do navio e ataque a pé), captura do núcleo, recompensa e trava
-   de re-ataque.
+   de re-ataque. A visão do Bruno (20/11/2026): pra dominar uma ilha o clã
+   faz um **cerco de barcos**, não morre (quem morre no mar volta pro
+   próprio barco com respawn crescente — já vale em terra na ilhota desde
+   20/11), invade, derrota os defensores, **abre os portões** e **domina a
+   bandeira** (os 2 minutos no anel sem inimigo). Afundar os barcos do
+   outro lado tira o ponto de volta dele.
 
 ## Armadilha
 

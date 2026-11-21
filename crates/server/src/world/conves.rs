@@ -325,6 +325,7 @@ impl GameWorld {
         // TERRITORIES: the held islets — loaded at sea every 30 s, and sent
         // to each client once (then on every change).
         self.tick_territorios();
+        self.tick_tomadas(shared::TICK_DT);
         // TERRITORIES (diagnostics, 20/11/2026): who is ashore, where, and
         // with what input, every 2 s.
         if self.tick % (shared::TICK_RATE_HZ as u32 * 2) == 0 {
@@ -1039,8 +1040,39 @@ impl GameWorld {
         self.por_no_conves(sid);
     }
 
-    /// Ashore → the anchored ship has no captain left at sea (death, a
-    /// teleport): it goes with them.
+    /// DIED ASHORE (owner, 20/11/2026: a sea death goes back to the ship,
+    /// the respawn delay growing): with my ship still at anchor I come back
+    /// at its wheel (`conves` kept through the naval respawn); as someone's
+    /// crew, ashore just ends and the respawn sails out on my own ship.
+    pub(crate) fn morte_em_terra(&mut self, sid: SessionId) {
+        let Some(t) = self.sessions.get(&sid).and_then(|s| s.em_terra) else {
+            return;
+        };
+        let navio = t.navio.filter(|e| self.ecs.contains(*e)).and_then(|e| {
+            let eid = self.ecs.get::<&NetId>(e).ok()?.0;
+            let classe = self.ecs.get::<&NavioEnt>(e).ok()?.classe;
+            Some((e, eid, classe))
+        });
+        let Some((e, navio_eid, classe)) = navio else {
+            self.largar_terra(sid);
+            return;
+        };
+        if let Some(s) = self.sessions.get_mut(&sid) {
+            s.em_terra = None;
+            s.conves = Some(ABordo {
+                navio: e,
+                navio_eid,
+                capitao: sid,
+                local: cv::leme(classe),
+                leme: true,
+                hostil: false,
+            });
+            let _ = s.handle.to_client.send(ServerMessage::EmTerra { ilhota: None });
+        }
+    }
+
+    /// Ashore → the anchored ship has no captain left at sea (a teleport,
+    /// crew): it goes with them.
     pub(crate) fn largar_terra(&mut self, sid: SessionId) {
         let Some(t) = self.sessions.get_mut(&sid).and_then(|s| s.em_terra.take()) else {
             return;
@@ -1694,6 +1726,81 @@ mod testes {
         w.on_territorios(vec![]);
         assert!(w.territorios.is_empty());
         assert_eq!(chegou(&mut rx), Some(vec![]));
+    }
+
+    /// DIED ASHORE with the ship at anchor: back at its wheel, the ship kept.
+    #[test]
+    fn morrer_em_terra_volta_pro_navio_ancorado() {
+        let (mut w, sid, _rx) = mundo();
+        w.step(shared::TICK_DT);
+        let navio = conves(&w, sid).navio;
+        {
+            let s = w.sessions.get_mut(&sid).unwrap();
+            s.conves = None;
+            s.em_terra = Some(EmTerra { ilhota: 0, navio: Some(navio) });
+        }
+        w.morte_em_terra(sid);
+        let s = &w.sessions[&sid];
+        assert!(s.em_terra.is_none());
+        let c = s.conves.expect("back aboard");
+        assert!(c.navio == navio && c.leme && c.capitao == sid);
+        assert!(w.ecs.contains(navio), "the ship stays");
+    }
+
+    /// THE CLAIM TAKES TWO MINUTES (owner, 20/11/2026): only the clan in the
+    /// ring runs the clock; an outsider pauses it; no clan member cancels it;
+    /// two minutes held make the islet the clan's.
+    #[test]
+    fn tomar_a_ilhota_leva_dois_minutos_so_com_o_cla() {
+        let (mut w, sid, _rx) = mundo();
+        w.step(shared::TICK_DT);
+        let ilha = &shared::mar::ilhotas()[0];
+        let (outro, _rx2) = marujo(&mut w, 47_471, 4_701, "Intruso", Vec2::new(0.0, 0.0));
+        w.step(shared::TICK_DT);
+        let corpo_e = w.sessions[&sid].entity.unwrap();
+        let por = |w: &mut GameWorld, quem: SessionId, p: Vec2| {
+            let e = w.sessions[&quem].entity.unwrap();
+            let s = w.sessions.get_mut(&quem).unwrap();
+            s.conves = None;
+            s.em_terra = Some(EmTerra { ilhota: 0, navio: None });
+            w.ecs.get::<&mut Position>(e).unwrap().0 = p;
+        };
+        {
+            let s = w.sessions.get_mut(&sid).unwrap();
+            s.cla_id = 7;
+            s.cla_tag = "MAR".into();
+        }
+        por(&mut w, sid, ilha.centro);
+        w.handle_navio(sid, PedidoNavio::ReivindicarIlhota);
+        assert!(w.tomadas.contains_key(&0), "the claim starts");
+        assert!(w.territorios.is_empty(), "not yet");
+        let segue = |w: &mut GameWorld, s: f32| {
+            for _ in 0..(s / shared::TICK_DT) as u32 {
+                w.ecs.get::<&mut Position>(corpo_e).unwrap().0 = ilha.centro;
+                w.tick_tomadas(shared::TICK_DT);
+            }
+        };
+        segue(&mut w, 60.0);
+        let feito = w.tomadas[&0].feito_s;
+        assert!((59.0..=61.0).contains(&feito), "{feito}");
+        // An outsider in the ring: paused.
+        por(&mut w, outro, ilha.centro + Vec2::X * 3.0);
+        segue(&mut w, 30.0);
+        assert!(w.tomadas[&0].contestada);
+        assert!((w.tomadas[&0].feito_s - feito).abs() < 0.5, "paused while contested");
+        // The outsider leaves: it runs again and completes.
+        por(&mut w, outro, ilha.centro + Vec2::X * 40.0);
+        segue(&mut w, 61.0);
+        assert!(!w.tomadas.contains_key(&0), "done");
+        assert_eq!(w.territorios.get(&0).map(|d| d.cla_id), Some(7));
+        // A new claim with no clan member left in the ring is cancelled.
+        w.territorios.clear();
+        w.handle_navio(sid, PedidoNavio::ReivindicarIlhota);
+        assert!(w.tomadas.contains_key(&0));
+        w.ecs.get::<&mut Position>(corpo_e).unwrap().0 = ilha.centro + Vec2::X * 30.0;
+        w.tick_tomadas(shared::TICK_DT);
+        assert!(!w.tomadas.contains_key(&0), "cancelled");
+        assert!(w.territorios.is_empty());
     }
 
     /// THE COAST'S PUSH (owner, 20/11/2026): a hull with its bow buried in

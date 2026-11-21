@@ -35,3 +35,20 @@ pub fn max_membros(tem_territorio: bool) -> usize {
         MAX_NOMADE
     }
 }
+
+/// THE CLAIM TAKES TIME (owner, 20/11/2026): two minutes inside the heart's
+/// ring with only the clan there. An outsider inside pauses it; no clan
+/// member inside cancels it. Seconds.
+pub const TEMPO_DE_TOMADA_S: f32 = 120.0;
+
+/// A claim under way, as everyone at sea sees it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TomadaInfo {
+    pub ilhota: u8,
+    pub tag: String,
+    pub cla: String,
+    /// Seconds done of `TEMPO_DE_TOMADA_S`.
+    pub feito_s: f32,
+    /// Someone outside the clan stands in the ring: the clock is paused.
+    pub contestada: bool,
+}

@@ -156,6 +156,9 @@ pub async fn run_world_loop(
                 Ok(IncomingMessage::Reivindicacao { sid, resultado }) => {
                     world.on_reivindicacao(sid, resultado)
                 }
+                Ok(IncomingMessage::TomadaAutorizada { sid, ilhota, resultado }) => {
+                    world.on_tomada_autorizada(sid, ilhota, resultado)
+                }
                 Ok(IncomingMessage::CorreioEntrega(e)) => world.on_correio_entrega(e),
                 Ok(IncomingMessage::CorreioFim { sid, nome, texto }) => {
                     world.on_correio_fim(sid, nome, texto)
@@ -204,6 +207,9 @@ pub async fn run_world_loop(
                 Ok(IncomingMessage::Territorios(v)) => world.on_territorios(v),
                 Ok(IncomingMessage::Reivindicacao { sid, resultado }) => {
                     world.on_reivindicacao(sid, resultado)
+                }
+                Ok(IncomingMessage::TomadaAutorizada { sid, ilhota, resultado }) => {
+                    world.on_tomada_autorizada(sid, ilhota, resultado)
                 }
                 Ok(IncomingMessage::CorreioEntrega(e)) => world.on_correio_entrega(e),
                 Ok(IncomingMessage::CorreioFim { sid, nome, texto }) => {

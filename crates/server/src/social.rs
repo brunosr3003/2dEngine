@@ -608,6 +608,44 @@ pub async fn territorios(pool: &PgPool) -> Result<Vec<shared::territorio::Dono>>
         .collect())
 }
 
+/// TERRITORIES: may `eu` START claiming islet `ilhota`? The same rules as
+/// `reivindicar`, read only (the two minutes start on a yes).
+pub async fn pode_reivindicar(pool: &PgPool, eu: &str, ilhota: u8) -> Result<String> {
+    let mut tx = pool.begin().await?;
+    let cla = checar_reivindicacao(&mut tx, eu, ilhota).await?;
+    let nome: String = sqlx::query_scalar("SELECT nome FROM social_clas WHERE id=$1")
+        .bind(cla)
+        .fetch_one(&mut *tx)
+        .await?;
+    Ok(nome)
+}
+
+async fn checar_reivindicacao(tx: &mut PgConnection, eu: &str, ilhota: u8) -> Result<i64> {
+    let Some((cla, lider)) = meu_cla(&mut *tx, eu).await? else {
+        bail!("Only a clan can claim a territory islet.");
+    };
+    let cargo_meu: Option<i16> =
+        sqlx::query_scalar("SELECT cargo FROM social_membros WHERE nome=$1")
+            .bind(eu)
+            .fetch_optional(&mut *tx)
+            .await?;
+    if lider != eu && cargo_meu != Some(cargo::OFICIAL as i16) {
+        bail!("Only the clan leader or an officer can claim an islet.");
+    }
+    if territorio_do_cla(&mut *tx, cla).await?.is_some() {
+        bail!("Your clan already holds a territory islet.");
+    }
+    let ocupada: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM territorios WHERE ilhota=$1)")
+            .bind(ilhota as i16)
+            .fetch_one(&mut *tx)
+            .await?;
+    if ocupada {
+        bail!("This islet already belongs to a clan.");
+    }
+    Ok(cla)
+}
+
 /// TERRITORIES: `eu` claims free islet `ilhota` for their clan. Leader or
 /// officer only; one islet per clan; the islet must be free.
 pub async fn reivindicar(pool: &PgPool, eu: &str, ilhota: u8) -> Result<shared::territorio::Dono> {

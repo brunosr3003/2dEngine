@@ -2847,6 +2847,7 @@ impl Jogo {
                 }
                 mar_ui::define_territorios(lista)
             }
+            ServerMessage::Tomadas { lista } => mar_ui::define_tomadas(lista),
             ServerMessage::EmTerra { ilhota } => {
                 if log_mar() {
                     eprintln!("[mar {:.2}] <- EmTerra {ilhota:?}", get_time());
@@ -8494,6 +8495,7 @@ impl Jogo {
             if let Some(pedido) = mar_ui::botoes_navais(&z, &self.world, self.coleta_hud.tipo()) {
                 self.envia(ClientMessage::Navio { pedido });
             }
+            mar_ui::faixa_da_tomada(&self.world);
             let bonus = self
                 .arvore_ui
                 .estado

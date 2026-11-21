@@ -18,6 +18,9 @@ pub const VERBETES: &[(&str, &str)] = &[
     ("Your clan already holds a territory islet.", "Seu clã já tem uma ilhota de território."),
     ("Only the clan leader or an officer can claim an islet.", "Só o líder ou um oficial do clã pode tomar uma ilhota."),
     ("{i} now belongs to {c}.", "{i} agora pertence a {c}."),
+    ("This islet is already being claimed.", "Esta ilhota já está sendo tomada."),
+    ("Claiming {i}: hold the ring for 2 minutes with only your clan inside.", "Tomando {i}: segure o anel por 2 minutos só com o seu clã dentro."),
+    ("The claim on {i} was lost: no clan member was left in the ring.", "A tomada de {i} falhou: nenhum membro do clã ficou no anel."),
     ("This nomad clan is full (10 members): it grows once it holds a territory islet.", "Este clã nômade está cheio (10 membros): ele cresce quando tiver uma ilhota de território."),
     // ─────────────────────────── servidor: correio oficial ───────────────────────────
     ("Invalid letter.", "Carta inválida."),
