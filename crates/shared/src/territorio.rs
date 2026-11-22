@@ -366,3 +366,83 @@ pub const KIND_CANHAO: u16 = 60_002;
 pub fn e_estrutura(k: u16) -> bool {
     (KIND_MURO..=KIND_CANHAO).contains(&k)
 }
+
+// ─────────────────── phase 4.4: the defenders ───────────────────
+
+/// A defender's role: they rotate warrior, warrior, archer, mage.
+pub mod papel_defensor {
+    pub const GUERREIRO: u8 = 0;
+    pub const ARQUEIRO: u8 = 1;
+    pub const MAGO: u8 = 2;
+}
+
+/// The role of defender number `i`.
+pub fn papel_do_defensor(i: usize) -> u8 {
+    [
+        papel_defensor::GUERREIRO,
+        papel_defensor::GUERREIRO,
+        papel_defensor::ARQUEIRO,
+        papel_defensor::MAGO,
+    ][i % 4]
+}
+
+/// How many defenders guard an islet: none at level 0; then the size's
+/// base (2/3/4) plus the level.
+pub fn quantos_defensores(porte: u8, n: u8) -> usize {
+    if n == 0 {
+        return 0;
+    }
+    let base = match porte {
+        GRANDE => 4,
+        MEDIA => 3,
+        _ => 2,
+    };
+    base + n as usize
+}
+
+/// A defender's level: the waters' band, +5 per village level, +3 per
+/// defence level (capped at 150).
+pub fn nivel_dos_defensores(faixa: u32, vila: u8, n: u8) -> u32 {
+    (faixa + 5 * vila as u32 + 3 * n as u32).min(150)
+}
+
+/// Where defender `i` of `total` keeps watch: a ring inside the walls.
+pub fn pos_do_defensor(centro: glam::Vec2, porte: u8, i: usize, total: usize) -> glam::Vec2 {
+    let a = 0.3 + i as f32 / total.max(1) as f32 * std::f32::consts::TAU;
+    centro + glam::Vec2::from_angle(a) * (raio_da_muralha(porte) * 0.62)
+}
+
+/// How long one stays an INVADER of an islet after a hostile act there
+/// (hitting a structure, a defender or a clan member), seconds. Only
+/// invaders are attacked by the defenders; gathering is not invading.
+pub const INVASOR_S: f32 = 120.0;
+
+#[cfg(test)]
+mod testes_dos_defensores {
+    use super::*;
+
+    #[test]
+    fn defensores_crescem_com_o_nivel() {
+        assert_eq!(quantos_defensores(PEQUENA, 0), 0);
+        assert_eq!(quantos_defensores(PEQUENA, 1), 3);
+        assert_eq!(quantos_defensores(GRANDE, 10), 14);
+        assert!(nivel_dos_defensores(100, 4, 10) <= 150);
+        assert_eq!(nivel_dos_defensores(40, 2, 1), 53);
+        let c = glam::Vec2::ZERO;
+        for i in 0..6 {
+            assert!(pos_do_defensor(c, MEDIA, i, 6).length() < raio_da_muralha(MEDIA));
+        }
+    }
+}
+
+// ─────────────────── phase 4.5: the cannons fire ───────────────────
+
+/// How far an islet's cannon reaches a ship, units.
+pub const ALCANCE_DO_CANHAO: f32 = 45.0;
+/// Seconds between two shots of one cannon.
+pub const RECARGA_DO_CANHAO_S: f32 = 4.0;
+
+/// A cannonball's hull damage at cannon level `n` (180 at 1, 720 at 10).
+pub fn dano_do_canhao(n: u8) -> i32 {
+    120 + 60 * n as i32
+}

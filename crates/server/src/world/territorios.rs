@@ -17,6 +17,33 @@ pub struct EstruturaTag {
     pub indice: u8,
 }
 
+/// An islet's DEFENDER (`shared::territorio`, phase 4.4).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DefensorTag {
+    pub ilhota: u8,
+    pub indice: u8,
+}
+
+/// An islet cannon's ball in flight at a ship (whose captain is `alvo`).
+#[derive(Debug, Clone, Copy)]
+pub struct BalaDaIlha {
+    pub alvo: SessionId,
+    pub mira: Vec2,
+    pub dano: i32,
+    pub chega_em: f32,
+}
+
+/// One defender slot of an islet: who stands there (and at what level), or
+/// when the next one comes.
+#[derive(Debug, Clone, Default)]
+pub struct VagaDeDefensor {
+    pub corpo: Option<(hecs::Entity, u32)>,
+    pub volta_em: f32,
+}
+
+/// Seconds before a fallen defender is replaced.
+const DEFENSOR_VOLTA_S: f32 = 60.0;
+
 /// A held islet's structure entities.
 #[derive(Debug, Default)]
 pub struct Estruturas {
@@ -62,6 +89,8 @@ impl GameWorld {
         }
         self.manter_npcs_das_ilhotas();
         self.manter_estruturas();
+        self.manter_defensores();
+        self.tick_canhoes_das_ilhas();
         let lista = self.lista_de_territorios();
         for s in self.sessions.values_mut() {
             if s.logged_in && !s.territorios_enviados {
@@ -729,5 +758,248 @@ impl GameWorld {
             return de_pe(es.portao) && !do_dono;
         }
         de_pe(es.muros[seg])
+    }
+
+    // ─────────────────── phase 4.4: the defenders ───────────────────
+
+    /// One defender of `papel` at `pos`, level `nivel`: a land fighter
+    /// tethered to its post (it walks back home), no XP.
+    fn por_defensor(&mut self, k: u8, i: usize, pos: Vec2, papel: u8, nivel: u32) -> hecs::Entity {
+        use shared::territorio::papel_defensor as pd;
+        // Warriors wear the Triton Guard forced to melee; archers and mages
+        // are the Archer and the Mage (`docs/TERRITORIOS.md`).
+        let kind = match papel {
+            pd::ARQUEIRO => 6,
+            pd::MAGO => 4,
+            _ => 71,
+        };
+        let (mut tag, mut health) = self.build_enemy_tag(kind, pos, 14.0, pos);
+        tag.level = nivel;
+        tag.nivel_da_faixa = nivel;
+        tag.xp_reward = 0;
+        tag.detect_range = deteccao_do_nivel(tag.detect_range, nivel);
+        let (hp, dano) = vida_e_dano_do_mob(health.max, tag.stats.attack_damage, nivel);
+        tag.stats.hp_max = hp;
+        tag.stats.attack_damage = dano;
+        tag.stats.defense = defesa_do_mob(tag.stats.defense, nivel);
+        health = Health { current: hp, max: hp };
+        if papel == pd::GUERREIRO {
+            tag.kite_dist = None;
+            tag.is_melee = true;
+            tag.attack_range = 1.8;
+        }
+        let eid = self.alloc_entity_id();
+        let corpo = self.spawn_entity_body(pos);
+        self.ecs.spawn((
+            NetId(eid),
+            corpo,
+            Position(pos),
+            Velocity(Vec2::ZERO),
+            health,
+            EntityKind::Enemy(kind),
+            tag,
+            DefensorTag { ilhota: k, indice: i as u8 },
+        ))
+    }
+
+    /// Every held islet keeps its defenders: as many as its defence level
+    /// says, at its level; a fallen one comes back after a minute; a freed
+    /// islet loses them. Old invader marks expire.
+    pub(crate) fn manter_defensores(&mut self) {
+        use shared::territorio as tr;
+        let agora = self.sim_time_s;
+        for m in self.invasores.values_mut() {
+            m.retain(|_, ate| *ate > agora);
+        }
+        self.invasores.retain(|_, m| !m.is_empty());
+        let livres: Vec<u8> = self
+            .defensores
+            .keys()
+            .copied()
+            .filter(|k| !self.territorios.contains_key(k))
+            .collect();
+        for k in livres {
+            for v in self.defensores.remove(&k).unwrap_or_default() {
+                if let Some((e, _)) = v.corpo {
+                    self.tirar(e);
+                }
+            }
+        }
+        let donos: Vec<(u8, [u8; tr::N_TRILHAS])> =
+            self.territorios.iter().map(|(k, d)| (*k, d.niveis)).collect();
+        for (k, niveis) in donos {
+            let Some(ilha) = shared::mar::ilhotas().get(k as usize) else {
+                continue;
+            };
+            let n = niveis[tr::trilha::DEFENSORES];
+            let total = tr::quantos_defensores(ilha.porte, n);
+            let nivel = tr::nivel_dos_defensores(ilha.nivel.0, niveis[tr::trilha::VILA], n);
+            let mut vagas = self.defensores.remove(&k).unwrap_or_default();
+            while vagas.len() > total {
+                if let Some((e, _)) = vagas.pop().and_then(|v| v.corpo) {
+                    self.tirar(e);
+                }
+            }
+            vagas.resize_with(total, VagaDeDefensor::default);
+            for v in vagas.iter_mut() {
+                // Gone (despawned) or dead: the slot waits, then refills.
+                let vivo = v.corpo.is_some_and(|(e, _)| {
+                    self.ecs.get::<&EnemyTag>(e).is_ok_and(|t| !t.dead)
+                });
+                if v.corpo.is_some() && !vivo {
+                    v.corpo = None;
+                    v.volta_em = agora + DEFENSOR_VOLTA_S;
+                }
+                // A new level: the guard is replaced at once.
+                if let Some((e, nv)) = v.corpo {
+                    if nv != nivel {
+                        if let Ok(n) = self.ecs.get::<&NetId>(e).map(|n| n.0) {
+                            self.removed_this_tick.push(n);
+                        }
+                        let _ = self.ecs.despawn(e);
+                        v.corpo = None;
+                        v.volta_em = 0.0;
+                    }
+                }
+            }
+            // Empty slots whose wait is over get a new guard.
+            for (i, v) in vagas.iter_mut().enumerate() {
+                if v.corpo.is_none() && agora >= v.volta_em {
+                    let pos = tr::pos_do_defensor(ilha.centro, ilha.porte, i, total);
+                    let e = self.por_defensor(k, i, pos, tr::papel_do_defensor(i), nivel);
+                    v.corpo = Some((e, nivel));
+                    v.volta_em = 0.0;
+                }
+            }
+            self.defensores.insert(k, vagas);
+        }
+    }
+
+    /// Is the body `atacante` of the clan that holds islet `k`?
+    pub(crate) fn mesmo_cla_da_ilhota(&self, atacante: EntityId, k: u8) -> bool {
+        let Some(dono) = self.territorios.get(&k) else {
+            return false;
+        };
+        self.sessions
+            .values()
+            .find(|s| s.entity_id == atacante)
+            .is_some_and(|s| s.cla_id == dono.cla_id && s.cla_id != 0)
+    }
+
+    /// A hostile act by `atacante` on `alvo`: a structure, a defender, or a
+    /// member of the holding clan standing on its islet. It marks the
+    /// attacker as that islet's INVADER for `INVASOR_S`.
+    pub(crate) fn marcar_invasor(&mut self, atacante: EntityId, alvo: hecs::Entity, alvo_id: EntityId) {
+        let ilhota = if let Ok(t) = self.ecs.get::<&EstruturaTag>(alvo) {
+            Some(t.ilhota)
+        } else if let Ok(d) = self.ecs.get::<&DefensorTag>(alvo) {
+            Some(d.ilhota)
+        } else {
+            self.sessions
+                .values()
+                .find(|s| s.entity_id == alvo_id)
+                .and_then(|s| {
+                    let k = s.em_terra?.ilhota;
+                    let dono = self.territorios.get(&k)?;
+                    (dono.cla_id == s.cla_id && s.cla_id != 0).then_some(k)
+                })
+        };
+        let Some(k) = ilhota else {
+            return;
+        };
+        if self.mesmo_cla_da_ilhota(atacante, k) {
+            return;
+        }
+        let ate = self.sim_time_s + shared::territorio::INVASOR_S;
+        self.invasores.entry(k).or_default().insert(atacante, ate);
+    }
+
+    // ─────────────────── phase 4.5: the cannons fire ───────────────────
+
+    /// Each standing islet cannon fires at the nearest enemy ship in reach:
+    /// in the siege window any ship from outside the holding clan; outside
+    /// it, only an invader's ship. Then the balls that landed this tick.
+    pub(crate) fn tick_canhoes_das_ilhas(&mut self) {
+        use shared::territorio as tr;
+        let agora = self.sim_time_s;
+        // Ships: (captain, position, captain's body, clan).
+        let navios: Vec<(SessionId, Vec2, EntityId, i64)> = self
+            .ecs
+            .query::<(&Position, &super::conves::NavioEnt)>()
+            .iter()
+            .filter_map(|(_, (p, n))| {
+                let s = self.sessions.get(&n.dono)?;
+                Some((n.dono, p.0, s.entity_id, s.cla_id))
+            })
+            .collect();
+        let mut tiros: Vec<(hecs::Entity, EntityId, Vec2, SessionId, Vec2, i32)> = Vec::new();
+        for (k, es) in &self.estruturas {
+            let Some(dono) = self.territorios.get(k) else {
+                continue;
+            };
+            let cerco = self.cercos_abertos.contains(k);
+            let invasores = self.invasores.get(k);
+            let dano = tr::dano_do_canhao(dono.niveis[tr::trilha::CANHOES]);
+            for c in &es.canhoes {
+                if self.recarga_dos_canhoes.get(c).is_some_and(|t| *t > agora) {
+                    continue;
+                }
+                let de_pe = self.ecs.get::<&Health>(*c).is_ok_and(|h| h.current > 0);
+                let (Some(pos), Ok(eid)) = (
+                    self.ecs.get::<&Position>(*c).ok().map(|p| p.0),
+                    self.ecs.get::<&NetId>(*c).map(|n| n.0),
+                ) else {
+                    continue;
+                };
+                if !de_pe {
+                    continue;
+                }
+                let alvo = navios
+                    .iter()
+                    .filter(|(_, p, corpo, cla)| {
+                        p.distance(pos) <= tr::ALCANCE_DO_CANHAO
+                            && *cla != dono.cla_id
+                            && (cerco || invasores.is_some_and(|m| m.contains_key(corpo)))
+                    })
+                    .min_by(|a, b| a.1.distance(pos).total_cmp(&b.1.distance(pos)));
+                if let Some((sid, p, _, _)) = alvo {
+                    tiros.push((*c, eid, pos, *sid, *p, dano));
+                }
+            }
+        }
+        for (canhao, eid, de, alvo, mira, dano) in tiros {
+            self.recarga_dos_canhoes.insert(canhao, agora + tr::RECARGA_DO_CANHAO_S);
+            let voo = shared::navio::tempo_de_voo(de.distance(mira));
+            self.ecs.spawn((BalaDaIlha { alvo, mira, dano, chega_em: agora + voo },));
+            for s in self.sessions.values().filter(|s| s.logged_in) {
+                let _ = s.handle.to_client.send(ServerMessage::SkillImpactFx {
+                    skill_id: shared::navio::id_de_skill(1),
+                    caster_eid: eid,
+                    caster_pos: de,
+                    target_pos: mira,
+                    tier: 0,
+                });
+            }
+        }
+        // The balls that landed: a hit if the ship is still there.
+        let prontas: Vec<(hecs::Entity, BalaDaIlha)> = self
+            .ecs
+            .query::<&BalaDaIlha>()
+            .iter()
+            .filter(|(_, b)| b.chega_em <= agora)
+            .map(|(e, b)| (e, *b))
+            .collect();
+        for (e, b) in prontas {
+            let _ = self.ecs.despawn(e);
+            let onde = self
+                .ecs
+                .query::<(&Position, &super::conves::NavioEnt)>()
+                .iter()
+                .find(|(_, (_, n))| n.dono == b.alvo)
+                .map(|(_, (p, _))| p.0);
+            if onde.is_some_and(|p| p.distance(b.mira) <= shared::navio::RAIO_DO_CASCO + 3.0) {
+                self.dano_no_casco(b.alvo, b.dano, None);
+            }
+        }
     }
 }

@@ -3200,6 +3200,12 @@ pub struct GameWorld {
     /// TERRITORIES: islets whose siege window is open now (structures can
     /// be damaged). Phase 5 drives it from the schedule.
     pub(crate) cercos_abertos: std::collections::HashSet<u8>,
+    /// TERRITORIES 4.4: each held islet's defender slots.
+    pub(crate) defensores: HashMap<u8, Vec<territorios::VagaDeDefensor>>,
+    /// TERRITORIES 4.4: each islet's invaders (body -> until when).
+    pub(crate) invasores: HashMap<u8, HashMap<EntityId, f32>>,
+    /// TERRITORIES 4.5: when each islet cannon may fire again.
+    pub(crate) recarga_dos_canhoes: HashMap<hecs::Entity, f32>,
     /// Open direct trades, one entry per side (`world/troca.rs`).
     pub(crate) trocas: HashMap<SessionId, troca::Mesa>,
     /// Pending trade invites: invited -> (who invited, until sim_time_s).
@@ -3721,6 +3727,9 @@ impl GameWorld {
             npcs_das_ilhotas: HashMap::new(),
             estruturas: HashMap::new(),
             cercos_abertos: Default::default(),
+            defensores: HashMap::new(),
+            invasores: HashMap::new(),
+            recarga_dos_canhoes: HashMap::new(),
             trocas: HashMap::new(),
             troca_convites: HashMap::new(),
             enemy_spawn_timer: 0.0,
@@ -3926,6 +3935,9 @@ impl GameWorld {
             npcs_das_ilhotas: HashMap::new(),
             estruturas: HashMap::new(),
             cercos_abertos: Default::default(),
+            defensores: HashMap::new(),
+            invasores: HashMap::new(),
+            recarga_dos_canhoes: HashMap::new(),
             trocas: HashMap::new(),
             troca_convites: HashMap::new(),
             enemy_spawn_timer: 0.0,
@@ -11491,6 +11503,23 @@ impl GameWorld {
         let impacto_mob = navio::impacto_da_mordida(self.no_mar());
         // ...and a sea mob gives up later: a ship is twice a shark's speed.
         let desiste_mob = navio::desistencia_do_bicho(self.no_mar());
+        // TERRITORIES 4.4: the islets' defenders fight on land, by land rules,
+        // and only the islet's invaders standing on land.
+        let (impacto_terra, desiste_terra) =
+            (navio::impacto_da_mordida(false), navio::desistencia_do_bicho(false));
+        let invasores_em_terra: HashMap<u8, std::collections::HashSet<EntityId>> = self
+            .invasores
+            .iter()
+            .map(|(k, m)| {
+                let a_bordo: std::collections::HashSet<EntityId> = self
+                    .sessions
+                    .values()
+                    .filter(|s| s.conves.is_some())
+                    .map(|s| s.entity_id)
+                    .collect();
+                (*k, m.keys().copied().filter(|e| !a_bordo.contains(e)).collect())
+            })
+            .collect();
         // ...and it hunts from the ship's SIDES (`navio::ponto_no_costado`):
         // each hull's heading and velocity, by its captain's entity.
         let no_mar_ia = self.no_mar();
@@ -11510,14 +11539,20 @@ impl GameWorld {
                     .map(|p| (p.owner_id, p.target)),
             )
             .collect();
-        for (_, (net, pos, vel, enemy, kind, inst_mob)) in self.ecs.query_mut::<(
+        for (_, (net, pos, vel, enemy, kind, inst_mob, defensor)) in self.ecs.query_mut::<(
             &NetId,
             &Position,
             &mut Velocity,
             &mut EnemyTag,
             &EntityKind,
             Option<&dungeon::Instancia>,
+            Option<&territorios::DefensorTag>,
         )>() {
+            let defensor = defensor.copied();
+            // A defender may only pick its islet's invaders.
+            let pode_alvo = |e: &EntityId| {
+                defensor.is_none_or(|d| invasores_em_terra.get(&d.ilhota).is_some_and(|s| s.contains(e)))
+            };
             let inst_mob = inst_mob.map_or(0, |i| i.0);
             let kind_id = match kind {
                 EntityKind::Enemy(k) => *k,
@@ -11597,11 +11632,11 @@ impl GameWorld {
             };
             if decide || enemy.ai_target.is_none() || forcado.is_some() {
                 enemy.ai_target = forcado
-                    .filter(|t| inst_do_jogador.get(t) == Some(&inst_mob))
+                    .filter(|t| inst_do_jogador.get(t) == Some(&inst_mob) && pode_alvo(t))
                     .or_else(|| {
                         player_positions
                             .iter()
-                            .filter(|p| p.2 == inst_mob)
+                            .filter(|p| p.2 == inst_mob && pode_alvo(&p.0))
                             .min_by(|a, b| {
                                 a.1.distance_squared(pos.0)
                                     .partial_cmp(&b.1.distance_squared(pos.0))
@@ -11613,7 +11648,7 @@ impl GameWorld {
             // Alvo que desconectou ou morreu sai do cache na hora.
             let nearest: Option<(EntityId, Vec2)> = enemy
                 .ai_target
-                .filter(|eid| inst_do_jogador.get(eid) == Some(&inst_mob))
+                .filter(|eid| inst_do_jogador.get(eid) == Some(&inst_mob) && pode_alvo(eid))
                 .and_then(|eid| player_pos_by_id.get(&eid).map(|p| (eid, *p)));
             if nearest.is_none() {
                 enemy.ai_target = None;
@@ -11690,6 +11725,8 @@ impl GameWorld {
                     // Mobs comuns mantêm o leash curto de 5s.
                     let aggro_drop_time = if enemy.is_boss {
                         CHEFE_DESISTE_S
+                    } else if defensor.is_some() {
+                        desiste_terra
                     } else {
                         desiste_mob
                     };
@@ -11927,7 +11964,8 @@ impl GameWorld {
                                 knockback: 0.0,
                                 target: nearest.map(|(id, _)| id),
                                 max_range: enemy.attack_range,
-                                impact_at: now_sim + impacto_mob,
+                                impact_at: now_sim
+                                    + if defensor.is_some() { impacto_terra } else { impacto_mob },
                             });
                         } else {
                             // proj_kind e proj_count cacheados a partir do EnemyBuild.
@@ -12544,6 +12582,12 @@ impl GameWorld {
             .values()
             .filter_map(|s| Some((s.entity?, (s.em_terra?.ilhota, s.cla_id))))
             .collect();
+        let defensores_em_terra: std::collections::HashSet<Entity> = self
+            .ecs
+            .query::<&territorios::DefensorTag>()
+            .iter()
+            .map(|(e, _)| e)
+            .collect();
         let mut bateu_na_barreira: Vec<Entity> = Vec::new();
         let mut corpos: Vec<(Entity, Vec2, f32)> = Vec::new();
         // Instancia de dungeon de cada corpo (0 = mundo): corpos de fases
@@ -12599,7 +12643,7 @@ impl GameWorld {
                 // A hull grazing the coast scrapes along it (`mover_raspando`).
                 // A PK hull: the peaceful waters are land to it; one past
                 // its grace inside is pushed out.
-                Some(_) if no_mar && !corpos_em_terra.contains_key(&e) => {
+                Some(_) if no_mar && !corpos_em_terra.contains_key(&e) && !defensores_em_terra.contains(&e) => {
                     let (barrado, empurra) = barreira.get(&e).copied().unwrap_or((false, None));
                     let v = empurra.unwrap_or(vel.0);
                     let livre = |x: f32, z: f32| shared::mar::navegavel(x, z);
@@ -13321,6 +13365,17 @@ impl GameWorld {
                     continue;
                 }
             }
+            // A clan never hurts its own islet's defenders.
+            if let Ok(d) = self.ecs.get::<&territorios::DefensorTag>(entity).map(|d| *d) {
+                if self.mesmo_cla_da_ilhota(attacker_id, d.ilhota) {
+                    continue;
+                }
+            }
+            // A hostile act on an islet (a structure, a defender, a clan member)
+            // makes the attacker its INVADER: the defenders hunt them.
+            if attacker_is_player && dmg > 0 {
+                self.marcar_invasor(attacker_id, entity, target_id);
+            }
             // Não reatribui um golpe fatal a outro ataque no mesmo tick.
             if !downed_targets.contains(&target_id)
                 && self
@@ -13918,6 +13973,11 @@ impl GameWorld {
             }
             // Tira o body físico imediato (bate na entidade não faz sentido).
             self.free_entity_body(e);
+            // TERRITORIES 4.4: an islet's defender drops nothing and gives no
+            // XP (no farming a clan's guards); its slot respawns it.
+            if self.ecs.get::<&territorios::DefensorTag>(e).is_ok() {
+                continue;
+            }
 
             // Loot table por kind. Boss (7) ganha raio maior pelo volume
             // de drops; demais usam ~3 tiles pra dar respiro visual.

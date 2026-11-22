@@ -1963,6 +1963,116 @@ mod testes {
         assert!(w.estruturas.is_empty() && !w.ecs.contains(e_muro));
     }
 
+    /// PHASE 4.4: an islet's defenders stand by its defence level, ignore
+    /// whoever just walks or gathers there, hunt its invaders, are never
+    /// hurt by the holding clan, and come back a minute after falling.
+    #[test]
+    fn defensores_so_atacam_invasores_e_voltam() {
+        use shared::territorio::{self as tr, trilha};
+        let (mut w, sid, _rx) = mundo();
+        w.step(shared::TICK_DT);
+        let k = 6u8;
+        let ilha = &shared::mar::ilhotas()[k as usize];
+        let mut niveis = tr::NIVEIS_INICIAIS;
+        niveis[trilha::DEFENSORES] = 1;
+        w.territorios.insert(k, tr::Dono { ilhota: k, cla_id: 7, tag: "MAR".into(), cla: "Mares".into(), niveis });
+        w.manter_defensores();
+        let total = tr::quantos_defensores(ilha.porte, 1);
+        let vagas = &w.defensores[&k];
+        assert_eq!(vagas.iter().filter(|v| v.corpo.is_some()).count(), total);
+        let (guarda, nivel) = vagas[0].corpo.unwrap();
+        assert_eq!(nivel, tr::nivel_dos_defensores(ilha.nivel.0, 1, 1));
+        // An outsider (clan 9) ashore right by the guard, doing nothing hostile.
+        let pos_guarda = w.ecs.get::<&Position>(guarda).unwrap().0;
+        {
+            let s = w.sessions.get_mut(&sid).unwrap();
+            s.cla_id = 9;
+            s.conves = None;
+            s.em_terra = Some(EmTerra { ilhota: k, navio: None });
+        }
+        let corpo_e = w.sessions[&sid].entity.unwrap();
+        let eu = w.sessions[&sid].entity_id;
+        w.ecs.get::<&mut Position>(corpo_e).unwrap().0 = pos_guarda + Vec2::X * 2.5;
+        anda(&mut w, sid, Vec2::ZERO, 2.0);
+        assert_eq!(w.ecs.get::<&EnemyTag>(guarda).unwrap().ai_target, None, "gathering is not invading");
+        // Hitting a guard makes them an invader: the guards turn on them.
+        let guarda_id = w.ecs.get::<&NetId>(guarda).unwrap().0;
+        w.marcar_invasor(eu, guarda, guarda_id);
+        assert!(w.invasores[&k].contains_key(&eu));
+        anda(&mut w, sid, Vec2::ZERO, 1.0);
+        assert_eq!(w.ecs.get::<&EnemyTag>(guarda).unwrap().ai_target, Some(eu), "the invader is hunted");
+        // The holding clan never hurts its own guards, nor becomes an invader.
+        w.sessions.get_mut(&sid).unwrap().cla_id = 7;
+        assert!(w.mesmo_cla_da_ilhota(eu, k));
+        // A fallen guard: its slot waits a minute, then refills.
+        w.ecs.get::<&mut EnemyTag>(guarda).unwrap().dead = true;
+        w.manter_defensores();
+        assert!(w.defensores[&k][0].corpo.is_none());
+        w.sim_time_s += 61.0;
+        w.manter_defensores();
+        assert!(w.defensores[&k][0].corpo.is_some_and(|(e, _)| e != guarda));
+        // Freed: they go.
+        w.territorios.clear();
+        w.manter_defensores();
+        assert!(w.defensores.is_empty());
+    }
+
+    /// PHASE 4.5: an islet's standing cannons fire at an enemy ship in
+    /// reach — any outsider in the siege window, only an invader outside it
+    /// — and the ball takes hull off the ship it lands on.
+    #[test]
+    fn os_canhoes_da_ilha_atiram_no_navio_inimigo() {
+        use shared::territorio::{self as tr, trilha};
+        let (mut w, sid, _rx) = mundo();
+        w.step(shared::TICK_DT);
+        let k = 6u8;
+        let ilha = &shared::mar::ilhotas()[k as usize];
+        let mut niveis = tr::NIVEIS_INICIAIS;
+        niveis[trilha::VILA] = 2;
+        niveis[trilha::CANHOES] = 2;
+        w.territorios.insert(k, tr::Dono { ilhota: k, cla_id: 7, tag: "MAR".into(), cla: "Mares".into(), niveis });
+        w.manter_estruturas();
+        let canhao = w.estruturas[&k].canhoes[0];
+        let pos_c = w.ecs.get::<&Position>(canhao).unwrap().0;
+        // My ship (clan 9) in reach, out at sea off that cannon.
+        let fora = (pos_c - ilha.centro).normalize();
+        let agua = w.agua_no_mar(pos_c + fora * 20.0);
+        w.por_navio_em(sid, agua);
+        w.sessions.get_mut(&sid).unwrap().cla_id = 9;
+        let casco = |w: &GameWorld| w.navio_equipado(sid).unwrap().1.casco;
+        let antes = casco(&w);
+        // No siege, not an invader: the cannons hold.
+        for _ in 0..60 {
+            w.tick_canhoes_das_ilhas();
+            w.sim_time_s += 0.1;
+        }
+        assert_eq!(casco(&w), antes, "peace: no fire");
+        // Siege open: they fire, and the balls land on the hull.
+        w.cercos_abertos.insert(k);
+        for _ in 0..80 {
+            w.tick_canhoes_das_ilhas();
+            w.sim_time_s += 0.1;
+        }
+        assert!(casco(&w) < antes, "under siege the cannons hit: {} -> {}", antes, casco(&w));
+        // A broken cannon is silent.
+        let depois = casco(&w);
+        for c in w.estruturas[&k].canhoes.clone() {
+            w.ecs.get::<&mut Health>(c).unwrap().current = 0;
+        }
+        for _ in 0..80 {
+            w.tick_canhoes_das_ilhas();
+            w.sim_time_s += 0.1;
+        }
+        // (balls already in the air may still land)
+        let fim = casco(&w);
+        for _ in 0..80 {
+            w.tick_canhoes_das_ilhas();
+            w.sim_time_s += 0.1;
+        }
+        assert_eq!(casco(&w), fim, "broken cannons stay silent");
+        let _ = depois;
+    }
+
     /// THE COAST'S PUSH (owner, 20/11/2026): a hull with its bow buried in
     /// an islet's beach eases back out until its whole outline floats.
     #[test]
