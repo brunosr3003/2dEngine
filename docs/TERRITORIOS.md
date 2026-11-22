@@ -70,6 +70,26 @@ nada a ver com as ilhas principais, que os clãs ocupam, fortificam e disputam.
    (`afundar_derrotado`); morrer na ilha sem navio = morte naval de verdade
    (navio avariado) e volta pro cais, só voltando ao mar depois do reparo.
 
+## Fase 5: regras do cerco (fechadas com o Bruno em 21/11/2026)
+
+- **Guerra só no fim de semana** (sábado ou domingo, horário de Brasília).
+- **Declaração** de segunda até **sexta ao meio-dia**; depois disso vale só
+  pro fim de semana seguinte.
+- **O defensor escolhe o horário**, dentro de uma **faixa** (ex.: 14h–22h de
+  sábado ou domingo). Sem escolha até sábado 0h, vale um horário padrão
+  (sábado 20h).
+- **Vitória pela bandeira**: quem segurar a bandeira 2 min dentro da janela
+  da guerra (1–2 h) leva a ilha. Muros, portões e defensores só atrasam; não
+  precisa demolir tudo.
+- **Manutenção semanal**: cada ilha cobra uma taxa semanal do banco do clã
+  (sobe com o nível). Sem pagar, as defesas enfraquecem e, depois de 2
+  semanas, a ilha fica livre.
+- **Escudo depois da troca de dono**: a ilha que acabou de trocar de dono
+  não pode ser atacada no fim de semana seguinte.
+- Já existente: **1 ilhota por clã** (com 12 ilhotas, sempre sobra ilha) e
+  tomar ilha **livre** não precisa de guerra (o claim de 2 min, a qualquer
+  hora).
+
 ## Fase 6: fortes nas ilhas principais (ideia aprovada em 21/11/2026)
 
 Depois do cerco (fase 5), o mesmo sistema da fase 4 vai pras ilhas
