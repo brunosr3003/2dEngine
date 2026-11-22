@@ -3815,3 +3815,118 @@ pub fn pano(
         texture: tex,
     });
 }
+
+/// A box centred at `c`, half sizes `meia` (x along `yaw`'s direction, y
+/// up, z across), turned by `yaw` (radians, `atan2(z, x)` of its x axis),
+/// two-sided and shaded per face (top bright, sides by facing).
+pub fn caixa(c: Vec3, meia: Vec3, yaw: f32, cor: Color) {
+    let (s, co) = yaw.sin_cos();
+    let eixo_x = vec3(co, 0.0, s);
+    let eixo_z = vec3(-s, 0.0, co);
+    let canto = |x: f32, y: f32, z: f32| c + eixo_x * (x * meia.x) + vec3(0.0, y * meia.y, 0.0) + eixo_z * (z * meia.z);
+    let byte = |v: f32| (v.clamp(0.0, 1.0) * 255.0) as u8;
+    let tom = |k: f32| [byte(cor.r * k), byte(cor.g * k), byte(cor.b * k), 255];
+    // (four corners, shade)
+    let faces: [([(f32, f32, f32); 4], f32); 6] = [
+        ([(-1.0, 1.0, -1.0), (1.0, 1.0, -1.0), (1.0, 1.0, 1.0), (-1.0, 1.0, 1.0)], 1.0),
+        ([(-1.0, -1.0, -1.0), (1.0, -1.0, -1.0), (1.0, -1.0, 1.0), (-1.0, -1.0, 1.0)], 0.45),
+        ([(-1.0, -1.0, 1.0), (1.0, -1.0, 1.0), (1.0, 1.0, 1.0), (-1.0, 1.0, 1.0)], 0.82),
+        ([(-1.0, -1.0, -1.0), (1.0, -1.0, -1.0), (1.0, 1.0, -1.0), (-1.0, 1.0, -1.0)], 0.68),
+        ([(1.0, -1.0, -1.0), (1.0, -1.0, 1.0), (1.0, 1.0, 1.0), (1.0, 1.0, -1.0)], 0.75),
+        ([(-1.0, -1.0, -1.0), (-1.0, -1.0, 1.0), (-1.0, 1.0, 1.0), (-1.0, 1.0, -1.0)], 0.6),
+    ];
+    let mut verts = Vec::with_capacity(24);
+    let mut idx: Vec<u16> = Vec::with_capacity(72);
+    for (k, (cantos, luz)) in faces.iter().enumerate() {
+        let b = (k * 4) as u16;
+        for (x, y, z) in cantos {
+            verts.push(vert(canto(*x, *y, *z), tom(*luz)));
+        }
+        idx.extend_from_slice(&[b, b + 1, b + 2, b, b + 2, b + 3, b, b + 2, b + 1, b, b + 3, b + 2]);
+    }
+    draw_mesh(&Mesh {
+        vertices: verts,
+        indices: idx,
+        texture: None,
+    });
+}
+
+/// TERRITORIES 4.3: a wall segment, the gate or a cannon (`territorio::
+/// KIND_*`) at `p` on its islet, looking its level (wood, stone, dark
+/// stone) and its damage (darker when hurt, rubble at 0).
+pub fn estrutura(kind: u16, p: Vec3, hp: u32, hp_max: u32) {
+    use shared::territorio as tr;
+    let q = ::glam::Vec2::new(p.x, p.z);
+    let Some(k) = mar::indice_da_ilhota(q) else {
+        return;
+    };
+    let ilha = &mar::ilhotas()[k];
+    let niveis = crate::mar_ui::dono_da_ilhota(k as u8).map_or(tr::NIVEIS_INICIAIS, |d| d.niveis);
+    let radial = (q - ilha.centro).normalize_or_zero();
+    let ang_radial = radial.y.atan2(radial.x);
+    let ang_tang = ang_radial + std::f32::consts::FRAC_PI_2;
+    let frac = if hp_max == 0 { 1.0 } else { hp as f32 / hp_max as f32 };
+    let dano = 0.55 + 0.45 * frac;
+    let base = p;
+    match kind {
+        tr::KIND_MURO | tr::KIND_PORTAO => {
+            let nivel = if kind == tr::KIND_MURO { niveis[tr::trilha::MUROS] } else { niveis[tr::trilha::PORTOES] };
+            let (alto, cor) = match nivel {
+                0..=3 => (2.6, Color::new(0.47, 0.32, 0.18, 1.0)),
+                4..=7 => (3.4, Color::new(0.58, 0.56, 0.52, 1.0)),
+                _ => (4.2, Color::new(0.34, 0.33, 0.36, 1.0)),
+            };
+            let cor = Color::new(cor.r * dano, cor.g * dano, cor.b * dano, 1.0);
+            let meio = std::f32::consts::PI * tr::raio_da_muralha(ilha.porte) / tr::SEGMENTOS_DA_MURALHA as f32 * 1.06;
+            if kind == tr::KIND_MURO {
+                if hp == 0 {
+                    // A breach: rubble.
+                    caixa(base + vec3(0.0, 0.25, 0.0), vec3(meio * 0.9, 0.25, tr::MEIA_ESPESSURA_DO_MURO * 1.3), ang_tang, cor);
+                    return;
+                }
+                caixa(base + vec3(0.0, alto / 2.0, 0.0), vec3(meio, alto / 2.0, tr::MEIA_ESPESSURA_DO_MURO), ang_tang, cor);
+                // Crown: wooden spikes, or stone merlons.
+                let tangente = vec3(ang_tang.cos(), 0.0, ang_tang.sin());
+                let n = 5;
+                for i in 0..n {
+                    let x = (i as f32 + 0.5) / n as f32 * 2.0 - 1.0;
+                    let topo = base + tangente * (x * meio) + vec3(0.0, alto + 0.25, 0.0);
+                    let m = if nivel <= 3 { vec3(0.18, 0.3, 0.18) } else { vec3(meio / n as f32 * 0.45, 0.3, tr::MEIA_ESPESSURA_DO_MURO) };
+                    caixa(topo, m, ang_tang, cor);
+                }
+            } else {
+                // Gate: two pillars and the door between (gone when broken).
+                let tangente = vec3(ang_tang.cos(), 0.0, ang_tang.sin());
+                let pilar = Color::new(cor.r * 0.85, cor.g * 0.85, cor.b * 0.85, 1.0);
+                for lado in [-1.0, 1.0] {
+                    caixa(
+                        base + tangente * (lado * (meio - 0.5)) + vec3(0.0, (alto + 1.0) / 2.0, 0.0),
+                        vec3(0.5, (alto + 1.0) / 2.0, tr::MEIA_ESPESSURA_DO_MURO * 1.2),
+                        ang_tang,
+                        pilar,
+                    );
+                }
+                if hp > 0 {
+                    let porta = if nivel <= 3 {
+                        Color::new(0.36 * dano, 0.22 * dano, 0.12 * dano, 1.0)
+                    } else {
+                        Color::new(0.28 * dano, 0.28 * dano, 0.3 * dano, 1.0)
+                    };
+                    caixa(base + vec3(0.0, alto * 0.45, 0.0), vec3(meio - 1.0, alto * 0.45, 0.3), ang_tang, porta);
+                }
+            }
+        }
+        tr::KIND_CANHAO => {
+            let cor = Color::new(0.3 * dano, 0.3 * dano, 0.32 * dano, 1.0);
+            let madeira = Color::new(0.42 * dano, 0.28 * dano, 0.16 * dano, 1.0);
+            if hp == 0 {
+                caixa(base + vec3(0.0, 0.2, 0.0), vec3(0.8, 0.2, 0.6), ang_radial, madeira);
+                return;
+            }
+            caixa(base + vec3(0.0, 0.35, 0.0), vec3(0.8, 0.35, 0.6), ang_radial, madeira);
+            let fora = vec3(radial.x, 0.0, radial.y);
+            caixa(base + vec3(0.0, 0.95, 0.0) + fora * 0.5, vec3(1.1, 0.22, 0.22), ang_radial, cor);
+        }
+        _ => {}
+    }
+}

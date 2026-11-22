@@ -250,6 +250,7 @@ impl AutoCombate {
             .iter()
             .filter(|(id, e)| {
                 e.meta.tag == EntityTag::Enemy
+                    && !shared::territorio::e_estrutura(e.meta.kind)
                     && e.state.hp > 0
                     && e.morte.is_none()
                     && !self.ignorados.get(id).is_some_and(|ate| *ate > agora)
@@ -295,7 +296,8 @@ impl AutoCombate {
         let aceita_gente = eu.meta.pk.hostil && self.pvp != shared::protocol::auto_pvp::NUNCA;
         let valido_alvo = |id: EntityId| {
             world.ents.get(&id).is_some_and(|e| {
-                let tipo_ok = e.meta.tag == EntityTag::Enemy
+                let tipo_ok = (e.meta.tag == EntityTag::Enemy
+                    && !shared::territorio::e_estrutura(e.meta.kind))
                     || (aceita_gente
                         && e.meta.tag == EntityTag::Player
                         && world.self_id != Some(id));

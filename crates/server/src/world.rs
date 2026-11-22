@@ -3195,6 +3195,11 @@ pub struct GameWorld {
     pub(crate) bandeiras: HashMap<i64, shared::bandeira::BandeiraDoCla>,
     /// TERRITORIES phase 4: each held islet's Governor and Farmer entities.
     pub(crate) npcs_das_ilhotas: HashMap<u8, [hecs::Entity; 2]>,
+    /// TERRITORIES 4.3: each held islet's walls, gate and cannons.
+    pub(crate) estruturas: HashMap<u8, territorios::Estruturas>,
+    /// TERRITORIES: islets whose siege window is open now (structures can
+    /// be damaged). Phase 5 drives it from the schedule.
+    pub(crate) cercos_abertos: std::collections::HashSet<u8>,
     /// Open direct trades, one entry per side (`world/troca.rs`).
     pub(crate) trocas: HashMap<SessionId, troca::Mesa>,
     /// Pending trade invites: invited -> (who invited, until sim_time_s).
@@ -3714,6 +3719,8 @@ impl GameWorld {
             tomadas: HashMap::new(),
             bandeiras: HashMap::new(),
             npcs_das_ilhotas: HashMap::new(),
+            estruturas: HashMap::new(),
+            cercos_abertos: Default::default(),
             trocas: HashMap::new(),
             troca_convites: HashMap::new(),
             enemy_spawn_timer: 0.0,
@@ -3917,6 +3924,8 @@ impl GameWorld {
             tomadas: HashMap::new(),
             bandeiras: HashMap::new(),
             npcs_das_ilhotas: HashMap::new(),
+            estruturas: HashMap::new(),
+            cercos_abertos: Default::default(),
             trocas: HashMap::new(),
             troca_convites: HashMap::new(),
             enemy_spawn_timer: 0.0,
@@ -12529,11 +12538,11 @@ impl GameWorld {
             .filter_map(|s| s.entity)
             .collect();
         // TERRITORIES: a body ashore on an islet walks the land, not the water.
-        let corpos_em_terra: std::collections::HashSet<Entity> = self
+        // (Its islet and clan: the walls stop those who may not pass.)
+        let corpos_em_terra: HashMap<Entity, (u8, i64)> = self
             .sessions
             .values()
-            .filter(|s| s.em_terra.is_some())
-            .filter_map(|s| s.entity)
+            .filter_map(|s| Some((s.entity?, (s.em_terra?.ilhota, s.cla_id))))
             .collect();
         let mut bateu_na_barreira: Vec<Entity> = Vec::new();
         let mut corpos: Vec<(Entity, Vec2, f32)> = Vec::new();
@@ -12590,7 +12599,7 @@ impl GameWorld {
                 // A hull grazing the coast scrapes along it (`mover_raspando`).
                 // A PK hull: the peaceful waters are land to it; one past
                 // its grace inside is pushed out.
-                Some(_) if no_mar && !corpos_em_terra.contains(&e) => {
+                Some(_) if no_mar && !corpos_em_terra.contains_key(&e) => {
                     let (barrado, empurra) = barreira.get(&e).copied().unwrap_or((false, None));
                     let v = empurra.unwrap_or(vel.0);
                     let livre = |x: f32, z: f32| shared::mar::navegavel(x, z);
@@ -12642,6 +12651,12 @@ impl GameWorld {
             let movido = match inst.and_then(|i| planta_da_inst.get(&i.0)) {
                 Some((p, andar)) => p.mover(pos.0, movido, ENTITY_RADIUS, *andar),
                 None => movido,
+            };
+            // TERRITORIES 4.3: a standing wall segment (or a closed gate for
+            // outsiders) stops the step.
+            let movido = match corpos_em_terra.get(&e) {
+                Some(&(ilhota, cla)) if self.muralha_barra(ilhota, cla, pos.0, movido) => pos.0,
+                _ => movido,
             };
             corpos.push((e, movido, mobilidade));
         }
@@ -13297,6 +13312,14 @@ impl GameWorld {
                 && !self.can_damage_player(attacker_id, target_id)
             {
                 continue;
+            }
+            // TERRITORIES: a wall, gate or cannon takes damage only in its
+            // islet's siege window, and only from outside the clan that
+            // holds it.
+            if let Ok(t) = self.ecs.get::<&territorios::EstruturaTag>(entity).map(|t| *t) {
+                if !self.pode_ferir_estrutura(attacker_id, t) {
+                    continue;
+                }
             }
             // Não reatribui um golpe fatal a outro ataque no mesmo tick.
             if !downed_targets.contains(&target_id)

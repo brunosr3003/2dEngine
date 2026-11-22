@@ -2097,6 +2097,11 @@ pub fn draw_entities_com_sombras(
                 get_frame_time(),
             );
         }
+        // TERRITORIES 4.3: walls, gates and cannons are structures, not mobs.
+        if e.meta.tag == shared::EntityTag::Enemy && shared::territorio::e_estrutura(e.meta.kind) {
+            crate::mar_cena::estrutura(e.meta.kind, p, e.state.hp, e.meta.hp_max);
+            continue;
+        }
         if crate::marinhos::desenha_ent(e, p) {
             continue;
         }

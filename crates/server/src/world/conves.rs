@@ -1906,6 +1906,63 @@ mod testes {
         assert!(w.npcs_das_ilhotas.is_empty());
     }
 
+    /// PHASE 4.3: walls, gate and cannons stand by their levels; the wall
+    /// stops outsiders (the gate lets the clan through, a breach anyone);
+    /// damage only lands in the siege window and from outside the clan.
+    #[test]
+    fn muros_portao_e_canhoes_barram_e_so_apanham_no_cerco() {
+        use shared::territorio::{self as tr, trilha};
+        let (mut w, sid, _rx) = mundo();
+        w.step(shared::TICK_DT);
+        let ilha = &shared::mar::ilhotas()[3];
+        let mut niveis = tr::NIVEIS_INICIAIS;
+        niveis[trilha::VILA] = 2;
+        niveis[trilha::MUROS] = 2;
+        niveis[trilha::PORTOES] = 1;
+        niveis[trilha::CANHOES] = 1;
+        w.territorios.insert(3, tr::Dono { ilhota: 3, cla_id: 7, tag: "MAR".into(), cla: "Mares".into(), niveis });
+        w.manter_estruturas();
+        let es = &w.estruturas[&3];
+        assert_eq!(es.muros.iter().flatten().count(), tr::SEGMENTOS_DA_MURALHA - 1);
+        assert!(es.portao.is_some());
+        assert_eq!(es.canhoes.len(), tr::canhoes_do_porte(ilha.porte));
+        let r = tr::raio_da_muralha(ilha.porte);
+        let gate = tr::segmento_do_portao(ilha.fase);
+        let muro = (gate + 4) % tr::SEGMENTOS_DA_MURALHA;
+        let passo = |seg: usize| {
+            let d = Vec2::from_angle(tr::angulo_do_segmento(seg));
+            (ilha.centro + d * (r - 2.0), ilha.centro + d * r)
+        };
+        let (de, para) = passo(muro);
+        assert!(w.muralha_barra(3, 9, de, para), "an outsider cannot cross the wall");
+        assert!(w.muralha_barra(3, 7, de, para), "nor can the clan, through stone");
+        let (gde, gpara) = passo(gate);
+        assert!(w.muralha_barra(3, 9, gde, gpara), "the gate is shut to outsiders");
+        assert!(!w.muralha_barra(3, 7, gde, gpara), "the gate opens for the clan");
+        // A breach lets anyone through.
+        let e_muro = w.estruturas[&3].muros[muro].unwrap();
+        w.ecs.get::<&mut Health>(e_muro).unwrap().current = 0;
+        assert!(!w.muralha_barra(3, 9, de, para));
+        w.ecs.get::<&mut Health>(e_muro).unwrap().current = tr::hp_do_muro(2);
+        // Damage: no siege, no; siege open, outsiders yes, the clan no.
+        let tag = *w.ecs.get::<&super::super::territorios::EstruturaTag>(e_muro).unwrap();
+        let eu = w.sessions[&sid].entity_id;
+        w.sessions.get_mut(&sid).unwrap().cla_id = 9;
+        assert!(!w.pode_ferir_estrutura(eu, tag), "no siege");
+        w.cercos_abertos.insert(3);
+        assert!(w.pode_ferir_estrutura(eu, tag), "siege, an outsider");
+        w.sessions.get_mut(&sid).unwrap().cla_id = 7;
+        assert!(!w.pode_ferir_estrutura(eu, tag), "the holding clan never");
+        // An upgrade raises the HP.
+        w.territorios.get_mut(&3).unwrap().niveis[trilha::MUROS] = 3;
+        w.manter_estruturas();
+        assert_eq!(w.ecs.get::<&Health>(e_muro).unwrap().max, tr::hp_do_muro(3));
+        // Freed: all gone.
+        w.territorios.clear();
+        w.manter_estruturas();
+        assert!(w.estruturas.is_empty() && !w.ecs.contains(e_muro));
+    }
+
     /// THE COAST'S PUSH (owner, 20/11/2026): a hull with its bow buried in
     /// an islet's beach eases back out until its whole outline floats.
     #[test]

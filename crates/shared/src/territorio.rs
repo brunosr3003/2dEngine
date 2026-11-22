@@ -261,3 +261,108 @@ mod testes_da_fase_4 {
         assert_eq!(ouro_do_nivel(10), 2_000_000);
     }
 }
+
+// ─────────────────── phase 4.3: the structures ───────────────────
+
+/// The wall ring is cut into this many segments, each with its own HP; a
+/// broken one is a breach. The gate takes one segment's place.
+pub const SEGMENTOS_DA_MURALHA: usize = 16;
+
+/// Which segment is the gate: the one an islet's `fase` points at (a fixed,
+/// varied side per islet).
+pub fn segmento_do_portao(fase: f32) -> usize {
+    let a = fase.rem_euclid(std::f32::consts::TAU);
+    ((a / std::f32::consts::TAU * SEGMENTOS_DA_MURALHA as f32).round() as usize) % SEGMENTOS_DA_MURALHA
+}
+
+/// The angle of segment `i`'s middle (radians, `atan2(y, x)`).
+pub fn angulo_do_segmento(i: usize) -> f32 {
+    i as f32 / SEGMENTOS_DA_MURALHA as f32 * std::f32::consts::TAU
+}
+
+/// The middle of segment `i` of the ring round `centro`.
+pub fn pos_do_segmento(centro: glam::Vec2, porte: u8, i: usize) -> glam::Vec2 {
+    centro + glam::Vec2::from_angle(angulo_do_segmento(i)) * raio_da_muralha(porte)
+}
+
+/// The segment a point at `p` (round `centro`) falls in.
+pub fn segmento_em(centro: glam::Vec2, p: glam::Vec2) -> usize {
+    let d = p - centro;
+    let a = d.y.atan2(d.x).rem_euclid(std::f32::consts::TAU);
+    ((a / std::f32::consts::TAU * SEGMENTOS_DA_MURALHA as f32).round() as usize) % SEGMENTOS_DA_MURALHA
+}
+
+/// Half the wall's thickness, units (a step into it is a step across it).
+pub const MEIA_ESPESSURA_DO_MURO: f32 = 0.9;
+
+/// Does a step from `de` to `para` cross (or enter) the wall ring round
+/// `centro`? The segment it meets, if so.
+pub fn cruza_a_muralha(centro: glam::Vec2, porte: u8, de: glam::Vec2, para: glam::Vec2) -> Option<usize> {
+    let r = raio_da_muralha(porte);
+    let (a, b) = (de.distance(centro) - r, para.distance(centro) - r);
+    let dentro_do_muro = |x: f32| x.abs() <= MEIA_ESPESSURA_DO_MURO;
+    // Moving into the wall's band, or jumping across it.
+    let entra = dentro_do_muro(b) && !dentro_do_muro(a) || (a < 0.0) != (b < 0.0);
+    if !entra || (dentro_do_muro(a) && dentro_do_muro(b)) {
+        return None;
+    }
+    Some(segmento_em(centro, para))
+}
+
+/// Where the cannon plots stand: evenly round the coast, inside it.
+pub fn pos_dos_canhoes(centro: glam::Vec2, raio_da_ilha: f32, porte: u8, fase: f32) -> Vec<glam::Vec2> {
+    let n = canhoes_do_porte(porte);
+    (0..n)
+        .map(|k| {
+            let a = fase + 0.4 + k as f32 / n as f32 * std::f32::consts::TAU;
+            centro + glam::Vec2::from_angle(a) * (raio_da_ilha * 0.72)
+        })
+        .collect()
+}
+
+/// HP of a wall segment, the gate and a cannon at a level (0 = not built).
+pub fn hp_do_muro(n: u8) -> i32 {
+    if n == 0 { 0 } else { 2_000 + 1_500 * n as i32 }
+}
+pub fn hp_do_portao(n: u8) -> i32 {
+    if n == 0 { 0 } else { 3_000 + 2_500 * n as i32 }
+}
+pub fn hp_do_canhao(n: u8) -> i32 {
+    if n == 0 { 0 } else { 1_500 + 1_000 * n as i32 }
+}
+
+#[cfg(test)]
+mod testes_das_estruturas {
+    use super::*;
+    use glam::Vec2;
+
+    #[test]
+    fn a_muralha_barra_quem_cruza_e_o_portao_tem_lugar() {
+        let c = Vec2::ZERO;
+        let r = raio_da_muralha(MEDIA);
+        // From inside to outside along +x: crosses segment 0.
+        assert_eq!(cruza_a_muralha(c, MEDIA, Vec2::new(r - 2.0, 0.0), Vec2::new(r, 0.0)), Some(0));
+        // Walking inside, or outside, never crosses.
+        assert_eq!(cruza_a_muralha(c, MEDIA, Vec2::new(5.0, 0.0), Vec2::new(6.0, 0.0)), None);
+        assert_eq!(cruza_a_muralha(c, MEDIA, Vec2::new(r + 5.0, 0.0), Vec2::new(r + 6.0, 0.0)), None);
+        // A big jump across is caught too.
+        assert!(cruza_a_muralha(c, MEDIA, Vec2::new(r - 3.0, 0.0), Vec2::new(r + 3.0, 0.0)).is_some());
+        for f in [0.0, 1.0, 2.5, 6.0] {
+            assert!(segmento_do_portao(f) < SEGMENTOS_DA_MURALHA);
+        }
+        assert_eq!(segmento_em(c, pos_do_segmento(c, GRANDE, 5)), 5);
+        assert_eq!(pos_dos_canhoes(c, 100.0, GRANDE, 0.0).len(), 6);
+        assert!(hp_do_portao(1) > hp_do_muro(1) && hp_do_muro(0) == 0);
+    }
+}
+
+/// The `EntityKind::Enemy` kinds of the structures (far past any bestiary
+/// kind): the client draws a wall, a gate or a cannon for them.
+pub const KIND_MURO: u16 = 60_000;
+pub const KIND_PORTAO: u16 = 60_001;
+pub const KIND_CANHAO: u16 = 60_002;
+
+/// Is enemy kind `k` a territory structure?
+pub fn e_estrutura(k: u16) -> bool {
+    (KIND_MURO..=KIND_CANHAO).contains(&k)
+}

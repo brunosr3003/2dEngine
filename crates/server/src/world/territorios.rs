@@ -8,6 +8,25 @@
 use super::*;
 use shared::territorio::{Dono, TomadaInfo, RAIO_DO_NUCLEO, TEMPO_DE_TOMADA_S};
 
+/// A territory structure (`shared::territorio::KIND_*`): which islet, what,
+/// which one (wall segment index, 0 for the gate, cannon plot).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EstruturaTag {
+    pub ilhota: u8,
+    pub tipo: u16,
+    pub indice: u8,
+}
+
+/// A held islet's structure entities.
+#[derive(Debug, Default)]
+pub struct Estruturas {
+    pub muros: [Option<hecs::Entity>; shared::territorio::SEGMENTOS_DA_MURALHA],
+    pub portao: Option<hecs::Entity>,
+    pub canhoes: Vec<hecs::Entity>,
+    /// The levels they were built at (to re-scale HP on an upgrade).
+    pub niveis: (u8, u8, u8),
+}
+
 /// A claim under way: who claims, for which clan, how far along.
 #[derive(Debug, Clone)]
 pub struct Tomada {
@@ -42,6 +61,7 @@ impl GameWorld {
             }
         }
         self.manter_npcs_das_ilhotas();
+        self.manter_estruturas();
         let lista = self.lista_de_territorios();
         for s in self.sessions.values_mut() {
             if s.logged_in && !s.territorios_enviados {
@@ -549,5 +569,165 @@ impl GameWorld {
                 self.avisa_missao(sid, e);
             }
         }
+    }
+
+    // ─────────────────── phase 4.3: walls, gate, cannons ───────────────────
+
+    fn por_estrutura(&mut self, pos: Vec2, tag: EstruturaTag, hp: i32) -> hecs::Entity {
+        let eid = self.alloc_entity_id();
+        self.ecs.spawn((
+            NetId(eid),
+            Position(pos),
+            Velocity(Vec2::ZERO),
+            EntityKind::Enemy(tag.tipo),
+            Health { current: hp, max: hp.max(1) },
+            tag,
+        ))
+    }
+
+    fn tirar(&mut self, e: hecs::Entity) {
+        if let Ok(n) = self.ecs.get::<&NetId>(e).map(|n| n.0) {
+            self.removed_this_tick.push(n);
+        }
+        let _ = self.ecs.despawn(e);
+    }
+
+    /// Every held islet's walls, gate and cannons match its levels: built
+    /// when a track reaches 1, their HP max following the level (an upgrade
+    /// raises current HP by the same amount), gone when the islet is freed.
+    pub(crate) fn manter_estruturas(&mut self) {
+        use shared::territorio as tr;
+        let livres: Vec<u8> = self
+            .estruturas
+            .keys()
+            .copied()
+            .filter(|k| !self.territorios.contains_key(k))
+            .collect();
+        for k in livres {
+            if let Some(es) = self.estruturas.remove(&k) {
+                for e in es.muros.into_iter().flatten().chain(es.portao).chain(es.canhoes) {
+                    self.tirar(e);
+                }
+            }
+        }
+        let donos: Vec<(u8, [u8; tr::N_TRILHAS])> =
+            self.territorios.iter().map(|(k, d)| (*k, d.niveis)).collect();
+        for (k, niveis) in donos {
+            let Some(ilha) = shared::mar::ilhotas().get(k as usize) else {
+                continue;
+            };
+            let (nm, np, nc) = (
+                niveis[tr::trilha::MUROS],
+                niveis[tr::trilha::PORTOES],
+                niveis[tr::trilha::CANHOES],
+            );
+            let atual = self.estruturas.get(&k).map(|e| e.niveis);
+            if atual == Some((nm, np, nc)) {
+                continue;
+            }
+            let mut es = self.estruturas.remove(&k).unwrap_or_default();
+            let portao_seg = tr::segmento_do_portao(ilha.fase);
+            // Walls: every segment but the gate's.
+            let hp_m = tr::hp_do_muro(nm);
+            for i in 0..tr::SEGMENTOS_DA_MURALHA {
+                if i == portao_seg {
+                    continue;
+                }
+                match (es.muros[i], nm) {
+                    (Some(e), 0) => {
+                        self.tirar(e);
+                        es.muros[i] = None;
+                    }
+                    (Some(e), _) => self.reescalar(e, hp_m),
+                    (None, 0) => {}
+                    (None, _) => {
+                        let tag = EstruturaTag { ilhota: k, tipo: tr::KIND_MURO, indice: i as u8 };
+                        es.muros[i] = Some(self.por_estrutura(tr::pos_do_segmento(ilha.centro, ilha.porte, i), tag, hp_m));
+                    }
+                }
+            }
+            // The gate (needs walls round it).
+            let hp_p = tr::hp_do_portao(np);
+            match (es.portao, np > 0 && nm > 0) {
+                (Some(e), false) => {
+                    self.tirar(e);
+                    es.portao = None;
+                }
+                (Some(e), true) => self.reescalar(e, hp_p),
+                (None, true) => {
+                    let tag = EstruturaTag { ilhota: k, tipo: tr::KIND_PORTAO, indice: portao_seg as u8 };
+                    es.portao = Some(self.por_estrutura(tr::pos_do_segmento(ilha.centro, ilha.porte, portao_seg), tag, hp_p));
+                }
+                (None, false) => {}
+            }
+            // Cannons on the coast plots.
+            let hp_c = tr::hp_do_canhao(nc);
+            if nc == 0 {
+                for e in std::mem::take(&mut es.canhoes) {
+                    self.tirar(e);
+                }
+            } else if es.canhoes.is_empty() {
+                for (n, pos) in tr::pos_dos_canhoes(ilha.centro, ilha.raio, ilha.porte, ilha.fase)
+                    .into_iter()
+                    .enumerate()
+                {
+                    let tag = EstruturaTag { ilhota: k, tipo: tr::KIND_CANHAO, indice: n as u8 };
+                    let e = self.por_estrutura(pos, tag, hp_c);
+                    es.canhoes.push(e);
+                }
+            } else {
+                for e in es.canhoes.clone() {
+                    self.reescalar(e, hp_c);
+                }
+            }
+            es.niveis = (nm, np, nc);
+            self.estruturas.insert(k, es);
+        }
+    }
+
+    /// A new max HP: current rises (or falls) by the same amount.
+    fn reescalar(&mut self, e: hecs::Entity, max: i32) {
+        if let Ok(mut h) = self.ecs.get::<&mut Health>(e) {
+            let ganho = max - h.max;
+            h.max = max.max(1);
+            h.current = (h.current + ganho).clamp(0, h.max);
+        }
+    }
+
+    /// May the body `atacante` damage structure `t`? Only in its islet's
+    /// siege window, and only someone outside the clan that holds it.
+    pub(crate) fn pode_ferir_estrutura(&self, atacante: EntityId, t: EstruturaTag) -> bool {
+        if !self.cercos_abertos.contains(&t.ilhota) {
+            return false;
+        }
+        let Some(dono) = self.territorios.get(&t.ilhota) else {
+            return false;
+        };
+        self.sessions
+            .values()
+            .find(|s| s.entity_id == atacante)
+            .is_some_and(|s| s.cla_id != dono.cla_id)
+    }
+
+    /// Does the wall stop a step from `de` to `para` on islet `ilhota` for a
+    /// body of clan `cla`? A standing segment stops everyone; the gate lets
+    /// the holding clan through; a breach (0 HP) or a broken gate lets anyone.
+    pub(crate) fn muralha_barra(&self, ilhota: u8, cla: i64, de: Vec2, para: Vec2) -> bool {
+        use shared::territorio as tr;
+        let (Some(es), Some(ilha)) = (self.estruturas.get(&ilhota), shared::mar::ilhotas().get(ilhota as usize)) else {
+            return false;
+        };
+        let Some(seg) = tr::cruza_a_muralha(ilha.centro, ilha.porte, de, para) else {
+            return false;
+        };
+        let de_pe = |e: Option<hecs::Entity>| {
+            e.and_then(|e| self.ecs.get::<&Health>(e).ok().map(|h| h.current > 0))
+                .unwrap_or(false)
+        };
+        if seg == tr::segmento_do_portao(ilha.fase) {
+            let do_dono = self.territorios.get(&ilhota).is_some_and(|d| d.cla_id == cla && cla != 0);
+            return de_pe(es.portao) && !do_dono;
+        }
+        de_pe(es.muros[seg])
     }
 }
