@@ -2681,6 +2681,13 @@ pub const VERBETES: &[(&str, &str)] = &[
     ("Territory: {n}", "Território: {n}"),
     ("Nomad clan", "Clã nômade"),
     // social_ui.rs — editor da bandeira do clã
+    ("Reports", "Denúncias"),
+    ("Custom image: flying", "Imagem própria: hasteada"),
+    ("Custom image: removed by the Tempest team, the preset flies", "Imagem própria: removida pela equipe do Tempest, vale a bandeira preset"),
+    ("Report a clan flag that is offensive, hateful or stolen. The Tempest team reviews every report and removes the flags that break the rules.", "Denuncie uma bandeira de clã ofensiva, de ódio ou roubada. A equipe do Tempest revisa toda denúncia e remove as bandeiras que quebram as regras."),
+    ("No clan has a custom flag image yet.", "Nenhum clã tem imagem própria na bandeira ainda."),
+    ("Clan flag (custom image)", "Bandeira do clã (imagem própria)"),
+    ("Preset (flies if the image is removed)", "Preset (vale se a imagem for removida)"),
     ("Upload image", "Enviar imagem"),
     ("Custom image: waiting for review", "Imagem própria: aguardando revisão"),
     ("Custom image: approved, flying", "Imagem própria: aprovada, hasteada"),

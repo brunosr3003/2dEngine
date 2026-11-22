@@ -100,6 +100,12 @@ pub enum Pedido {
     /// on the site (`Estado::codigo_bandeira`). Same rank as the tag.
     /// Appended.
     CodigoBandeira,
+    /// CLAN FLAGS: report clan `cla`'s custom flag image (offensive,
+    /// hateful, stolen); it goes to the Panopticon. Once per player per flag.
+    /// Appended.
+    DenunciarBandeira {
+        cla: i64,
+    },
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -127,6 +133,21 @@ pub struct Estado {
     /// CLAN FLAGS: my live upload code ("" = none), from `CodigoBandeira`.
     /// Appended.
     pub codigo_bandeira: String,
+    /// CLAN FLAGS: the custom flag images flying now (most recent first),
+    /// for the Reports tab. Appended.
+    pub bandeiras_publicas: Vec<BandeiraPublica>,
+}
+
+/// A clan's custom flag image, as the Reports tab lists it.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct BandeiraPublica {
+    pub cla_id: i64,
+    pub nome: String,
+    pub tag: String,
+    /// `bandeira::LARG` × `ALT` RGBA.
+    pub pixels: Vec<u8>,
+    /// I already reported it.
+    pub denunciei: bool,
 }
 
 /// One name on the blacklist. The location is filled by the server ONLY
@@ -252,6 +273,10 @@ pub struct Cla {
     /// CLAN FLAGS: the uploaded image's state (`bandeira::IMAGEM_*`).
     /// Appended.
     pub imagem_bandeira: u8,
+    /// CLAN FLAGS: the approved image itself (`bandeira::LARG` × `ALT`
+    /// RGBA), for the clan panel anywhere (the sea's list is the sea's).
+    /// Appended.
+    pub imagem: Option<Vec<u8>>,
 }
 
 /// A friend or clan member, as the social panel shows them.

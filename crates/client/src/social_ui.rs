@@ -17,6 +17,8 @@ pub enum Aba {
     Cla,
     /// The blacklist (`shared::social::Inimigo`).
     ListaNegra,
+    /// CLAN FLAGS: report a custom flag image (it goes to the Panopticon).
+    Denuncias,
 }
 
 #[derive(Default)]
@@ -249,6 +251,7 @@ impl Social {
             (Aba::Correio, "Mail"),
             (Aba::Cla, "Clan"),
             (Aba::ListaNegra, "Blacklist"),
+            (Aba::Denuncias, "Reports"),
         ];
         let tw = (p.w - 40.0) / abas.len() as f32;
         for (i, (aba, nome)) in abas.iter().enumerate() {
@@ -264,7 +267,7 @@ impl Social {
                 Aba::Amigos => !self.estado.recebidos.is_empty(),
                 Aba::Correio => self.correio_pendente(),
                 Aba::Cla => !self.estado.convites_cla.is_empty(),
-                Aba::ListaNegra => false,
+                Aba::ListaNegra | Aba::Denuncias => false,
             };
             if alerta {
                 e::badge(r);
@@ -282,6 +285,7 @@ impl Social {
             Aba::Correio => self.correio_ui(a, digitado, &mut saida, vox, solido),
             Aba::Cla => self.cla_ui(a, eu, digitado, &mut saida),
             Aba::ListaNegra => self.lista_negra_ui(a, digitado, &mut saida),
+            Aba::Denuncias => self.denuncias_ui(a, &mut saida),
         }
         let aviso = if !self.carregado && self.aviso.is_empty() {
             "Loading…"
@@ -2154,7 +2158,7 @@ pub async fn previa() {
         amigos:vec!["MaréAlta".into(),"Navegante".into()],recebidos:vec!["Corsair".into()],enviados:vec!["Captain".into()],
         neste_canal:vec!["brunji".into(),"MaréAlta".into()],
         cartas:vec![social::Carta{id:1,de:"MaréAlta".into(),assunto:"Ready for the next adventure?".into(),texto:"Vamos reunir o grupo na vila e explorar as dungeons. Se precisar de ajuda, mande uma carta!".into(),quando:0,lida:false,oficial:false,anexos:vec![],resgatada:false}],
-        cla:Some(social::Cla{id:1,nome:"Tide Corsairs".into(),lider:"brunji".into(),aviso:"Meet at the village for the next expedition.".into(),membros:vec!["brunji".into(),"MaréAlta".into(),"Navegante".into(),"Captain".into()],tag:"TIDE".into(),oficiais:vec!["MaréAlta".into()],territorio:Some(1),bandeira:0x1_1040,imagem_bandeira:0}),
+        cla:Some(social::Cla{id:1,nome:"Tide Corsairs".into(),lider:"brunji".into(),aviso:"Meet at the village for the next expedition.".into(),membros:vec!["brunji".into(),"MaréAlta".into(),"Navegante".into(),"Captain".into()],tag:"TIDE".into(),oficiais:vec!["MaréAlta".into()],territorio:Some(1),bandeira:0x1_1040,imagem_bandeira:0,imagem:None}),
         convites_cla:vec![], cargo:Some("admin".into()),destinatarios:42,oficiais:vec![],
         contatos: previa_contatos(),
         lista_negra: vec![
@@ -2163,6 +2167,7 @@ pub async fn previa() {
         ],
         matadores: vec![],
         codigo_bandeira: String::new(),
+        bandeiras_publicas: vec![],
     }));
     ui.grupo = vec!["brunji".into(), "MaréAlta".into()];
     ui.grupo_tags = vec!["TIDE".into(), "TIDE".into()];
@@ -2305,6 +2310,7 @@ mod testes {
             territorio: None,
             bandeira: 0,
             imagem_bandeira: 0,
+            imagem: None,
         }
     }
 
@@ -2494,8 +2500,20 @@ impl Social {
         use shared::bandeira::{Bandeira, NOMES_DAS_CORES, NOMES_DOS_EMBLEMAS, NOMES_DOS_PADROES};
         let atual = self.bandeira_edit.unwrap_or(c.bandeira);
         let (pw, ph) = (84.0 * k, 56.0 * k);
-        e::texto(x, y + 2.0, "Clan flag", 14, e::OURO);
-        let tex = crate::bandeiras::do_preset(atual);
+        // The approved image is what flies: shown unless the preset is being
+        // edited (then the preset under edit, which flies only without it).
+        let imagem = c
+            .imagem
+            .as_ref()
+            .filter(|_| self.bandeira_edit.is_none())
+            .map(|px| crate::bandeiras::da_imagem(c.id, px));
+        let titulo = match (&imagem, c.imagem.is_some()) {
+            (Some(_), _) => "Clan flag (custom image)",
+            (None, true) => "Preset (flies if the image is removed)",
+            (None, false) => "Clan flag",
+        };
+        e::texto(x, y + 2.0, titulo, 14, e::OURO);
+        let tex = imagem.unwrap_or_else(|| crate::bandeiras::do_preset(atual));
         draw_rectangle(x - 1.0, y + 10.0 * k - 1.0, pw + 2.0, ph + 2.0, Color::new(0.0, 0.0, 0.0, 0.8));
         draw_texture_ex(
             &tex,
@@ -2559,8 +2577,8 @@ impl Social {
         let ry = y + 10.0 * k + 3.0 * (lh + 4.0 * k) + 4.0 * k;
         let estado = match c.imagem_bandeira {
             shared::bandeira::IMAGEM_PENDENTE => ("Custom image: waiting for review", e::OURO),
-            shared::bandeira::IMAGEM_APROVADA => ("Custom image: approved, flying", e::VERDE),
-            shared::bandeira::IMAGEM_RECUSADA => ("Custom image: refused, the preset flies", e::VERMELHO),
+            shared::bandeira::IMAGEM_APROVADA => ("Custom image: flying", e::VERDE),
+            shared::bandeira::IMAGEM_RECUSADA => ("Custom image: removed by the Tempest team, the preset flies", e::VERMELHO),
             _ => ("Custom image: none (the preset flies)", e::SUAVE),
         };
         let bw = 150.0 * k;
@@ -2582,5 +2600,63 @@ impl Social {
             }
         }
         ry + lh + 14.0 * k
+    }
+}
+
+
+impl Social {
+    /// CLAN FLAGS — THE REPORTS TAB: the custom flag images flying now, each
+    /// with Report (once per player per flag; it goes to the Panopticon,
+    /// where the team removes the ones that break the rules).
+    fn denuncias_ui(&mut self, a: Rect, s: &mut Vec<ClientMessage>) {
+        use crate::hud_estilo as e;
+        let k = (a.w / 900.0).clamp(0.75, 1.4);
+        texto_em_linhas(
+            "Report a clan flag that is offensive, hateful or stolen. The Tempest team reviews every report and removes the flags that break the rules.",
+            Rect::new(a.x, a.y, a.w, 40.0 * k),
+            13,
+            e::SUAVE,
+            0,
+        );
+        let lista = self.estado.bandeiras_publicas.clone();
+        if lista.is_empty() {
+            e::texto(a.x, a.y + 70.0 * k, "No clan has a custom flag image yet.", 15, e::SUAVE);
+            return;
+        }
+        let topo = a.y + 52.0 * k;
+        let (fw, fh) = (72.0 * k, 48.0 * k);
+        let linha = fh + 12.0 * k;
+        let colunas = if a.w > 640.0 { 2 } else { 1 };
+        let cw = a.w / colunas as f32;
+        let cabe = (((a.y + a.h - topo) / linha).floor() as usize).max(1) * colunas;
+        for (n, b) in lista.iter().take(cabe).enumerate() {
+            let x = a.x + (n % colunas) as f32 * cw;
+            let y = topo + (n / colunas) as f32 * linha;
+            let tex = crate::bandeiras::da_imagem(b.cla_id, &b.pixels);
+            draw_rectangle(x - 1.0, y - 1.0, fw + 2.0, fh + 2.0, Color::new(0.0, 0.0, 0.0, 0.8));
+            draw_texture_ex(
+                &tex,
+                x,
+                y,
+                WHITE,
+                DrawTextureParams {
+                    dest_size: Some(vec2(fw, fh)),
+                    ..Default::default()
+                },
+            );
+            let nome = if b.tag.is_empty() {
+                b.nome.clone()
+            } else {
+                format!("[{}] {}", b.tag, b.nome)
+            };
+            let bw = 120.0 * k;
+            e::texto_ajustado(&nome, x + fw + 10.0 * k, y + fh * 0.6, cw - fw - bw - 28.0 * k, 15, e::TEXTO);
+            let br = Rect::new(x + cw - bw - 12.0 * k, y + (fh - 34.0 * k) / 2.0, bw, 34.0 * k);
+            if b.denunciei {
+                e::texto_ajustado("Reported", br.x + 10.0 * k, br.y + 22.0 * k, bw, 14, e::SUAVE);
+            } else if crate::ui::botao(br, "Report", true) {
+                self.enviar(Pedido::DenunciarBandeira { cla: b.cla_id }, s);
+            }
+        }
     }
 }

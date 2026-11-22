@@ -50,6 +50,30 @@ pub fn da_tag(tag: &str) -> Option<Texture2D> {
     Some(textura_da(&b))
 }
 
+/// An approved image's texture (the clan panel), cached per clan and image.
+pub fn da_imagem(cla_id: i64, pixels: &[u8]) -> Texture2D {
+    thread_local! {
+        static IMAGENS: RefCell<HashMap<(i64, u64), Texture2D>> = RefCell::new(HashMap::new());
+    }
+    // A cheap fingerprint: a new upload makes a new texture.
+    let marca = pixels
+        .iter()
+        .step_by(7)
+        .fold(0xcbf2_9ce4_8422_2325u64, |h, b| (h ^ *b as u64).wrapping_mul(0x1000_0000_01b3));
+    IMAGENS.with(|t| {
+        t.borrow_mut()
+            .entry((cla_id, marca))
+            .or_insert_with(|| {
+                if pixels.len() == LARG * ALT * 4 {
+                    textura_de(pixels)
+                } else {
+                    textura_de(&Bandeira::do_cla(cla_id).pixels())
+                }
+            })
+            .clone()
+    })
+}
+
 /// A preset's texture (the editor's preview).
 pub fn do_preset(v: u32) -> Texture2D {
     PRESETS.with(|p| {

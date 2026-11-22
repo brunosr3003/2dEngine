@@ -16,14 +16,14 @@ input[type=file]{width:100%;color:#f2e8d2}
 </style></head><body><main>
 <h1>Clan flag</h1>
 <p>Pick an image for your clan's flag. It is cut to 3:2 and shown small, so a bold, simple picture works best.
-It flies on your ships, your islet and the map <b>after the Tempest team reviews it</b>.</p>
+It flies on your ships, your islet and the map right away.</p>
 <div class="caixa">
 <input id="arquivo" type="file" accept="image/png,image/jpeg">
 <canvas id="previa" width="48" height="32"></canvas>
-<button id="enviar" disabled>Send for review</button>
+<button id="enviar" disabled>Send</button>
 <p id="estado"></p>
 </div>
-<p style="font-size:13px">No offensive, hateful or copyrighted images: a refused flag can cost the clan its custom image.</p>
+<p style="font-size:13px">No offensive, hateful or copyrighted images: players can report a flag, and the Tempest team removes the ones that break the rules.</p>
 </main>
 <script>
 const codigo = new URLSearchParams(location.search).get('c') || '';
@@ -57,7 +57,7 @@ btn.onclick = async () => {
   try {
     const r = await fetch('/api/bandeira', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ codigo, imagem: dados }) });
     const d = await r.json();
-    if (d.ok) { estado.textContent = 'Sent! It will fly once the team approves it. You can close this page.'; estado.className = 'ok'; }
+    if (d.ok) { estado.textContent = 'Done! Your flag is flying (within 30 s at sea). You can close this page.'; estado.className = 'ok'; }
     else { estado.textContent = d.erro || 'Could not send.'; estado.className = 'erro'; btn.disabled = false; }
   } catch (e) { estado.textContent = 'Could not reach the server.'; estado.className = 'erro'; btn.disabled = false; }
 };

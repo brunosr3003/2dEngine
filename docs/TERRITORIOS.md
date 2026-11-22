@@ -85,8 +85,12 @@ entidade do capitão), no mastro da ilhota que o clã domina e no mapa.
   gera código de uso único (15 min, `cla_bandeira_codigos`) → o jogo abre
   `<site>/api/bandeira?c=CÓDIGO` (página em `crates/web/estatico`; sob /api porque os proxies só repassam /api/*) → `POST
   /api/bandeira` (PNG/JPEG até 3 MB) corta 3:2, reduz pra 48×32 RGBA e
-  grava PENDENTE em `cla_bandeira_imagem` → aprovar/recusar no Panóptico
-  (aba "bandeiras") → aprovada ganha do preset em até 30 s.
+  grava JÁ APROVADA em `cla_bandeira_imagem` (auto-approve, decisão de
+  21/11/2026) e zera as denúncias antigas → ganha do preset em até 30 s.
+- **Denúncias**: aba "Reports" no painel Social lista as imagens no ar;
+  `Pedido::DenunciarBandeira` (1 por jogador por bandeira, não a do próprio
+  clã) grava em `cla_bandeira_denuncias`; o Panóptico (aba "bandeiras")
+  ordena pelas mais denunciadas e "recusar" tira a imagem (volta o preset).
 - O mar manda `ServerMessage::Bandeiras` (todas, com a imagem aprovada) a
   cada mudança; o cliente faz uma textura por bandeira (`bandeiras.rs`).
 

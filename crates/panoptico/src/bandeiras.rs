@@ -41,23 +41,26 @@ fn base64(b: &[u8]) -> String {
 }
 
 pub async fn lista(State(st): State<Estado>) -> impl IntoResponse {
-    let linhas: Vec<(i64, String, String, i16, String, String, Option<String>, Vec<u8>)> = sqlx::query_as(
+    // The most reported first: images go up at once (auto-approve), the
+    // players' reports bring the bad ones to the top.
+    let linhas: Vec<(i64, String, String, i16, String, String, Option<String>, Vec<u8>, i64)> = sqlx::query_as(
         "SELECT b.cla, c.nome, c.tag, b.estado, b.enviada_por, \
            to_char(to_timestamp(b.enviada) AT TIME ZONE 'America/Sao_Paulo', 'DD/MM HH24:MI'), \
-           b.revisada_por, b.pixels \
+           b.revisada_por, b.pixels, \
+           (SELECT count(*) FROM cla_bandeira_denuncias d WHERE d.cla = b.cla) AS n \
          FROM cla_bandeira_imagem b JOIN social_clas c ON c.id = b.cla \
-         ORDER BY (b.estado <> 1), b.enviada DESC LIMIT 100",
+         ORDER BY n DESC, b.enviada DESC LIMIT 100",
     )
     .fetch_all(&*st.pool)
     .await
     .unwrap_or_default();
     let v: Vec<serde_json::Value> = linhas
         .into_iter()
-        .map(|(cla, nome, tag, estado, por, quando, revisor, px)| {
+        .map(|(cla, nome, tag, estado, por, quando, revisor, px, n)| {
             serde_json::json!({
                 "cla": cla, "nome": nome, "tag": tag, "estado": estado,
                 "por": por, "quando": quando, "revisor": revisor,
-                "imagem": png_data_url(&px),
+                "imagem": png_data_url(&px), "denuncias": n,
             })
         })
         .collect();

@@ -587,9 +587,10 @@
 <div class="aba-painel" id="aba-bandeiras" hidden>
   <h2>Bandeiras de clã</h2>
   <p class="nota">
-    Imagens que líderes de clã enviaram pelo site. Só aparecem no jogo (mastro dos
-    navios, ilhota e mapa) depois de <b>aprovadas</b>; o jogo pega em até 30 s.
-    Recusada, o clã volta pra bandeira preset.
+    Imagens que líderes de clã enviaram pelo site. Entram no jogo na hora
+    (aprovação automática); jogadores <b>denunciam</b> na aba Reports do menu
+    Social, e as mais denunciadas aparecem primeiro. <b>Recusar</b> tira a
+    imagem do jogo em até 30 s (o clã volta pro preset); aprovar devolve.
   </p>
   <div id="bd-lista"></div>
 </div>
@@ -2331,7 +2332,7 @@ document.getElementById('ch-palavra-add').onclick = () => {
 };
 PUXA.chat = chCarrega;
 // ── bandeiras de clã ──────────────────────────────────────────────────
-const BD_ESTADO = { 1: 'pendente', 2: 'aprovada', 3: 'recusada' };
+const BD_ESTADO = { 1: 'pendente', 2: 'no ar', 3: 'recusada' };
 async function bdCarrega() {
   const d = await api('api/bandeiras'); if (!d) return;
   const el = document.getElementById('bd-lista');
@@ -2341,7 +2342,8 @@ async function bdCarrega() {
       <img src="${b.imagem}" width="144" height="96" style="image-rendering:pixelated;border:1px solid #777;background:#000">
       <div style="flex:1">
         <b>${b.tag ? '[' + esc(b.tag) + '] ' : ''}${esc(b.nome)}</b><br>
-        <span class="nota">enviada por ${esc(b.por)} em ${esc(b.quando)} · <b>${BD_ESTADO[b.estado] || b.estado}</b>${b.revisor ? ' por ' + esc(b.revisor) : ''}</span>
+        <span class="nota">enviada por ${esc(b.por)} em ${esc(b.quando)} · <b>${BD_ESTADO[b.estado] || b.estado}</b>${b.revisor ? ' por ' + esc(b.revisor) : ''}</span><br>
+        <span style="color:${b.denuncias ? '#f26b6b' : '#888'}"><b>${b.denuncias}</b> denúncia${b.denuncias === 1 ? '' : 's'}</span>
       </div>
       <button class="acao" onclick="bdAcao(${b.cla}, true)">aprovar</button>
       <button class="acao" onclick="bdAcao(${b.cla}, false)">recusar</button>

@@ -1,8 +1,9 @@
 //! CLAN FLAG UPLOAD (docs/TERRITORIOS.md): the game hands the clan leader a
 //! one-time code (`social::Pedido::CodigoBandeira`) and opens this page; the
 //! page sends a PNG or JPEG with the code; here it is cut to 3:2, reduced to
-//! `bandeira::LARG` × `ALT` RGBA and stored PENDING. It flies only after
-//! staff approve it in the Panopticon.
+//! `bandeira::LARG` × `ALT` RGBA and flies at once (owner, 21/11/2026:
+//! auto-approve); players report bad ones in the game's Reports tab and
+//! staff refuse them in the Panopticon.
 
 use axum::{
     extract::State,
@@ -13,7 +14,7 @@ use axum::{
 };
 use base64::Engine;
 use serde::Deserialize;
-use shared::bandeira::{ALT, IMAGEM_PENDENTE, LARG};
+use shared::bandeira::{ALT, IMAGEM_APROVADA, LARG};
 use sqlx::postgres::PgPool;
 use std::sync::Arc;
 
@@ -108,7 +109,7 @@ async fn enviar(State(st): State<Estado>, Json(e): Json<Envio>) -> impl IntoResp
     )
     .bind(cla)
     .bind(&pixels)
-    .bind(IMAGEM_PENDENTE as i16)
+    .bind(IMAGEM_APROVADA as i16)
     .bind(&nome)
     .execute(&*st.pool)
     .await;
@@ -116,7 +117,12 @@ async fn enviar(State(st): State<Estado>, Json(e): Json<Envio>) -> impl IntoResp
         tracing::error!("bandeira: db {err:?}");
         return erro(StatusCode::INTERNAL_SERVER_ERROR, "Server error, try again.");
     }
-    tracing::info!("bandeira: {nome} enviou imagem para o cla {cla} (pendente)");
+    // A new image starts with no reports (the old ones were about the old).
+    let _ = sqlx::query("DELETE FROM cla_bandeira_denuncias WHERE cla=$1")
+        .bind(cla)
+        .execute(&*st.pool)
+        .await;
+    tracing::info!("bandeira: {nome} enviou imagem para o cla {cla} (no ar; denúncias vão ao Panóptico)");
     (StatusCode::OK, Json(serde_json::json!({ "ok": true })))
 }
 

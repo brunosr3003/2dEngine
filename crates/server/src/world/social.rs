@@ -99,6 +99,7 @@ impl GameWorld {
                                 Pedido::ConvidarCla { .. } => "Clan invite sent.",
                                 Pedido::AdicionarListaNegra { .. } => "Added to your blacklist.",
                                 Pedido::RemoverListaNegra { .. } => "Removed from your blacklist.",
+                                Pedido::DenunciarBandeira { .. } => "Flag reported. Thank you: the Tempest team will review it.",
                                 _ => "Updated.",
                             }
                             .to_string()

@@ -41,6 +41,9 @@ pub async fn init(pool: &PgPool) -> Result<()> {
         // RGBA (the site reduces it); estado = bandeira::IMAGEM_* (1 pending,
         // 2 approved, 3 refused). Shown only once approved in the Panopticon.
         "CREATE TABLE IF NOT EXISTS cla_bandeira_imagem (cla BIGINT PRIMARY KEY REFERENCES social_clas(id) ON DELETE CASCADE, pixels BYTEA NOT NULL, estado SMALLINT NOT NULL, enviada BIGINT NOT NULL, enviada_por TEXT NOT NULL, revisada_por TEXT)",
+        // Reports on a clan's flag image (once per player per flag); the
+        // Panopticon sorts by them. A new upload clears them.
+        "CREATE TABLE IF NOT EXISTS cla_bandeira_denuncias (cla BIGINT NOT NULL REFERENCES social_clas(id) ON DELETE CASCADE, nome TEXT NOT NULL, quando BIGINT NOT NULL, PRIMARY KEY(cla,nome))",
         // One-time upload codes (the game asks, the site spends).
         "CREATE TABLE IF NOT EXISTS cla_bandeira_codigos (codigo TEXT PRIMARY KEY, cla BIGINT NOT NULL REFERENCES social_clas(id) ON DELETE CASCADE, nome TEXT NOT NULL, expira BIGINT NOT NULL)",
     ] {
@@ -576,6 +579,27 @@ pub async fn executar(pool: &PgPool, eu: &str, pedido: &Pedido) -> Result<()> {
                 bail!("That name is not on your blacklist.");
             }
         }
+        Pedido::DenunciarBandeira { cla } => {
+            if meu_cla(&mut tx, eu).await?.is_some_and(|(meu, _)| meu == *cla) {
+                bail!("That is your own clan's flag.");
+            }
+            let tem: bool = sqlx::query_scalar(
+                "SELECT EXISTS(SELECT 1 FROM cla_bandeira_imagem WHERE cla=$1 AND estado=2)",
+            )
+            .bind(cla)
+            .fetch_one(&mut *tx)
+            .await?;
+            if !tem {
+                bail!("That flag is no longer flying.");
+            }
+            sqlx::query(
+                "INSERT INTO cla_bandeira_denuncias(cla,nome,quando) VALUES($1,$2,extract(epoch from now())::bigint) ON CONFLICT DO NOTHING",
+            )
+            .bind(cla)
+            .bind(eu)
+            .execute(&mut *tx)
+            .await?;
+        }
         Pedido::CodigoBandeira => {
             let id = permitido(&mut tx, eu, AcaoCla::Tag, 0).await?;
             const LETRAS: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -798,11 +822,12 @@ pub async fn estado(pool: &PgPool, eu: &str) -> Result<Estado> {
             .map(|(n, _)| n.clone())
             .collect();
         let territorio = territorio_do_cla(&mut tx, id).await?;
-        let imagem_bandeira: Option<i16> =
-            sqlx::query_scalar("SELECT estado FROM cla_bandeira_imagem WHERE cla=$1")
+        let (imagem_bandeira, pixels): (Option<i16>, Option<Vec<u8>>) =
+            sqlx::query_as::<_, (i16, Vec<u8>)>("SELECT estado, pixels FROM cla_bandeira_imagem WHERE cla=$1")
                 .bind(id)
                 .fetch_optional(&mut *tx)
-                .await?;
+                .await?
+                .map_or((None, None), |(e, p)| (Some(e), Some(p)));
         e.codigo_bandeira = sqlx::query_scalar(
             "SELECT codigo FROM cla_bandeira_codigos WHERE nome=$1 AND cla=$2 AND expira > extract(epoch from now())::bigint",
         )
@@ -825,8 +850,29 @@ pub async fn estado(pool: &PgPool, eu: &str) -> Result<Estado> {
                 .map(|b| b as u32)
                 .unwrap_or_else(|| shared::bandeira::Bandeira::do_cla(id).empacota()),
             imagem_bandeira: imagem_bandeira.map_or(0, |e| e as u8),
+            imagem: pixels.filter(|_| imagem_bandeira == Some(shared::bandeira::IMAGEM_APROVADA as i16)),
         });
     }
+    // CLAN FLAGS: the custom images flying now, for the Reports tab.
+    let publicas: Vec<(i64, String, String, Vec<u8>, bool)> = sqlx::query_as(
+        "SELECT c.id, c.nome, c.tag, b.pixels, \
+           EXISTS(SELECT 1 FROM cla_bandeira_denuncias d WHERE d.cla=c.id AND d.nome=$1) \
+         FROM cla_bandeira_imagem b JOIN social_clas c ON c.id=b.cla \
+         WHERE b.estado=2 ORDER BY b.enviada DESC LIMIT 30",
+    )
+    .bind(eu)
+    .fetch_all(&mut *tx)
+    .await?;
+    e.bandeiras_publicas = publicas
+        .into_iter()
+        .map(|(cla_id, nome, tag, pixels, denunciei)| BandeiraPublica {
+            cla_id,
+            nome,
+            tag,
+            pixels,
+            denunciei,
+        })
+        .collect();
     e.contatos = contatos(&mut tx, &e).await?;
     e.lista_negra = lista_negra(&mut tx, eu).await?;
     e.matadores = sqlx::query_as::<_, (i64, String)>(
@@ -1507,6 +1553,18 @@ mod tests {
         sqlx::query("UPDATE cla_bandeira_imagem SET estado=2 WHERE cla=$1").bind(cla).execute(p).await?;
         assert!(bandeiras(p).await?.iter().any(|b| b.cla_id == cla && b.imagem.as_deref() == Some(&px[..])));
         assert_eq!(estado(p, "Fabi").await?.cla.unwrap().imagem_bandeira, shared::bandeira::IMAGEM_APROVADA);
+        assert_eq!(estado(p, "Fabi").await?.cla.unwrap().imagem.as_deref(), Some(&px[..]), "the panel gets the image");
+        // REPORTS: not one's own clan; once per player; the Reports tab marks it.
+        assert!(executar(p, "M1", &Pedido::DenunciarBandeira { cla }).await.is_err(), "own clan");
+        assert!(estado(p, "Dani").await?.bandeiras_publicas.iter().any(|b| b.cla_id == cla && !b.denunciei));
+        executar(p, "Dani", &Pedido::DenunciarBandeira { cla }).await?;
+        executar(p, "Dani", &Pedido::DenunciarBandeira { cla }).await?;
+        let n: i64 = sqlx::query_scalar("SELECT count(*) FROM cla_bandeira_denuncias WHERE cla=$1")
+            .bind(cla)
+            .fetch_one(p)
+            .await?;
+        assert_eq!(n, 1, "once per player");
+        assert!(estado(p, "Dani").await?.bandeiras_publicas.iter().any(|b| b.cla_id == cla && b.denunciei));
         // Dissolving frees it.
         executar(p, "Eva", &Pedido::DissolverCla).await?;
         assert!(territorios(p).await?.is_empty());
