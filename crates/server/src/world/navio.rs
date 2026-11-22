@@ -208,6 +208,7 @@ impl GameWorld {
             PedidoNavio::Desembarcar => self.desembarcar(sid),
             PedidoNavio::VoltarAoNavio => self.voltar_do_desembarque(sid),
             PedidoNavio::ReivindicarIlhota => self.reivindicar_ilhota(sid),
+            PedidoNavio::MelhorarIlha { trilha } => self.melhorar_ilha(sid, trilha),
         }
     }
 

@@ -93,6 +93,16 @@ pub enum IncomingMessage {
         /// The clan's name, or why not.
         resultado: Result<String, String>,
     },
+    /// TERRITORIES phase 4: an upgrade's outcome (what was paid, to refund
+    /// on an error).
+    IlhaMelhorada {
+        sid: SessionId,
+        ilhota: u8,
+        trilha: usize,
+        para: u8,
+        pago: (Vec<(u16, u32)>, u64),
+        resultado: Result<(), String>,
+    },
     CorreioEntrega(crate::correio_admin::Entrega),
     CorreioFim {
         sid: SessionId,
@@ -3183,6 +3193,8 @@ pub struct GameWorld {
     pub(crate) tomadas: HashMap<u8, territorios::Tomada>,
     /// CLAN FLAGS: every clan's flag (clan id -> flag), loaded at sea.
     pub(crate) bandeiras: HashMap<i64, shared::bandeira::BandeiraDoCla>,
+    /// TERRITORIES phase 4: each held islet's Governor and Farmer entities.
+    pub(crate) npcs_das_ilhotas: HashMap<u8, [hecs::Entity; 2]>,
     /// Open direct trades, one entry per side (`world/troca.rs`).
     pub(crate) trocas: HashMap<SessionId, troca::Mesa>,
     /// Pending trade invites: invited -> (who invited, until sim_time_s).
@@ -3701,6 +3713,7 @@ impl GameWorld {
             territorios: HashMap::new(),
             tomadas: HashMap::new(),
             bandeiras: HashMap::new(),
+            npcs_das_ilhotas: HashMap::new(),
             trocas: HashMap::new(),
             troca_convites: HashMap::new(),
             enemy_spawn_timer: 0.0,
@@ -3903,6 +3916,7 @@ impl GameWorld {
             territorios: HashMap::new(),
             tomadas: HashMap::new(),
             bandeiras: HashMap::new(),
+            npcs_das_ilhotas: HashMap::new(),
             trocas: HashMap::new(),
             troca_convites: HashMap::new(),
             enemy_spawn_timer: 0.0,

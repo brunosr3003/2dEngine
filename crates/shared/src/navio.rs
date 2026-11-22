@@ -1766,6 +1766,9 @@ pub enum PedidoNavio {
     /// TERRITORIES (phase 3): claim the free islet I stand on, at its
     /// centre, for my clan (leader or officer). Appended.
     ReivindicarIlhota,
+    /// TERRITORIES (phase 4): raise track `trilha` (`territorio::trilha`) of
+    /// my clan's islet, standing by its Governor or Farmer. Appended.
+    MelhorarIlha { trilha: u8 },
 }
 
 /// The ship's state, for the Captain's buttons and the hull bar.

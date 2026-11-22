@@ -1597,6 +1597,8 @@ pub fn rig_do_npc(papel: u8, id: u64) -> &'static str {
         p if p == P::Motorista as u8 => "npcs/motorista",
         p if p == P::Submarino as u8 => "npcs/capitao",
         p if p == P::Prime as u8 => "npcs/mercador",
+        p if p == P::Governador as u8 => "npcs/mestre_missoes",
+        p if p == P::Fazendeiro as u8 => "npcs/estivador",
         _ => ALDEOES[(id % ALDEOES.len() as u64) as usize],
     }
 }

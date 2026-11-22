@@ -41,6 +41,7 @@ impl GameWorld {
                 });
             }
         }
+        self.manter_npcs_das_ilhotas();
         let lista = self.lista_de_territorios();
         for s in self.sessions.values_mut() {
             if s.logged_in && !s.territorios_enviados {
@@ -301,6 +302,7 @@ impl GameWorld {
                     cla_id: t.cla_id,
                     tag: t.tag,
                     cla: t.cla,
+                    niveis: shared::territorio::NIVEIS_INICIAIS,
                 }),
             );
             return;
@@ -364,6 +366,188 @@ impl GameWorld {
                 self.avisar_territorios();
             }
             Err(e) => self.avisa_missao(sid, e),
+        }
+    }
+
+    // ─────────────────── phase 4: Governor, Farmer, upgrades ───────────────────
+
+    /// Every held islet has its Governor and Farmer at the heart; a freed
+    /// islet loses them.
+    fn manter_npcs_das_ilhotas(&mut self) {
+        use shared::construcao::Papel;
+        let fora: Vec<u8> = self
+            .npcs_das_ilhotas
+            .keys()
+            .copied()
+            .filter(|k| !self.territorios.contains_key(k))
+            .collect();
+        for k in fora {
+            if let Some(es) = self.npcs_das_ilhotas.remove(&k) {
+                for e in es {
+                    if let Ok(n) = self.ecs.get::<&NetId>(e).map(|n| n.0) {
+                        self.removed_this_tick.push(n);
+                    }
+                    let _ = self.ecs.despawn(e);
+                }
+            }
+        }
+        let novas: Vec<u8> = self
+            .territorios
+            .keys()
+            .copied()
+            .filter(|k| !self.npcs_das_ilhotas.contains_key(k))
+            .collect();
+        for k in novas {
+            let Some(ilha) = shared::mar::ilhotas().get(k as usize) else {
+                continue;
+            };
+            let mut es = Vec::new();
+            for (papel, pos) in [
+                (Papel::Governador, shared::territorio::pos_do_governador(ilha.centro)),
+                (Papel::Fazendeiro, shared::territorio::pos_do_fazendeiro(ilha.centro)),
+            ] {
+                let eid = self.alloc_entity_id();
+                // Facing out from the heart.
+                let olha = (pos - ilha.centro).normalize_or_zero();
+                let yaw = olha.x.atan2(olha.y);
+                es.push(self.ecs.spawn((
+                    NetId(eid),
+                    Position(pos),
+                    EntityKind::Npc(9),
+                    NpcDaVilaTag {
+                        nome: papel.nome().into(),
+                        rumo: shared::npc_kind(Some(yaw), papel as u8),
+                        giver: None,
+                    },
+                )));
+            }
+            self.npcs_das_ilhotas.insert(k, [es[0], es[1]]);
+        }
+    }
+
+    /// RAISE a track of my clan's islet (`PedidoNavio::MelhorarIlha`):
+    /// ashore, by the right NPC (Governor for the village and defences,
+    /// Farmer for the resources), under the cap, paying materials and gold
+    /// from my bag; the database writes it (and a refusal refunds).
+    pub(crate) fn melhorar_ilha(&mut self, sid: SessionId, trilha: u8) {
+        use shared::territorio as tr;
+        let t = trilha as usize;
+        if t >= tr::N_TRILHAS {
+            return;
+        }
+        let Some(s) = self.sessions.get(&sid) else {
+            return;
+        };
+        let Some(k) = s.em_terra.map(|e| e.ilhota) else {
+            return;
+        };
+        let Some(dono) = self.territorios.get(&k).cloned() else {
+            self.avisa_missao(sid, "This islet belongs to no clan.".into());
+            return;
+        };
+        if dono.cla_id != s.cla_id || s.cla_id == 0 {
+            self.avisa_missao(sid, "Only the clan that holds this islet can upgrade it.".into());
+            return;
+        }
+        let Some(ilha) = shared::mar::ilhotas().get(k as usize) else {
+            return;
+        };
+        let npc = if tr::do_governador(t) {
+            tr::pos_do_governador(ilha.centro)
+        } else {
+            tr::pos_do_fazendeiro(ilha.centro)
+        };
+        let perto = s
+            .entity
+            .and_then(|e| self.ecs.get::<&Position>(e).ok().map(|p| p.0))
+            .is_some_and(|p| p.distance(npc) <= tr::ALCANCE_DO_NPC + 1.0);
+        if !perto {
+            return;
+        }
+        let atual = dono.niveis[t];
+        let para = atual + 1;
+        if para > tr::teto(t, ilha.porte, dono.niveis[tr::trilha::VILA]) {
+            self.avisa_missao(sid, "That is as high as it goes for now.".into());
+            return;
+        }
+        let (mats, ouro) = tr::custo(t, para);
+        let falta = s.gold < ouro
+            || mats
+                .iter()
+                .any(|(item, q)| crate::craft::tem(&s.inventory, *item) < *q);
+        if falta {
+            self.avisa_missao(sid, "Not enough materials or gold for this upgrade.".into());
+            return;
+        }
+        let s = self.sessions.get_mut(&sid).unwrap();
+        s.gold -= ouro;
+        for (item, q) in &mats {
+            crate::craft::consumir(&mut s.inventory, *item, *q);
+        }
+        s.inventory_dirty = true;
+        self.save_pending = true;
+        let nome = self.nome_de(sid);
+        let pago = (mats, ouro);
+        let Some(ctx) = self.auth_ctx.clone() else {
+            // No database (tests).
+            self.on_ilha_melhorada(sid, k, t, para, pago, Ok(()));
+            return;
+        };
+        tokio::spawn(async move {
+            let resultado = crate::social::melhorar_ilha(&ctx.pool, &nome, k, t, para)
+                .await
+                .map_err(|e| e.to_string());
+            let _ = ctx.tx.send(IncomingMessage::IlhaMelhorada {
+                sid,
+                ilhota: k,
+                trilha: t,
+                para,
+                pago,
+                resultado,
+            });
+        });
+    }
+
+    /// The database's answer to an upgrade: the new level for everyone at
+    /// sea, or the payment back.
+    pub fn on_ilha_melhorada(
+        &mut self,
+        sid: SessionId,
+        ilhota: u8,
+        trilha: usize,
+        para: u8,
+        pago: (Vec<(u16, u32)>, u64),
+        resultado: Result<(), String>,
+    ) {
+        use shared::territorio as tr;
+        match resultado {
+            Ok(()) => {
+                if let Some(d) = self.territorios.get_mut(&ilhota) {
+                    d.niveis[trilha] = para;
+                }
+                let nome = tr::NOMES_DAS_TRILHAS[trilha];
+                let texto = if trilha == tr::trilha::VILA {
+                    format!(
+                        "The islet grew into a {}.",
+                        tr::NOMES_DA_VILA[(para as usize).clamp(1, 4) - 1]
+                    )
+                } else {
+                    format!("{nome} upgraded to level {para}.")
+                };
+                self.send_chat_to(sid, &texto);
+                self.avisar_territorios();
+            }
+            Err(e) => {
+                if let Some(s) = self.sessions.get_mut(&sid) {
+                    s.gold += pago.1;
+                    for (item, q) in pago.0 {
+                        crate::world::add_to_inventory(&mut s.inventory, item, q, None);
+                    }
+                    s.inventory_dirty = true;
+                }
+                self.save_pending = true;
+                self.avisa_missao(sid, e);
+            }
         }
     }
 }

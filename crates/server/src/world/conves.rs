@@ -1705,6 +1705,7 @@ mod testes {
             cla_id,
             tag: "X".into(),
             cla: "X".into(),
+            niveis: shared::territorio::NIVEIS_INICIAIS,
         };
         w.territorios.insert(0, dono(0, 9));
         assert!(w.pode_reivindicar(sid).is_err(), "held by another clan");
@@ -1718,6 +1719,7 @@ mod testes {
             cla_id: 7,
             tag: "MAR".into(),
             cla: "Mares".into(),
+            niveis: shared::territorio::NIVEIS_INICIAIS,
         };
         w.on_reivindicacao(sid, Ok(novo.clone()));
         assert_eq!(w.territorios.get(&0), Some(&novo));
@@ -1842,6 +1844,66 @@ mod testes {
         w.tick_tomadas(shared::TICK_DT);
         assert!(!w.tomadas.contains_key(&0), "cancelled");
         assert!(w.territorios.is_empty());
+    }
+
+    /// PHASE 4: the Governor and the Farmer stand on a held islet (and go
+    /// when it is freed); upgrades are paid by the right NPC, under the cap.
+    #[test]
+    fn governador_e_fazendeiro_melhoram_a_ilha() {
+        use shared::territorio::{self as tr, trilha};
+        let (mut w, sid, _rx) = mundo();
+        w.step(shared::TICK_DT);
+        let ilha = &shared::mar::ilhotas()[0];
+        {
+            let s = w.sessions.get_mut(&sid).unwrap();
+            s.cla_id = 7;
+            s.cla_tag = "MAR".into();
+            s.conves = None;
+            s.em_terra = Some(EmTerra { ilhota: 0, navio: None });
+            s.gold = 100_000_000;
+        }
+        w.territorios.insert(
+            0,
+            tr::Dono { ilhota: 0, cla_id: 7, tag: "MAR".into(), cla: "Mares".into(), niveis: tr::NIVEIS_INICIAIS },
+        );
+        w.step(shared::TICK_DT);
+        assert!(w.npcs_das_ilhotas.contains_key(&0), "the NPCs stand there");
+        let corpo_e = w.sessions[&sid].entity.unwrap();
+        let por = |w: &mut GameWorld, p: Vec2| w.ecs.get::<&mut Position>(corpo_e).unwrap().0 = p;
+        let dar = |w: &mut GameWorld, t: usize, n: u8| {
+            for (item, q) in tr::custo(t, n).0 {
+                let s = w.sessions.get_mut(&sid).unwrap();
+                s.inventory.push(shared::InventorySlot { item_id: item, qty: q, instance: None });
+            }
+        };
+        // Away from the Governor: nothing.
+        por(&mut w, ilha.centro + Vec2::new(0.0, 15.0));
+        dar(&mut w, trilha::VILA, 2);
+        w.handle_navio(sid, PedidoNavio::MelhorarIlha { trilha: trilha::VILA as u8 });
+        assert_eq!(w.territorios[&0].niveis[trilha::VILA], 1);
+        // By the Governor: the village grows, paid.
+        por(&mut w, tr::pos_do_governador(ilha.centro));
+        let ouro = w.sessions[&sid].gold;
+        w.handle_navio(sid, PedidoNavio::MelhorarIlha { trilha: trilha::VILA as u8 });
+        assert_eq!(w.territorios[&0].niveis[trilha::VILA], 2);
+        assert_eq!(w.sessions[&sid].gold, ouro - tr::ouro_da_vila(2));
+        // Walls now have a cap; without materials it is refused, with them it rises.
+        w.handle_navio(sid, PedidoNavio::MelhorarIlha { trilha: trilha::MUROS as u8 });
+        assert_eq!(w.territorios[&0].niveis[trilha::MUROS], 0, "no materials");
+        dar(&mut w, trilha::MUROS, 1);
+        w.handle_navio(sid, PedidoNavio::MelhorarIlha { trilha: trilha::MUROS as u8 });
+        assert_eq!(w.territorios[&0].niveis[trilha::MUROS], 1);
+        // A Farmer's track at the Governor: nothing; at the Farmer: yes.
+        dar(&mut w, trilha::MADEIRA, 1);
+        w.handle_navio(sid, PedidoNavio::MelhorarIlha { trilha: trilha::MADEIRA as u8 });
+        assert_eq!(w.territorios[&0].niveis[trilha::MADEIRA], 0);
+        por(&mut w, tr::pos_do_fazendeiro(ilha.centro));
+        w.handle_navio(sid, PedidoNavio::MelhorarIlha { trilha: trilha::MADEIRA as u8 });
+        assert_eq!(w.territorios[&0].niveis[trilha::MADEIRA], 1);
+        // Freed: the NPCs go.
+        w.territorios.clear();
+        w.step(shared::TICK_DT);
+        assert!(w.npcs_das_ilhotas.is_empty());
     }
 
     /// THE COAST'S PUSH (owner, 20/11/2026): a hull with its bow buried in

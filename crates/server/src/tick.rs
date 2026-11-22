@@ -160,6 +160,9 @@ pub async fn run_world_loop(
                 Ok(IncomingMessage::TomadaAutorizada { sid, ilhota, resultado }) => {
                     world.on_tomada_autorizada(sid, ilhota, resultado)
                 }
+                Ok(IncomingMessage::IlhaMelhorada { sid, ilhota, trilha, para, pago, resultado }) => {
+                    world.on_ilha_melhorada(sid, ilhota, trilha, para, pago, resultado)
+                }
                 Ok(IncomingMessage::CorreioEntrega(e)) => world.on_correio_entrega(e),
                 Ok(IncomingMessage::CorreioFim { sid, nome, texto }) => {
                     world.on_correio_fim(sid, nome, texto)
@@ -212,6 +215,9 @@ pub async fn run_world_loop(
                 }
                 Ok(IncomingMessage::TomadaAutorizada { sid, ilhota, resultado }) => {
                     world.on_tomada_autorizada(sid, ilhota, resultado)
+                }
+                Ok(IncomingMessage::IlhaMelhorada { sid, ilhota, trilha, para, pago, resultado }) => {
+                    world.on_ilha_melhorada(sid, ilhota, trilha, para, pago, resultado)
                 }
                 Ok(IncomingMessage::CorreioEntrega(e)) => world.on_correio_entrega(e),
                 Ok(IncomingMessage::CorreioFim { sid, nome, texto }) => {

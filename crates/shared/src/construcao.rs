@@ -378,6 +378,11 @@ pub enum Papel {
     /// and Energy for gold at the market price plus a markup. In every town
     /// square. Last, so every other role keeps its number on the wire.
     Prime,
+    /// TERRITORIES (docs/TERRITORIOS.md, phase 4): a held islet's GOVERNOR,
+    /// at its heart: upgrades the village and its defences. Appended.
+    Governador,
+    /// TERRITORIES: a held islet's FARMER: upgrades its resources. Appended.
+    Fazendeiro,
 }
 
 impl Papel {
@@ -452,6 +457,8 @@ impl Papel {
             Motorista => "Sky Bus Professor",
             Submarino => "Submarine Captain",
             Prime => "Prime Merchant",
+            Governador => "Governor",
+            Fazendeiro => "Farmer",
         }
     }
 }

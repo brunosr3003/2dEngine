@@ -138,6 +138,7 @@ mod diarias;
 mod economia;
 mod escolha_npc;
 mod estaleiro_ui;
+mod ilha_ui;
 mod eventos_ui;
 mod filme;
 mod filme_luta;
@@ -540,6 +541,8 @@ struct Jogo {
     viagem: viagem_ui::ViagemUi,
     /// The Shipyard of the dock NPCs (ships only, 17/11/2026).
     estaleiro: estaleiro_ui::EstaleiroUi,
+    /// TERRITORIES phase 4: the Governor's and the Farmer's panels.
+    ilha_ui: ilha_ui::IlhaUi,
     estaleiro_pendente: Option<shared::navio::EstadoNavio>,
     /// The town's Island Portal: walk-in, banner, label.
     portal: portal_ilhas_ui::PortalUi,
@@ -1192,6 +1195,7 @@ async fn main() {
         billing_recuperado: false,
         viagem: viagem_ui::ViagemUi::default(),
         estaleiro: estaleiro_ui::EstaleiroUi::default(),
+        ilha_ui: ilha_ui::IlhaUi::default(),
         estaleiro_pendente: None,
         portal: portal_ilhas_ui::PortalUi::default(),
         colonia: colonia_ui::ColoniaUi::default(),
@@ -8498,6 +8502,7 @@ impl Jogo {
                 self.envia(ClientMessage::Navio { pedido });
             }
             mar_ui::faixa_da_tomada(&self.world);
+            self.ilha_ui.pilula(&z, &self.world);
             let bonus = self
                 .arvore_ui
                 .estado
@@ -9304,6 +9309,15 @@ impl Jogo {
         match self.viagem.desenha(false) {
             Some(viagem_ui::Escolha::Ilha(ilha)) => self.envia(ClientMessage::Viajar { ilha }),
             Some(viagem_ui::Escolha::MinhaIlha) | None => {}
+        }
+        // TERRITORIES phase 4: the Governor's / Farmer's panel.
+        let pedido_ilha = {
+            let bolsa = &self.bolsa;
+            let conta = |id: u16| bolsa.moeda(id);
+            self.ilha_ui.desenha(&conta, bolsa.ouro)
+        };
+        if let Some(pedido) = pedido_ilha {
+            self.envia(ClientMessage::Navio { pedido });
         }
         // THE SHIPYARD (dock NPCs, 17/11/2026).
         let escolha_estaleiro = {

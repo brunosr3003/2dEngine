@@ -37,6 +37,9 @@ pub async fn init(pool: &PgPool) -> Result<()> {
         // CLAN FLAGS: the preset (`bandeira::Bandeira` packed); NULL = the
         // clan's default (`Bandeira::do_cla`). Read as Option, never NOT NULL.
         "ALTER TABLE social_clas ADD COLUMN IF NOT EXISTS bandeira INTEGER",
+        // TERRITORIES phase 4: every upgrade track's level (`territorio::
+        // trilha`), Postgres arrays are 1-based (niveis[1] = the village).
+        "ALTER TABLE territorios ADD COLUMN IF NOT EXISTS niveis SMALLINT[] NOT NULL DEFAULT '{1,0,0,0,0,0,0,0}'",
         // CLAN FLAGS, the uploaded image: one per clan, already LARG x ALT
         // RGBA (the site reduces it); estado = bandeira::IMAGEM_* (1 pending,
         // 2 approved, 3 refused). Shown only once approved in the Panopticon.
@@ -673,18 +676,19 @@ pub async fn bandeiras(pool: &PgPool) -> Result<Vec<shared::bandeira::BandeiraDo
 
 /// TERRITORIES: every held islet, with its clan's tag and name.
 pub async fn territorios(pool: &PgPool) -> Result<Vec<shared::territorio::Dono>> {
-    let linhas: Vec<(i16, i64, String, String)> = sqlx::query_as(
-        "SELECT t.ilhota, c.id, c.tag, c.nome FROM territorios t JOIN social_clas c ON c.id=t.cla ORDER BY t.ilhota",
+    let linhas: Vec<(i16, i64, String, String, Vec<i16>)> = sqlx::query_as(
+        "SELECT t.ilhota, c.id, c.tag, c.nome, t.niveis FROM territorios t JOIN social_clas c ON c.id=t.cla ORDER BY t.ilhota",
     )
     .fetch_all(pool)
     .await?;
     Ok(linhas
         .into_iter()
-        .map(|(i, cla_id, tag, cla)| shared::territorio::Dono {
+        .map(|(i, cla_id, tag, cla, niveis)| shared::territorio::Dono {
             ilhota: i as u8,
             cla_id,
             tag,
             cla,
+            niveis: niveis_de(&niveis),
         })
         .collect())
 }
@@ -767,7 +771,52 @@ pub async fn reivindicar(pool: &PgPool, eu: &str, ilhota: u8) -> Result<shared::
         cla_id: cla,
         tag,
         cla: nome,
+        niveis: shared::territorio::NIVEIS_INICIAIS,
     })
+}
+
+/// The database's levels column into the fixed array (missing = initial).
+fn niveis_de(v: &[i16]) -> [u8; shared::territorio::N_TRILHAS] {
+    let mut n = shared::territorio::NIVEIS_INICIAIS;
+    for (k, x) in v.iter().take(n.len()).enumerate() {
+        n[k] = (*x).clamp(0, 10) as u8;
+    }
+    n
+}
+
+/// TERRITORIES (phase 4): raise track `trilha` of islet `ilhota` to level
+/// `para`. Leader or officer of the clan that holds it; the level must be
+/// exactly the next one (two upgrades at once cannot both land). The sea
+/// already took the materials and gold (and refunds on an error here).
+pub async fn melhorar_ilha(pool: &PgPool, eu: &str, ilhota: u8, trilha: usize, para: u8) -> Result<()> {
+    let mut tx = pool.begin().await?;
+    let Some((cla, lider)) = meu_cla(&mut tx, eu).await? else {
+        bail!("You have no clan.");
+    };
+    let cargo_meu: Option<i16> =
+        sqlx::query_scalar("SELECT cargo FROM social_membros WHERE nome=$1")
+            .bind(eu)
+            .fetch_optional(&mut *tx)
+            .await?;
+    if lider != eu && cargo_meu != Some(cargo::OFICIAL as i16) {
+        bail!("Only the clan leader or an officer can upgrade the islet.");
+    }
+    let feito = sqlx::query(
+        "UPDATE territorios SET niveis[$1] = $2 WHERE ilhota=$3 AND cla=$4 AND niveis[$1] = $5",
+    )
+    .bind(trilha as i32 + 1)
+    .bind(para as i16)
+    .bind(ilhota as i16)
+    .bind(cla)
+    .bind(para as i16 - 1)
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
+    if feito == 0 {
+        bail!("The islet changed meanwhile: try again.");
+    }
+    tx.commit().await?;
+    Ok(())
 }
 
 pub async fn estado(pool: &PgPool, eu: &str) -> Result<Estado> {
@@ -1520,6 +1569,15 @@ mod tests {
         // With an islet the clan grows: M9's invite is still there.
         executar(p, "M9", &Pedido::ResponderCla { id, aceitar: true }).await?;
         assert_eq!(estado(p, "Eva").await?.cla.unwrap().membros.len(), 11);
+        // PHASE 4: upgrades — the next level only, leader or officer.
+        assert_eq!(territorios(p).await?[0].niveis, shared::territorio::NIVEIS_INICIAIS);
+        melhorar_ilha(p, "Eva", 3, shared::territorio::trilha::VILA, 2).await?;
+        assert!(melhorar_ilha(p, "Eva", 3, shared::territorio::trilha::VILA, 2).await.is_err(), "not twice");
+        assert!(melhorar_ilha(p, "Eva", 3, shared::territorio::trilha::MUROS, 2).await.is_err(), "no skipping");
+        assert!(melhorar_ilha(p, "M1", 3, shared::territorio::trilha::MUROS, 1).await.is_err(), "a member cannot");
+        melhorar_ilha(p, "Eva", 3, shared::territorio::trilha::MUROS, 1).await?;
+        let n = territorios(p).await?[0].niveis;
+        assert_eq!((n[0], n[1]), (2, 1));
         // Another clan cannot take a held islet.
         executar(p, "Gil", &Pedido::CriarCla { nome: "Outros".into(), tag: "OUT".into() }).await?;
         assert!(reivindicar(p, "Gil", 3).await.is_err(), "the islet is held");
