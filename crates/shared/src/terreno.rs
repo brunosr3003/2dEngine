@@ -1370,8 +1370,18 @@ pub fn arvore_da_coluna(
     agua: bool,
 ) -> Option<ArvorePlantada> {
     // NADA NA PONTE da Ilha Magica: ela e' estreita e um tronco a fecha.
-    // Nothing grows on the sea's silhouettes either.
-    if ger.e_mar() || ger.na_ponte_magica(bx, bz) {
+    // At sea only the territory islets' tree plots grow (`mar::lote_da_coluna`).
+    if ger.e_mar() {
+        return crate::mar::lote_da_coluna(bx, bz)
+            .filter(|l| l.tipo == 0)
+            .map(|l| ArvorePlantada {
+                especie: if l.feitio == crate::mar::Feitio::Ermo { Arvore::Pinheiro } else { Arvore::Copada },
+                centro: l.centro,
+                porte: 1.0,
+                variante: l.variante,
+            });
+    }
+    if ger.na_ponte_magica(bx, bz) {
         return None;
     }
     // Kōgen-tō: only in the parks (`kogen::so_no_parque`).
@@ -1684,9 +1694,22 @@ pub fn minerio_da_coluna(
     agua: bool,
 ) -> Option<Minerio> {
     if ger.e_mar() {
-        return None;
+        return lote_de_minerio(bx, bz, false);
     }
     recurso_montanha_da_coluna(bioma, bx, bz, topo, ger, agua, false)
+}
+
+/// At sea: a territory islet's rock (or Energy) plot, as a `Minerio`.
+fn lote_de_minerio(bx: i32, bz: i32, energia: bool) -> Option<Minerio> {
+    crate::mar::lote_da_coluna(bx, bz)
+        .filter(|l| l.tipo == if energia { 2 } else { 1 })
+        .map(|l| Minerio {
+            centro: l.centro,
+            tier: if energia { 1 } else { l.tier },
+            porte: 1.0,
+            variante: l.variante,
+            energia,
+        })
 }
 
 /// Fração do pico a partir da qual a Energia nasce. Bem mais baixa que a do
@@ -1753,7 +1776,7 @@ pub fn energia_da_coluna(
     agua: bool,
 ) -> Option<Minerio> {
     if ger.e_mar() {
-        return None;
+        return lote_de_minerio(bx, bz, true);
     }
     recurso_montanha_da_coluna(bioma, bx, bz, topo, ger, agua, true)
 }
@@ -2024,7 +2047,11 @@ pub fn estorvos_da_coluna(
                 coluna,
             });
         }
-        return;
+        // The territory islets' plots (trees, rocks, Energy) go on through
+        // the land path below: `arvore_da_coluna` and friends answer them.
+        if crate::mar::lote_da_coluna(bx, bz).is_none() {
+            return;
+        }
     }
     // A ARENA NÃO TEM MAIS EXCEÇÃO AQUI, e a que havia era um defeito.
     //

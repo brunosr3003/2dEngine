@@ -2073,6 +2073,24 @@ mod testes {
         let _ = depois;
     }
 
+    /// PHASE 4.6: on a held islet the Farmer's level raises the yield and
+    /// a tenth goes to the bank (here: off the gatherer's share); on a free
+    /// islet nothing changes.
+    #[test]
+    fn a_coleta_na_ilhota_rende_mais_e_paga_a_taxa() {
+        use shared::territorio::{self as tr, trilha};
+        let (mut w, _sid, _rx) = mundo();
+        let mut drops = vec![(shared::item_id::WOOD_T1, 100u32)];
+        w.recurso_da_ilhota(2, 0, &mut drops);
+        assert_eq!(drops[0].1, 100, "free islet: untouched");
+        let mut niveis = tr::NIVEIS_INICIAIS;
+        niveis[trilha::MADEIRA] = 2;
+        w.territorios.insert(2, tr::Dono { ilhota: 2, cla_id: 7, tag: "MAR".into(), cla: "Mares".into(), niveis });
+        let mut drops = vec![(shared::item_id::WOOD_T1, 100u32)];
+        w.recurso_da_ilhota(2, 0, &mut drops);
+        assert_eq!(drops[0].1, 135, "x1.5 then minus a tenth");
+    }
+
     /// THE COAST'S PUSH (owner, 20/11/2026): a hull with its bow buried in
     /// an islet's beach eases back out until its whole outline floats.
     #[test]

@@ -2681,6 +2681,10 @@ pub const VERBETES: &[(&str, &str)] = &[
     ("Territory: {n}", "Território: {n}"),
     ("Nomad clan", "Clã nômade"),
     // ilha_ui.rs — Governador e Fazendeiro (fase 4)
+    ("Plunder bank", "Saquear o banco"),
+    ("Clan bank", "Banco do clã"),
+    ("Empty. A tenth of what anyone gathers on your islet lands here.", "Vazio. Um décimo do que qualquer um coleta na sua ilhota cai aqui."),
+    ("Tap an item to take up to 1,000 (by mail).", "Toque num item para retirar até 1.000 (pelo correio)."),
     ("Governor", "Governador"),
     ("Farmer", "Fazendeiro"),
     ("Walls", "Muros"),

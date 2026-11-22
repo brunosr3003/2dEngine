@@ -88,6 +88,9 @@ impl GameWorld {
             }
         }
         self.manter_npcs_das_ilhotas();
+        // A closed siege forgets who plundered (the next one starts clean).
+        let cercos = &self.cercos_abertos;
+        self.saques_do_cerco.retain(|(k, _)| cercos.contains(k));
         self.manter_estruturas();
         self.manter_defensores();
         self.tick_canhoes_das_ilhas();
@@ -1000,6 +1003,104 @@ impl GameWorld {
             if onde.is_some_and(|p| p.distance(b.mira) <= shared::navio::RAIO_DO_CASCO + 3.0) {
                 self.dano_no_casco(b.alvo, b.dano, None);
             }
+        }
+    }
+
+    // ─────────────────── phase 4.6: the islet's resources ───────────────────
+
+    /// A gather on islet `k` of a node of `tier` (0 tree, 1..4 rock): on a
+    /// held islet the Farmer's level of that resource raises the yield
+    /// (+25% a level), and a tenth of it goes to the holder's clan bank.
+    pub(crate) fn recurso_da_ilhota(&mut self, k: u8, tier: u8, drops: &mut [(u16, u32)]) {
+        use shared::territorio as tr;
+        let Some(dono) = self.territorios.get(&k) else {
+            return;
+        };
+        let trilha = match tier {
+            0 => tr::trilha::MADEIRA,
+            5 => tr::trilha::ENERGIA,
+            _ => tr::trilha::PEDRA,
+        };
+        let mult = 1.0 + 0.25 * dono.niveis[trilha] as f32;
+        let cla = dono.cla_id;
+        let mut taxa: Vec<(u16, u32)> = Vec::new();
+        for (item, qtd) in drops.iter_mut() {
+            let bruto = *qtd as f32 * mult;
+            let total = bruto.floor() as u32 + u32::from(fastrand::f32() < bruto.fract());
+            let t = total / 10 + u32::from(fastrand::u32(0..10) < total % 10);
+            *qtd = total - t;
+            if t > 0 {
+                taxa.push((*item, t));
+            }
+        }
+        if taxa.is_empty() {
+            return;
+        }
+        let Some(ctx) = self.auth_ctx.clone() else {
+            return;
+        };
+        tokio::spawn(async move {
+            if let Err(e) = crate::social::depositar_no_banco(&ctx.pool, cla, &taxa).await {
+                tracing::warn!("banco do cla: falha ao depositar a taxa: {e:#}");
+            }
+        });
+    }
+
+    /// PLUNDER (`PedidoNavio::SaquearBanco`): an outsider by an enemy islet's
+    /// Governor, in its siege window, loots a tenth of the clan's biggest
+    /// stacks — by mail, once per siege.
+    pub(crate) fn saquear_banco_da_ilha(&mut self, sid: SessionId) {
+        use shared::territorio as tr;
+        let Some(s) = self.sessions.get(&sid) else {
+            return;
+        };
+        let Some(k) = s.em_terra.map(|e| e.ilhota) else {
+            return;
+        };
+        let Some(dono) = self.territorios.get(&k).cloned() else {
+            return;
+        };
+        if s.cla_id == dono.cla_id && s.cla_id != 0 {
+            return;
+        }
+        if !self.cercos_abertos.contains(&k) {
+            self.avisa_missao(sid, "The bank can only be plundered during a siege.".into());
+            return;
+        }
+        let Some(ilha) = shared::mar::ilhotas().get(k as usize) else {
+            return;
+        };
+        let perto = s
+            .entity
+            .and_then(|e| self.ecs.get::<&Position>(e).ok().map(|p| p.0))
+            .is_some_and(|p| p.distance(tr::pos_do_governador(ilha.centro)) <= tr::ALCANCE_DO_NPC + 1.0);
+        if !perto {
+            return;
+        }
+        let eu = s.entity_id;
+        if !self.saques_do_cerco.insert((k, eu)) {
+            self.avisa_missao(sid, "You already plundered this bank in this siege.".into());
+            return;
+        }
+        let nome = self.nome_de(sid);
+        let Some(ctx) = self.auth_ctx.clone() else {
+            return;
+        };
+        tokio::spawn(async move {
+            let resultado = crate::social::saquear_banco(&ctx.pool, dono.cla_id, &nome)
+                .await
+                .map_err(|e| e.to_string());
+            let _ = ctx.tx.send(IncomingMessage::Saque { sid, resultado });
+        });
+    }
+
+    pub fn on_saque(&mut self, sid: SessionId, resultado: Result<Vec<(u16, u32)>, String>) {
+        match resultado {
+            Ok(v) => {
+                let n: u32 = v.iter().map(|(_, q)| q).sum();
+                self.send_chat_to(sid, &format!("Plundered {n} items from the clan bank: they are in your Mail."));
+            }
+            Err(e) => self.avisa_missao(sid, e),
         }
     }
 }

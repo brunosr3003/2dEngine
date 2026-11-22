@@ -95,6 +95,11 @@ pub enum IncomingMessage {
     },
     /// TERRITORIES phase 4: an upgrade's outcome (what was paid, to refund
     /// on an error).
+    /// TERRITORIES 4.6: a bank plunder's outcome.
+    Saque {
+        sid: SessionId,
+        resultado: Result<Vec<(u16, u32)>, String>,
+    },
     IlhaMelhorada {
         sid: SessionId,
         ilhota: u8,
@@ -3206,6 +3211,8 @@ pub struct GameWorld {
     pub(crate) invasores: HashMap<u8, HashMap<EntityId, f32>>,
     /// TERRITORIES 4.5: when each islet cannon may fire again.
     pub(crate) recarga_dos_canhoes: HashMap<hecs::Entity, f32>,
+    /// TERRITORIES 4.6: who already looted which islet's bank this siege.
+    pub(crate) saques_do_cerco: std::collections::HashSet<(u8, EntityId)>,
     /// Open direct trades, one entry per side (`world/troca.rs`).
     pub(crate) trocas: HashMap<SessionId, troca::Mesa>,
     /// Pending trade invites: invited -> (who invited, until sim_time_s).
@@ -3730,6 +3737,7 @@ impl GameWorld {
             defensores: HashMap::new(),
             invasores: HashMap::new(),
             recarga_dos_canhoes: HashMap::new(),
+            saques_do_cerco: Default::default(),
             trocas: HashMap::new(),
             troca_convites: HashMap::new(),
             enemy_spawn_timer: 0.0,
@@ -3938,6 +3946,7 @@ impl GameWorld {
             defensores: HashMap::new(),
             invasores: HashMap::new(),
             recarga_dos_canhoes: HashMap::new(),
+            saques_do_cerco: Default::default(),
             trocas: HashMap::new(),
             troca_convites: HashMap::new(),
             enemy_spawn_timer: 0.0,
@@ -22045,13 +22054,19 @@ impl GameWorld {
                 );
             }
         }
+        // TERRITORIES 4.6: a territory islet's tree or rock: the holder's
+        // Farmer levels raise the yield, and a tenth goes to its clan bank.
+        let na_ilhota = self.no_mar() && shared::mar::indice_da_ilhota(c.centro).is_some();
+        if let Some(k) = shared::mar::indice_da_ilhota(c.centro).filter(|_| self.no_mar()) {
+            self.recurso_da_ilhota(k as u8, c.tier, &mut drops);
+        }
         let mut premio = drops.clone();
         if self.na_magica() {
             premio.push((shared::item_id::MOEDA_MAGICA, 1));
         }
         // THE SEA'S OWN MATERIAL (naval phase 2): every piece of wreckage
         // gives a Wreck Plank with its wood or Steel.
-        if self.no_mar() {
+        if self.no_mar() && !na_ilhota {
             premio.push((
                 shared::item_id::PRANCHA_DE_NAUFRAGIO,
                 shared::navio::PRANCHAS_DO_DESTROCO,

@@ -47,6 +47,9 @@ pub async fn init(pool: &PgPool) -> Result<()> {
         // Reports on a clan's flag image (once per player per flag); the
         // Panopticon sorts by them. A new upload clears them.
         "CREATE TABLE IF NOT EXISTS cla_bandeira_denuncias (cla BIGINT NOT NULL REFERENCES social_clas(id) ON DELETE CASCADE, nome TEXT NOT NULL, quando BIGINT NOT NULL, PRIMARY KEY(cla,nome))",
+        // TERRITORIES 4.6: the clan bank (the islet's gathering tax lands
+        // here; invaders can loot part of it in a siege).
+        "CREATE TABLE IF NOT EXISTS cla_banco (cla BIGINT NOT NULL REFERENCES social_clas(id) ON DELETE CASCADE, item INTEGER NOT NULL, qtd BIGINT NOT NULL, PRIMARY KEY(cla,item))",
         // One-time upload codes (the game asks, the site spends).
         "CREATE TABLE IF NOT EXISTS cla_bandeira_codigos (codigo TEXT PRIMARY KEY, cla BIGINT NOT NULL REFERENCES social_clas(id) ON DELETE CASCADE, nome TEXT NOT NULL, expira BIGINT NOT NULL)",
     ] {
@@ -63,6 +66,87 @@ pub async fn init(pool: &PgPool) -> Result<()> {
 /// The kill letter: a SYSTEM official letter (no staff behind it, no
 /// attachments) to `para`, remembering `matador` for its "Add to blacklist".
 /// Only the newest `shared::pk::MAX_CARTAS_DE_ABATE` are kept.
+/// A system letter (from "Tempest") with attachments, inside `tx`.
+pub async fn carta_do_sistema(
+    tx: &mut PgConnection,
+    para: &str,
+    assunto: &str,
+    texto: &str,
+    anexos: &[shared::social::Anexo],
+) -> Result<()> {
+    let envio = format!("sys-{}-{:016x}", crate::presenca::agora(), fastrand::u64(..));
+    let id: i64 = sqlx::query_scalar(
+        "INSERT INTO social_campanhas(envio,autor,account_id,cargo,destino,assunto,texto,anexos,quando,destinatarios)
+         VALUES($1,'Tempest',0,'system',$2,$3,$4,$5,extract(epoch FROM now())::bigint,1) RETURNING id",
+    )
+    .bind(&envio)
+    .bind(para)
+    .bind(assunto)
+    .bind(texto)
+    .bind(serde_json::to_string(anexos)?)
+    .fetch_one(&mut *tx)
+    .await?;
+    sqlx::query("INSERT INTO social_oficiais(campanha,para) SELECT $1,name FROM characters WHERE name=$2")
+        .bind(id)
+        .bind(para)
+        .execute(&mut *tx)
+        .await?;
+    Ok(())
+}
+
+/// TERRITORIES 4.6: the gathering TAX into clan `cla`'s bank.
+pub async fn depositar_no_banco(pool: &PgPool, cla: i64, itens: &[(u16, u32)]) -> Result<()> {
+    let mut tx = pool.begin().await?;
+    for (item, q) in itens.iter().filter(|(_, q)| *q > 0) {
+        sqlx::query(
+            "INSERT INTO cla_banco(cla,item,qtd) VALUES($1,$2,$3) ON CONFLICT (cla,item) DO UPDATE SET qtd = cla_banco.qtd + EXCLUDED.qtd",
+        )
+        .bind(cla)
+        .bind(*item as i32)
+        .bind(*q as i64)
+        .execute(&mut *tx)
+        .await?;
+    }
+    tx.commit().await?;
+    Ok(())
+}
+
+/// TERRITORIES 4.6: an INVADER loots clan `cla`'s bank in a siege: a tenth
+/// of each of its eight biggest stacks, by mail. Returns what was taken.
+pub async fn saquear_banco(pool: &PgPool, cla: i64, invasor: &str) -> Result<Vec<(u16, u32)>> {
+    let mut tx = pool.begin().await?;
+    let pilhas: Vec<(i32, i64)> = sqlx::query_as(
+        "SELECT item, qtd FROM cla_banco WHERE cla=$1 AND qtd >= 10 ORDER BY qtd DESC LIMIT 8 FOR UPDATE",
+    )
+    .bind(cla)
+    .fetch_all(&mut *tx)
+    .await?;
+    let mut levou = Vec::new();
+    for (item, qtd) in pilhas {
+        let q = (qtd / 10).min(100_000);
+        if q <= 0 {
+            continue;
+        }
+        sqlx::query("UPDATE cla_banco SET qtd = qtd - $3 WHERE cla=$1 AND item=$2")
+            .bind(cla)
+            .bind(item)
+            .bind(q)
+            .execute(&mut *tx)
+            .await?;
+        levou.push((item as u16, q as u32));
+    }
+    if levou.is_empty() {
+        bail!("The clan bank is empty.");
+    }
+    let anexos: Vec<shared::social::Anexo> = levou
+        .iter()
+        .map(|(i, q)| shared::social::Anexo { item_id: *i, qtd: *q, instance: None })
+        .collect();
+    carta_do_sistema(&mut tx, invasor, "Plunder", "Looted from an enemy clan's bank during a siege.", &anexos).await?;
+    tx.commit().await?;
+    Ok(levou)
+}
+
 pub async fn carta_de_abate(
     pool: &PgPool,
     para: &str,
@@ -582,6 +666,34 @@ pub async fn executar(pool: &PgPool, eu: &str, pedido: &Pedido) -> Result<()> {
                 bail!("That name is not on your blacklist.");
             }
         }
+        Pedido::SacarBanco { item, qtd } => {
+            let id = permitido(&mut tx, eu, AcaoCla::Tag, 0).await?;
+            let qtd = (*qtd).clamp(1, 1_000) as i64;
+            let tirou = sqlx::query(
+                "UPDATE cla_banco SET qtd = qtd - $3 WHERE cla=$1 AND item=$2 AND qtd >= $3",
+            )
+            .bind(id)
+            .bind(*item as i32)
+            .bind(qtd)
+            .execute(&mut *tx)
+            .await?
+            .rows_affected();
+            if tirou == 0 {
+                bail!("The clan bank does not have that much.");
+            }
+            sqlx::query("DELETE FROM cla_banco WHERE cla=$1 AND qtd <= 0")
+                .bind(id)
+                .execute(&mut *tx)
+                .await?;
+            carta_do_sistema(
+                &mut tx,
+                eu,
+                "Clan bank",
+                "Taken out of your clan's bank.",
+                &[shared::social::Anexo { item_id: *item, qtd: qtd as u32, instance: None }],
+            )
+            .await?;
+        }
         Pedido::DenunciarBandeira { cla } => {
             if meu_cla(&mut tx, eu).await?.is_some_and(|(meu, _)| meu == *cla) {
                 bail!("That is your own clan's flag.");
@@ -900,6 +1012,13 @@ pub async fn estado(pool: &PgPool, eu: &str) -> Result<Estado> {
                 .unwrap_or_else(|| shared::bandeira::Bandeira::do_cla(id).empacota()),
             imagem_bandeira: imagem_bandeira.map_or(0, |e| e as u8),
             imagem: pixels.filter(|_| imagem_bandeira == Some(shared::bandeira::IMAGEM_APROVADA as i16)),
+            banco: sqlx::query_as::<_, (i32, i64)>("SELECT item, qtd FROM cla_banco WHERE cla=$1 ORDER BY qtd DESC")
+                .bind(id)
+                .fetch_all(&mut *tx)
+                .await?
+                .into_iter()
+                .map(|(i, q)| (i as u16, q as u64))
+                .collect(),
         });
     }
     // CLAN FLAGS: the custom images flying now, for the Reports tab.
@@ -1578,6 +1697,25 @@ mod tests {
         melhorar_ilha(p, "Eva", 3, shared::territorio::trilha::MUROS, 1).await?;
         let n = territorios(p).await?[0].niveis;
         assert_eq!((n[0], n[1]), (2, 1));
+        // PHASE 4.6: the CLAN BANK — the tax lands, the leader takes some out
+        // by mail (a member cannot), an invader plunders a tenth.
+        let mares = estado(p, "Eva").await?.cla.unwrap().id;
+        depositar_no_banco(p, mares, &[(60, 500), (345, 200)]).await?;
+        depositar_no_banco(p, mares, &[(60, 100)]).await?;
+        assert_eq!(estado(p, "Fabi").await?.cla.unwrap().banco, vec![(60, 600), (345, 200)]);
+        assert!(executar(p, "M1", &Pedido::SacarBanco { item: 60, qtd: 10 }).await.is_err(), "a member cannot");
+        executar(p, "Eva", &Pedido::SacarBanco { item: 60, qtd: 100 }).await?;
+        assert_eq!(estado(p, "Eva").await?.cla.unwrap().banco[0], (60, 500));
+        let cartas: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM social_oficiais o JOIN social_campanhas c ON c.id=o.campanha WHERE o.para='Eva' AND c.anexos LIKE '%\"item_id\":60%'",
+        )
+        .fetch_one(p)
+        .await?;
+        assert_eq!(cartas, 1, "the withdrawal came by mail");
+        assert!(executar(p, "Eva", &Pedido::SacarBanco { item: 60, qtd: 999 }).await.is_err(), "not more than there is");
+        let levou = saquear_banco(p, mares, "Gil").await?;
+        assert_eq!(levou, vec![(60, 50), (345, 20)]);
+        assert_eq!(estado(p, "Eva").await?.cla.unwrap().banco, vec![(60, 450), (345, 180)]);
         // Another clan cannot take a held islet.
         executar(p, "Gil", &Pedido::CriarCla { nome: "Outros".into(), tag: "OUT".into() }).await?;
         assert!(reivindicar(p, "Gil", 3).await.is_err(), "the islet is held");

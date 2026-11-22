@@ -1769,6 +1769,10 @@ pub enum PedidoNavio {
     /// TERRITORIES (phase 4): raise track `trilha` (`territorio::trilha`) of
     /// my clan's islet, standing by its Governor or Farmer. Appended.
     MelhorarIlha { trilha: u8 },
+    /// TERRITORIES (4.6): an invader, by an enemy islet's Governor in its
+    /// siege window, loots a tenth of that clan's bank (once per siege).
+    /// Appended.
+    SaquearBanco,
 }
 
 /// The ship's state, for the Captain's buttons and the hull bar.

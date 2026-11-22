@@ -106,6 +106,12 @@ pub enum Pedido {
     DenunciarBandeira {
         cla: i64,
     },
+    /// TERRITORIES 4.6: take `qtd` of `item` out of the clan bank (leader or
+    /// officer); it arrives by mail. Appended.
+    SacarBanco {
+        item: u16,
+        qtd: u32,
+    },
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -277,6 +283,9 @@ pub struct Cla {
     /// RGBA), for the clan panel anywhere (the sea's list is the sea's).
     /// Appended.
     pub imagem: Option<Vec<u8>>,
+    /// TERRITORIES 4.6: the CLAN BANK — (item, amount), filled by the tax on
+    /// what is gathered on the clan's islet. Appended.
+    pub banco: Vec<(u16, u64)>,
 }
 
 /// A friend or clan member, as the social panel shows them.

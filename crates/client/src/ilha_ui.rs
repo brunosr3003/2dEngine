@@ -41,26 +41,56 @@ fn npc_perto(w: &crate::world::World) -> Option<(u8, bool)> {
     }
 }
 
+/// The held islet of ANOTHER clan whose Governor I stand by.
+fn governador_inimigo_perto(w: &crate::world::World) -> Option<u8> {
+    if !w.em_terra {
+        return None;
+    }
+    let eu = w.ents.get(&w.self_id?)?;
+    let p = ::glam::Vec2::new(eu.render_pos.x, eu.render_pos.y);
+    let k = shared::mar::indice_da_ilhota(p)?;
+    let dono = crate::mar_ui::dono_da_ilhota(k as u8)?;
+    if !dono.tag.is_empty() && Some(dono.tag.as_str()) == crate::mapa::minha_tag_de_cla().as_deref() {
+        return None;
+    }
+    let c = shared::mar::ilhotas()[k].centro;
+    (p.distance(tr::pos_do_governador(c)) <= tr::ALCANCE_DO_NPC).then_some(k as u8)
+}
+
 impl IlhaUi {
     /// The "Governor" / "Farmer" pill over the helm toggle, when I stand by
     /// one of them on my clan's islet; it opens the panel. Walking away
     /// closes an open panel.
-    pub fn pilula(&mut self, z: &crate::hud_layout::Zonas, w: &crate::world::World) {
+    pub fn pilula(&mut self, z: &crate::hud_layout::Zonas, w: &crate::world::World) -> Option<PedidoNavio> {
+        // By an ENEMY islet's Governor: plunder its bank (the server allows
+        // it only in that islet's siege window).
+        if self.aberto.is_none() && npc_perto(w).is_none() {
+            if let Some(k) = governador_inimigo_perto(w) {
+                let _ = k;
+                let leme = crate::mar_ui::retangulo_do_leme(z);
+                let r = Rect::new(leme.x - 60.0 * z.s, leme.y - 52.0 * z.s, leme.w + 120.0 * z.s, 42.0 * z.s);
+                if crate::ui::botao(r, "Plunder bank", true) {
+                    return Some(PedidoNavio::SaquearBanco);
+                }
+                return None;
+            }
+        }
         let perto = npc_perto(w);
         if self.aberto.is_some() && perto != self.aberto {
             self.aberto = None;
         }
         let Some((k, gov)) = perto else {
-            return;
+            return None;
         };
         if self.aberto.is_some() {
-            return;
+            return None;
         }
         let leme = crate::mar_ui::retangulo_do_leme(z);
         let r = Rect::new(leme.x - 60.0 * z.s, leme.y - 52.0 * z.s, leme.w + 120.0 * z.s, 42.0 * z.s);
         if crate::ui::botao(r, if gov { "Governor" } else { "Farmer" }, true) {
             self.aberto = Some((k, gov));
         }
+        None
     }
 
     /// The open panel. Returns the upgrade asked for.

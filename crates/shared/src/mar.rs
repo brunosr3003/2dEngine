@@ -1966,3 +1966,103 @@ mod testes_das_ilhotas {
         }
     }
 }
+
+// ─────────────── TERRITORIES 4.6: the islets' resource plots ───────────────
+
+/// One resource plot of a territory islet: a tree (0), a rock (1) or an
+/// Energy crystal (2), at a fixed column, every islet, held or free (anyone
+/// gathers; the Farmer's levels raise the yield, a tenth goes to the
+/// holder's bank). Pure geometry: server and client plant the same.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct LoteDeRecurso {
+    pub tipo: u8,
+    pub centro: Vec2,
+    /// A rock's colour (1 grey .. 4 purple) from the waters' level.
+    pub tier: u8,
+    pub variante: u32,
+    /// The islet's biome look (pine trees on the Waste-like islets).
+    pub feitio: Feitio,
+}
+
+/// How many trees, rocks and crystals an islet of `porte` has.
+pub fn lotes_do_porte(porte: u8) -> (usize, usize, usize) {
+    match porte {
+        crate::territorio::GRANDE => (12, 8, 4),
+        crate::territorio::MEDIA => (9, 6, 3),
+        _ => (6, 4, 2),
+    }
+}
+
+fn lotes() -> &'static std::collections::HashMap<(i32, i32), LoteDeRecurso> {
+    static L: std::sync::OnceLock<std::collections::HashMap<(i32, i32), LoteDeRecurso>> =
+        std::sync::OnceLock::new();
+    L.get_or_init(|| {
+        let mut m = std::collections::HashMap::new();
+        for (k, i) in ilhotas().iter().enumerate() {
+            let (na, np, ne) = lotes_do_porte(i.porte);
+            let tipos: Vec<u8> = std::iter::repeat_n(0u8, na)
+                .chain(std::iter::repeat_n(1u8, np))
+                .chain(std::iter::repeat_n(2u8, ne))
+                .collect();
+            // Between the wall and the coast's cannons.
+            let r0 = crate::territorio::raio_da_muralha(i.porte) + 4.5;
+            let r1 = (i.raio * 0.64).max(r0 + 2.0);
+            let total = tipos.len();
+            for (n, tipo) in tipos.into_iter().enumerate() {
+                let h = mistura(k as i32 * 131 + n as i32, 0x10E5);
+                let a = i.fase + 0.15 + n as f32 / total as f32 * std::f32::consts::TAU;
+                let r = r0 + (r1 - r0) * ((h & 0xFF) as f32 / 255.0);
+                let c = i.centro + Vec2::from_angle(a) * r;
+                let (bx, bz) = ((c.x / BLOCO).round() as i32, (c.y / BLOCO).round() as i32);
+                let centro = Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO);
+                m.insert(
+                    (bx, bz),
+                    LoteDeRecurso {
+                        tipo,
+                        centro,
+                        tier: (1 + nivel_em(centro) / 30).min(4) as u8,
+                        variante: h >> 8,
+                        feitio: i.feitio,
+                    },
+                );
+            }
+        }
+        m
+    })
+}
+
+/// The resource plot in column `(bx, bz)`, if any.
+pub fn lote_da_coluna(bx: i32, bz: i32) -> Option<LoteDeRecurso> {
+    lotes().get(&(bx, bz)).copied()
+}
+
+#[cfg(test)]
+mod testes_dos_lotes {
+    use super::*;
+
+    /// TERRITORIES 4.6: every islet has its trees, rocks and Energy plots,
+    /// on its land, between the wall and the cannons; the sea's obstacle
+    /// list plants them (so the gather pipeline sees them).
+    #[test]
+    fn as_ilhotas_tem_lotes_de_recurso_em_terra() {
+        let ger = crate::terreno::Gerador::da_ilha(&DEF);
+        for (k, i) in ilhotas().iter().enumerate() {
+            let (na, np, ne) = lotes_do_porte(i.porte);
+            let meus: Vec<LoteDeRecurso> = lotes()
+                .values()
+                .filter(|l| l.centro.distance(i.centro) < i.raio)
+                .copied()
+                .collect();
+            assert_eq!(meus.len(), na + np + ne, "{} (#{k})", i.nome);
+            for l in &meus {
+                assert!(altura(l.centro.x, l.centro.y) > NIVEL_DO_MAR, "a plot in the water on {}", i.nome);
+                let d = l.centro.distance(i.centro);
+                assert!(d > crate::territorio::raio_da_muralha(i.porte), "inside the walls on {}", i.nome);
+                let (bx, bz) = ((l.centro.x / BLOCO).round() as i32, (l.centro.y / BLOCO).round() as i32);
+                let mut saida = Vec::new();
+                crate::terreno::estorvos_da_coluna(Bioma::Floresta, bx, bz, 1, 0, &ger, false, &mut saida);
+                assert!(!saida.is_empty(), "the sea plants the plot at {bx},{bz}");
+            }
+        }
+    }
+}

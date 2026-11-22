@@ -1667,6 +1667,8 @@ impl Social {
         }
         // ── CLAN FLAG: flown on the clan's ships, its islet and the map ──
         y = self.editor_de_bandeira(c, social::pode_no_cla(meu, A::Tag, 0), dir.x, y, dir.w, fh, k, s);
+        // ── CLAN BANK: the islet's gathering tax ──
+        y = self.banco_do_cla(c, social::pode_no_cla(meu, A::Tag, 0), dir.x, y, dir.w, k, s);
         // Ranks, for whoever wonders what an officer can do.
         texto_em_linhas(
             "Leader: everything. Officers: invite, kick members, edit the notice. Select a member in Members to see their actions.",
@@ -2158,7 +2160,7 @@ pub async fn previa() {
         amigos:vec!["MaréAlta".into(),"Navegante".into()],recebidos:vec!["Corsair".into()],enviados:vec!["Captain".into()],
         neste_canal:vec!["brunji".into(),"MaréAlta".into()],
         cartas:vec![social::Carta{id:1,de:"MaréAlta".into(),assunto:"Ready for the next adventure?".into(),texto:"Vamos reunir o grupo na vila e explorar as dungeons. Se precisar de ajuda, mande uma carta!".into(),quando:0,lida:false,oficial:false,anexos:vec![],resgatada:false}],
-        cla:Some(social::Cla{id:1,nome:"Tide Corsairs".into(),lider:"brunji".into(),aviso:"Meet at the village for the next expedition.".into(),membros:vec!["brunji".into(),"MaréAlta".into(),"Navegante".into(),"Captain".into()],tag:"TIDE".into(),oficiais:vec!["MaréAlta".into()],territorio:Some(1),bandeira:0x1_1040,imagem_bandeira:0,imagem:None}),
+        cla:Some(social::Cla{id:1,nome:"Tide Corsairs".into(),lider:"brunji".into(),aviso:"Meet at the village for the next expedition.".into(),membros:vec!["brunji".into(),"MaréAlta".into(),"Navegante".into(),"Captain".into()],tag:"TIDE".into(),oficiais:vec!["MaréAlta".into()],territorio:Some(1),bandeira:0x1_1040,imagem_bandeira:0,imagem:None,banco:vec![(60,1200),(345,300)]}),
         convites_cla:vec![], cargo:Some("admin".into()),destinatarios:42,oficiais:vec![],
         contatos: previa_contatos(),
         lista_negra: vec![
@@ -2311,6 +2313,7 @@ mod testes {
             bandeira: 0,
             imagem_bandeira: 0,
             imagem: None,
+            banco: vec![],
         }
     }
 
@@ -2658,5 +2661,60 @@ impl Social {
                 self.enviar(Pedido::DenunciarBandeira { cla: b.cla_id }, s);
             }
         }
+    }
+}
+
+
+impl Social {
+    /// CLAN BANK (territories 4.6): what the islet's gathering tax brought
+    /// in; leader or officer takes up to 1,000 of a stack with a tap (it
+    /// arrives by mail).
+    #[allow(clippy::too_many_arguments)]
+    fn banco_do_cla(
+        &mut self,
+        c: &social::Cla,
+        pode: bool,
+        x: f32,
+        y: f32,
+        w: f32,
+        k: f32,
+        s: &mut Vec<ClientMessage>,
+    ) -> f32 {
+        use crate::hud_estilo as e;
+        e::texto(x, y + 2.0, "Clan bank", 14, e::OURO);
+        if c.banco.is_empty() {
+            e::texto_ajustado(
+                "Empty. A tenth of what anyone gathers on your islet lands here.",
+                x,
+                y + 22.0 * k,
+                w,
+                12,
+                e::SUAVE,
+            );
+            return y + 38.0 * k;
+        }
+        let ic = 34.0 * k;
+        let passo = ic + 10.0 * k;
+        let por_linha = ((w / passo).floor() as usize).max(1);
+        let m = Vec2::from(mouse_position());
+        for (n, (item, qtd)) in c.banco.iter().take(por_linha * 2).enumerate() {
+            let r = Rect::new(
+                x + (n % por_linha) as f32 * passo,
+                y + 12.0 * k + (n / por_linha) as f32 * (ic + 6.0 * k),
+                ic,
+                ic,
+            );
+            crate::icones::icone(*item, r, None, Some((*qtd).min(u32::MAX as u64) as u32));
+            if pode && r.toca(m) && crate::foco::clique() {
+                self.enviar(Pedido::SacarBanco { item: *item, qtd: (*qtd).min(1_000) as u32 }, s);
+            }
+        }
+        let linhas = c.banco.len().min(por_linha * 2).div_ceil(por_linha) as f32;
+        let fim = y + 12.0 * k + linhas * (ic + 6.0 * k);
+        if pode {
+            e::texto_ajustado("Tap an item to take up to 1,000 (by mail).", x, fim + 12.0 * k, w, 11, e::SUAVE);
+            return fim + 22.0 * k;
+        }
+        fim + 6.0 * k
     }
 }

@@ -8502,7 +8502,9 @@ impl Jogo {
                 self.envia(ClientMessage::Navio { pedido });
             }
             mar_ui::faixa_da_tomada(&self.world);
-            self.ilha_ui.pilula(&z, &self.world);
+            if let Some(pedido) = self.ilha_ui.pilula(&z, &self.world) {
+                self.envia(ClientMessage::Navio { pedido });
+            }
             let bonus = self
                 .arvore_ui
                 .estado
