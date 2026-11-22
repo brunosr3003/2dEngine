@@ -86,6 +86,12 @@ nada a ver com as ilhas principais, que os clãs ocupam, fortificam e disputam.
   semanas, a ilha fica livre.
 - **Escudo depois da troca de dono**: a ilha que acabou de trocar de dono
   não pode ser atacada no fim de semana seguinte.
+- **Duração da janela** por porte: pequena **45 min**, média **60 min**,
+  grande **90 min**. O atacante vence ao segurar a bandeira 2 min sem
+  ninguém do defensor no anel; acabou o tempo sem isso, o defensor fica.
+  **Prorrogação**: se no fim da janela o anel estiver em disputa (ou a
+  contagem dos 2 min correndo), a guerra continua até a disputa acabar,
+  no máximo +10 min.
 - Já existente: **1 ilhota por clã** (com 12 ilhotas, sempre sobra ilha) e
   tomar ilha **livre** não precisa de guerra (o claim de 2 min, a qualquer
   hora).
@@ -101,8 +107,11 @@ pra cidade com o respawn crescente).
 - **Só quem tem clã participa**: na guerra de forte, só membros de clã
   atacam e são atacados; quem não tem clã passa sem ser alvo e sem poder
   atacar (decisão do Bruno: "esses PvPs são opcionais").
-- **Taxa**: uma % pequena (começar com 2–5%) do que se coleta e dropa
-  naquela ilha vai pro banco do clã dono, como o ouro.
+- **Porte grande**: o forte de ilha principal sobe até Fortaleza (trilhas
+  até nível 10, janela de guerra de 90 min).
+- **Taxa menor que a das ilhotas**: **3%** do que se coleta e dropa naquela
+  ilha vai pro banco do clã dono (ilhota do mar: **10%** do que se coleta
+  nela). A ilha principal tem muito mais movimento, então rende mesmo assim.
 - **Um forte de ilha principal por clã**, além da ilhota do mar.
 - Exige generalizar território, cerco e banco (hoje no processo do mar)
   pra qualquer zona.
