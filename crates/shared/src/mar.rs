@@ -52,7 +52,8 @@ pub const ZONA: &str = "mar_aberto";
 /// Bump when the relief changes: it names the height caches.
 /// 5 (20/11/2026): the territory islets (`ilhotas`) — with the old cache the
 /// land mover saw water under them and no one could walk ashore.
-pub const REVISAO: u32 = 5;
+/// 6 (21/11/2026): islet sizes (large/medium/small) and their flat ground.
+pub const REVISAO: u32 = 6;
 pub const SEMENTE: i32 = 0x0005_EA01;
 /// The square the height field covers: ±1,150 u (16/11/2026, every island
 /// on the sea; it was ±900 with four islands, ±700 with domes). ~42 MB of
@@ -182,6 +183,9 @@ pub struct IlhaVista {
     /// A CLAN TERRITORY islet (`ilhotas`, docs/TERRITORIOS.md): no pier,
     /// no quay, no zone, no route; only its land.
     pub territorio: bool,
+    /// A territory islet's size (`territorio::PEQUENA`/`MEDIA`/`GRANDE`);
+    /// 0 for the dock islands.
+    pub porte: u8,
 }
 
 impl IlhaVista {
@@ -351,6 +355,7 @@ pub fn ilhas() -> &'static [IlhaVista] {
                     fase: i as f32 * 2.399 + 0.7,
                     mesas: [(Vec2::ZERO, 0.0, 0.0); 3],
                     territorio: false,
+                    porte: 0,
                 };
                 let ang = rumo.y.atan2(rumo.x);
                 v.raiz = centro + rumo * (v.costa(ang) - 3.0);
@@ -390,21 +395,29 @@ pub fn terras() -> &'static [IlhaVista] {
 /// How many territory islets the sea has (docs/TERRITORIOS.md).
 pub const N_ILHOTAS: usize = 12;
 
-/// The islets' names, in placement order.
+/// The islets' names, in placement order: the three large, the three
+/// medium, the six small.
 pub const NOMES_DAS_ILHOTAS: [&str; N_ILHOTAS] = [
+    "Stormwatch",
+    "Coral Crown",
+    "Sunken Bell",
+    "Lantern Isle",
+    "Wreckers' Rest",
+    "Kestrel Isle",
     "Gull Rock",
     "Ember Key",
     "Saltmarsh Isle",
     "Driftwood Cay",
     "Thornreef",
-    "Lantern Isle",
-    "Coral Crown",
-    "Stormwatch",
     "Black Sand Cay",
-    "Kestrel Isle",
-    "Wreckers' Rest",
-    "Sunken Bell",
 ];
+
+/// Each islet's size, in placement order (docs/TERRITORIOS.md, phase 4):
+/// 3 large, 3 medium, 6 small.
+pub const PORTES_DAS_ILHOTAS: [u8; N_ILHOTAS] = {
+    use crate::territorio::{GRANDE as G, MEDIA as M, PEQUENA as P};
+    [G, G, G, M, M, M, P, P, P, P, P, P]
+};
 
 /// Distance from `p` to the segment `a`-`b`.
 fn dist_ao_segmento(p: Vec2, a: Vec2, b: Vec2) -> f32 {
@@ -434,31 +447,32 @@ pub fn ilhotas() -> &'static [IlhaVista] {
         }
         cands.sort_by_key(|(h, _)| *h);
         let mut feitas: Vec<IlhaVista> = Vec::new();
-        for (h, c) in cands {
-            if feitas.len() == N_ILHOTAS {
-                break;
-            }
-            let raio = 48.0 + 24.0 * ((h >> 8) & 0xFF) as f32 / 255.0;
-            let longe_das_ilhas = ilhas()
-                .iter()
-                .all(|i| c.distance(i.centro) > i.raio + raio + 140.0);
-            let longe_das_rotas = rotas
-                .iter()
-                .all(|(a, b)| dist_ao_segmento(c, *a, *b) > raio + 70.0);
-            let longe_das_outras = feitas
-                .iter()
-                .all(|o| c.distance(o.centro) > o.raio + raio + 110.0);
-            let na_carta = c.x.abs() + raio + margem < BORDA && c.y.abs() + raio + margem < BORDA;
-            if !(longe_das_ilhas
-                && longe_das_rotas
-                && longe_das_outras
-                && na_carta
-                && !aguas_pacificas(c))
-            {
+        // Largest first: the large ones only in the strong northern waters
+        // (the nearest dock island of level 60+: Skyreach, Kōgen-tō, Abyssia).
+        for (k, porte) in PORTES_DAS_ILHOTAS.iter().copied().enumerate() {
+            let achada = cands.iter().find_map(|(h, c)| {
+                let c = *c;
+                let f = ((h >> 8) & 0xFF) as f32 / 255.0;
+                let raio = crate::territorio::raio_do_porte(porte, f);
+                let perto = ilha_mais_perto(c);
+                let ok = (porte != crate::territorio::GRANDE || perto.nivel.0 >= 60)
+                    && ilhas()
+                        .iter()
+                        .all(|i| c.distance(i.centro) > i.raio + raio + 120.0)
+                    && rotas
+                        .iter()
+                        .all(|(a, b)| dist_ao_segmento(c, *a, *b) > raio + 60.0)
+                    && feitas
+                        .iter()
+                        .all(|o| c.distance(o.centro) > o.raio + raio + 90.0)
+                    && c.x.abs() + raio + margem < BORDA
+                    && c.y.abs() + raio + margem < BORDA
+                    && !aguas_pacificas(c);
+                ok.then_some((c, raio, perto.nivel))
+            });
+            let Some((c, raio, nivel)) = achada else {
                 continue;
-            }
-            let k = feitas.len();
-            let perto = ilha_mais_perto(c);
+            };
             feitas.push(IlhaVista {
                 ilha: 1000 + k,
                 zona: ZONA,
@@ -467,11 +481,12 @@ pub fn ilhotas() -> &'static [IlhaVista] {
                 raio,
                 raiz: c,
                 ponta: c,
-                nivel: perto.nivel,
+                nivel,
                 feitio: if k % 3 == 1 { Feitio::Ermo } else { Feitio::Bosque },
                 fase: k as f32 * 1.913 + 0.3,
                 mesas: [(Vec2::ZERO, 0.0, 0.0); 3],
                 territorio: true,
+                porte,
             });
         }
         feitas
@@ -755,6 +770,17 @@ fn terra_da(i: &'static IlhaVista, p: Vec2, d: f32, costa: f32) -> Option<Terra>
         return Some(Terra {
             ilha: i,
             h,
+            dentro: e,
+            cais: false,
+            molhe: 0.0,
+        });
+    }
+    // A TERRITORY ISLET is FLAT (owner, 21/11/2026: room for a village and
+    // fewer step bugs): a short beach rising to a low, even plateau.
+    if i.territorio {
+        return Some(Terra {
+            ilha: i,
+            h: 0.5 + (e * 0.3).min(1.5),
             dentro: e,
             cais: false,
             molhe: 0.0,
@@ -1907,7 +1933,20 @@ mod testes_das_ilhotas {
             assert!(t.h > NIVEL_DO_MAR && !t.cais, "{}", i.nome);
             assert!(!navegavel(i.centro.x, i.centro.y));
             for o in &v[k + 1..] {
-                assert!(i.centro.distance(o.centro) > i.raio + o.raio + 100.0);
+                assert!(i.centro.distance(o.centro) > i.raio + o.raio + 90.0);
+            }
+            // Its size, and the large ones in the strong northern waters.
+            assert_eq!(i.porte, PORTES_DAS_ILHOTAS[k]);
+            let f0 = crate::territorio::raio_do_porte(i.porte, 0.0);
+            assert!((f0..=f0 + 12.0).contains(&i.raio), "{} raio {}", i.nome, i.raio);
+            if i.porte == crate::territorio::GRANDE {
+                assert!(ilha_mais_perto(i.centro).nivel.0 >= 60, "{} is not north", i.nome);
+            }
+            // FLAT: the whole inside of the coast is one even plateau.
+            for a in 0..16 {
+                let q = i.centro + Vec2::from_angle(a as f32 * 0.39) * (i.raio * 0.6);
+                let h = altura(q.x, q.y);
+                assert!((1.5..=2.5).contains(&h), "{} not flat at {q}: {h}", i.nome);
             }
             for d in ilhas() {
                 assert!(i.centro.distance(d.centro) > i.raio + d.raio + 100.0);
