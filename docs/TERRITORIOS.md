@@ -70,6 +70,23 @@ nada a ver com as ilhas principais, que os clãs ocupam, fortificam e disputam.
    (`afundar_derrotado`); morrer na ilha sem navio = morte naval de verdade
    (navio avariado) e volta pro cais, só voltando ao mar depois do reparo.
 
+## Fase 6: fortes nas ilhas principais (ideia aprovada em 21/11/2026)
+
+Depois do cerco (fase 5), o mesmo sistema da fase 4 vai pras ilhas
+principais, **em todas, inclusive as iniciais**: um forte por ilha, num
+ponto fixo fora da cidade, com Governador, muros, portões, canhões e
+defensores, e cerco agendado **a pé** (sem PvP de barco; quem morre volta
+pra cidade com o respawn crescente).
+
+- **Só quem tem clã participa**: na guerra de forte, só membros de clã
+  atacam e são atacados; quem não tem clã passa sem ser alvo e sem poder
+  atacar (decisão do Bruno: "esses PvPs são opcionais").
+- **Taxa**: uma % pequena (começar com 2–5%) do que se coleta e dropa
+  naquela ilha vai pro banco do clã dono, como o ouro.
+- **Um forte de ilha principal por clã**, além da ilhota do mar.
+- Exige generalizar território, cerco e banco (hoje no processo do mar)
+  pra qualquer zona.
+
 ## Fase 4 em detalhe (21/11/2026)
 
 **Portes das ilhotas** (12 no total): 3 **grandes** (raio ~105) só na faixa
