@@ -1027,6 +1027,52 @@ pub async fn guerras(pool: &PgPool) -> Result<Vec<shared::territorio::Guerra>> {
         .collect())
 }
 
+/// THE WEEKLY DIVIDENDS (22/11/2026): after a paid upkeep, a fifth of the
+/// bank's eight biggest material stacks (never its gold) is shared evenly
+/// among the members who played in the last 7 days, by mail.
+async fn dividendos(tx: &mut PgConnection, cla: i64, agora: i64) -> Result<()> {
+    let ativos: Vec<String> = sqlx::query_scalar(
+        "SELECT m.nome FROM social_membros m JOIN social_presenca p ON p.nome=m.nome
+          WHERE m.cla=$1 AND (p.online OR p.visto >= $2) ORDER BY m.nome",
+    )
+    .bind(cla)
+    .bind(agora - 7 * 86_400)
+    .fetch_all(&mut *tx)
+    .await?;
+    if ativos.is_empty() {
+        return Ok(());
+    }
+    let pilhas: Vec<(i32, i64)> = sqlx::query_as(
+        "SELECT item, qtd FROM cla_banco WHERE cla=$1 AND item <> $2 ORDER BY qtd DESC LIMIT 8",
+    )
+    .bind(cla)
+    .bind(shared::item_id::GOLD as i32)
+    .fetch_all(&mut *tx)
+    .await?;
+    let n = ativos.len() as i64;
+    let mut parte: Vec<shared::social::Anexo> = Vec::new();
+    for (item, qtd) in pilhas {
+        let cada = (qtd / 5 / n).min(100_000);
+        if cada <= 0 {
+            continue;
+        }
+        sqlx::query("UPDATE cla_banco SET qtd = qtd - $3 WHERE cla=$1 AND item=$2")
+            .bind(cla)
+            .bind(item)
+            .bind(cada * n)
+            .execute(&mut *tx)
+            .await?;
+        parte.push(shared::social::Anexo { item_id: item as u16, qtd: cada as u32, instance: None });
+    }
+    if parte.is_empty() {
+        return Ok(());
+    }
+    for nome in &ativos {
+        carta_do_sistema(&mut *tx, nome, "Clan dividends", "Your share of the islet's income this week.", &parte).await?;
+    }
+    Ok(())
+}
+
 /// TERRITORIES phase 5: the WEEKLY UPKEEP, due Monday 00:00 (Brasília).
 /// Paid from the clan bank's gold; unpaid, the islet falls a week behind (1:
 /// defences weakened, 2: the islet is freed). A newly held islet gets its
@@ -1062,6 +1108,9 @@ pub async fn cobrar_manutencao(pool: &PgPool, agora: i64) -> Result<Vec<u8>> {
         .rows_affected()
             == 1;
         let atrasos = if pagou { 0 } else { atrasos + 1 };
+        if pagou {
+            dividendos(&mut tx, cla, agora).await?;
+        }
         if atrasos >= 2 {
             sqlx::query("DELETE FROM territorios WHERE ilhota=$1").bind(ilhota).execute(&mut *tx).await?;
             sqlx::query("DELETE FROM territorio_agenda WHERE ilhota=$1").bind(ilhota).execute(&mut *tx).await?;
@@ -1440,7 +1489,7 @@ pub async fn bater_presenca(
     zona: &str,
     canal: &str,
     presentes: &[Presente],
-) -> Result<Vec<(String, i64, String)>> {
+) -> Result<Vec<(String, i64, String, Option<(u8, u8)>)>> {
     if presentes.is_empty() {
         return Ok(Vec::new());
     }
@@ -1470,14 +1519,25 @@ pub async fn bater_presenca(
     .bind(&ys)
     .execute(pool)
     .await?;
-    let r: Vec<(String, i64, String)> = sqlx::query_as(
-        "SELECT n, coalesce(m.cla,0), coalesce(c.tag,'') FROM unnest($1::text[]) AS t(n)
-           LEFT JOIN social_membros m ON m.nome=t.n LEFT JOIN social_clas c ON c.id=m.cla",
+    // (And the clan's islet and village level: the territory's passives.)
+    let r: Vec<(String, i64, String, Option<i16>, Option<i16>)> = sqlx::query_as(
+        "SELECT n, coalesce(m.cla,0), coalesce(c.tag,''), ter.ilhota, ter.niveis[1] FROM unnest($1::text[]) AS t(n)
+           LEFT JOIN social_membros m ON m.nome=t.n LEFT JOIN social_clas c ON c.id=m.cla
+           LEFT JOIN territorios ter ON ter.cla=m.cla",
     )
     .bind(&nomes)
     .fetch_all(pool)
     .await?;
-    Ok(r)
+    Ok(r
+        .into_iter()
+        .map(|(n, cla, tag, ilhota, vila)| {
+            let terr = ilhota.and_then(|k| {
+                let porte = shared::mar::ilhotas().get(k as usize)?.porte;
+                Some((porte, vila.unwrap_or(1).clamp(0, 4) as u8))
+            });
+            (n, cla, tag, terr)
+        })
+        .collect())
 }
 
 /// Logout from THIS channel. Guarded by zone+channel: during a handoff the
@@ -1991,8 +2051,16 @@ mod tests {
         let taxa = shared::territorio::manutencao_semanal(&territorios(p).await?[0].niveis);
         depositar_no_banco(p, mares, &[(shared::item_id::GOLD, taxa as u32 + 5)]).await?;
         assert!(executar(p, "Eva", &Pedido::SacarBanco { item: shared::item_id::GOLD, qtd: 1 }).await.is_err(), "gold stays");
+        // Eva played this week; the bank holds 450 wood: a fifth goes out.
+        sqlx::query("INSERT INTO social_presenca(nome,zona,canal,online,visto) VALUES('Eva','mar','1',FALSE,$1) ON CONFLICT (nome) DO UPDATE SET visto=EXCLUDED.visto")
+            .bind(quando)
+            .execute(p)
+            .await?;
+        let madeira_antes = estado(p, "Eva").await?.cla.unwrap().banco.iter().find(|(i, _)| *i == 60).map_or(0, |x| x.1);
         cobrar_manutencao(p, quando).await?;
         assert_eq!(territorios(p).await?[0].atrasos, 0, "paid");
+        let madeira = estado(p, "Eva").await?.cla.unwrap().banco.iter().find(|(i, _)| *i == 60).map_or(0, |x| x.1);
+        assert!(madeira < madeira_antes, "dividends went out: {madeira_antes} -> {madeira}");
         let ouro: i64 = sqlx::query_scalar("SELECT qtd FROM cla_banco WHERE cla=$1 AND item=$2")
             .bind(mares)
             .bind(shared::item_id::GOLD as i32)

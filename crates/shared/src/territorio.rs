@@ -604,9 +604,22 @@ mod testes_da_data {
 /// An islet's weekly UPKEEP in gold, from the clan bank: 100k per village
 /// level plus 20k per level of every other track.
 pub fn manutencao_semanal(niveis: &[u8; N_TRILHAS]) -> u64 {
+    // Halved on 22/11/2026 (owner: "dá pra diminuir a taxa").
     let vila = niveis[trilha::VILA] as u64;
     let resto: u64 = niveis.iter().skip(1).map(|n| *n as u64).sum();
-    100_000 * vila + 20_000 * resto
+    50_000 * vila + 10_000 * resto
+}
+
+/// THE TERRITORY'S PASSIVES (22/11/2026): what every member of a clan with
+/// an islet gets, by its size and village level — (XP and drop, gathering
+/// speed and chest gold), as fractions.
+pub fn passivas_do_territorio(porte: u8, vila: u8) -> (f32, f32) {
+    let por_vila = match porte {
+        GRANDE => 0.04,
+        MEDIA => 0.03,
+        _ => 0.02,
+    };
+    (por_vila * vila as f32, 0.05 * vila as f32)
 }
 
 /// The next Monday 00:00 (Brasília) after `agora`: when the upkeep is due.
@@ -624,9 +637,10 @@ mod testes_da_manutencao {
     #[test]
     fn a_manutencao_e_a_segunda_feira() {
         let mut n = NIVEIS_INICIAIS;
-        assert_eq!(manutencao_semanal(&n), 100_000);
+        assert_eq!(manutencao_semanal(&n), 50_000);
         n = [4, 10, 10, 10, 10, 10, 10, 10];
-        assert_eq!(manutencao_semanal(&n), 1_800_000);
+        assert_eq!(manutencao_semanal(&n), 900_000);
+        assert_eq!(passivas_do_territorio(GRANDE, 4), (0.16, 0.2));
         // Sunday 2026-11-22 15:00 BRT → Monday 23rd 00:00.
         let domingo = 20_779 * 86_400 + 15 * 3600 - FUSO_S;
         assert_eq!(proxima_segunda(domingo), 20_780 * 86_400 - FUSO_S);

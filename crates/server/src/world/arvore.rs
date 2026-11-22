@@ -31,6 +31,15 @@ impl Session {
             b.ouro += x.ouro;
             b.loot_melhor += x.loot_melhor;
         }
+        // THE TERRITORY'S PASSIVES: my clan holds an islet.
+        if let Some((porte, vila)) = self.territorio_do_cla {
+            let (xp_drop, coleta_ouro) = shared::territorio::passivas_do_territorio(porte, vila);
+            b.xp += xp_drop;
+            b.drop += xp_drop;
+            b.minerio += coleta_ouro;
+            b.energia += coleta_ouro;
+            b.ouro += coleta_ouro;
+        }
         b
     }
 

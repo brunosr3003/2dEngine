@@ -98,6 +98,23 @@ nada a ver com as ilhas principais, que os clãs ocupam, fortificam e disputam.
   tomar ilha **livre** não precisa de guerra (o claim de 2 min, a qualquer
   hora).
 
+## Vantagens do território pro membro (decididas em 22/11/2026)
+
+O Bruno perguntou "por que alguém pagaria essa taxa?": ter ilha precisa dar
+vantagem que o MEMBRO sente. Pacote aprovado:
+
+1. **Manutenção pela metade**: 50k × vila + 10k × cada nível das outras trilhas.
+2. **Passivas do território** (todo membro, enquanto o clã tiver ilha):
+   XP e drop +2%/+3%/+4% por nível da vila (pequena/média/grande, até +16%
+   na Fortaleza); velocidade de coleta e ouro de baú +5% por nível da vila.
+3. **Loja do clã**: pontos de clã por membro (depósito de ouro na
+   manutenção = 1 ponto por 1.000; coleta na ilha do clã; defesa na guerra),
+   trocados por chaves, materiais raros, cosméticos e montaria exclusiva.
+4. **Ilha como base**: teleporte pra ilha do clã pelo menu, reparo de navio
+   grátis lá; depois baú pessoal e chefe exclusivo nas grandes.
+5. **Dividendos semanais**: toda segunda, depois da manutenção, 20% do
+   material do banco é dividido entre os membros que jogaram na semana.
+
 ## Fase 6: fortes nas ilhas principais (ideia aprovada em 21/11/2026)
 
 Depois do cerco (fase 5), o mesmo sistema da fase 4 vai pras ilhas

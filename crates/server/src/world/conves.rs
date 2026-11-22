@@ -2179,6 +2179,21 @@ mod testes {
         assert_eq!(guardas, tr::quantos_defensores(ilha.porte, 2));
     }
 
+    /// THE TERRITORY'S PASSIVES: a member of a clan with an islet gets XP,
+    /// drop, gathering and gold by its size and village level.
+    #[test]
+    fn as_passivas_do_territorio_valem_pro_membro() {
+        use shared::territorio as tr;
+        let (mut w, sid, _rx) = mundo();
+        let sem = w.sessions[&sid].bonus_economia();
+        w.sessions.get_mut(&sid).unwrap().territorio_do_cla = Some((tr::GRANDE, 4));
+        let com = w.sessions[&sid].bonus_economia();
+        assert!((com.xp - sem.xp - 0.16).abs() < 1e-4);
+        assert!((com.drop - sem.drop - 0.16).abs() < 1e-4);
+        assert!((com.minerio - sem.minerio - 0.20).abs() < 1e-4);
+        assert!((com.ouro - sem.ouro - 0.20).abs() < 1e-4);
+    }
+
     /// THE COAST'S PUSH (owner, 20/11/2026): a hull with its bow buried in
     /// an islet's beach eases back out until its whole outline floats.
     #[test]

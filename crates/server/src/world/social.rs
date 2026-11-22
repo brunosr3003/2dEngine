@@ -255,8 +255,8 @@ impl GameWorld {
         });
     }
 
-    pub fn on_cla_dos_presentes(&mut self, v: Vec<(String, i64, String)>) {
-        for (nome, id, tag) in v {
+    pub fn on_cla_dos_presentes(&mut self, v: Vec<(String, i64, String, Option<(u8, u8)>)>) {
+        for (nome, id, tag, terr) in v {
             if let Some(s) = self
                 .sessions
                 .values_mut()
@@ -264,6 +264,7 @@ impl GameWorld {
             {
                 s.cla_id = id;
                 s.cla_tag = tag;
+                s.territorio_do_cla = terr;
             }
         }
     }

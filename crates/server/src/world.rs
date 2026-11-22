@@ -74,8 +74,9 @@ pub enum IncomingMessage {
         nome: String,
         avisos: Vec<shared::social::Aviso>,
     },
-    /// Presence heartbeat answer: (character, clan id, clan tag).
-    ClaDosPresentes(Vec<(String, i64, String)>),
+    /// Presence heartbeat answer: (character, clan id, clan tag, the clan's
+    /// islet (size, village level) for the territory's passives).
+    ClaDosPresentes(Vec<(String, i64, String, Option<(u8, u8)>)>),
     /// TERRITORIES: the held islets, read from the database.
     Territorios(Vec<shared::territorio::Dono>),
     /// CLAN FLAGS: every clan's flag, read from the database.
@@ -2615,6 +2616,9 @@ pub struct Session {
     /// by this player's own social state (`social::bater_presenca`).
     pub cla_id: i64,
     pub cla_tag: String,
+    /// TERRITORIES: my clan's islet (size, village level), for the passives
+    /// (`territorio::passivas_do_territorio`); from the presence heartbeat.
+    pub territorio_do_cla: Option<(u8, u8)>,
     /// The tag last put on the nameplate; a change forces the meta again.
     cla_tag_visto: String,
     /// Power last sent in this player's meta (re-sent when it changes).
@@ -8653,6 +8657,7 @@ impl GameWorld {
                 cartas_de_abate: Vec::new(),
                 cla_id: 0,
                 cla_tag: String::new(),
+                territorio_do_cla: None,
                 cla_tag_visto: String::new(),
                 poder_visto: 0,
                 renascimentos: 0,
