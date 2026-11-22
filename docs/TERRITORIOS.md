@@ -89,9 +89,11 @@ nada a ver com as ilhas principais, que os clãs ocupam, fortificam e disputam.
 - **Duração da janela** por porte: pequena **45 min**, média **60 min**,
   grande **90 min**. O atacante vence ao segurar a bandeira 2 min sem
   ninguém do defensor no anel; acabou o tempo sem isso, o defensor fica.
-  **Prorrogação**: se no fim da janela o anel estiver em disputa (ou a
-  contagem dos 2 min correndo), a guerra continua até a disputa acabar,
-  no máximo +10 min.
+  **Prorrogação sem limite**: se no fim da janela houver atacante no anel
+  (disputando ou com a contagem dos 2 min correndo), a guerra continua
+  enquanto houver atacante lá. Ela só acaba quando os defensores expulsam
+  todos os atacantes do anel (o defensor fica) ou quando o atacante
+  completa os 2 min (toma a ilha).
 - Já existente: **1 ilhota por clã** (com 12 ilhotas, sempre sobra ilha) e
   tomar ilha **livre** não precisa de guerra (o claim de 2 min, a qualquer
   hora).
