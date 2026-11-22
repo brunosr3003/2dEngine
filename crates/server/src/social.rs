@@ -40,6 +40,11 @@ pub async fn init(pool: &PgPool) -> Result<()> {
         // TERRITORIES phase 4: every upgrade track's level (`territorio::
         // trilha`), Postgres arrays are 1-based (niveis[1] = the village).
         "ALTER TABLE territorios ADD COLUMN IF NOT EXISTS niveis SMALLINT[] NOT NULL DEFAULT '{1,0,0,0,0,0,0,0}'",
+        // TERRITORIES phase 5: the shield after a conquest, the defender's war
+        // slot, and the declared wars (one per islet per weekend).
+        "ALTER TABLE territorios ADD COLUMN IF NOT EXISTS escudo_ate BIGINT NOT NULL DEFAULT 0",
+        "CREATE TABLE IF NOT EXISTS territorio_agenda (ilhota SMALLINT PRIMARY KEY, dia SMALLINT NOT NULL DEFAULT 6, hora SMALLINT NOT NULL DEFAULT 20)",
+        "CREATE TABLE IF NOT EXISTS territorio_guerras (id BIGSERIAL PRIMARY KEY, ilhota SMALLINT NOT NULL, atacante BIGINT NOT NULL REFERENCES social_clas(id) ON DELETE CASCADE, sabado BIGINT NOT NULL, estado SMALLINT NOT NULL DEFAULT 0, vencedor BIGINT, UNIQUE(ilhota, sabado))",
         // CLAN FLAGS, the uploaded image: one per clan, already LARG x ALT
         // RGBA (the site reduces it); estado = bandeira::IMAGEM_* (1 pending,
         // 2 approved, 3 refused). Shown only once approved in the Panopticon.
@@ -788,19 +793,25 @@ pub async fn bandeiras(pool: &PgPool) -> Result<Vec<shared::bandeira::BandeiraDo
 
 /// TERRITORIES: every held islet, with its clan's tag and name.
 pub async fn territorios(pool: &PgPool) -> Result<Vec<shared::territorio::Dono>> {
-    let linhas: Vec<(i16, i64, String, String, Vec<i16>)> = sqlx::query_as(
-        "SELECT t.ilhota, c.id, c.tag, c.nome, t.niveis FROM territorios t JOIN social_clas c ON c.id=t.cla ORDER BY t.ilhota",
+    let linhas: Vec<(i16, i64, String, String, Vec<i16>, i64, Option<i16>, Option<i16>)> = sqlx::query_as(
+        "SELECT t.ilhota, c.id, c.tag, c.nome, t.niveis, t.escudo_ate, a.dia, a.hora FROM territorios t \
+         JOIN social_clas c ON c.id=t.cla LEFT JOIN territorio_agenda a ON a.ilhota=t.ilhota ORDER BY t.ilhota",
     )
     .fetch_all(pool)
     .await?;
     Ok(linhas
         .into_iter()
-        .map(|(i, cla_id, tag, cla, niveis)| shared::territorio::Dono {
+        .map(|(i, cla_id, tag, cla, niveis, escudo_ate, dia, hora)| shared::territorio::Dono {
             ilhota: i as u8,
             cla_id,
             tag,
             cla,
             niveis: niveis_de(&niveis),
+            escudo_ate,
+            agenda: (
+                dia.map_or(shared::territorio::DIA_PADRAO, |d| d as u8),
+                hora.map_or(shared::territorio::HORA_PADRAO, |h| h as u8),
+            ),
         })
         .collect())
 }
@@ -884,6 +895,194 @@ pub async fn reivindicar(pool: &PgPool, eu: &str, ilhota: u8) -> Result<shared::
         tag,
         cla: nome,
         niveis: shared::territorio::NIVEIS_INICIAIS,
+        escudo_ate: 0,
+        agenda: (shared::territorio::DIA_PADRAO, shared::territorio::HORA_PADRAO),
+    })
+}
+
+/// Leader or officer of a clan: (clan id).
+async fn chefia(tx: &mut PgConnection, eu: &str) -> Result<i64> {
+    let Some((cla, lider)) = meu_cla(&mut *tx, eu).await? else {
+        bail!("You have no clan.");
+    };
+    let cargo_meu: Option<i16> = sqlx::query_scalar("SELECT cargo FROM social_membros WHERE nome=$1")
+        .bind(eu)
+        .fetch_optional(&mut *tx)
+        .await?;
+    if lider != eu && cargo_meu != Some(cargo::OFICIAL as i16) {
+        bail!("Only the clan leader or an officer can do that.");
+    }
+    Ok(cla)
+}
+
+/// TERRITORIES phase 5: DECLARE WAR on islet `ilhota` at `agora`. Leader or
+/// officer; a clan without an islet (one per clan); the islet held by
+/// another clan and not shielded that weekend; one war per islet per
+/// weekend. Monday to Friday noon → the coming weekend, later → the next.
+pub async fn declarar_guerra(pool: &PgPool, eu: &str, ilhota: u8, agora: i64) -> Result<i64> {
+    let mut tx = pool.begin().await?;
+    let cla = chefia(&mut tx, eu).await?;
+    if territorio_do_cla(&mut tx, cla).await?.is_some() {
+        bail!("Your clan already holds an islet: one per clan.");
+    }
+    let alvo: Option<(i64, i64)> = sqlx::query_as("SELECT cla, escudo_ate FROM territorios WHERE ilhota=$1")
+        .bind(ilhota as i16)
+        .fetch_optional(&mut *tx)
+        .await?;
+    let Some((dono, escudo)) = alvo else {
+        bail!("This islet is free: claim it instead.");
+    };
+    if dono == cla {
+        bail!("This islet is already yours.");
+    }
+    let sabado = shared::territorio::fim_de_semana_da_declaracao(agora);
+    if escudo > sabado {
+        bail!("This islet is shielded after its last conquest: try a later weekend.");
+    }
+    let feito = sqlx::query(
+        "INSERT INTO territorio_guerras(ilhota,atacante,sabado) VALUES($1,$2,$3) ON CONFLICT DO NOTHING",
+    )
+    .bind(ilhota as i16)
+    .bind(cla)
+    .bind(sabado)
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
+    if feito == 0 {
+        bail!("Another clan already declared war on this islet for that weekend.");
+    }
+    tx.commit().await?;
+    Ok(sabado)
+}
+
+/// TERRITORIES phase 5: the holder sets its islet's war slot. Locked once a
+/// war's weekend has begun.
+pub async fn agendar_guerra(pool: &PgPool, eu: &str, ilhota: u8, dia: u8, hora: u8, agora: i64) -> Result<()> {
+    let mut tx = pool.begin().await?;
+    let cla = chefia(&mut tx, eu).await?;
+    if territorio_do_cla(&mut tx, cla).await? != Some(ilhota) {
+        bail!("Only the clan that holds this islet sets its war time.");
+    }
+    let travada: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM territorio_guerras WHERE ilhota=$1 AND estado=0 AND sabado <= $2)",
+    )
+    .bind(ilhota as i16)
+    .bind(agora)
+    .fetch_one(&mut *tx)
+    .await?;
+    if travada {
+        bail!("The war weekend has begun: its time is locked.");
+    }
+    let dia = if dia == 0 { 0 } else { 6 };
+    let hora = hora.clamp(shared::territorio::HORA_MIN, shared::territorio::HORA_MAX);
+    sqlx::query(
+        "INSERT INTO territorio_agenda(ilhota,dia,hora) VALUES($1,$2,$3) ON CONFLICT (ilhota) DO UPDATE SET dia=EXCLUDED.dia, hora=EXCLUDED.hora",
+    )
+    .bind(ilhota as i16)
+    .bind(dia as i16)
+    .bind(hora as i16)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(())
+}
+
+/// TERRITORIES phase 5: the open wars (not ended), with their window.
+pub async fn guerras(pool: &PgPool) -> Result<Vec<shared::territorio::Guerra>> {
+    let linhas: Vec<(i64, i16, i64, String, String, i64, Option<i16>, Option<i16>)> = sqlx::query_as(
+        "SELECT g.id, g.ilhota, c.id, c.tag, c.nome, g.sabado, a.dia, a.hora FROM territorio_guerras g \
+         JOIN social_clas c ON c.id=g.atacante LEFT JOIN territorio_agenda a ON a.ilhota=g.ilhota \
+         WHERE g.estado=0 ORDER BY g.sabado, g.ilhota",
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(linhas
+        .into_iter()
+        .map(|(id, ilhota, atacante_id, atacante_tag, atacante, sabado, dia, hora)| {
+            let porte = shared::mar::ilhotas().get(ilhota as usize).map_or(1, |i| i.porte);
+            let inicio = shared::territorio::inicio_da_guerra(
+                sabado,
+                dia.map_or(shared::territorio::DIA_PADRAO, |d| d as u8),
+                hora.map_or(shared::territorio::HORA_PADRAO, |h| h as u8),
+            );
+            shared::territorio::Guerra {
+                id,
+                ilhota: ilhota as u8,
+                atacante_id,
+                atacante_tag,
+                atacante,
+                inicio,
+                fim: inicio + shared::territorio::janela_da_guerra_min(porte) as i64 * 60,
+            }
+        })
+        .collect())
+}
+
+/// TERRITORIES phase 5: a war ended (the defender held, or a conquest).
+pub async fn encerrar_guerra(pool: &PgPool, id: i64, vencedor: Option<i64>) -> Result<()> {
+    sqlx::query("UPDATE territorio_guerras SET estado=1, vencedor=$2 WHERE id=$1")
+        .bind(id)
+        .bind(vencedor)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+/// TERRITORIES phase 5: CONQUEST — the attacker of war `guerra` held the
+/// ring two minutes in the window: the islet (with its levels) becomes
+/// theirs, shielded until `escudo_ate`, and the war ends. Leader or officer
+/// of the attacking clan.
+pub async fn conquistar(pool: &PgPool, eu: &str, guerra: i64, escudo_ate: i64) -> Result<shared::territorio::Dono> {
+    let mut tx = pool.begin().await?;
+    let cla = chefia(&mut tx, eu).await?;
+    let g: Option<(i16, i64)> = sqlx::query_as("SELECT ilhota, atacante FROM territorio_guerras WHERE id=$1 AND estado=0")
+        .bind(guerra)
+        .fetch_optional(&mut *tx)
+        .await?;
+    let Some((ilhota, atacante)) = g else {
+        bail!("That war is over.");
+    };
+    if atacante != cla {
+        bail!("Your clan is not the attacker of this war.");
+    }
+    if territorio_do_cla(&mut tx, cla).await?.is_some() {
+        bail!("Your clan already holds an islet: one per clan.");
+    }
+    let feito = sqlx::query(
+        "UPDATE territorios SET cla=$2, desde=extract(epoch from now())::bigint, escudo_ate=$3 WHERE ilhota=$1",
+    )
+    .bind(ilhota)
+    .bind(cla)
+    .bind(escudo_ate)
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
+    if feito == 0 {
+        bail!("The islet changed meanwhile.");
+    }
+    sqlx::query("UPDATE territorio_guerras SET estado=1, vencedor=$2 WHERE id=$1")
+        .bind(guerra)
+        .bind(cla)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM territorio_agenda WHERE ilhota=$1").bind(ilhota).execute(&mut *tx).await?;
+    let (tag, nome): (String, String) = sqlx::query_as("SELECT tag,nome FROM social_clas WHERE id=$1")
+        .bind(cla)
+        .fetch_one(&mut *tx)
+        .await?;
+    let niveis: Vec<i16> = sqlx::query_scalar("SELECT niveis FROM territorios WHERE ilhota=$1")
+        .bind(ilhota)
+        .fetch_one(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    Ok(shared::territorio::Dono {
+        ilhota: ilhota as u8,
+        cla_id: cla,
+        tag,
+        cla: nome,
+        niveis: niveis_de(&niveis),
+        escudo_ate,
+        agenda: (shared::territorio::DIA_PADRAO, shared::territorio::HORA_PADRAO),
     })
 }
 

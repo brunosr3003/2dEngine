@@ -94,6 +94,7 @@ impl GameWorld {
         self.manter_estruturas();
         self.manter_defensores();
         self.tick_canhoes_das_ilhas();
+        self.tick_guerras();
         let lista = self.lista_de_territorios();
         for s in self.sessions.values_mut() {
             if s.logged_in && !s.territorios_enviados {
@@ -146,6 +147,12 @@ impl GameWorld {
                 }
                 Err(e) => tracing::warn!("territorios: falha ao carregar: {e:#}"),
             }
+            match crate::social::guerras(&ctx.pool).await {
+                Ok(v) => {
+                    let _ = ctx.tx.send(IncomingMessage::Guerras(v));
+                }
+                Err(e) => tracing::warn!("guerras: falha ao carregar: {e:#}"),
+            }
             match crate::social::bandeiras(&ctx.pool).await {
                 Ok(v) => {
                     let _ = ctx.tx.send(IncomingMessage::Bandeiras(v));
@@ -193,8 +200,13 @@ impl GameWorld {
         if s.cla_id == 0 {
             return Err("Only a clan can claim a territory islet.");
         }
-        if self.territorios.contains_key(&t.ilhota) {
-            return Err("This islet already belongs to a clan.");
+        if let Some(dono) = self.territorios.get(&t.ilhota) {
+            // Held: only the declared ATTACKER, in its war's open window.
+            let em_guerra = self.guerra_aberta(t.ilhota).is_some_and(|g| g.atacante_id == s.cla_id);
+            if dono.cla_id == s.cla_id || !em_guerra {
+                return Err("This islet already belongs to a clan.");
+            }
+            return Ok(t.ilhota);
         }
         if self.territorios.values().any(|d| d.cla_id == s.cla_id) {
             return Err("Your clan already holds a territory islet.");
@@ -218,6 +230,11 @@ impl GameWorld {
         };
         if self.tomadas.contains_key(&ilhota) {
             self.avisa_missao(sid, "This islet is already being claimed.".into());
+            return;
+        }
+        // In a war the database checks the rank at the conquest itself.
+        if let Some(g) = self.guerra_aberta(ilhota).cloned() {
+            self.on_tomada_autorizada(sid, ilhota, Ok(g.atacante));
             return;
         }
         let nome = self.nome_de(sid);
@@ -345,6 +362,31 @@ impl GameWorld {
 
     /// Two minutes held: write it (the database re-checks rank and freedom).
     fn concluir_tomada(&mut self, t: Tomada) {
+        // A held islet taken in its war: CONQUEST.
+        if self.territorios.contains_key(&t.ilhota) {
+            let Some(g) = self.guerra_aberta(t.ilhota).cloned() else {
+                return;
+            };
+            let escudo = shared::territorio::escudo_da_conquista(agora_unix());
+            let Some(ctx) = self.auth_ctx.clone() else {
+                // No database (tests).
+                let mut d = self.territorios[&t.ilhota].clone();
+                d.cla_id = t.cla_id;
+                d.tag = t.tag;
+                d.cla = t.cla;
+                d.escudo_ate = escudo;
+                self.on_reivindicacao(t.quem, Ok(d));
+                return;
+            };
+            let (sid, nome) = (t.quem, t.nome);
+            tokio::spawn(async move {
+                let resultado = crate::social::conquistar(&ctx.pool, &nome, g.id, escudo)
+                    .await
+                    .map_err(|e| e.to_string());
+                let _ = ctx.tx.send(IncomingMessage::Reivindicacao { sid, resultado });
+            });
+            return;
+        }
         let Some(ctx) = self.auth_ctx.clone() else {
             // No database (tests).
             self.on_reivindicacao(
@@ -355,6 +397,7 @@ impl GameWorld {
                     tag: t.tag,
                     cla: t.cla,
                     niveis: shared::territorio::NIVEIS_INICIAIS,
+                    ..Default::default()
                 }),
             );
             return;
@@ -414,7 +457,12 @@ impl GameWorld {
                 self.send_chat_to(sid, &texto);
                 let cla = d.cla_id;
                 self.avisar_cla(cla, &texto);
-                self.territorios.insert(d.ilhota, d);
+                let k = d.ilhota;
+                self.territorios.insert(k, d);
+                // A conquest ends that islet's war.
+                if let Some(g) = self.guerra_aberta(k).cloned() {
+                    self.fechar_guerra(g.id, k, false);
+                }
                 self.avisar_territorios();
             }
             Err(e) => self.avisa_missao(sid, e),
@@ -1103,4 +1151,183 @@ impl GameWorld {
             Err(e) => self.avisa_missao(sid, e),
         }
     }
+
+    // ─────────────────── phase 5: the wars ───────────────────
+
+    /// The war on islet `k` whose window is open now, if any.
+    pub(crate) fn guerra_aberta(&self, k: u8) -> Option<&shared::territorio::Guerra> {
+        self.guerras.iter().find(|g| g.ilhota == k && self.guerras_abertas.contains(&g.id))
+    }
+
+    fn lista_de_guerras(&self) -> Vec<shared::territorio::Guerra> {
+        self.guerras.clone()
+    }
+
+    pub fn on_guerras(&mut self, v: Vec<shared::territorio::Guerra>) {
+        if v != self.guerras {
+            self.guerras = v;
+            self.avisar_guerras();
+        }
+    }
+
+    fn avisar_guerras(&mut self) {
+        let lista = self.lista_de_guerras();
+        for s in self.sessions.values_mut().filter(|s| s.logged_in) {
+            s.guerras_enviadas = true;
+            let _ = s.handle.to_client.send(ServerMessage::Guerras { lista: lista.clone() });
+        }
+    }
+
+    /// Each tick: a war's window opens at its start; past its end it runs
+    /// on while an attacker stands in the ring (unlimited overtime); then it
+    /// closes — the defender held — and the walls, gates and cannons are
+    /// whole again.
+    pub(crate) fn tick_guerras(&mut self) {
+        let lista = self.lista_de_guerras();
+        for s in self.sessions.values_mut() {
+            if s.logged_in && !s.guerras_enviadas {
+                s.guerras_enviadas = true;
+                let _ = s.handle.to_client.send(ServerMessage::Guerras { lista: lista.clone() });
+            }
+        }
+        let agora = agora_unix();
+        let mut fechar = Vec::new();
+        for g in &self.guerras {
+            let atacante_no_anel = self.cla_no_anel(g.ilhota, g.atacante_id);
+            let aberta = agora >= g.inicio && (agora < g.fim || atacante_no_anel);
+            if aberta {
+                if self.guerras_abertas.insert(g.id) {
+                    self.cercos_abertos.insert(g.ilhota);
+                    tracing::info!("guerra {}: abriu na ilhota {}", g.id, g.ilhota);
+                }
+            } else if agora >= g.fim {
+                fechar.push((g.id, g.ilhota));
+            }
+        }
+        for (id, k) in fechar {
+            self.fechar_guerra(id, k, true);
+        }
+    }
+
+    /// A war ends (`defensor_ficou`: the window ran out with no conquest).
+    pub(crate) fn fechar_guerra(&mut self, id: i64, k: u8, defensor_ficou: bool) {
+        self.guerras.retain(|g| g.id != id);
+        self.guerras_abertas.remove(&id);
+        self.cercos_abertos.remove(&k);
+        self.tomadas.remove(&k);
+        // Whole again for the next war.
+        if let Some(es) = self.estruturas.get(&k) {
+            let todas: Vec<hecs::Entity> = es.muros.iter().flatten().copied().chain(es.portao).chain(es.canhoes.iter().copied()).collect();
+            for e in todas {
+                if let Ok(mut h) = self.ecs.get::<&mut Health>(e) {
+                    h.current = h.max;
+                }
+            }
+        }
+        if defensor_ficou {
+            let ilha = shared::mar::ilhotas().get(k as usize).map_or("the islet", |i| i.nome);
+            let texto = format!("The war for {ilha} is over: the defenders held.");
+            let alvos: Vec<SessionId> = self.sessions.iter().filter(|(_, s)| s.logged_in).map(|(id, _)| *id).collect();
+            for sid in alvos {
+                self.send_chat_to(sid, &texto);
+            }
+            if let Some(ctx) = self.auth_ctx.clone() {
+                tokio::spawn(async move {
+                    if let Err(e) = crate::social::encerrar_guerra(&ctx.pool, id, None).await {
+                        tracing::warn!("guerra: falha ao encerrar: {e:#}");
+                    }
+                });
+            }
+        }
+        self.avisar_guerras();
+    }
+
+    /// Does clan `cla` have someone standing in islet `k`'s ring?
+    fn cla_no_anel(&self, k: u8, cla: i64) -> bool {
+        let Some(ilha) = shared::mar::ilhotas().get(k as usize) else {
+            return false;
+        };
+        self.sessions.values().any(|s| {
+            s.logged_in
+                && s.cla_id == cla
+                && cla != 0
+                && s.entity
+                    .and_then(|e| self.ecs.get::<&Position>(e).ok().map(|p| p.0))
+                    .is_some_and(|p| p.distance(ilha.centro) <= shared::territorio::RAIO_DO_NUCLEO)
+        })
+    }
+
+    /// The islet whose Governor `sid` stands by, if any (held by anyone).
+    fn governador_ao_lado(&self, sid: SessionId) -> Option<u8> {
+        let s = self.sessions.get(&sid)?;
+        let k = s.em_terra?.ilhota;
+        self.territorios.get(&k)?;
+        let ilha = shared::mar::ilhotas().get(k as usize)?;
+        let p = self.ecs.get::<&Position>(s.entity?).ok()?.0;
+        (p.distance(shared::territorio::pos_do_governador(ilha.centro)) <= shared::territorio::ALCANCE_DO_NPC + 1.0)
+            .then_some(k)
+    }
+
+    /// DECLARE WAR on the enemy islet whose Governor I stand by.
+    pub(crate) fn declarar_guerra_aqui(&mut self, sid: SessionId) {
+        let Some(k) = self.governador_ao_lado(sid) else {
+            return;
+        };
+        let nome = self.nome_de(sid);
+        let Some(ctx) = self.auth_ctx.clone() else {
+            return;
+        };
+        let agora = agora_unix();
+        tokio::spawn(async move {
+            let resultado = crate::social::declarar_guerra(&ctx.pool, &nome, k, agora)
+                .await
+                .map(|sabado| {
+                    let ilha = shared::mar::ilhotas().get(k as usize).map_or("the islet", |i| i.nome);
+                    format!(
+                        "War declared on {ilha} for the weekend of {} (the defender picks the hour).",
+                        shared::territorio::data_curta(sabado)
+                    )
+                })
+                .map_err(|e| e.to_string());
+            let _ = ctx.tx.send(IncomingMessage::RespostaDeGuerra { sid, resultado });
+        });
+    }
+
+    /// SET MY ISLET'S WAR TIME at its Governor.
+    pub(crate) fn agendar_guerra_aqui(&mut self, sid: SessionId, dia: u8, hora: u8) {
+        let Some(k) = self.governador_ao_lado(sid) else {
+            return;
+        };
+        let nome = self.nome_de(sid);
+        let Some(ctx) = self.auth_ctx.clone() else {
+            return;
+        };
+        let agora = agora_unix();
+        tokio::spawn(async move {
+            let resultado = crate::social::agendar_guerra(&ctx.pool, &nome, k, dia, hora, agora)
+                .await
+                .map(|_| {
+                    let d = if dia == 0 { "Sunday" } else { "Saturday" };
+                    format!("War time set: {d} {:02}:00.", hora.clamp(shared::territorio::HORA_MIN, shared::territorio::HORA_MAX))
+                })
+                .map_err(|e| e.to_string());
+            let _ = ctx.tx.send(IncomingMessage::RespostaDeGuerra { sid, resultado });
+        });
+    }
+
+    pub fn on_resposta_de_guerra(&mut self, sid: SessionId, resultado: Result<String, String>) {
+        match resultado {
+            Ok(t) => {
+                self.send_chat_to(sid, &t);
+                // The new war or slot reaches everyone at once.
+                self.carregar_territorios();
+            }
+            Err(e) => self.avisa_missao(sid, e),
+        }
+    }
+}
+
+/// Now, unix seconds.
+pub(crate) fn agora_unix() -> i64 {
+    (now_ms() / 1000) as i64
 }

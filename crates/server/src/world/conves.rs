@@ -1706,6 +1706,7 @@ mod testes {
             tag: "X".into(),
             cla: "X".into(),
             niveis: shared::territorio::NIVEIS_INICIAIS,
+            ..Default::default()
         };
         w.territorios.insert(0, dono(0, 9));
         assert!(w.pode_reivindicar(sid).is_err(), "held by another clan");
@@ -1720,6 +1721,7 @@ mod testes {
             tag: "MAR".into(),
             cla: "Mares".into(),
             niveis: shared::territorio::NIVEIS_INICIAIS,
+            ..Default::default()
         };
         w.on_reivindicacao(sid, Ok(novo.clone()));
         assert_eq!(w.territorios.get(&0), Some(&novo));
@@ -1864,7 +1866,7 @@ mod testes {
         }
         w.territorios.insert(
             0,
-            tr::Dono { ilhota: 0, cla_id: 7, tag: "MAR".into(), cla: "Mares".into(), niveis: tr::NIVEIS_INICIAIS },
+            tr::Dono { ilhota: 0, cla_id: 7, tag: "MAR".into(), cla: "Mares".into(), niveis: tr::NIVEIS_INICIAIS, ..Default::default() },
         );
         w.step(shared::TICK_DT);
         assert!(w.npcs_das_ilhotas.contains_key(&0), "the NPCs stand there");
@@ -1920,7 +1922,7 @@ mod testes {
         niveis[trilha::MUROS] = 2;
         niveis[trilha::PORTOES] = 1;
         niveis[trilha::CANHOES] = 1;
-        w.territorios.insert(3, tr::Dono { ilhota: 3, cla_id: 7, tag: "MAR".into(), cla: "Mares".into(), niveis });
+        w.territorios.insert(3, tr::Dono { ilhota: 3, cla_id: 7, tag: "MAR".into(), cla: "Mares".into(), niveis, ..Default::default() });
         w.manter_estruturas();
         let es = &w.estruturas[&3];
         assert_eq!(es.muros.iter().flatten().count(), tr::SEGMENTOS_DA_MURALHA - 1);
@@ -1975,7 +1977,7 @@ mod testes {
         let ilha = &shared::mar::ilhotas()[k as usize];
         let mut niveis = tr::NIVEIS_INICIAIS;
         niveis[trilha::DEFENSORES] = 1;
-        w.territorios.insert(k, tr::Dono { ilhota: k, cla_id: 7, tag: "MAR".into(), cla: "Mares".into(), niveis });
+        w.territorios.insert(k, tr::Dono { ilhota: k, cla_id: 7, tag: "MAR".into(), cla: "Mares".into(), niveis, ..Default::default() });
         w.manter_defensores();
         let total = tr::quantos_defensores(ilha.porte, 1);
         let vagas = &w.defensores[&k];
@@ -2030,7 +2032,7 @@ mod testes {
         let mut niveis = tr::NIVEIS_INICIAIS;
         niveis[trilha::VILA] = 2;
         niveis[trilha::CANHOES] = 2;
-        w.territorios.insert(k, tr::Dono { ilhota: k, cla_id: 7, tag: "MAR".into(), cla: "Mares".into(), niveis });
+        w.territorios.insert(k, tr::Dono { ilhota: k, cla_id: 7, tag: "MAR".into(), cla: "Mares".into(), niveis, ..Default::default() });
         w.manter_estruturas();
         let canhao = w.estruturas[&k].canhoes[0];
         let pos_c = w.ecs.get::<&Position>(canhao).unwrap().0;
@@ -2085,10 +2087,70 @@ mod testes {
         assert_eq!(drops[0].1, 100, "free islet: untouched");
         let mut niveis = tr::NIVEIS_INICIAIS;
         niveis[trilha::MADEIRA] = 2;
-        w.territorios.insert(2, tr::Dono { ilhota: 2, cla_id: 7, tag: "MAR".into(), cla: "Mares".into(), niveis });
+        w.territorios.insert(2, tr::Dono { ilhota: 2, cla_id: 7, tag: "MAR".into(), cla: "Mares".into(), niveis, ..Default::default() });
         let mut drops = vec![(shared::item_id::WOOD_T1, 100u32)];
         w.recurso_da_ilhota(2, 0, &mut drops);
         assert_eq!(drops[0].1, 135, "x1.5 then minus a tenth");
+    }
+
+    /// PHASE 5: a declared war opens at its time; the attacker holding the
+    /// ring two minutes CONQUERS the held islet (shielded, war over); a war
+    /// runs on past its end while an attacker stands in the ring, and
+    /// closes — structures whole again — once none does.
+    #[test]
+    fn a_guerra_abre_prorroga_e_a_conquista_troca_o_dono() {
+        use shared::territorio::{self as tr, trilha, Guerra};
+        let (mut w, sid, _rx) = mundo();
+        w.step(shared::TICK_DT);
+        let k = 4u8;
+        let ilha = &shared::mar::ilhotas()[k as usize];
+        let mut niveis = tr::NIVEIS_INICIAIS;
+        niveis[trilha::VILA] = 2;
+        niveis[trilha::MUROS] = 1;
+        w.territorios.insert(k, tr::Dono { ilhota: k, cla_id: 7, tag: "DEF".into(), cla: "Defs".into(), niveis, ..Default::default() });
+        w.manter_estruturas();
+        let agora = super::super::territorios::agora_unix();
+        let guerra = |id: i64, inicio: i64, fim: i64| Guerra {
+            id, ilhota: k, atacante_id: 9, atacante_tag: "ATK".into(), atacante: "Atks".into(), inicio, fim,
+        };
+        // Not yet.
+        w.guerras = vec![guerra(1, agora + 3600, agora + 7200)];
+        w.tick_guerras();
+        assert!(!w.cercos_abertos.contains(&k), "before its time");
+        // Its time: the siege opens; the attacker (clan 9) starts the claim.
+        w.guerras = vec![guerra(1, agora - 10, agora + 3600)];
+        w.tick_guerras();
+        assert!(w.cercos_abertos.contains(&k));
+        {
+            let s = w.sessions.get_mut(&sid).unwrap();
+            s.cla_id = 9;
+            s.cla_tag = "ATK".into();
+            s.conves = None;
+            s.em_terra = Some(EmTerra { ilhota: k, navio: None });
+        }
+        let corpo_e = w.sessions[&sid].entity.unwrap();
+        w.ecs.get::<&mut Position>(corpo_e).unwrap().0 = ilha.centro;
+        w.handle_navio(sid, PedidoNavio::ReivindicarIlhota);
+        assert!(w.tomadas.contains_key(&k), "the attacker may claim a held islet in its war");
+        for _ in 0..((tr::TEMPO_DE_TOMADA_S + 1.0) / shared::TICK_DT) as u32 {
+            w.tick_tomadas(shared::TICK_DT);
+        }
+        assert_eq!(w.territorios[&k].cla_id, 9, "conquered");
+        assert!(w.territorios[&k].escudo_ate > agora, "shielded");
+        assert!(w.guerras.is_empty() && !w.cercos_abertos.contains(&k), "the war is over");
+        // A second war: past its end with an attacker in the ring it runs on…
+        w.territorios.get_mut(&k).unwrap().cla_id = 7;
+        w.guerras = vec![guerra(2, agora - 7200, agora - 60)];
+        w.tick_guerras();
+        assert!(w.cercos_abertos.contains(&k), "overtime while an attacker holds the ring");
+        // …and closes once none does, the walls whole again.
+        let muro = w.estruturas[&k].muros.iter().flatten().next().copied().unwrap();
+        w.ecs.get::<&mut Health>(muro).unwrap().current = 0;
+        w.ecs.get::<&mut Position>(corpo_e).unwrap().0 = ilha.centro + Vec2::X * 30.0;
+        w.tick_guerras();
+        assert!(!w.cercos_abertos.contains(&k) && w.guerras.is_empty());
+        let h = *w.ecs.get::<&Health>(muro).unwrap();
+        assert_eq!(h.current, h.max, "repaired after the war");
     }
 
     /// THE COAST'S PUSH (owner, 20/11/2026): a hull with its bow buried in

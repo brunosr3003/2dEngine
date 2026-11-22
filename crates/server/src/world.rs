@@ -95,6 +95,13 @@ pub enum IncomingMessage {
     },
     /// TERRITORIES phase 4: an upgrade's outcome (what was paid, to refund
     /// on an error).
+    /// TERRITORIES phase 5: the open wars, read from the database.
+    Guerras(Vec<shared::territorio::Guerra>),
+    /// TERRITORIES phase 5: a declaration's / a war time's answer.
+    RespostaDeGuerra {
+        sid: SessionId,
+        resultado: Result<String, String>,
+    },
     /// TERRITORIES 4.6: a bank plunder's outcome.
     Saque {
         sid: SessionId,
@@ -2652,6 +2659,8 @@ pub struct Session {
     pub territorios_enviados: bool,
     /// CLAN FLAGS: this client has the flags list (`Bandeiras`).
     pub bandeiras_enviadas: bool,
+    /// TERRITORIES phase 5: this client has the wars list (`Guerras`).
+    pub guerras_enviadas: bool,
     /// The deck rows this session's client already has (`Conves` deltas).
     pub conves_enviado: HashMap<EntityId, shared::conves::NoConves>,
     /// LETHAL FURY (Assassin active): until when, and its factor (1.0, or
@@ -3213,6 +3222,9 @@ pub struct GameWorld {
     pub(crate) recarga_dos_canhoes: HashMap<hecs::Entity, f32>,
     /// TERRITORIES 4.6: who already looted which islet's bank this siege.
     pub(crate) saques_do_cerco: std::collections::HashSet<(u8, EntityId)>,
+    /// TERRITORIES phase 5: the declared wars, and those whose window opened.
+    pub(crate) guerras: Vec<shared::territorio::Guerra>,
+    pub(crate) guerras_abertas: std::collections::HashSet<i64>,
     /// Open direct trades, one entry per side (`world/troca.rs`).
     pub(crate) trocas: HashMap<SessionId, troca::Mesa>,
     /// Pending trade invites: invited -> (who invited, until sim_time_s).
@@ -3738,6 +3750,8 @@ impl GameWorld {
             invasores: HashMap::new(),
             recarga_dos_canhoes: HashMap::new(),
             saques_do_cerco: Default::default(),
+            guerras: Vec::new(),
+            guerras_abertas: Default::default(),
             trocas: HashMap::new(),
             troca_convites: HashMap::new(),
             enemy_spawn_timer: 0.0,
@@ -3947,6 +3961,8 @@ impl GameWorld {
             invasores: HashMap::new(),
             recarga_dos_canhoes: HashMap::new(),
             saques_do_cerco: Default::default(),
+            guerras: Vec::new(),
+            guerras_abertas: Default::default(),
             trocas: HashMap::new(),
             troca_convites: HashMap::new(),
             enemy_spawn_timer: 0.0,
@@ -8653,6 +8669,7 @@ impl GameWorld {
                 em_terra: None,
                 territorios_enviados: false,
                 bandeiras_enviadas: false,
+                guerras_enviadas: false,
                 conves_enviado: HashMap::new(),
                 furia_ate: 0.0,
                 furia_fator: 0.0,

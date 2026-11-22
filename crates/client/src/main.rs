@@ -2854,6 +2854,7 @@ impl Jogo {
             }
             ServerMessage::Tomadas { lista } => mar_ui::define_tomadas(lista),
             ServerMessage::Bandeiras { lista } => bandeiras::define(lista),
+            ServerMessage::Guerras { lista } => mar_ui::define_guerras(lista),
             ServerMessage::EmTerra { ilhota } => {
                 if log_mar() {
                     eprintln!("[mar {:.2}] <- EmTerra {ilhota:?}", get_time());

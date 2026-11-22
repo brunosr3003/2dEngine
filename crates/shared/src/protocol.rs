@@ -1599,6 +1599,11 @@ pub enum ServerMessage {
     Bandeiras {
         lista: Vec<crate::bandeira::BandeiraDoCla>,
     },
+    /// TERRITORIES phase 5: the declared wars (whole list, on entering the
+    /// sea and on every change). Appended.
+    Guerras {
+        lista: Vec<crate::territorio::Guerra>,
+    },
 }
 
 /// Quantos espacos a barra de itens tem: C, 8, 9 e 0.

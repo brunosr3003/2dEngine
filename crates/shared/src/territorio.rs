@@ -4,7 +4,7 @@
 use serde::{Deserialize, Serialize};
 
 /// One held islet, as the sea and the map show it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Dono {
     /// Index in `mar::ilhotas`.
     pub ilhota: u8,
@@ -15,6 +15,25 @@ pub struct Dono {
     pub cla: String,
     /// Phase 4: every upgrade track's level (`Trilha` index). Appended.
     pub niveis: [u8; N_TRILHAS],
+    /// Phase 5: no war can be declared on it before this (unix s). Appended.
+    pub escudo_ate: i64,
+    /// Phase 5: the defender's war slot (weekday 6 Sat / 0 Sun, hour).
+    /// Appended.
+    pub agenda: (u8, u8),
+}
+
+/// A declared WAR (phase 5): who attacks which islet, and its window.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Guerra {
+    pub id: i64,
+    pub ilhota: u8,
+    pub atacante_id: i64,
+    pub atacante_tag: String,
+    pub atacante: String,
+    /// Window start and end (unix s); past the end it runs on while an
+    /// attacker stands in the ring.
+    pub inicio: i64,
+    pub fim: i64,
 }
 
 /// How near the islet's centre (its flag, later its core) a claim is made,
@@ -445,4 +464,134 @@ pub const RECARGA_DO_CANHAO_S: f32 = 4.0;
 /// A cannonball's hull damage at cannon level `n` (180 at 1, 720 at 10).
 pub fn dano_do_canhao(n: u8) -> i32 {
     120 + 60 * n as i32
+}
+
+// ─────────────────── phase 5: the siege calendar ───────────────────
+//
+// All times are unix seconds; the rules are in Brasília time (UTC-3, no
+// daylight saving): war only on Saturday or Sunday, declared Monday to
+// Friday noon for the coming weekend, the defender picks the hour within
+// 14h-22h (default Saturday 20h).
+
+/// Brasília is UTC-3.
+pub const FUSO_S: i64 = -3 * 3600;
+/// The defender's window of hours (start of the war), inclusive.
+pub const HORA_MIN: u8 = 14;
+pub const HORA_MAX: u8 = 22;
+/// Default slot: Saturday (6) at 20h.
+pub const DIA_PADRAO: u8 = 6;
+pub const HORA_PADRAO: u8 = 20;
+
+/// Days since the epoch in local time, and the local weekday (0 Sunday).
+fn dia_local(t: i64) -> (i64, u8) {
+    let d = (t + FUSO_S).div_euclid(86_400);
+    // 1970-01-01 was a Thursday (4).
+    (d, ((d + 4).rem_euclid(7)) as u8)
+}
+
+/// The unix time of the Saturday 00:00 (local) of the weekend a war
+/// DECLARED at `agora` falls on: Monday 00:00 to Friday 12:00 → the coming
+/// weekend; later (Friday afternoon, the weekend itself) → the next one.
+pub fn fim_de_semana_da_declaracao(agora: i64) -> i64 {
+    let (d, wd) = dia_local(agora);
+    let seg_do_dia = (agora + FUSO_S).rem_euclid(86_400);
+    // Days until this week's Saturday (wd 6), from Monday..Friday.
+    let ate_sabado = (6 - wd as i64).rem_euclid(7);
+    let sabado = d + ate_sabado;
+    let a_tempo = match wd {
+        1..=4 => true,
+        5 => seg_do_dia < 12 * 3600,
+        _ => false,
+    };
+    // Sunday's "this Saturday" is already next weekend; Friday afternoon and
+    // Saturday push one week.
+    let sabado = if a_tempo || wd == 0 { sabado } else { sabado + 7 };
+    sabado * 86_400 - FUSO_S
+}
+
+/// When a war of the weekend starting `sabado` (from
+/// `fim_de_semana_da_declaracao`) begins, at the defender's `dia` (6 Sat,
+/// 0 Sun) and `hora` (clamped to the window).
+pub fn inicio_da_guerra(sabado: i64, dia: u8, hora: u8) -> i64 {
+    let dias = if dia == 0 { 1 } else { 0 };
+    sabado + dias * 86_400 + hora.clamp(HORA_MIN, HORA_MAX) as i64 * 3600
+}
+
+/// The end of the weekend starting `sabado` (Monday 00:00 local): a new
+/// owner's shield lasts until the end of the NEXT weekend.
+pub fn fim_do_fim_de_semana(sabado: i64) -> i64 {
+    sabado + 2 * 86_400
+}
+
+#[cfg(test)]
+mod testes_do_calendario {
+    use super::*;
+
+    /// Local time → unix (BRT).
+    fn em(ano_dia: i64, h: i64) -> i64 {
+        ano_dia * 86_400 + h * 3600 - FUSO_S
+    }
+
+    #[test]
+    fn a_declaracao_cai_no_fim_de_semana_certo() {
+        // 2026-11-23 is a Monday: days since epoch = 20780.
+        let seg = 20_780i64;
+        assert_eq!(dia_local(em(seg, 10)).1, 1, "Monday");
+        let sabado = em(seg + 5, 0);
+        assert_eq!(dia_local(sabado).1, 6, "that Saturday");
+        // Monday, Thursday night, Friday 11:59 → this weekend.
+        assert_eq!(fim_de_semana_da_declaracao(em(seg, 9)), sabado);
+        assert_eq!(fim_de_semana_da_declaracao(em(seg + 3, 23)), sabado);
+        assert_eq!(fim_de_semana_da_declaracao(em(seg + 4, 11) + 3599), sabado);
+        // Friday 12:00, Saturday, Sunday → next weekend.
+        assert_eq!(fim_de_semana_da_declaracao(em(seg + 4, 12)), sabado + 7 * 86_400);
+        assert_eq!(fim_de_semana_da_declaracao(em(seg + 5, 15)), sabado + 7 * 86_400);
+        assert_eq!(fim_de_semana_da_declaracao(em(seg + 6, 15)), sabado + 7 * 86_400);
+        // The defender's slot.
+        assert_eq!(inicio_da_guerra(sabado, 6, 20), em(seg + 5, 20));
+        assert_eq!(inicio_da_guerra(sabado, 0, 14), em(seg + 6, 14));
+        assert_eq!(inicio_da_guerra(sabado, 6, 3), em(seg + 5, 14), "clamped to the window");
+        assert_eq!(fim_do_fim_de_semana(sabado), em(seg + 7, 0));
+    }
+}
+
+/// The Saturday 00:00 (local) of the weekend time `t` falls in (a Sunday
+/// counts back to its Saturday).
+pub fn sabado_de(t: i64) -> i64 {
+    let (d, wd) = dia_local(t);
+    let atras = match wd {
+        0 => 1,
+        6 => 0,
+        w => (w as i64 + 1).rem_euclid(7),
+    };
+    (d - atras) * 86_400 - FUSO_S
+}
+
+/// A conquest's shield: until the end of the NEXT weekend.
+pub fn escudo_da_conquista(agora: i64) -> i64 {
+    fim_do_fim_de_semana(sabado_de(agora) + 7 * 86_400)
+}
+
+/// "dd/mm" of the local day containing unix time `t` (Brasília).
+pub fn data_curta(t: i64) -> String {
+    // Days → civil date (Howard Hinnant's algorithm).
+    let z = (t + FUSO_S).div_euclid(86_400) + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    format!("{d:02}/{m:02}")
+}
+
+#[cfg(test)]
+mod testes_da_data {
+    #[test]
+    fn data_curta_confere() {
+        // 2026-11-28 20:00 BRT.
+        let t = 20_785 * 86_400 + 20 * 3600 + 3 * 3600;
+        assert_eq!(super::data_curta(t), "28/11");
+    }
 }

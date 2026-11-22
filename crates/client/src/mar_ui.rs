@@ -41,6 +41,36 @@ pub fn define_territorios(v: Vec<shared::territorio::Dono>) {
     }
 }
 
+/// TERRITORIES phase 5: the declared wars (`ServerMessage::Guerras`).
+static GUERRAS: std::sync::Mutex<Vec<shared::territorio::Guerra>> = std::sync::Mutex::new(Vec::new());
+
+pub fn define_guerras(v: Vec<shared::territorio::Guerra>) {
+    if let Ok(mut g) = GUERRAS.lock() {
+        *g = v;
+    }
+}
+
+/// The war declared on islet `ilhota`, if any.
+pub fn guerra_da_ilhota(ilhota: u8) -> Option<shared::territorio::Guerra> {
+    GUERRAS.lock().ok().and_then(|g| g.iter().find(|x| x.ilhota == ilhota).cloned())
+}
+
+/// Now, unix seconds (the wars' clock).
+pub fn agora_unix() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs() as i64)
+}
+
+/// "Sat 20:00" for a war start (Brasília time).
+pub fn texto_do_horario(t: i64) -> String {
+    let local = t + shared::territorio::FUSO_S;
+    let dia = (local.div_euclid(86_400) + 4).rem_euclid(7);
+    let h = local.rem_euclid(86_400) / 3600;
+    let nome = if dia == 0 { "Sun" } else if dia == 6 { "Sat" } else { "—" };
+    format!("{} {:02}:00", shared::idioma::tr(nome), h)
+}
+
 /// TERRITORIES: the claims under way (`ServerMessage::Tomadas`).
 static TOMADAS: std::sync::Mutex<Vec<shared::territorio::TomadaInfo>> =
     std::sync::Mutex::new(Vec::new());
@@ -67,6 +97,25 @@ pub fn faixa_da_tomada(w: &crate::world::World) {
         return;
     };
     let p = ::glam::Vec2::new(eu.render_pos.x, eu.render_pos.y);
+    // A WAR under way nearby: who attacks, and the time left (or overtime).
+    let agora = agora_unix();
+    let guerras = GUERRAS.lock().map(|g| g.clone()).unwrap_or_default();
+    if let Some((g, ilha)) = guerras.iter().find_map(|g| {
+        let i = shared::mar::ilhotas().get(g.ilhota as usize)?;
+        (agora >= g.inicio && i.centro.distance(p) <= 160.0).then_some((g, i))
+    }) {
+        let s = (screen_height().min(screen_width()) / 800.0).clamp(0.8, 1.6);
+        let quem = if g.atacante_tag.is_empty() { g.atacante.clone() } else { format!("[{}] {}", g.atacante_tag, g.atacante) };
+        let texto = if agora < g.fim {
+            let falta = (g.fim - agora).max(0);
+            format!("War for {}: {quem} attacking · {}:{:02}", ilha.nome, falta / 60, falta % 60)
+        } else {
+            format!("War for {}: {quem} attacking · Overtime", ilha.nome)
+        };
+        let (x, y, tam) = (screen_width() * 0.5, 64.0 * s, (17.0 * s) as u16);
+        crate::hud_estilo::texto_centro(x + 1.5, y + 1.5, &texto, tam, Color::new(0.0, 0.0, 0.0, 0.85));
+        crate::hud_estilo::texto_centro(x, y, &texto, tam, crate::hud_estilo::VERMELHO);
+    }
     let lista = TOMADAS.lock().map(|t| t.clone()).unwrap_or_default();
     let Some((t, ilha)) = lista.iter().find_map(|t| {
         let i = shared::mar::ilhotas().get(t.ilhota as usize)?;

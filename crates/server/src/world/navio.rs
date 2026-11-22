@@ -210,6 +210,8 @@ impl GameWorld {
             PedidoNavio::ReivindicarIlhota => self.reivindicar_ilhota(sid),
             PedidoNavio::MelhorarIlha { trilha } => self.melhorar_ilha(sid, trilha),
             PedidoNavio::SaquearBanco => self.saquear_banco_da_ilha(sid),
+            PedidoNavio::DeclararGuerra => self.declarar_guerra_aqui(sid),
+            PedidoNavio::AgendarGuerra { dia, hora } => self.agendar_guerra_aqui(sid, dia, hora),
         }
     }
 

@@ -1237,11 +1237,14 @@ fn aguas_sem_lei(
             ),
         }
         if !mini {
-            let rotulo = match &dono {
+            let mut rotulo = match &dono {
                 None => format!("{} · Free territory", i.nome),
                 Some(d) if !d.tag.is_empty() => format!("{} · [{}] {}", i.nome, d.tag, d.cla),
                 Some(d) => format!("{} · {}", i.nome, d.cla),
             };
+            if let Some(g) = crate::mar_ui::guerra_da_ilhota(n as u8) {
+                rotulo.push_str(&format!(" · ⚔ {}", crate::mar_ui::texto_do_horario(g.inicio)));
+            }
             let (dx, dy) = (q.x + r * 2.0, q.y + r * 0.45);
             estilo::texto(dx + 1.0, dy + 1.0, &rotulo, tamanho, Color::new(0.0, 0.0, 0.0, 0.85));
             estilo::texto(dx, dy, &rotulo, tamanho, cor);

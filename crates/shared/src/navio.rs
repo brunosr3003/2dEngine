@@ -1773,6 +1773,12 @@ pub enum PedidoNavio {
     /// siege window, loots a tenth of that clan's bank (once per siege).
     /// Appended.
     SaquearBanco,
+    /// TERRITORIES (phase 5): declare war on the enemy islet whose Governor
+    /// I stand by (leader or officer; Monday to Friday noon). Appended.
+    DeclararGuerra,
+    /// TERRITORIES (phase 5): set my clan's islet's war slot (6 Sat / 0
+    /// Sun, hour 14-22), at its Governor. Appended.
+    AgendarGuerra { dia: u8, hora: u8 },
 }
 
 /// The ship's state, for the Captain's buttons and the hull bar.

@@ -66,11 +66,18 @@ impl IlhaUi {
         // it only in that islet's siege window).
         if self.aberto.is_none() && npc_perto(w).is_none() {
             if let Some(k) = governador_inimigo_perto(w) {
-                let _ = k;
+                // In its war: plunder; no war declared: declare one.
+                let guerra = crate::mar_ui::guerra_da_ilhota(k);
+                let em_guerra = guerra.as_ref().is_some_and(|g| crate::mar_ui::agora_unix() >= g.inicio);
+                let (rotulo, pedido) = match (&guerra, em_guerra) {
+                    (_, true) => ("Plunder bank", PedidoNavio::SaquearBanco),
+                    (None, false) => ("Declare war", PedidoNavio::DeclararGuerra),
+                    (Some(_), false) => return None,
+                };
                 let leme = crate::mar_ui::retangulo_do_leme(z);
                 let r = Rect::new(leme.x - 60.0 * z.s, leme.y - 52.0 * z.s, leme.w + 120.0 * z.s, 42.0 * z.s);
-                if crate::ui::botao(r, "Plunder bank", true) {
-                    return Some(PedidoNavio::SaquearBanco);
+                if crate::ui::botao(r, rotulo, true) {
+                    return Some(pedido);
                 }
                 return None;
             }
@@ -109,7 +116,8 @@ impl IlhaUi {
             .collect();
         let linha = 64.0 * s;
         let w = (760.0 * s).min(sw - 24.0);
-        let h = 120.0 * s + linha * trilhas.len() as f32;
+        let extra = if gov { linha } else { 0.0 };
+        let h = 120.0 * s + linha * trilhas.len() as f32 + extra;
         let p = Rect::new((sw - w) / 2.0, (sh - h) / 2.0, w, h);
         e::painel_destaque(p, e::OURO);
         let titulo = format!(
@@ -181,6 +189,38 @@ impl IlhaUi {
             );
             if crate::ui::botao(br, "Upgrade", ok) && br.toca(Vec2::from(mouse_position())) {
                 pedido = Some(PedidoNavio::MelhorarIlha { trilha: t as u8 });
+            }
+        }
+        // THE WAR TIME (phase 5): the defender picks Saturday or Sunday,
+        // 14h-22h (Brasília); a declared war shows here.
+        if gov {
+            let y = p.y + 84.0 * s + trilhas.len() as f32 * linha;
+            let (dia, hora) = dono.agenda;
+            let nome_dia = if dia == 0 { "Sunday" } else { "Saturday" };
+            e::texto_forte(p.x + 20.0 * s, y + 22.0 * s, "War time", 17, e::TEXTO);
+            let mut info = format!("{} {:02}:00", shared::idioma::tr(nome_dia), hora);
+            if let Some(g) = crate::mar_ui::guerra_da_ilhota(k) {
+                let quem = if g.atacante_tag.is_empty() { g.atacante.clone() } else { format!("[{}] {}", g.atacante_tag, g.atacante) };
+                info = format!("{info} · war declared by {quem}");
+            }
+            e::texto(p.x + 20.0 * s, y + 44.0 * s, &info, 13, e::SUAVE);
+            // The 18 slots in order: Sat 14..22, Sun 14..22.
+            let slots: Vec<(u8, u8)> = [6u8, 0u8]
+                .iter()
+                .flat_map(|d| (tr::HORA_MIN..=tr::HORA_MAX).map(move |h| (*d, h)))
+                .collect();
+            let atual = slots.iter().position(|x| *x == (if dia == 0 { 0 } else { 6 }, hora)).unwrap_or(6);
+            let bw = 44.0 * s;
+            let menos = Rect::new(p.x + p.w - 2.0 * bw - 30.0 * s, y + 8.0 * s, bw, 40.0 * s);
+            let mais = Rect::new(p.x + p.w - bw - 20.0 * s, y + 8.0 * s, bw, 40.0 * s);
+            let m = Vec2::from(mouse_position());
+            if crate::ui::botao(menos, "<", true) && menos.toca(m) {
+                let (d, h) = slots[(atual + slots.len() - 1) % slots.len()];
+                pedido = Some(PedidoNavio::AgendarGuerra { dia: d, hora: h });
+            }
+            if crate::ui::botao(mais, ">", true) && mais.toca(m) {
+                let (d, h) = slots[(atual + 1) % slots.len()];
+                pedido = Some(PedidoNavio::AgendarGuerra { dia: d, hora: h });
             }
         }
         pedido

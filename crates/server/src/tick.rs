@@ -164,6 +164,10 @@ pub async fn run_world_loop(
                     world.on_ilha_melhorada(sid, ilhota, trilha, para, pago, resultado)
                 }
                 Ok(IncomingMessage::Saque { sid, resultado }) => world.on_saque(sid, resultado),
+                Ok(IncomingMessage::Guerras(v)) => world.on_guerras(v),
+                Ok(IncomingMessage::RespostaDeGuerra { sid, resultado }) => {
+                    world.on_resposta_de_guerra(sid, resultado)
+                }
                 Ok(IncomingMessage::CorreioEntrega(e)) => world.on_correio_entrega(e),
                 Ok(IncomingMessage::CorreioFim { sid, nome, texto }) => {
                     world.on_correio_fim(sid, nome, texto)
@@ -221,6 +225,10 @@ pub async fn run_world_loop(
                     world.on_ilha_melhorada(sid, ilhota, trilha, para, pago, resultado)
                 }
                 Ok(IncomingMessage::Saque { sid, resultado }) => world.on_saque(sid, resultado),
+                Ok(IncomingMessage::Guerras(v)) => world.on_guerras(v),
+                Ok(IncomingMessage::RespostaDeGuerra { sid, resultado }) => {
+                    world.on_resposta_de_guerra(sid, resultado)
+                }
                 Ok(IncomingMessage::CorreioEntrega(e)) => world.on_correio_entrega(e),
                 Ok(IncomingMessage::CorreioFim { sid, nome, texto }) => {
                     world.on_correio_fim(sid, nome, texto)
