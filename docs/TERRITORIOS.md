@@ -50,8 +50,8 @@ nada a ver com as ilhas principais, que os clãs ocupam, fortificam e disputam.
    passivas do clã, quando existirem, exigem território. Painel do clã
    mostra "Territory: X" ou "Nomad clan". Ainda sem abandonar ilhota pela
    UI (dissolver o clã libera).
-4. **Fortes**: lotes por ilhota, módulos com nível e custo, render no
-   cliente, armazém do clã.
+4. **Fortes e economia da ilha** (desenho fechado com o Bruno em 21/11/2026,
+   ver a seção "Fase 4 em detalhe").
 5. **Cerco**: declaração, janela agendada pelo dono, estruturas com HP
    (canhão do navio e ataque a pé), captura do núcleo, recompensa e trava
    de re-ataque. A visão do Bruno (20/11/2026): pra dominar uma ilha o clã
@@ -69,6 +69,43 @@ nada a ver com as ilhas principais, que os clãs ocupam, fortificam e disputam.
    vivo em terra, ele fica na ilha sem navio e sem penalidade
    (`afundar_derrotado`); morrer na ilha sem navio = morte naval de verdade
    (navio avariado) e volta pro cais, só voltando ao mar depois do reparo.
+
+## Fase 4 em detalhe (21/11/2026)
+
+**Portes das ilhotas** (12 no total): 3 **grandes** (raio ~105) só na faixa
+norte (águas fortes, perto de Skyreach/Kōgen-tō/Abyssia), 3 **médias** (~77)
+e 6 **pequenas** (~53). Relevo **plano** (platô liso, praia curta) pra caber
+construção e evitar bug de degrau. Layout fixo por ilha: centro da vila,
+anel da muralha, portão virado pra praia de desembarque, lotes de canhão na
+costa, lotes de recurso.
+
+**NPC Governador** (centro da vila): upgrada a VILA (Acampamento → Vila →
+Forte → Fortaleza; teto: pequena Vila, média Forte, grande Fortaleza) e as
+DEFESAS: **muros** e **portões** (HP, destrutíveis), **canhões** (HP,
+destrutíveis, atiram em navio inimigo ancorado na costa) e **defensores**
+(guerreiros, arqueiros, magos; nível = nível da ilha + nível da defesa).
+
+**NPC Fazendeiro**: upgrada os RECURSOS da ilha (árvores, pedreiras,
+energia…). **Qualquer um coleta**, mas uma **taxa vai pro banco do clã**
+dono; o banco pode ser **saqueado numa invasão**.
+
+**Defensores atacam só invasores**: quem bateu em muro/portão/canhão,
+defensor ou membro do clã naquela ilha (marca de invasor por um tempo).
+Coletar não é invadir.
+
+**Destruição só na janela do cerco** (decisão da fase 5); no teste, um botão
+no Panóptico abre o cerco na hora.
+
+**Custo**: materiais + ouro = **20.000 × N²** no nível N (escala calculada
+pela renda: ~10–20k/h por jogador ativo, clã de 10–20 junta ~1–2M/dia).
+Tetos por trilha: pequena 4, média 7, grande 10 → maxar as 7 trilhas
+(muro, portão, canhão, defensor, madeira, pedra, energia) custa ~4,2M /
+~19,6M / ~54M. Vila: Vila 500k, Forte 2M, Fortaleza 6M.
+
+**Etapas**: 4.1 portes + relevo plano + layout · 4.2 Governador, upgrades e
+banco de dados · 4.3 muros/portões/canhões com HP e colisão · 4.4
+defensores · 4.5 canhões atirando · 4.6 Fazendeiro, recursos, taxa e banco
+do clã.
 
 ## Bandeiras de clã (21/11/2026)
 
