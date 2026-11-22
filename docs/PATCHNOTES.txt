@@ -8,7 +8,7 @@ Nov 20, 2026 — New ships and naval PvP
 - Ships that nose onto a beach now ease back out to the waterline instead of sitting inside the land.
 - Fixed: after going ashore on an islet you could not walk; the islets' ground is now solid underfoot.
 - Territory islets now come in three sizes: three large islets in the strong northern waters, three medium and six small. Their ground is flat, ready for building.
-- A held islet has a Governor and a Farmer at its heart. Leaders and officers upgrade the village (Camp, Village, Fort, Fortress; small islets stop at Village, medium at Fort), walls, gates, cannons and defenders with the Governor, and the islet's lumber, quarry and energy with the Farmer. Upgrades cost materials and gold.
+- A held islet has a Governor and a Farmer at its heart. Leaders and officers upgrade the village (Camp, Village, Fort, Fortress; small islets stop at Village, medium at Fort), walls, gates, cannons and defenders with the Governor, and the islet's lumber, quarry and energy with the Farmer. Upgrades cost materials and gold, more for each level.
 - Clan territories: a clan leader or officer starts claiming a free islet at its heart with Claim island, then the clan must hold the ring for 2 minutes. Anyone from outside the clan in the ring pauses the claim, and it fails if no clan member is left inside. One islet per clan; the map shows who holds each one.
 - Dying on an islet now brings you back aboard your anchored ship, with the respawn delay growing on each death, as on deck.
 - An anchored ship broken while its crew fights ashore now burns as a wreck like any other: fall on the islet and you still come back aboard it. If it sinks while you are ashore, you stay on the islet without a ship, and falling there sends you to the dock.
