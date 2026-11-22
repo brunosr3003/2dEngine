@@ -1779,6 +1779,9 @@ pub enum PedidoNavio {
     /// TERRITORIES (phase 5): set my clan's islet's war slot (6 Sat / 0
     /// Sun, hour 14-22), at its Governor. Appended.
     AgendarGuerra { dia: u8, hora: u8 },
+    /// TERRITORIES (phase 5): put `qtd` of my gold into my clan's bank for
+    /// the weekly upkeep, at my clan's islet's Governor. Appended.
+    DepositarOuro { qtd: u32 },
 }
 
 /// The ship's state, for the Captain's buttons and the hull bar.

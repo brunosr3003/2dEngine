@@ -212,6 +212,7 @@ impl GameWorld {
             PedidoNavio::SaquearBanco => self.saquear_banco_da_ilha(sid),
             PedidoNavio::DeclararGuerra => self.declarar_guerra_aqui(sid),
             PedidoNavio::AgendarGuerra { dia, hora } => self.agendar_guerra_aqui(sid, dia, hora),
+            PedidoNavio::DepositarOuro { qtd } => self.depositar_ouro_aqui(sid, qtd),
         }
     }
 

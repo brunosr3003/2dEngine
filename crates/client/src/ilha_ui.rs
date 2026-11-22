@@ -116,7 +116,7 @@ impl IlhaUi {
             .collect();
         let linha = 64.0 * s;
         let w = (760.0 * s).min(sw - 24.0);
-        let extra = if gov { linha } else { 0.0 };
+        let extra = if gov { 2.0 * linha } else { 0.0 };
         let h = 120.0 * s + linha * trilhas.len() as f32 + extra;
         let p = Rect::new((sw - w) / 2.0, (sh - h) / 2.0, w, h);
         e::painel_destaque(p, e::OURO);
@@ -221,6 +221,23 @@ impl IlhaUi {
             if crate::ui::botao(mais, ">", true) && mais.toca(m) {
                 let (d, h) = slots[(atual + 1) % slots.len()];
                 pedido = Some(PedidoNavio::AgendarGuerra { dia: d, hora: h });
+            }
+            // THE WEEKLY UPKEEP: paid Monday from the clan bank's gold.
+            let y = y + linha;
+            let taxa = tr::manutencao_semanal(&dono.niveis);
+            e::texto_forte(p.x + 20.0 * s, y + 22.0 * s, "Upkeep", 17, e::TEXTO);
+            let (info, cor) = if dono.atrasos > 0 {
+                (format!("{taxa} gold/week · UNPAID: defences at half, freed next week"), e::VERMELHO)
+            } else {
+                (format!("{taxa} gold/week, from the clan bank every Monday"), e::SUAVE)
+            };
+            e::texto_ajustado(&info, p.x + 20.0 * s, y + 44.0 * s, p.w - 300.0 * s, 13, cor);
+            let bw = 110.0 * s;
+            for (n, (rotulo, qtd)) in [("+100k", 100_000u32), ("+1M", 1_000_000u32)].iter().enumerate() {
+                let r = Rect::new(p.x + p.w - (2 - n) as f32 * (bw + 8.0 * s) - 12.0 * s, y + 8.0 * s, bw, 40.0 * s);
+                if crate::ui::botao(r, rotulo, ouro >= *qtd as u64) && r.toca(m) {
+                    pedido = Some(PedidoNavio::DepositarOuro { qtd: *qtd });
+                }
             }
         }
         pedido

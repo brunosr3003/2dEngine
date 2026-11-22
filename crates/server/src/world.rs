@@ -102,6 +102,12 @@ pub enum IncomingMessage {
         sid: SessionId,
         resultado: Result<String, String>,
     },
+    /// TERRITORIES phase 5: a gold deposit's outcome (refunded on an error).
+    Deposito {
+        sid: SessionId,
+        qtd: u32,
+        resultado: Result<(), String>,
+    },
     /// TERRITORIES 4.6: a bank plunder's outcome.
     Saque {
         sid: SessionId,

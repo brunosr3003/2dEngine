@@ -52,6 +52,8 @@ pub struct Estruturas {
     pub canhoes: Vec<hecs::Entity>,
     /// The levels they were built at (to re-scale HP on an upgrade).
     pub niveis: (u8, u8, u8),
+    /// The upkeep weeks behind they were built with (half HP when > 0).
+    pub atrasos: u8,
 }
 
 /// A claim under way: who claims, for which clan, how far along.
@@ -140,7 +142,14 @@ impl GameWorld {
         let Some(ctx) = self.auth_ctx.clone() else {
             return;
         };
+        let agora = agora_unix();
         tokio::spawn(async move {
+            // The weekly upkeep falls due here (Monday 00:00, Brasília).
+            match crate::social::cobrar_manutencao(&ctx.pool, agora).await {
+                Ok(v) if !v.is_empty() => tracing::info!("manutencao: ilhotas liberadas por falta de pagamento: {v:?}"),
+                Ok(_) => {}
+                Err(e) => tracing::warn!("manutencao: falha ao cobrar: {e:#}"),
+            }
             match crate::social::territorios(&ctx.pool).await {
                 Ok(v) => {
                     let _ = ctx.tx.send(IncomingMessage::Territorios(v));
@@ -690,25 +699,27 @@ impl GameWorld {
                 }
             }
         }
-        let donos: Vec<(u8, [u8; tr::N_TRILHAS])> =
-            self.territorios.iter().map(|(k, d)| (*k, d.niveis)).collect();
-        for (k, niveis) in donos {
+        let donos: Vec<(u8, [u8; tr::N_TRILHAS], u8)> =
+            self.territorios.iter().map(|(k, d)| (*k, d.niveis, d.atrasos)).collect();
+        for (k, niveis, atrasos) in donos {
             let Some(ilha) = shared::mar::ilhotas().get(k as usize) else {
                 continue;
             };
+            // Upkeep a week behind: the defences stand at half strength.
+            let metade = |hp: i32| if atrasos > 0 { (hp / 2).max(1) } else { hp };
             let (nm, np, nc) = (
                 niveis[tr::trilha::MUROS],
                 niveis[tr::trilha::PORTOES],
                 niveis[tr::trilha::CANHOES],
             );
-            let atual = self.estruturas.get(&k).map(|e| e.niveis);
-            if atual == Some((nm, np, nc)) {
+            let atual = self.estruturas.get(&k).map(|e| (e.niveis, e.atrasos));
+            if atual == Some(((nm, np, nc), atrasos)) {
                 continue;
             }
             let mut es = self.estruturas.remove(&k).unwrap_or_default();
             let portao_seg = tr::segmento_do_portao(ilha.fase);
             // Walls: every segment but the gate's.
-            let hp_m = tr::hp_do_muro(nm);
+            let hp_m = metade(tr::hp_do_muro(nm));
             for i in 0..tr::SEGMENTOS_DA_MURALHA {
                 if i == portao_seg {
                     continue;
@@ -727,7 +738,7 @@ impl GameWorld {
                 }
             }
             // The gate (needs walls round it).
-            let hp_p = tr::hp_do_portao(np);
+            let hp_p = metade(tr::hp_do_portao(np));
             match (es.portao, np > 0 && nm > 0) {
                 (Some(e), false) => {
                     self.tirar(e);
@@ -741,7 +752,7 @@ impl GameWorld {
                 (None, false) => {}
             }
             // Cannons on the coast plots.
-            let hp_c = tr::hp_do_canhao(nc);
+            let hp_c = metade(tr::hp_do_canhao(nc));
             if nc == 0 {
                 for e in std::mem::take(&mut es.canhoes) {
                     self.tirar(e);
@@ -761,6 +772,7 @@ impl GameWorld {
                 }
             }
             es.niveis = (nm, np, nc);
+            es.atrasos = atrasos;
             self.estruturas.insert(k, es);
         }
     }
@@ -876,14 +888,15 @@ impl GameWorld {
                 }
             }
         }
-        let donos: Vec<(u8, [u8; tr::N_TRILHAS])> =
-            self.territorios.iter().map(|(k, d)| (*k, d.niveis)).collect();
-        for (k, niveis) in donos {
+        let donos: Vec<(u8, [u8; tr::N_TRILHAS], u8)> =
+            self.territorios.iter().map(|(k, d)| (*k, d.niveis, d.atrasos)).collect();
+        for (k, niveis, atrasos) in donos {
             let Some(ilha) = shared::mar::ilhotas().get(k as usize) else {
                 continue;
             };
             let n = niveis[tr::trilha::DEFENSORES];
-            let total = tr::quantos_defensores(ilha.porte, n);
+            // Upkeep a week behind: half the guards.
+            let total = tr::quantos_defensores(ilha.porte, n) / if atrasos > 0 { 2 } else { 1 };
             let nivel = tr::nivel_dos_defensores(ilha.nivel.0, niveis[tr::trilha::VILA], n);
             let mut vagas = self.defensores.remove(&k).unwrap_or_default();
             while vagas.len() > total {
@@ -1323,6 +1336,53 @@ impl GameWorld {
                 self.carregar_territorios();
             }
             Err(e) => self.avisa_missao(sid, e),
+        }
+    }
+
+    /// GOLD FOR THE UPKEEP (`PedidoNavio::DepositarOuro`): at my clan's
+    /// islet's Governor, `qtd` of my gold into the clan bank (refunded if the
+    /// database refuses).
+    pub(crate) fn depositar_ouro_aqui(&mut self, sid: SessionId, qtd: u32) {
+        let Some(k) = self.governador_ao_lado(sid) else {
+            return;
+        };
+        let Some(dono) = self.territorios.get(&k).cloned() else {
+            return;
+        };
+        let Some(s) = self.sessions.get_mut(&sid) else {
+            return;
+        };
+        if s.cla_id != dono.cla_id || s.cla_id == 0 || qtd == 0 {
+            return;
+        }
+        if s.gold < qtd as u64 {
+            self.avisa_missao(sid, "You do not have that much gold.".into());
+            return;
+        }
+        s.gold -= qtd as u64;
+        self.save_pending = true;
+        let Some(ctx) = self.auth_ctx.clone() else {
+            return;
+        };
+        let cla = dono.cla_id;
+        tokio::spawn(async move {
+            let resultado = crate::social::depositar_no_banco(&ctx.pool, cla, &[(shared::item_id::GOLD, qtd)])
+                .await
+                .map_err(|e| e.to_string());
+            let _ = ctx.tx.send(IncomingMessage::Deposito { sid, qtd, resultado });
+        });
+    }
+
+    pub fn on_deposito(&mut self, sid: SessionId, qtd: u32, resultado: Result<(), String>) {
+        match resultado {
+            Ok(()) => self.send_chat_to(sid, &format!("{qtd} gold put in the clan bank for the upkeep.")),
+            Err(e) => {
+                if let Some(s) = self.sessions.get_mut(&sid) {
+                    s.gold += qtd as u64;
+                }
+                self.save_pending = true;
+                self.avisa_missao(sid, e);
+            }
         }
     }
 }

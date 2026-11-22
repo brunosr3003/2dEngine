@@ -43,6 +43,10 @@ pub async fn init(pool: &PgPool) -> Result<()> {
         // TERRITORIES phase 5: the shield after a conquest, the defender's war
         // slot, and the declared wars (one per islet per weekend).
         "ALTER TABLE territorios ADD COLUMN IF NOT EXISTS escudo_ate BIGINT NOT NULL DEFAULT 0",
+        // The weekly upkeep: when it is next due (0 = set at the first
+        // reading: the first week is free) and the unpaid weeks.
+        "ALTER TABLE territorios ADD COLUMN IF NOT EXISTS manutencao_em BIGINT NOT NULL DEFAULT 0",
+        "ALTER TABLE territorios ADD COLUMN IF NOT EXISTS atrasos SMALLINT NOT NULL DEFAULT 0",
         "CREATE TABLE IF NOT EXISTS territorio_agenda (ilhota SMALLINT PRIMARY KEY, dia SMALLINT NOT NULL DEFAULT 6, hora SMALLINT NOT NULL DEFAULT 20)",
         "CREATE TABLE IF NOT EXISTS territorio_guerras (id BIGSERIAL PRIMARY KEY, ilhota SMALLINT NOT NULL, atacante BIGINT NOT NULL REFERENCES social_clas(id) ON DELETE CASCADE, sabado BIGINT NOT NULL, estado SMALLINT NOT NULL DEFAULT 0, vencedor BIGINT, UNIQUE(ilhota, sabado))",
         // CLAN FLAGS, the uploaded image: one per clan, already LARG x ALT
@@ -673,6 +677,9 @@ pub async fn executar(pool: &PgPool, eu: &str, pedido: &Pedido) -> Result<()> {
         }
         Pedido::SacarBanco { item, qtd } => {
             let id = permitido(&mut tx, eu, AcaoCla::Tag, 0).await?;
+            if *item == shared::item_id::GOLD {
+                bail!("The bank's gold pays the islet's upkeep: it cannot be taken out.");
+            }
             let qtd = (*qtd).clamp(1, 1_000) as i64;
             let tirou = sqlx::query(
                 "UPDATE cla_banco SET qtd = qtd - $3 WHERE cla=$1 AND item=$2 AND qtd >= $3",
@@ -793,15 +800,16 @@ pub async fn bandeiras(pool: &PgPool) -> Result<Vec<shared::bandeira::BandeiraDo
 
 /// TERRITORIES: every held islet, with its clan's tag and name.
 pub async fn territorios(pool: &PgPool) -> Result<Vec<shared::territorio::Dono>> {
-    let linhas: Vec<(i16, i64, String, String, Vec<i16>, i64, Option<i16>, Option<i16>)> = sqlx::query_as(
-        "SELECT t.ilhota, c.id, c.tag, c.nome, t.niveis, t.escudo_ate, a.dia, a.hora FROM territorios t \
+    let linhas: Vec<(i16, i64, String, String, Vec<i16>, i64, Option<i16>, Option<i16>, i16)> = sqlx::query_as(
+        "SELECT t.ilhota, c.id, c.tag, c.nome, t.niveis, t.escudo_ate, a.dia, a.hora, t.atrasos FROM territorios t \
          JOIN social_clas c ON c.id=t.cla LEFT JOIN territorio_agenda a ON a.ilhota=t.ilhota ORDER BY t.ilhota",
     )
     .fetch_all(pool)
     .await?;
     Ok(linhas
         .into_iter()
-        .map(|(i, cla_id, tag, cla, niveis, escudo_ate, dia, hora)| shared::territorio::Dono {
+        .map(|(i, cla_id, tag, cla, niveis, escudo_ate, dia, hora, atrasos)| shared::territorio::Dono {
+            atrasos: atrasos.clamp(0, 9) as u8,
             ilhota: i as u8,
             cla_id,
             tag,
@@ -897,6 +905,7 @@ pub async fn reivindicar(pool: &PgPool, eu: &str, ilhota: u8) -> Result<shared::
         niveis: shared::territorio::NIVEIS_INICIAIS,
         escudo_ate: 0,
         agenda: (shared::territorio::DIA_PADRAO, shared::territorio::HORA_PADRAO),
+        atrasos: 0,
     })
 }
 
@@ -1018,6 +1027,58 @@ pub async fn guerras(pool: &PgPool) -> Result<Vec<shared::territorio::Guerra>> {
         .collect())
 }
 
+/// TERRITORIES phase 5: the WEEKLY UPKEEP, due Monday 00:00 (Brasília).
+/// Paid from the clan bank's gold; unpaid, the islet falls a week behind (1:
+/// defences weakened, 2: the islet is freed). A newly held islet gets its
+/// first due date here (its first week is free). Returns the islets freed.
+pub async fn cobrar_manutencao(pool: &PgPool, agora: i64) -> Result<Vec<u8>> {
+    let mut tx = pool.begin().await?;
+    let devidas: Vec<(i16, i64, Vec<i16>, i64, i16)> = sqlx::query_as(
+        "SELECT ilhota, cla, niveis, manutencao_em, atrasos FROM territorios WHERE manutencao_em <= $1 FOR UPDATE",
+    )
+    .bind(agora)
+    .fetch_all(&mut *tx)
+    .await?;
+    let proxima = shared::territorio::proxima_segunda(agora);
+    let mut liberadas = Vec::new();
+    for (ilhota, cla, niveis, quando, atrasos) in devidas {
+        if quando == 0 {
+            sqlx::query("UPDATE territorios SET manutencao_em=$2 WHERE ilhota=$1")
+                .bind(ilhota)
+                .bind(proxima)
+                .execute(&mut *tx)
+                .await?;
+            continue;
+        }
+        let taxa = shared::territorio::manutencao_semanal(&niveis_de(&niveis)) as i64;
+        let pagou = sqlx::query(
+            "UPDATE cla_banco SET qtd = qtd - $3 WHERE cla=$1 AND item=$2 AND qtd >= $3",
+        )
+        .bind(cla)
+        .bind(shared::item_id::GOLD as i32)
+        .bind(taxa)
+        .execute(&mut *tx)
+        .await?
+        .rows_affected()
+            == 1;
+        let atrasos = if pagou { 0 } else { atrasos + 1 };
+        if atrasos >= 2 {
+            sqlx::query("DELETE FROM territorios WHERE ilhota=$1").bind(ilhota).execute(&mut *tx).await?;
+            sqlx::query("DELETE FROM territorio_agenda WHERE ilhota=$1").bind(ilhota).execute(&mut *tx).await?;
+            liberadas.push(ilhota as u8);
+            continue;
+        }
+        sqlx::query("UPDATE territorios SET manutencao_em=$2, atrasos=$3 WHERE ilhota=$1")
+            .bind(ilhota)
+            .bind(proxima)
+            .bind(atrasos)
+            .execute(&mut *tx)
+            .await?;
+    }
+    tx.commit().await?;
+    Ok(liberadas)
+}
+
 /// TERRITORIES phase 5: a war ended (the defender held, or a conquest).
 pub async fn encerrar_guerra(pool: &PgPool, id: i64, vencedor: Option<i64>) -> Result<()> {
     sqlx::query("UPDATE territorio_guerras SET estado=1, vencedor=$2 WHERE id=$1")
@@ -1049,7 +1110,7 @@ pub async fn conquistar(pool: &PgPool, eu: &str, guerra: i64, escudo_ate: i64) -
         bail!("Your clan already holds an islet: one per clan.");
     }
     let feito = sqlx::query(
-        "UPDATE territorios SET cla=$2, desde=extract(epoch from now())::bigint, escudo_ate=$3 WHERE ilhota=$1",
+        "UPDATE territorios SET cla=$2, desde=extract(epoch from now())::bigint, escudo_ate=$3, manutencao_em=0, atrasos=0 WHERE ilhota=$1",
     )
     .bind(ilhota)
     .bind(cla)
@@ -1083,6 +1144,7 @@ pub async fn conquistar(pool: &PgPool, eu: &str, guerra: i64, escudo_ate: i64) -
         niveis: niveis_de(&niveis),
         escudo_ate,
         agenda: (shared::territorio::DIA_PADRAO, shared::territorio::HORA_PADRAO),
+        atrasos: 0,
     })
 }
 
@@ -1918,6 +1980,32 @@ mod tests {
         // Another clan cannot take a held islet.
         executar(p, "Gil", &Pedido::CriarCla { nome: "Outros".into(), tag: "OUT".into() }).await?;
         assert!(reivindicar(p, "Gil", 3).await.is_err(), "the islet is held");
+        // PHASE 5: THE WEEKLY UPKEEP — the first reading only sets the due
+        // date (a free week); paid from the bank's gold; unpaid twice frees it.
+        let agora = 1_800_000_000i64;
+        cobrar_manutencao(p, agora).await?;
+        let (quando, atrasos): (i64, i16) = sqlx::query_as("SELECT manutencao_em, atrasos FROM territorios WHERE ilhota=3")
+            .fetch_one(p)
+            .await?;
+        assert_eq!((quando, atrasos), (shared::territorio::proxima_segunda(agora), 0), "first week free");
+        let taxa = shared::territorio::manutencao_semanal(&territorios(p).await?[0].niveis);
+        depositar_no_banco(p, mares, &[(shared::item_id::GOLD, taxa as u32 + 5)]).await?;
+        assert!(executar(p, "Eva", &Pedido::SacarBanco { item: shared::item_id::GOLD, qtd: 1 }).await.is_err(), "gold stays");
+        cobrar_manutencao(p, quando).await?;
+        assert_eq!(territorios(p).await?[0].atrasos, 0, "paid");
+        let ouro: i64 = sqlx::query_scalar("SELECT qtd FROM cla_banco WHERE cla=$1 AND item=$2")
+            .bind(mares)
+            .bind(shared::item_id::GOLD as i32)
+            .fetch_one(p)
+            .await?;
+        assert_eq!(ouro, 5);
+        let semana2 = shared::territorio::proxima_segunda(quando);
+        cobrar_manutencao(p, semana2).await?;
+        assert_eq!(territorios(p).await?[0].atrasos, 1, "a week behind");
+        assert_eq!(cobrar_manutencao(p, shared::territorio::proxima_segunda(semana2)).await?, vec![3], "freed");
+        assert!(territorios(p).await?.is_empty());
+        // (Held again for the rest of the test.)
+        reivindicar(p, "Eva", 3).await?;
         // CLAN FLAGS: the default until one is picked; leader or officer sets
         // it (a plain member cannot); the sea's list carries it.
         let padrao = shared::bandeira::Bandeira::do_cla(estado(p, "Eva").await?.cla.unwrap().id).empacota();

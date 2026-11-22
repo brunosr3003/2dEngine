@@ -20,6 +20,9 @@ pub struct Dono {
     /// Phase 5: the defender's war slot (weekday 6 Sat / 0 Sun, hour).
     /// Appended.
     pub agenda: (u8, u8),
+    /// Phase 5: weeks of unpaid upkeep (1 weakens the defences; 2 frees the
+    /// islet). Appended.
+    pub atrasos: u8,
 }
 
 /// A declared WAR (phase 5): who attacks which islet, and its window.
@@ -593,5 +596,42 @@ mod testes_da_data {
         // 2026-11-28 20:00 BRT.
         let t = 20_785 * 86_400 + 20 * 3600 + 3 * 3600;
         assert_eq!(super::data_curta(t), "28/11");
+    }
+}
+
+// ─────────────────── phase 5: the weekly upkeep ───────────────────
+
+/// An islet's weekly UPKEEP in gold, from the clan bank: 100k per village
+/// level plus 20k per level of every other track.
+pub fn manutencao_semanal(niveis: &[u8; N_TRILHAS]) -> u64 {
+    let vila = niveis[trilha::VILA] as u64;
+    let resto: u64 = niveis.iter().skip(1).map(|n| *n as u64).sum();
+    100_000 * vila + 20_000 * resto
+}
+
+/// The next Monday 00:00 (Brasília) after `agora`: when the upkeep is due.
+pub fn proxima_segunda(agora: i64) -> i64 {
+    let (d, wd) = dia_local(agora);
+    let ate = (8 - wd as i64).rem_euclid(7);
+    let ate = if ate == 0 { 7 } else { ate };
+    (d + ate) * 86_400 - FUSO_S
+}
+
+#[cfg(test)]
+mod testes_da_manutencao {
+    use super::*;
+
+    #[test]
+    fn a_manutencao_e_a_segunda_feira() {
+        let mut n = NIVEIS_INICIAIS;
+        assert_eq!(manutencao_semanal(&n), 100_000);
+        n = [4, 10, 10, 10, 10, 10, 10, 10];
+        assert_eq!(manutencao_semanal(&n), 1_800_000);
+        // Sunday 2026-11-22 15:00 BRT → Monday 23rd 00:00.
+        let domingo = 20_779 * 86_400 + 15 * 3600 - FUSO_S;
+        assert_eq!(proxima_segunda(domingo), 20_780 * 86_400 - FUSO_S);
+        // Monday 10:00 → the next Monday.
+        let segunda = 20_780 * 86_400 + 10 * 3600 - FUSO_S;
+        assert_eq!(proxima_segunda(segunda), 20_787 * 86_400 - FUSO_S);
     }
 }

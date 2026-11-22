@@ -165,6 +165,7 @@ pub async fn run_world_loop(
                 }
                 Ok(IncomingMessage::Saque { sid, resultado }) => world.on_saque(sid, resultado),
                 Ok(IncomingMessage::Guerras(v)) => world.on_guerras(v),
+                Ok(IncomingMessage::Deposito { sid, qtd, resultado }) => world.on_deposito(sid, qtd, resultado),
                 Ok(IncomingMessage::RespostaDeGuerra { sid, resultado }) => {
                     world.on_resposta_de_guerra(sid, resultado)
                 }
@@ -226,6 +227,7 @@ pub async fn run_world_loop(
                 }
                 Ok(IncomingMessage::Saque { sid, resultado }) => world.on_saque(sid, resultado),
                 Ok(IncomingMessage::Guerras(v)) => world.on_guerras(v),
+                Ok(IncomingMessage::Deposito { sid, qtd, resultado }) => world.on_deposito(sid, qtd, resultado),
                 Ok(IncomingMessage::RespostaDeGuerra { sid, resultado }) => {
                     world.on_resposta_de_guerra(sid, resultado)
                 }

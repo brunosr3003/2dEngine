@@ -2153,6 +2153,32 @@ mod testes {
         assert_eq!(h.current, h.max, "repaired after the war");
     }
 
+    /// PHASE 5: upkeep a week behind leaves the defences at half: half the
+    /// wall HP, half the guards.
+    #[test]
+    fn manutencao_atrasada_enfraquece_as_defesas() {
+        use shared::territorio::{self as tr, trilha};
+        let (mut w, _sid, _rx) = mundo();
+        let k = 6u8;
+        let ilha = &shared::mar::ilhotas()[k as usize];
+        let mut niveis = tr::NIVEIS_INICIAIS;
+        niveis[trilha::VILA] = 2;
+        niveis[trilha::MUROS] = 2;
+        niveis[trilha::DEFENSORES] = 2;
+        w.territorios.insert(k, tr::Dono { ilhota: k, cla_id: 7, niveis, ..Default::default() });
+        w.manter_estruturas();
+        w.manter_defensores();
+        let muro = w.estruturas[&k].muros.iter().flatten().next().copied().unwrap();
+        assert_eq!(w.ecs.get::<&Health>(muro).unwrap().max, tr::hp_do_muro(2));
+        let guardas = w.defensores[&k].len();
+        w.territorios.get_mut(&k).unwrap().atrasos = 1;
+        w.manter_estruturas();
+        w.manter_defensores();
+        assert_eq!(w.ecs.get::<&Health>(muro).unwrap().max, tr::hp_do_muro(2) / 2);
+        assert_eq!(w.defensores[&k].len(), guardas / 2);
+        assert_eq!(guardas, tr::quantos_defensores(ilha.porte, 2));
+    }
+
     /// THE COAST'S PUSH (owner, 20/11/2026): a hull with its bow buried in
     /// an islet's beach eases back out until its whole outline floats.
     #[test]
