@@ -112,6 +112,11 @@ pub enum Pedido {
         item: u16,
         qtd: u32,
     },
+    /// THE CLAN SHOP: buy offer `indice` of `territorio::loja_do_cla` with my
+    /// clan points (only while my clan holds an islet). Appended.
+    ComprarLojaCla {
+        indice: u8,
+    },
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -286,6 +291,9 @@ pub struct Cla {
     /// TERRITORIES 4.6: the CLAN BANK — (item, amount), filled by the tax on
     /// what is gathered on the clan's islet. Appended.
     pub banco: Vec<(u16, u64)>,
+    /// THE CLAN SHOP: my own clan points (`territorio::loja_do_cla`).
+    /// Appended.
+    pub pontos: u32,
 }
 
 /// A friend or clan member, as the social panel shows them.

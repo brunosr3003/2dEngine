@@ -1072,7 +1072,7 @@ impl GameWorld {
     /// A gather on islet `k` of a node of `tier` (0 tree, 1..4 rock): on a
     /// held islet the Farmer's level of that resource raises the yield
     /// (+25% a level), and a tenth of it goes to the holder's clan bank.
-    pub(crate) fn recurso_da_ilhota(&mut self, k: u8, tier: u8, drops: &mut [(u16, u32)]) {
+    pub(crate) fn recurso_da_ilhota(&mut self, k: u8, tier: u8, drops: &mut [(u16, u32)], quem: Option<SessionId>) {
         use shared::territorio as tr;
         let Some(dono) = self.territorios.get(&k) else {
             return;
@@ -1100,9 +1100,21 @@ impl GameWorld {
         let Some(ctx) = self.auth_ctx.clone() else {
             return;
         };
+        // A member gathering on their own clan's islet earns clan points.
+        let membro = quem
+            .and_then(|sid| self.sessions.get(&sid))
+            .filter(|s| s.cla_id == cla)
+            .map(|s| s.name.clone());
+        let pts: u32 = taxa.iter().map(|(_, q)| q).sum::<u32>() * shared::territorio::PONTOS_POR_ITEM_DE_TAXA;
         tokio::spawn(async move {
             if let Err(e) = crate::social::depositar_no_banco(&ctx.pool, cla, &taxa).await {
                 tracing::warn!("banco do cla: falha ao depositar a taxa: {e:#}");
+                return;
+            }
+            if let Some(nome) = membro {
+                if let Err(e) = crate::social::somar_pontos(&ctx.pool, cla, &nome, pts).await {
+                    tracing::warn!("loja do cla: falha ao somar pontos: {e:#}");
+                }
             }
         });
     }
@@ -1365,10 +1377,17 @@ impl GameWorld {
             return;
         };
         let cla = dono.cla_id;
+        let nome = self.nome_de(sid);
         tokio::spawn(async move {
             let resultado = crate::social::depositar_no_banco(&ctx.pool, cla, &[(shared::item_id::GOLD, qtd)])
                 .await
                 .map_err(|e| e.to_string());
+            if resultado.is_ok() {
+                let pts = qtd / shared::territorio::OURO_POR_PONTO;
+                if let Err(e) = crate::social::somar_pontos(&ctx.pool, cla, &nome, pts).await {
+                    tracing::warn!("loja do cla: falha ao somar pontos: {e:#}");
+                }
+            }
             let _ = ctx.tx.send(IncomingMessage::Deposito { sid, qtd, resultado });
         });
     }

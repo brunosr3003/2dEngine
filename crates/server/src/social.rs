@@ -58,6 +58,7 @@ pub async fn init(pool: &PgPool) -> Result<()> {
         "CREATE TABLE IF NOT EXISTS cla_bandeira_denuncias (cla BIGINT NOT NULL REFERENCES social_clas(id) ON DELETE CASCADE, nome TEXT NOT NULL, quando BIGINT NOT NULL, PRIMARY KEY(cla,nome))",
         // TERRITORIES 4.6: the clan bank (the islet's gathering tax lands
         // here; invaders can loot part of it in a siege).
+        "CREATE TABLE IF NOT EXISTS cla_pontos (cla BIGINT NOT NULL REFERENCES social_clas(id) ON DELETE CASCADE, nome TEXT NOT NULL, pontos BIGINT NOT NULL DEFAULT 0, PRIMARY KEY(cla,nome))",
         "CREATE TABLE IF NOT EXISTS cla_banco (cla BIGINT NOT NULL REFERENCES social_clas(id) ON DELETE CASCADE, item INTEGER NOT NULL, qtd BIGINT NOT NULL, PRIMARY KEY(cla,item))",
         // One-time upload codes (the game asks, the site spends).
         "CREATE TABLE IF NOT EXISTS cla_bandeira_codigos (codigo TEXT PRIMARY KEY, cla BIGINT NOT NULL REFERENCES social_clas(id) ON DELETE CASCADE, nome TEXT NOT NULL, expira BIGINT NOT NULL)",
@@ -100,6 +101,24 @@ pub async fn carta_do_sistema(
         .bind(para)
         .execute(&mut *tx)
         .await?;
+    Ok(())
+}
+
+/// THE CLAN SHOP: `pts` clan points to member `nome` of clan `cla` (only
+/// while they are still in it).
+pub async fn somar_pontos(pool: &PgPool, cla: i64, nome: &str, pts: u32) -> Result<()> {
+    if pts == 0 {
+        return Ok(());
+    }
+    sqlx::query(
+        "INSERT INTO cla_pontos(cla,nome,pontos) SELECT $1,$2,$3 WHERE EXISTS (SELECT 1 FROM social_membros WHERE cla=$1 AND nome=$2)
+         ON CONFLICT (cla,nome) DO UPDATE SET pontos = cla_pontos.pontos + EXCLUDED.pontos",
+    )
+    .bind(cla)
+    .bind(nome)
+    .bind(pts as i64)
+    .execute(pool)
+    .await?;
     Ok(())
 }
 
@@ -703,6 +722,39 @@ pub async fn executar(pool: &PgPool, eu: &str, pedido: &Pedido) -> Result<()> {
                 "Clan bank",
                 "Taken out of your clan's bank.",
                 &[shared::social::Anexo { item_id: *item, qtd: qtd as u32, instance: None }],
+            )
+            .await?;
+        }
+        Pedido::ComprarLojaCla { indice } => {
+            let Some((id, _)) = meu_cla(&mut tx, eu).await? else {
+                bail!("You are not in a clan.");
+            };
+            let tem_ilha: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM territorios WHERE cla=$1)")
+                .bind(id)
+                .fetch_one(&mut *tx)
+                .await?;
+            if !tem_ilha {
+                bail!("The clan shop opens while your clan holds an islet.");
+            }
+            let Some(o) = shared::territorio::loja_do_cla().get(*indice as usize).copied() else {
+                bail!("That offer is gone.");
+            };
+            let pagou = sqlx::query("UPDATE cla_pontos SET pontos = pontos - $3 WHERE cla=$1 AND nome=$2 AND pontos >= $3")
+                .bind(id)
+                .bind(eu)
+                .bind(o.preco as i64)
+                .execute(&mut *tx)
+                .await?
+                .rows_affected();
+            if pagou == 0 {
+                bail!("Not enough clan points.");
+            }
+            carta_do_sistema(
+                &mut tx,
+                eu,
+                "Clan shop",
+                "Bought with your clan points.",
+                &[shared::social::Anexo { item_id: o.item, qtd: o.qtd, instance: None }],
             )
             .await?;
         }
@@ -1329,6 +1381,13 @@ pub async fn estado(pool: &PgPool, eu: &str) -> Result<Estado> {
                 .into_iter()
                 .map(|(i, q)| (i as u16, q as u64))
                 .collect(),
+            pontos: sqlx::query_scalar::<_, i64>("SELECT pontos FROM cla_pontos WHERE cla=$1 AND nome=$2")
+                .bind(id)
+                .bind(eu)
+                .fetch_optional(&mut *tx)
+                .await?
+                .unwrap_or(0)
+                .clamp(0, u32::MAX as i64) as u32,
         });
     }
     // CLAN FLAGS: the custom images flying now, for the Reports tab.
@@ -2074,6 +2133,18 @@ mod tests {
         assert!(territorios(p).await?.is_empty());
         // (Held again for the rest of the test.)
         reivindicar(p, "Eva", 3).await?;
+        // THE CLAN SHOP: points per member, spent on an offer, by mail.
+        let oferta = shared::territorio::loja_do_cla()[0];
+        assert!(executar(p, "Eva", &Pedido::ComprarLojaCla { indice: 0 }).await.is_err(), "no points");
+        somar_pontos(p, mares, "Eva", oferta.preco + 3).await?;
+        somar_pontos(p, mares, "Gil", 999).await?; // not in the clan: nothing
+        assert_eq!(estado(p, "Eva").await?.cla.unwrap().pontos, oferta.preco + 3);
+        executar(p, "Eva", &Pedido::ComprarLojaCla { indice: 0 }).await?;
+        assert_eq!(estado(p, "Eva").await?.cla.unwrap().pontos, 3);
+        let cartas: i64 = sqlx::query_scalar("SELECT count(*) FROM social_campanhas WHERE destino='Eva' AND assunto='Clan shop'")
+            .fetch_one(p)
+            .await?;
+        assert_eq!(cartas, 1);
         // CLAN FLAGS: the default until one is picked; leader or officer sets
         // it (a plain member cannot); the sea's list carries it.
         let padrao = shared::bandeira::Bandeira::do_cla(estado(p, "Eva").await?.cla.unwrap().id).empacota();

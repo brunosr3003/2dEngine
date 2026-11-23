@@ -649,3 +649,50 @@ mod testes_da_manutencao {
         assert_eq!(proxima_segunda(segunda), 20_787 * 86_400 - FUSO_S);
     }
 }
+
+// ─────────────────── the clan shop (22/11/2026) ───────────────────
+
+/// One offer of the CLAN SHOP: `qtd` of `item` for `preco` clan points.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OfertaDaLoja {
+    pub item: u16,
+    pub qtd: u32,
+    pub preco: u32,
+}
+
+/// CLAN POINTS, per member, earned on the clan's islet: 1 per 1,000 gold put
+/// in for the upkeep...
+pub const OURO_POR_PONTO: u32 = 1_000;
+/// ...and 1 per item the member's gathering pays in tax to the bank.
+pub const PONTOS_POR_ITEM_DE_TAXA: u32 = 1;
+
+/// The clan shop: only a clan HOLDING an islet opens it (the point is to
+/// keep it); what is bought arrives by mail.
+pub fn loja_do_cla() -> Vec<OfertaDaLoja> {
+    use crate::item_id as i;
+    let o = |item, qtd, preco| OfertaDaLoja { item, qtd, preco };
+    vec![
+        o(i::PERGAMINHO_TELEPORTE, 5, 25),
+        o(i::XP_POTION, 1, 60),
+        o(i::FORTUNA_POTION, 1, 60),
+        o(i::SORTE_POTION, 1, 80),
+        o(i::DARKSTEEL, 10, 120),
+        o(i::GLITTERING_POWDER, 10, 150),
+        o(i::PEDRA_DE_AFINIDADE, 1, 250),
+        o(i::chave_na_cor(i::SCALE, 4), 1, 400),
+        o(i::chave_na_cor(i::CLAW, 4), 1, 400),
+        o(i::chave_na_cor(i::HORN, 4), 1, 400),
+        o(i::chave_na_cor(i::HIDE, 4), 1, 400),
+        o(i::SCALE_LENDARIA, 1, 2_500),
+    ]
+}
+
+#[cfg(test)]
+mod testes_da_loja {
+    #[test]
+    fn a_loja_tem_precos_e_cabe_num_u8() {
+        let l = super::loja_do_cla();
+        assert!(!l.is_empty() && l.len() <= u8::MAX as usize);
+        assert!(l.iter().all(|o| o.preco > 0 && o.qtd > 0));
+    }
+}

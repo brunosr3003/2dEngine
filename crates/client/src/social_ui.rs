@@ -1669,6 +1669,8 @@ impl Social {
         y = self.editor_de_bandeira(c, social::pode_no_cla(meu, A::Tag, 0), dir.x, y, dir.w, fh, k, s);
         // ── CLAN BANK: the islet's gathering tax ──
         y = self.banco_do_cla(c, social::pode_no_cla(meu, A::Tag, 0), dir.x, y, dir.w, k, s);
+        // ── CLAN SHOP: my clan points, while the clan holds an islet ──
+        y = self.loja_do_cla(c, dir.x, y, dir.w, k, s);
         // Ranks, for whoever wonders what an officer can do.
         texto_em_linhas(
             "Leader: everything. Officers: invite, kick members, edit the notice. Select a member in Members to see their actions.",
@@ -2160,7 +2162,7 @@ pub async fn previa() {
         amigos:vec!["MaréAlta".into(),"Navegante".into()],recebidos:vec!["Corsair".into()],enviados:vec!["Captain".into()],
         neste_canal:vec!["brunji".into(),"MaréAlta".into()],
         cartas:vec![social::Carta{id:1,de:"MaréAlta".into(),assunto:"Ready for the next adventure?".into(),texto:"Vamos reunir o grupo na vila e explorar as dungeons. Se precisar de ajuda, mande uma carta!".into(),quando:0,lida:false,oficial:false,anexos:vec![],resgatada:false}],
-        cla:Some(social::Cla{id:1,nome:"Tide Corsairs".into(),lider:"brunji".into(),aviso:"Meet at the village for the next expedition.".into(),membros:vec!["brunji".into(),"MaréAlta".into(),"Navegante".into(),"Captain".into()],tag:"TIDE".into(),oficiais:vec!["MaréAlta".into()],territorio:Some(1),bandeira:0x1_1040,imagem_bandeira:0,imagem:None,banco:vec![(60,1200),(345,300)]}),
+        cla:Some(social::Cla{id:1,nome:"Tide Corsairs".into(),lider:"brunji".into(),aviso:"Meet at the village for the next expedition.".into(),membros:vec!["brunji".into(),"MaréAlta".into(),"Navegante".into(),"Captain".into()],tag:"TIDE".into(),oficiais:vec!["MaréAlta".into()],territorio:Some(1),bandeira:0x1_1040,imagem_bandeira:0,imagem:None,banco:vec![(60,1200),(345,300)],pontos:640}),
         convites_cla:vec![], cargo:Some("admin".into()),destinatarios:42,oficiais:vec![],
         contatos: previa_contatos(),
         lista_negra: vec![
@@ -2314,6 +2316,7 @@ mod testes {
             imagem_bandeira: 0,
             imagem: None,
             banco: vec![],
+            pontos: 0,
         }
     }
 
@@ -2716,5 +2719,45 @@ impl Social {
             return fim + 22.0 * k;
         }
         fim + 6.0 * k
+    }
+
+    /// CLAN SHOP: my clan points (earned gathering on the clan's islet and
+    /// putting gold in for its upkeep) for the offers of
+    /// `territorio::loja_do_cla`; a tap buys, it arrives by mail.
+    fn loja_do_cla(&mut self, c: &social::Cla, x: f32, y: f32, w: f32, k: f32, s: &mut Vec<ClientMessage>) -> f32 {
+        use crate::hud_estilo as e;
+        let y = y + 8.0 * k;
+        e::texto(x, y + 2.0, &format!("Clan shop · {} points", c.pontos), 14, e::OURO);
+        if c.territorio.is_none() {
+            e::texto_ajustado("Opens while your clan holds an islet.", x, y + 22.0 * k, w, 12, e::SUAVE);
+            return y + 38.0 * k;
+        }
+        let ofertas = shared::territorio::loja_do_cla();
+        let ic = 34.0 * k;
+        let passo = ic + 26.0 * k;
+        let por_linha = ((w / passo).floor() as usize).max(1);
+        let m = Vec2::from(mouse_position());
+        for (n, o) in ofertas.iter().enumerate() {
+            let rx = x + (n % por_linha) as f32 * passo;
+            let ry = y + 14.0 * k + (n / por_linha) as f32 * (ic + 20.0 * k);
+            let r = Rect::new(rx, ry, ic, ic);
+            let da = c.pontos >= o.preco;
+            crate::icones::icone(o.item, r, None, Some(o.qtd));
+            e::texto(rx, ry + ic + 12.0 * k, &o.preco.to_string(), 11, if da { e::OURO } else { e::SUAVE });
+            if da && r.toca(m) && crate::foco::clique() {
+                self.enviar(Pedido::ComprarLojaCla { indice: n as u8 }, s);
+            }
+        }
+        let linhas = ofertas.len().div_ceil(por_linha) as f32;
+        let fim = y + 14.0 * k + linhas * (ic + 20.0 * k);
+        e::texto_ajustado(
+            "Points: 1 per item your gathering taxes on the islet, 1 per 1,000 gold for the upkeep. Tap to buy (by mail).",
+            x,
+            fim + 10.0 * k,
+            w,
+            11,
+            e::SUAVE,
+        );
+        fim + 26.0 * k
     }
 }

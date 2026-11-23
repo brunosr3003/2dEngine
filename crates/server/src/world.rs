@@ -22086,7 +22086,7 @@ impl GameWorld {
         // Farmer levels raise the yield, and a tenth goes to its clan bank.
         let na_ilhota = self.no_mar() && shared::mar::indice_da_ilhota(c.centro).is_some();
         if let Some(k) = shared::mar::indice_da_ilhota(c.centro).filter(|_| self.no_mar()) {
-            self.recurso_da_ilhota(k as u8, c.tier, &mut drops);
+            self.recurso_da_ilhota(k as u8, c.tier, &mut drops, Some(sid));
         }
         let mut premio = drops.clone();
         if self.na_magica() {

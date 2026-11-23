@@ -2681,6 +2681,9 @@ pub const VERBETES: &[(&str, &str)] = &[
     ("Territory: {n}", "Território: {n}"),
     ("Nomad clan", "Clã nômade"),
     // ilha_ui.rs — Governador e Fazendeiro (fase 4)
+    ("Clan shop · {p} points", "Loja do clã · {p} pontos"),
+    ("Opens while your clan holds an islet.", "Abre enquanto seu clã tiver uma ilhota."),
+    ("Points: 1 per item your gathering taxes on the islet, 1 per 1,000 gold for the upkeep. Tap to buy (by mail).", "Pontos: 1 por item que sua coleta paga de taxa na ilhota, 1 a cada 1.000 de ouro da manutenção. Toque para comprar (chega pelo correio)."),
     ("Upkeep", "Manutenção"),
     ("{t} gold/week · UNPAID: defences at half, freed next week", "{t} de ouro/semana · NÃO PAGA: defesas pela metade, liberada na próxima semana"),
     ("{t} gold/week, from the clan bank every Monday", "{t} de ouro/semana, do banco do clã toda segunda"),

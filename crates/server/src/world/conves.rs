@@ -2083,13 +2083,13 @@ mod testes {
         use shared::territorio::{self as tr, trilha};
         let (mut w, _sid, _rx) = mundo();
         let mut drops = vec![(shared::item_id::WOOD_T1, 100u32)];
-        w.recurso_da_ilhota(2, 0, &mut drops);
+        w.recurso_da_ilhota(2, 0, &mut drops, None);
         assert_eq!(drops[0].1, 100, "free islet: untouched");
         let mut niveis = tr::NIVEIS_INICIAIS;
         niveis[trilha::MADEIRA] = 2;
         w.territorios.insert(2, tr::Dono { ilhota: 2, cla_id: 7, tag: "MAR".into(), cla: "Mares".into(), niveis, ..Default::default() });
         let mut drops = vec![(shared::item_id::WOOD_T1, 100u32)];
-        w.recurso_da_ilhota(2, 0, &mut drops);
+        w.recurso_da_ilhota(2, 0, &mut drops, None);
         assert_eq!(drops[0].1, 135, "x1.5 then minus a tenth");
     }
 
