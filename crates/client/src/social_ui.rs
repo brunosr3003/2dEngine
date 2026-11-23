@@ -2732,6 +2732,12 @@ impl Social {
             e::texto_ajustado("Opens while your clan holds an islet.", x, y + 22.0 * k, w, 12, e::SUAVE);
             return y + 38.0 * k;
         }
+        // THE ISLET AS A BASE: the trip there, from anywhere (free, 10 min).
+        let bw = (200.0 * k).min(w * 0.5);
+        let br = Rect::new(x + w - bw, y - 12.0 * k, bw, 28.0 * k);
+        if crate::ui::botao(br, "Travel to the islet", true) && br.toca(Vec2::from(mouse_position())) && crate::foco::clique() {
+            s.push(ClientMessage::Navio { pedido: shared::navio::PedidoNavio::IrParaIlhaDoCla });
+        }
         let ofertas = shared::territorio::loja_do_cla();
         let ic = 34.0 * k;
         let passo = ic + 26.0 * k;

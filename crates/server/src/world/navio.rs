@@ -213,6 +213,7 @@ impl GameWorld {
             PedidoNavio::DeclararGuerra => self.declarar_guerra_aqui(sid),
             PedidoNavio::AgendarGuerra { dia, hora } => self.agendar_guerra_aqui(sid, dia, hora),
             PedidoNavio::DepositarOuro { qtd } => self.depositar_ouro_aqui(sid, qtd),
+            PedidoNavio::IrParaIlhaDoCla => self.ir_para_ilha_do_cla(sid),
         }
     }
 
@@ -366,6 +367,29 @@ impl GameWorld {
 
     /// REPAIR at the Captain: the whole hull, for copper.
     fn reparar_navio(&mut self, sid: SessionId) {
+        // THE ISLET AS A BASE: at my clan's islet's Governor, free — but not
+        // while its war is on.
+        let na_base = self.governador_ao_lado(sid).is_some_and(|k| {
+            self.territorios.get(&k).is_some_and(|d| {
+                self.sessions.get(&sid).is_some_and(|s| s.cla_id != 0 && s.cla_id == d.cla_id)
+            }) && self.guerra_aberta(k).is_none()
+        });
+        if na_base {
+            let Some((id, mut d)) = self.navio_equipado(sid) else {
+                self.avisa_missao(sid, "You have no ship. Put one in the Ship slot of your equipment.".into());
+                return;
+            };
+            if nv::custo_do_reparo(id, &d) == 0 && !d.avariado {
+                self.avisa_missao(sid, "Your hull is already sound.".into());
+                return;
+            }
+            d.casco = nv::casco_total(id, &d);
+            d.avariado = false;
+            self.guarda_navio(sid, d);
+            self.envia_estado_navio(sid);
+            self.send_chat_to(sid, "Hull repaired at your clan's islet, free.");
+            return;
+        }
         if !self.perto_do_capitao_do_porto(sid) {
             self.avisa_missao(sid, "The Harbour Captain repairs ships at the dock.".into());
             return;

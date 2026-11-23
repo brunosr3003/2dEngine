@@ -1548,7 +1548,7 @@ pub async fn bater_presenca(
     zona: &str,
     canal: &str,
     presentes: &[Presente],
-) -> Result<Vec<(String, i64, String, Option<(u8, u8)>)>> {
+) -> Result<Vec<(String, i64, String, Option<(u8, u8, u8)>)>> {
     if presentes.is_empty() {
         return Ok(Vec::new());
     }
@@ -1592,7 +1592,7 @@ pub async fn bater_presenca(
         .map(|(n, cla, tag, ilhota, vila)| {
             let terr = ilhota.and_then(|k| {
                 let porte = shared::mar::ilhotas().get(k as usize)?.porte;
-                Some((porte, vila.unwrap_or(1).clamp(0, 4) as u8))
+                Some((k as u8, porte, vila.unwrap_or(1).clamp(0, 4) as u8))
             });
             (n, cla, tag, terr)
         })

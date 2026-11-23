@@ -139,6 +139,14 @@ impl IlhaUi {
             return None;
         }
         let mut pedido = None;
+        // THE ISLET AS A BASE: the Governor repairs the clan's ships, free
+        // (not during the islet's war; the server checks).
+        if gov {
+            let r = Rect::new(p.x + p.w - 52.0 * s - 190.0 * s, p.y + 12.0 * s, 180.0 * s, 32.0 * s);
+            if crate::ui::botao(r, "Repair ship (free)", true) && r.toca(Vec2::from(mouse_position())) {
+                pedido = Some(PedidoNavio::Reparar);
+            }
+        }
         for (n, t) in trilhas.iter().copied().enumerate() {
             let y = p.y + 84.0 * s + n as f32 * linha;
             let atual = dono.niveis[t];

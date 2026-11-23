@@ -1283,7 +1283,7 @@ impl GameWorld {
     }
 
     /// The islet whose Governor `sid` stands by, if any (held by anyone).
-    fn governador_ao_lado(&self, sid: SessionId) -> Option<u8> {
+    pub(crate) fn governador_ao_lado(&self, sid: SessionId) -> Option<u8> {
         let s = self.sessions.get(&sid)?;
         let k = s.em_terra?.ilhota;
         self.territorios.get(&k)?;
@@ -1403,6 +1403,70 @@ impl GameWorld {
                 self.avisa_missao(sid, e);
             }
         }
+    }
+
+    /// THE ISLET AS A BASE (`PedidoNavio::IrParaIlhaDoCla`): from anywhere to
+    /// my clan's islet, ashore in front of its Governor. Free, with a
+    /// cooldown; not from a dungeon, the tutorial or a PvP fight (the handoff
+    /// refuses that), not from aboard a ship at sea (go ashore first).
+    pub(crate) fn ir_para_ilha_do_cla(&mut self, sid: SessionId) {
+        if self.tutorial_mode || self.dungeon_mode {
+            self.avisa_missao(sid, "You can't travel to your islet from here.".into());
+            return;
+        }
+        let agora = self.sim_time_s;
+        let Some(s) = self.sessions.get(&sid).filter(|s| s.logged_in) else {
+            return;
+        };
+        let Some(k) = s.ilhota_do_cla else {
+            self.avisa_missao(sid, "Your clan holds no islet.".into());
+            return;
+        };
+        if s.instancia != 0 || s.downed || s.carrying.is_some() || s.carried_by.is_some() {
+            self.avisa_missao(sid, "You can't travel to your islet right now.".into());
+            return;
+        }
+        if agora < s.viagem_a_ilha_em {
+            let falta = (s.viagem_a_ilha_em - agora).ceil() as u32;
+            self.avisa_missao(sid, format!("The trip to your islet is ready again in {}:{:02}.", falta / 60, falta % 60));
+            return;
+        }
+        let Some(ilha) = shared::mar::ilhotas().get(k as usize) else {
+            return;
+        };
+        let chegada = shared::territorio::chegada_na_ilhota(ilha.centro);
+        if !self.no_mar() {
+            let aviso = format!("You travel to your clan's islet, {}.", ilha.nome);
+            if self.mandar_para_zona(sid, shared::mar::ZONA, chegada, Some(&aviso), Some(ilha.nome)) {
+                if let Some(s) = self.sessions.get_mut(&sid) {
+                    s.viagem_a_ilha_em = agora + shared::territorio::RECARGA_DA_VIAGEM_S;
+                }
+            }
+            return;
+        }
+        // Already at sea: ashore only (a ship at anchor stays where it is).
+        let Some(s) = self.sessions.get(&sid) else {
+            return;
+        };
+        if s.conves.is_some() {
+            self.avisa_missao(sid, "At sea, go ashore first: your ship cannot follow.".into());
+            return;
+        }
+        let Some(corpo) = s.entity else {
+            return;
+        };
+        let navio = s.em_terra.and_then(|t| t.navio);
+        if let Ok(mut p) = self.ecs.get::<&mut Position>(corpo) {
+            p.0 = chegada;
+        }
+        if let Some(s) = self.sessions.get_mut(&sid) {
+            s.em_terra = Some(super::conves::EmTerra { ilhota: k, navio });
+            s.rota.limpa();
+            s.viagem_a_ilha_em = agora + shared::territorio::RECARGA_DA_VIAGEM_S;
+            let _ = s.handle.to_client.send(ServerMessage::EmTerra { ilhota: Some(k) });
+        }
+        self.save_pending = true;
+        self.send_chat_to(sid, &format!("You travel to your clan's islet, {}.", ilha.nome));
     }
 }
 

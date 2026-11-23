@@ -1782,6 +1782,9 @@ pub enum PedidoNavio {
     /// TERRITORIES (phase 5): put `qtd` of my gold into my clan's bank for
     /// the weekly upkeep, at my clan's islet's Governor. Appended.
     DepositarOuro { qtd: u32 },
+    /// TERRITORIES (the islet as a base): from anywhere, to my clan's islet,
+    /// ashore by its Governor (free, a cooldown). Appended.
+    IrParaIlhaDoCla,
 }
 
 /// The ship's state, for the Captain's buttons and the hull bar.

@@ -26,7 +26,7 @@ pub struct Dono {
 }
 
 /// A declared WAR (phase 5): who attacks which islet, and its window.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Guerra {
     pub id: i64,
     pub ilhota: u8,
@@ -695,4 +695,13 @@ mod testes_da_loja {
         assert!(!l.is_empty() && l.len() <= u8::MAX as usize);
         assert!(l.iter().all(|o| o.preco > 0 && o.qtd > 0));
     }
+}
+
+/// THE ISLET AS A BASE: the trip to the clan's islet (free) waits this long
+/// between uses.
+pub const RECARGA_DA_VIAGEM_S: f32 = 600.0;
+
+/// Where the trip to islet centre `centro` lands: in front of the Governor.
+pub fn chegada_na_ilhota(centro: glam::Vec2) -> glam::Vec2 {
+    pos_do_governador(centro) + glam::Vec2::new(0.0, 2.5)
 }

@@ -444,6 +444,16 @@ impl GameWorld {
             .collect();
         let tenta_o_cais = self.tick % 30 == 0;
         for sid in soltos {
+            // Arrived standing on an islet (the trip to the clan's islet, a
+            // relog ashore): ashore, no ship.
+            let pos = self.sessions.get(&sid).and_then(|s| s.entity).and_then(|e| self.ecs.get::<&Position>(e).ok().map(|p| p.0));
+            if let Some(k) = pos.filter(|p| shared::mar::chao_de_ilhota(*p)).and_then(shared::mar::indice_da_ilhota) {
+                if let Some(s) = self.sessions.get_mut(&sid) {
+                    s.em_terra = Some(EmTerra { ilhota: k as u8, navio: None });
+                    let _ = s.handle.to_client.send(ServerMessage::EmTerra { ilhota: Some(k as u8) });
+                }
+                continue;
+            }
             if !self.lancar_navio(sid, None) && tenta_o_cais {
                 // At sea without a ship that floats (unequipped out there, a
                 // hull that sank): the sea washes them ashore.
@@ -2192,6 +2202,66 @@ mod testes {
         assert!((com.drop - sem.drop - 0.16).abs() < 1e-4);
         assert!((com.minerio - sem.minerio - 0.20).abs() < 1e-4);
         assert!((com.ouro - sem.ouro - 0.20).abs() < 1e-4);
+    }
+
+    /// THE ISLET AS A BASE: arriving at sea standing on an islet is being
+    /// ashore (no ship launched); the trip to the clan's islet lands by its
+    /// Governor and waits its cooldown; the Governor repairs the hull free,
+    /// but not during its war.
+    #[test]
+    fn a_ilha_do_cla_e_base_viagem_e_reparo() {
+        use shared::territorio as tr;
+        let (mut w, sid, _rx) = mundo();
+        w.step(shared::TICK_DT);
+        let k = 1u8;
+        let ilha = &shared::mar::ilhotas()[k as usize];
+        let corpo = w.sessions[&sid].entity.unwrap();
+        // Arrival ON the islet: ashore, no ship.
+        {
+            let s = w.sessions.get_mut(&sid).unwrap();
+            s.conves = None;
+            s.em_terra = None;
+        }
+        w.ecs.get::<&mut Position>(corpo).unwrap().0 = tr::chegada_na_ilhota(ilha.centro);
+        assert!(shared::mar::chao_de_ilhota(tr::chegada_na_ilhota(ilha.centro)), "the landing is solid ground");
+        w.step(shared::TICK_DT);
+        let t = w.sessions[&sid].em_terra.expect("ashore");
+        assert_eq!((t.ilhota, t.navio), (k, None));
+        // The trip: my clan holds islet 1; I stand on islet 0.
+        w.territorios.insert(k, tr::Dono { ilhota: k, cla_id: 7, ..Default::default() });
+        {
+            let s = w.sessions.get_mut(&sid).unwrap();
+            s.cla_id = 7;
+            s.ilhota_do_cla = Some(k);
+            s.em_terra = Some(EmTerra { ilhota: 0, navio: None });
+        }
+        w.ecs.get::<&mut Position>(corpo).unwrap().0 = shared::mar::ilhotas()[0].centro;
+        w.handle_navio(sid, PedidoNavio::IrParaIlhaDoCla);
+        assert_eq!(w.ecs.get::<&Position>(corpo).unwrap().0, tr::chegada_na_ilhota(ilha.centro));
+        assert_eq!(w.sessions[&sid].em_terra.unwrap().ilhota, k);
+        // Cooldown: a second trip from elsewhere is refused.
+        w.ecs.get::<&mut Position>(corpo).unwrap().0 = shared::mar::ilhotas()[0].centro;
+        w.handle_navio(sid, PedidoNavio::IrParaIlhaDoCla);
+        assert_eq!(w.ecs.get::<&Position>(corpo).unwrap().0, shared::mar::ilhotas()[0].centro, "cooldown");
+        // FREE REPAIR at my Governor.
+        w.ecs.get::<&mut Position>(corpo).unwrap().0 = tr::pos_do_governador(ilha.centro);
+        w.sessions.get_mut(&sid).unwrap().em_terra = Some(EmTerra { ilhota: k, navio: None });
+        let (id, mut d) = w.navio_equipado(sid).expect("a ship");
+        d.casco = 1;
+        w.guarda_navio(sid, d);
+        let cobre = crate::craft::tem(&w.sessions[&sid].inventory, shared::item_id::COPPER);
+        w.handle_navio(sid, PedidoNavio::Reparar);
+        let (_, d) = w.navio_equipado(sid).unwrap();
+        assert_eq!(d.casco, nv::casco_total(id, &d), "repaired");
+        assert_eq!(crate::craft::tem(&w.sessions[&sid].inventory, shared::item_id::COPPER), cobre, "free");
+        // During its war: not free (and not at the dock: refused).
+        let mut d2 = d.clone();
+        d2.casco = 1;
+        w.guarda_navio(sid, d2);
+        w.guerras.push(tr::Guerra { id: 9, ilhota: k, ..Default::default() });
+        w.guerras_abertas.insert(9);
+        w.handle_navio(sid, PedidoNavio::Reparar);
+        assert_eq!(w.navio_equipado(sid).unwrap().1.casco, 1, "no free repair in its war");
     }
 
     /// THE COAST'S PUSH (owner, 20/11/2026): a hull with its bow buried in

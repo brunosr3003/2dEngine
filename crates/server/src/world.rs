@@ -76,7 +76,7 @@ pub enum IncomingMessage {
     },
     /// Presence heartbeat answer: (character, clan id, clan tag, the clan's
     /// islet (size, village level) for the territory's passives).
-    ClaDosPresentes(Vec<(String, i64, String, Option<(u8, u8)>)>),
+    ClaDosPresentes(Vec<(String, i64, String, Option<(u8, u8, u8)>)>),
     /// TERRITORIES: the held islets, read from the database.
     Territorios(Vec<shared::territorio::Dono>),
     /// CLAN FLAGS: every clan's flag, read from the database.
@@ -2619,6 +2619,10 @@ pub struct Session {
     /// TERRITORIES: my clan's islet (size, village level), for the passives
     /// (`territorio::passivas_do_territorio`); from the presence heartbeat.
     pub territorio_do_cla: Option<(u8, u8)>,
+    /// THE ISLET AS A BASE: my clan's islet, and when I may travel there
+    /// again (sim seconds).
+    pub ilhota_do_cla: Option<u8>,
+    pub viagem_a_ilha_em: f32,
     /// The tag last put on the nameplate; a change forces the meta again.
     cla_tag_visto: String,
     /// Power last sent in this player's meta (re-sent when it changes).
@@ -8658,6 +8662,8 @@ impl GameWorld {
                 cla_id: 0,
                 cla_tag: String::new(),
                 territorio_do_cla: None,
+                ilhota_do_cla: None,
+                viagem_a_ilha_em: 0.0,
                 cla_tag_visto: String::new(),
                 poder_visto: 0,
                 renascimentos: 0,
