@@ -2264,6 +2264,53 @@ mod testes {
         assert_eq!(w.navio_equipado(sid).unwrap().1.casco, 1, "no free repair in its war");
     }
 
+    /// PHASE 6: a main island's clan FORT — claimed on foot at its heart in
+    /// the island's own process; a clan holds one islet AND one fort; the
+    /// fort has its Governor only; the sea does not run it.
+    #[test]
+    fn o_forte_da_ilha_principal_se_toma_a_pe() {
+        use shared::territorio as tr;
+        let (mut w, sid, _rx) = mundo();
+        w.step(shared::TICK_DT);
+        w.zona = "ilha_inicial".into();
+        let f = tr::lugares_da_zona("ilha_inicial")[0];
+        assert!(tr::e_forte(f.k) && w.tem_forte());
+        let corpo = w.sessions[&sid].entity.unwrap();
+        {
+            let s = w.sessions.get_mut(&sid).unwrap();
+            s.cla_id = 7;
+            s.cla_tag = "MAR".into();
+            s.conves = None;
+            s.em_terra = None;
+        }
+        // The clan already holds a SEA islet: the fort is still open to it.
+        w.territorios.insert(3, tr::Dono { ilhota: 3, cla_id: 7, ..Default::default() });
+        // Away from the fort: nothing to claim.
+        w.ecs.get::<&mut Position>(corpo).unwrap().0 = f.centro + Vec2::X * (f.raio + 30.0);
+        assert!(w.pode_reivindicar(sid).is_err());
+        w.ecs.get::<&mut Position>(corpo).unwrap().0 = f.centro;
+        assert_eq!(w.pode_reivindicar(sid), Ok(f.k));
+        w.handle_navio(sid, PedidoNavio::ReivindicarIlhota);
+        assert!(w.tomadas.contains_key(&f.k), "the claim starts on foot");
+        for _ in 0..((tr::TEMPO_DE_TOMADA_S + 1.0) / shared::TICK_DT) as u32 {
+            w.ecs.get::<&mut Position>(corpo).unwrap().0 = f.centro;
+            w.tick_tomadas(shared::TICK_DT);
+        }
+        assert_eq!(w.territorios.get(&f.k).map(|d| d.cla_id), Some(7), "the fort is the clan's");
+        // The island runs it: the Governor alone stands there.
+        w.step(shared::TICK_DT);
+        assert_eq!(w.npcs_das_ilhotas.get(&f.k).map(|v| v.len()), Some(1));
+        assert!(!w.npcs_das_ilhotas.contains_key(&3), "the sea islet is not this process's");
+        // One fort per clan: holding another one, this one is refused.
+        let mut outro = w.territorios.remove(&f.k).unwrap();
+        outro.ilhota = tr::PRIMEIRO_FORTE + 1;
+        w.territorios.insert(outro.ilhota, outro);
+        assert!(w.pode_reivindicar(sid).is_err(), "one main-island fort per clan");
+        // And the sea does not run the forts it hears of.
+        w.zona = shared::mar::ZONA.into();
+        assert!(!w.e_daqui(f.k) && w.e_daqui(3));
+    }
+
     /// THE COAST'S PUSH (owner, 20/11/2026): a hull with its bow buried in
     /// an islet's beach eases back out until its whole outline floats.
     #[test]

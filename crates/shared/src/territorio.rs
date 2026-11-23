@@ -83,6 +83,101 @@ pub struct TomadaInfo {
 pub const PEQUENA: u8 = 1;
 pub const MEDIA: u8 = 2;
 pub const GRANDE: u8 = 3;
+/// TERRITORIES phase 6: a main island's clan FORT — a large territory in
+/// every rule (Fortress, tracks to 10, 90-minute wars) but walled tighter to
+/// fit its clearing (`terreno::RAIO_PLATO_DO_FORTE`) and with no cannons (no
+/// ships come there).
+pub const FORTE: u8 = 4;
+
+/// The first territory id of the main-island forts: `PRIMEIRO_FORTE + i` is
+/// the fort of `terreno::ARQUIPELAGO[i]`; below it, `mar::ilhotas()` indices.
+pub const PRIMEIRO_FORTE: u8 = 100;
+
+/// Is territory `k` a main-island fort (not a sea islet)?
+pub fn e_forte(k: u8) -> bool {
+    k >= PRIMEIRO_FORTE
+}
+
+/// A TERRITORY wherever it is: a sea islet or a main island's fort — the
+/// fields the rules read (`mar::IlhaVista` has the same names).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Lugar {
+    pub k: u8,
+    /// The process it lives in.
+    pub zona: &'static str,
+    pub nome: &'static str,
+    pub centro: glam::Vec2,
+    pub raio: f32,
+    pub porte: u8,
+    /// Which way the gate faces (radians).
+    pub fase: f32,
+    /// The level band (defenders' levels).
+    pub nivel: (u32, u32),
+}
+
+/// Territory `k`: a sea islet (`k < PRIMEIRO_FORTE`) or a main island's fort.
+pub fn lugar(k: u8) -> Option<Lugar> {
+    if !e_forte(k) {
+        let i = crate::mar::ilhotas().get(k as usize)?;
+        return Some(Lugar {
+            k,
+            zona: crate::mar::ZONA,
+            nome: i.nome,
+            centro: i.centro,
+            raio: i.raio,
+            porte: i.porte,
+            fase: i.fase,
+            nivel: i.nivel,
+        });
+    }
+    static FORTES: std::sync::OnceLock<Vec<Option<Lugar>>> = std::sync::OnceLock::new();
+    FORTES
+        .get_or_init(|| {
+            crate::terreno::ARQUIPELAGO
+                .iter()
+                .enumerate()
+                .map(|(n, def)| {
+                    let ger = crate::terreno::Gerador::da_ilha(def);
+                    let f = ger.forte()?;
+                    let centro = f.centro();
+                    let cidade = ger.cidade().map_or(glam::Vec2::ZERO, |c| c.centro());
+                    let rumo = cidade - centro;
+                    let nome: &'static str = Box::leak(format!("{} Fort", def.nome).into_boxed_str());
+                    Some(Lugar {
+                        k: PRIMEIRO_FORTE + n as u8,
+                        zona: def.zona,
+                        nome,
+                        centro,
+                        raio: f.raio,
+                        porte: FORTE,
+                        fase: rumo.y.atan2(rumo.x),
+                        nivel: def.nivel,
+                    })
+                })
+                .collect()
+        })
+        .get((k - PRIMEIRO_FORTE) as usize)
+        .copied()
+        .flatten()
+}
+
+/// Every territory of process `zona` (the sea's islets, or an island's fort).
+pub fn lugares_da_zona(zona: &str) -> Vec<Lugar> {
+    if crate::mar::e_mar(zona) {
+        return (0..crate::mar::ilhotas().len() as u8).filter_map(lugar).collect();
+    }
+    crate::terreno::ARQUIPELAGO
+        .iter()
+        .position(|d| d.zona == zona)
+        .and_then(|n| lugar(PRIMEIRO_FORTE + n as u8))
+        .into_iter()
+        .collect()
+}
+
+/// The territory whose ground (centre to `raio`) holds `p` in process `zona`.
+pub fn lugar_em(zona: &str, p: glam::Vec2) -> Option<Lugar> {
+    lugares_da_zona(zona).into_iter().find(|l| l.centro.distance(p) <= l.raio)
+}
 
 /// An islet's radius for its size (`f` in 0..1 varies it a little).
 pub fn raio_do_porte(porte: u8, f: f32) -> f32 {
@@ -96,6 +191,7 @@ pub fn raio_do_porte(porte: u8, f: f32) -> f32 {
 pub fn nome_do_porte(porte: u8) -> &'static str {
     match porte {
         GRANDE => "Large",
+        FORTE => "Fort",
         MEDIA => "Medium",
         _ => "Small",
     }
@@ -109,7 +205,7 @@ pub const NOMES_DA_VILA: [&str; 4] = ["Camp", "Village", "Fort", "Fortress"];
 /// Fort, large up to Fortress.
 pub fn vila_maxima(porte: u8) -> u8 {
     match porte {
-        GRANDE => 4,
+        GRANDE | FORTE => 4,
         MEDIA => 3,
         _ => 2,
     }
@@ -119,7 +215,7 @@ pub fn vila_maxima(porte: u8) -> u8 {
 /// defenders, wood, stone, energy) of a size.
 pub fn trilha_maxima(porte: u8) -> u8 {
     match porte {
-        GRANDE => 10,
+        GRANDE | FORTE => 10,
         MEDIA => 7,
         _ => 4,
     }
@@ -143,7 +239,7 @@ pub fn ouro_da_vila(n: u8) -> u64 {
 /// The war window of a size, minutes (phase 5): 45 / 60 / 90.
 pub fn janela_da_guerra_min(porte: u8) -> u32 {
     match porte {
-        GRANDE => 90,
+        GRANDE | FORTE => 90,
         MEDIA => 60,
         _ => 45,
     }
@@ -153,6 +249,7 @@ pub fn janela_da_guerra_min(porte: u8) -> u32 {
 pub fn raio_da_muralha(porte: u8) -> f32 {
     match porte {
         GRANDE => 40.0,
+        FORTE => 24.0,
         MEDIA => 30.0,
         _ => 21.0,
     }
@@ -161,6 +258,7 @@ pub fn raio_da_muralha(porte: u8) -> f32 {
 /// How many cannon plots an islet has on its coast.
 pub fn canhoes_do_porte(porte: u8) -> usize {
     match porte {
+        FORTE => 0,
         GRANDE => 6,
         MEDIA => 4,
         _ => 2,
@@ -415,7 +513,7 @@ pub fn quantos_defensores(porte: u8, n: u8) -> usize {
         return 0;
     }
     let base = match porte {
-        GRANDE => 4,
+        GRANDE | FORTE => 4,
         MEDIA => 3,
         _ => 2,
     };
@@ -615,7 +713,7 @@ pub fn manutencao_semanal(niveis: &[u8; N_TRILHAS]) -> u64 {
 /// speed and chest gold), as fractions.
 pub fn passivas_do_territorio(porte: u8, vila: u8) -> (f32, f32) {
     let por_vila = match porte {
-        GRANDE => 0.04,
+        GRANDE | FORTE => 0.04,
         MEDIA => 0.03,
         _ => 0.02,
     };
@@ -704,4 +802,34 @@ pub const RECARGA_DA_VIAGEM_S: f32 = 600.0;
 /// Where the trip to islet centre `centro` lands: in front of the Governor.
 pub fn chegada_na_ilhota(centro: glam::Vec2) -> glam::Vec2 {
     pos_do_governador(centro) + glam::Vec2::new(0.0, 2.5)
+}
+
+#[cfg(test)]
+mod testes_do_lugar {
+    use super::*;
+
+    #[test]
+    fn todo_lugar_responde_ilhotas_e_fortes() {
+        let n = crate::mar::ilhotas().len();
+        assert_eq!(lugares_da_zona(crate::mar::ZONA).len(), n);
+        for k in 0..n as u8 {
+            let l = lugar(k).unwrap();
+            assert_eq!(l.centro, crate::mar::ilhotas()[k as usize].centro);
+            assert!(!e_forte(k));
+        }
+        let fortes: Vec<Lugar> = crate::terreno::ARQUIPELAGO
+            .iter()
+            .flat_map(|d| lugares_da_zona(d.zona))
+            .collect();
+        assert!(fortes.len() >= 4, "the four Perlin islands have forts");
+        for f in &fortes {
+            assert!(e_forte(f.k) && f.porte == FORTE);
+            assert_eq!(lugar(f.k), Some(*f));
+            assert_eq!(lugar_em(f.zona, f.centro).map(|l| l.k), Some(f.k));
+            // The walls fit the clearing.
+            assert!(raio_da_muralha(FORTE) + 2.0 < crate::terreno::RAIO_PLATO_DO_FORTE);
+            assert_eq!(canhoes_do_porte(f.porte), 0);
+        }
+        assert!(lugar(250).is_none());
+    }
 }

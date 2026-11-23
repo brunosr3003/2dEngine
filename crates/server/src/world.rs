@@ -3222,7 +3222,7 @@ pub struct GameWorld {
     /// CLAN FLAGS: every clan's flag (clan id -> flag), loaded at sea.
     pub(crate) bandeiras: HashMap<i64, shared::bandeira::BandeiraDoCla>,
     /// TERRITORIES phase 4: each held islet's Governor and Farmer entities.
-    pub(crate) npcs_das_ilhotas: HashMap<u8, [hecs::Entity; 2]>,
+    pub(crate) npcs_das_ilhotas: HashMap<u8, Vec<hecs::Entity>>,
     /// TERRITORIES 4.3: each held islet's walls, gate and cannons.
     pub(crate) estruturas: HashMap<u8, territorios::Estruturas>,
     /// TERRITORIES: islets whose siege window is open now (structures can
@@ -14570,6 +14570,12 @@ impl GameWorld {
         self.sincroniza_pets();
         self.tick_pets(dt);
         self.tick_mar();
+        // TERRITORIES phase 6: a main island runs its clan fort (the sea runs
+        // its islets inside `tick_conves`).
+        if !self.no_mar() && !self.tutorial_mode && !self.dungeon_mode && self.tem_forte() {
+            self.tick_territorios();
+            self.tick_tomadas(dt);
+        }
         // A montaria VISTA sai do equipamento, e equipar acontece por muitos
         // caminhos (bolsa, saque que auto-equipa, correio, mercado). Conferir
         // no tick cobre todos: sem isto, equipar nao avisava ninguem e o

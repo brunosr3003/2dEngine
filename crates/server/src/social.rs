@@ -34,6 +34,10 @@ pub async fn init(pool: &PgPool) -> Result<()> {
         // TERRITORIES (docs/TERRITORIOS.md): which clan holds which islet
         // (`mar::ilhotas` index). One islet per clan; a dissolved clan frees it.
         "CREATE TABLE IF NOT EXISTS territorios (ilhota SMALLINT PRIMARY KEY, cla BIGINT NOT NULL UNIQUE REFERENCES social_clas(id) ON DELETE CASCADE, desde BIGINT NOT NULL)",
+        // Phase 6: a clan holds ONE sea islet and ONE main-island fort
+        // (`territorio::PRIMEIRO_FORTE`): unique per (clan, kind), not per clan.
+        "ALTER TABLE territorios DROP CONSTRAINT IF EXISTS territorios_cla_key",
+        "CREATE UNIQUE INDEX IF NOT EXISTS territorios_cla_tipo ON territorios (cla, (ilhota >= 100))",
         // CLAN FLAGS: the preset (`bandeira::Bandeira` packed); NULL = the
         // clan's default (`Bandeira::do_cla`). Read as Option, never NOT NULL.
         "ALTER TABLE social_clas ADD COLUMN IF NOT EXISTS bandeira INTEGER",
@@ -821,12 +825,30 @@ pub async fn executar(pool: &PgPool, eu: &str, pedido: &Pedido) -> Result<()> {
 }
 
 /// TERRITORIES: the islet clan `cla` holds, if any.
+/// The clan's SEA ISLET (a fort does not end the nomad life: the islet does).
 pub async fn territorio_do_cla(tx: &mut PgConnection, cla: i64) -> Result<Option<u8>> {
-    let v: Option<i16> = sqlx::query_scalar("SELECT ilhota FROM territorios WHERE cla=$1")
+    territorio_do_tipo(tx, cla, false).await
+}
+
+/// Phase 6: the clan's territory of a kind — its sea islet, or its
+/// main-island fort (one of each).
+pub async fn territorio_do_tipo(tx: &mut PgConnection, cla: i64, forte: bool) -> Result<Option<u8>> {
+    let v: Option<i16> = sqlx::query_scalar("SELECT ilhota FROM territorios WHERE cla=$1 AND (ilhota >= $2) = $3")
         .bind(cla)
+        .bind(shared::territorio::PRIMEIRO_FORTE as i16)
+        .bind(forte)
         .fetch_optional(&mut *tx)
         .await?;
     Ok(v.map(|i| i as u8))
+}
+
+/// "Your clan already holds …" for the kind of territory `k`.
+fn ja_tem(k: u8) -> &'static str {
+    if shared::territorio::e_forte(k) {
+        "Your clan already holds a main-island fort: one per clan."
+    } else {
+        "Your clan already holds a territory islet."
+    }
 }
 
 /// CLAN FLAGS: every clan's flag (the approved image comes with part 2).
@@ -900,8 +922,8 @@ async fn checar_reivindicacao(tx: &mut PgConnection, eu: &str, ilhota: u8) -> Re
     if lider != eu && cargo_meu != Some(cargo::OFICIAL as i16) {
         bail!("Only the clan leader or an officer can claim an islet.");
     }
-    if territorio_do_cla(&mut *tx, cla).await?.is_some() {
-        bail!("Your clan already holds a territory islet.");
+    if territorio_do_tipo(&mut *tx, cla, shared::territorio::e_forte(ilhota)).await?.is_some() {
+        bail!(ja_tem(ilhota));
     }
     let ocupada: bool =
         sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM territorios WHERE ilhota=$1)")
@@ -929,8 +951,8 @@ pub async fn reivindicar(pool: &PgPool, eu: &str, ilhota: u8) -> Result<shared::
     if lider != eu && cargo_meu != Some(cargo::OFICIAL as i16) {
         bail!("Only the clan leader or an officer can claim an islet.");
     }
-    if territorio_do_cla(&mut tx, cla).await?.is_some() {
-        bail!("Your clan already holds a territory islet.");
+    if territorio_do_tipo(&mut tx, cla, shared::territorio::e_forte(ilhota)).await?.is_some() {
+        bail!(ja_tem(ilhota));
     }
     let feito = sqlx::query(
         "INSERT INTO territorios(ilhota,cla,desde) VALUES($1,$2,extract(epoch from now())::bigint) ON CONFLICT DO NOTHING",
@@ -983,8 +1005,8 @@ async fn chefia(tx: &mut PgConnection, eu: &str) -> Result<i64> {
 pub async fn declarar_guerra(pool: &PgPool, eu: &str, ilhota: u8, agora: i64) -> Result<i64> {
     let mut tx = pool.begin().await?;
     let cla = chefia(&mut tx, eu).await?;
-    if territorio_do_cla(&mut tx, cla).await?.is_some() {
-        bail!("Your clan already holds an islet: one per clan.");
+    if territorio_do_tipo(&mut tx, cla, shared::territorio::e_forte(ilhota)).await?.is_some() {
+        bail!(if shared::territorio::e_forte(ilhota) { ja_tem(ilhota) } else { "Your clan already holds an islet: one per clan." });
     }
     let alvo: Option<(i64, i64)> = sqlx::query_as("SELECT cla, escudo_ate FROM territorios WHERE ilhota=$1")
         .bind(ilhota as i16)
@@ -1021,7 +1043,7 @@ pub async fn declarar_guerra(pool: &PgPool, eu: &str, ilhota: u8, agora: i64) ->
 pub async fn agendar_guerra(pool: &PgPool, eu: &str, ilhota: u8, dia: u8, hora: u8, agora: i64) -> Result<()> {
     let mut tx = pool.begin().await?;
     let cla = chefia(&mut tx, eu).await?;
-    if territorio_do_cla(&mut tx, cla).await? != Some(ilhota) {
+    if territorio_do_tipo(&mut tx, cla, shared::territorio::e_forte(ilhota)).await? != Some(ilhota) {
         bail!("Only the clan that holds this islet sets its war time.");
     }
     let travada: bool = sqlx::query_scalar(
@@ -1207,8 +1229,8 @@ pub async fn conquistar(pool: &PgPool, eu: &str, guerra: i64, escudo_ate: i64) -
     if atacante != cla {
         bail!("Your clan is not the attacker of this war.");
     }
-    if territorio_do_cla(&mut tx, cla).await?.is_some() {
-        bail!("Your clan already holds an islet: one per clan.");
+    if territorio_do_tipo(&mut tx, cla, shared::territorio::e_forte(ilhota as u8)).await?.is_some() {
+        bail!(if shared::territorio::e_forte(ilhota as u8) { ja_tem(ilhota as u8) } else { "Your clan already holds an islet: one per clan." });
     }
     let feito = sqlx::query(
         "UPDATE territorios SET cla=$2, desde=extract(epoch from now())::bigint, escudo_ate=$3, manutencao_em=0, atrasos=0 WHERE ilhota=$1",
@@ -1582,7 +1604,7 @@ pub async fn bater_presenca(
     let r: Vec<(String, i64, String, Option<i16>, Option<i16>)> = sqlx::query_as(
         "SELECT n, coalesce(m.cla,0), coalesce(c.tag,''), ter.ilhota, ter.niveis[1] FROM unnest($1::text[]) AS t(n)
            LEFT JOIN social_membros m ON m.nome=t.n LEFT JOIN social_clas c ON c.id=m.cla
-           LEFT JOIN territorios ter ON ter.cla=m.cla",
+           LEFT JOIN territorios ter ON ter.cla=m.cla AND ter.ilhota < 100",
     )
     .bind(&nomes)
     .fetch_all(pool)
@@ -2133,6 +2155,12 @@ mod tests {
         assert!(territorios(p).await?.is_empty());
         // (Held again for the rest of the test.)
         reivindicar(p, "Eva", 3).await?;
+        // PHASE 6: a clan holds one sea islet AND one main-island fort.
+        let forte = shared::territorio::PRIMEIRO_FORTE;
+        assert_eq!(reivindicar(p, "Eva", forte).await?.ilhota, forte, "islet + fort");
+        assert!(reivindicar(p, "Eva", forte + 1).await.is_err(), "one fort per clan");
+        assert_eq!(estado(p, "Eva").await?.cla.unwrap().territorio, Some(3), "the islet is still the clan's islet");
+        sqlx::query("DELETE FROM territorios WHERE ilhota=$1").bind(forte as i16).execute(p).await?;
         // THE CLAN SHOP: points per member, spent on an offer, by mail.
         let oferta = shared::territorio::loja_do_cla()[0];
         assert!(executar(p, "Eva", &Pedido::ComprarLojaCla { indice: 0 }).await.is_err(), "no points");

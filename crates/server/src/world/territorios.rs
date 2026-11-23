@@ -74,8 +74,31 @@ pub struct Tomada {
 const RECARREGA_A_CADA_S: u32 = 30;
 
 impl GameWorld {
-    /// Each tick at sea: reload now and then; send the list to whoever does
-    /// not have it yet.
+    /// Does this main island have a clan fort (`territorio::lugares_da_zona`)?
+    pub(crate) fn tem_forte(&self) -> bool {
+        !self.no_mar() && !shared::territorio::lugares_da_zona(&self.zona).is_empty()
+    }
+
+    /// Is territory `k` this process's (the sea's islets, an island's fort)?
+    pub(crate) fn e_daqui(&self, k: u8) -> bool {
+        shared::territorio::lugar(k).is_some_and(|l| l.zona == self.zona)
+    }
+
+    /// The territory session `s` stands on: at sea the islet they went ashore
+    /// on; on a main island its fort, inside its clearing.
+    pub(crate) fn lugar_da_sessao(&self, s: &Session) -> Option<u8> {
+        if self.no_mar() {
+            return s.em_terra.map(|t| t.ilhota);
+        }
+        if s.instancia != 0 {
+            return None;
+        }
+        let p = self.ecs.get::<&Position>(s.entity?).ok()?.0;
+        shared::territorio::lugar_em(&self.zona, p).map(|l| l.k)
+    }
+
+    /// Each tick (the sea, and every main island for its fort): reload now
+    /// and then; send the list to whoever does not have it yet.
     pub(crate) fn tick_territorios(&mut self) {
         if self.tick % (shared::TICK_RATE_HZ as u32 * RECARREGA_A_CADA_S) == 1 {
             self.carregar_territorios();
@@ -143,12 +166,16 @@ impl GameWorld {
             return;
         };
         let agora = agora_unix();
+        let cobra = self.no_mar();
         tokio::spawn(async move {
-            // The weekly upkeep falls due here (Monday 00:00, Brasília).
-            match crate::social::cobrar_manutencao(&ctx.pool, agora).await {
-                Ok(v) if !v.is_empty() => tracing::info!("manutencao: ilhotas liberadas por falta de pagamento: {v:?}"),
-                Ok(_) => {}
-                Err(e) => tracing::warn!("manutencao: falha ao cobrar: {e:#}"),
+            // The weekly upkeep falls due here (Monday 00:00, Brasília) —
+            // charged by the sea alone, for islets and forts.
+            if cobra {
+                match crate::social::cobrar_manutencao(&ctx.pool, agora).await {
+                    Ok(v) if !v.is_empty() => tracing::info!("manutencao: territorios liberados por falta de pagamento: {v:?}"),
+                    Ok(_) => {}
+                    Err(e) => tracing::warn!("manutencao: falha ao cobrar: {e:#}"),
+                }
             }
             match crate::social::territorios(&ctx.pool).await {
                 Ok(v) => {
@@ -195,10 +222,8 @@ impl GameWorld {
     /// The rules the sea knows; the clan rank is the database's.
     pub(crate) fn pode_reivindicar(&self, sid: SessionId) -> Result<u8, &'static str> {
         let s = self.sessions.get(&sid).ok_or("")?;
-        let t = s.em_terra.ok_or("Go ashore on a territory islet first.")?;
-        let ilha = shared::mar::ilhotas()
-            .get(t.ilhota as usize)
-            .ok_or("Go ashore on a territory islet first.")?;
+        let k = self.lugar_da_sessao(s).ok_or("Go ashore on a territory islet first.")?;
+        let ilha = shared::territorio::lugar(k).ok_or("Go ashore on a territory islet first.")?;
         let corpo = s
             .entity
             .and_then(|e| self.ecs.get::<&Position>(e).ok().map(|p| p.0))
@@ -209,18 +234,28 @@ impl GameWorld {
         if s.cla_id == 0 {
             return Err("Only a clan can claim a territory islet.");
         }
-        if let Some(dono) = self.territorios.get(&t.ilhota) {
+        if let Some(dono) = self.territorios.get(&k) {
             // Held: only the declared ATTACKER, in its war's open window.
-            let em_guerra = self.guerra_aberta(t.ilhota).is_some_and(|g| g.atacante_id == s.cla_id);
+            let em_guerra = self.guerra_aberta(k).is_some_and(|g| g.atacante_id == s.cla_id);
             if dono.cla_id == s.cla_id || !em_guerra {
                 return Err("This islet already belongs to a clan.");
             }
-            return Ok(t.ilhota);
+            return Ok(k);
         }
-        if self.territorios.values().any(|d| d.cla_id == s.cla_id) {
-            return Err("Your clan already holds a territory islet.");
+        // One sea islet and one main-island fort per clan.
+        let forte = shared::territorio::e_forte(k);
+        if self
+            .territorios
+            .values()
+            .any(|d| d.cla_id == s.cla_id && shared::territorio::e_forte(d.ilhota) == forte)
+        {
+            return Err(if forte {
+                "Your clan already holds a main-island fort: one per clan."
+            } else {
+                "Your clan already holds a territory islet."
+            });
         }
-        Ok(t.ilhota)
+        Ok(k)
     }
 
     /// CLAIM the free islet I stand on, at its heart (`PedidoNavio::
@@ -291,7 +326,7 @@ impl GameWorld {
             feito_s: 0.0,
             contestada: false,
         };
-        let ilha = shared::mar::ilhotas()[ilhota as usize].nome;
+        let ilha = shared::territorio::lugar(ilhota).map_or("the islet", |i| i.nome);
         tracing::info!("territorio: {} comecou a tomar {ilha}", tomada.nome);
         self.tomadas.insert(ilhota, tomada);
         self.send_chat_to(
@@ -320,7 +355,7 @@ impl GameWorld {
         let mut prontas = Vec::new();
         let mut mudou = false;
         for (ilhota, t) in self.tomadas.iter_mut() {
-            let centro = shared::mar::ilhotas()[*ilhota as usize].centro;
+            let centro = shared::territorio::lugar(*ilhota).map_or(Vec2::ZERO, |i| i.centro);
             let dentro = corpos
                 .iter()
                 .filter(|(_, _, p)| p.distance(centro) <= RAIO_DO_NUCLEO);
@@ -352,7 +387,7 @@ impl GameWorld {
         }
         for ilhota in canceladas {
             if let Some(t) = self.tomadas.remove(&ilhota) {
-                let ilha = shared::mar::ilhotas()[ilhota as usize].nome;
+                let ilha = shared::territorio::lugar(ilhota).map_or("the islet", |i| i.nome);
                 tracing::info!("territorio: tomada de {ilha} por {} cancelada", t.nome);
                 self.avisar_cla(t.cla_id, &format!("The claim on {ilha} was lost: no clan member was left in the ring."));
                 mudou = true;
@@ -458,9 +493,7 @@ impl GameWorld {
     pub fn on_reivindicacao(&mut self, sid: SessionId, resultado: Result<Dono, String>) {
         match resultado {
             Ok(d) => {
-                let ilha = shared::mar::ilhotas()
-                    .get(d.ilhota as usize)
-                    .map_or("the islet", |i| i.nome);
+                let ilha = shared::territorio::lugar(d.ilhota).map_or("the islet", |i| i.nome);
                 tracing::info!("territorio: {} reivindicou {ilha} para {}", self.nome_de(sid), d.cla);
                 let texto = format!("{ilha} now belongs to {}.", d.cla);
                 self.send_chat_to(sid, &texto);
@@ -504,17 +537,21 @@ impl GameWorld {
             .territorios
             .keys()
             .copied()
-            .filter(|k| !self.npcs_das_ilhotas.contains_key(k))
+            .filter(|k| self.e_daqui(*k) && !self.npcs_das_ilhotas.contains_key(k))
             .collect();
         for k in novas {
-            let Some(ilha) = shared::mar::ilhotas().get(k as usize) else {
+            let Some(ilha) = shared::territorio::lugar(k) else {
                 continue;
             };
             let mut es = Vec::new();
-            for (papel, pos) in [
+            // A main-island fort has its Governor only: its income is the
+            // island's tax, not plots of its own.
+            let papeis = [
                 (Papel::Governador, shared::territorio::pos_do_governador(ilha.centro)),
                 (Papel::Fazendeiro, shared::territorio::pos_do_fazendeiro(ilha.centro)),
-            ] {
+            ];
+            let n = if shared::territorio::e_forte(k) { 1 } else { 2 };
+            for (papel, pos) in papeis.into_iter().take(n) {
                 let eid = self.alloc_entity_id();
                 // Facing out from the heart.
                 let olha = (pos - ilha.centro).normalize_or_zero();
@@ -530,7 +567,7 @@ impl GameWorld {
                     },
                 )));
             }
-            self.npcs_das_ilhotas.insert(k, [es[0], es[1]]);
+            self.npcs_das_ilhotas.insert(k, es);
         }
     }
 
@@ -547,7 +584,7 @@ impl GameWorld {
         let Some(s) = self.sessions.get(&sid) else {
             return;
         };
-        let Some(k) = s.em_terra.map(|e| e.ilhota) else {
+        let Some(k) = self.lugar_da_sessao(s) else {
             return;
         };
         let Some(dono) = self.territorios.get(&k).cloned() else {
@@ -558,7 +595,7 @@ impl GameWorld {
             self.avisa_missao(sid, "Only the clan that holds this islet can upgrade it.".into());
             return;
         }
-        let Some(ilha) = shared::mar::ilhotas().get(k as usize) else {
+        let Some(ilha) = shared::territorio::lugar(k) else {
             return;
         };
         let npc = if tr::do_governador(t) {
@@ -699,10 +736,14 @@ impl GameWorld {
                 }
             }
         }
-        let donos: Vec<(u8, [u8; tr::N_TRILHAS], u8)> =
-            self.territorios.iter().map(|(k, d)| (*k, d.niveis, d.atrasos)).collect();
+        let donos: Vec<(u8, [u8; tr::N_TRILHAS], u8)> = self
+            .territorios
+            .iter()
+            .filter(|(k, _)| self.e_daqui(**k))
+            .map(|(k, d)| (*k, d.niveis, d.atrasos))
+            .collect();
         for (k, niveis, atrasos) in donos {
-            let Some(ilha) = shared::mar::ilhotas().get(k as usize) else {
+            let Some(ilha) = shared::territorio::lugar(k) else {
                 continue;
             };
             // Upkeep a week behind: the defences stand at half strength.
@@ -806,7 +847,7 @@ impl GameWorld {
     /// the holding clan through; a breach (0 HP) or a broken gate lets anyone.
     pub(crate) fn muralha_barra(&self, ilhota: u8, cla: i64, de: Vec2, para: Vec2) -> bool {
         use shared::territorio as tr;
-        let (Some(es), Some(ilha)) = (self.estruturas.get(&ilhota), shared::mar::ilhotas().get(ilhota as usize)) else {
+        let (Some(es), Some(ilha)) = (self.estruturas.get(&ilhota), shared::territorio::lugar(ilhota)) else {
             return false;
         };
         let Some(seg) = tr::cruza_a_muralha(ilha.centro, ilha.porte, de, para) else {
@@ -888,10 +929,14 @@ impl GameWorld {
                 }
             }
         }
-        let donos: Vec<(u8, [u8; tr::N_TRILHAS], u8)> =
-            self.territorios.iter().map(|(k, d)| (*k, d.niveis, d.atrasos)).collect();
+        let donos: Vec<(u8, [u8; tr::N_TRILHAS], u8)> = self
+            .territorios
+            .iter()
+            .filter(|(k, _)| self.e_daqui(**k))
+            .map(|(k, d)| (*k, d.niveis, d.atrasos))
+            .collect();
         for (k, niveis, atrasos) in donos {
-            let Some(ilha) = shared::mar::ilhotas().get(k as usize) else {
+            let Some(ilha) = shared::territorio::lugar(k) else {
                 continue;
             };
             let n = niveis[tr::trilha::DEFENSORES];
@@ -963,7 +1008,7 @@ impl GameWorld {
                 .values()
                 .find(|s| s.entity_id == alvo_id)
                 .and_then(|s| {
-                    let k = s.em_terra?.ilhota;
+                    let k = self.lugar_da_sessao(s)?;
                     let dono = self.territorios.get(&k)?;
                     (dono.cla_id == s.cla_id && s.cla_id != 0).then_some(k)
                 })
@@ -1127,7 +1172,7 @@ impl GameWorld {
         let Some(s) = self.sessions.get(&sid) else {
             return;
         };
-        let Some(k) = s.em_terra.map(|e| e.ilhota) else {
+        let Some(k) = self.lugar_da_sessao(s) else {
             return;
         };
         let Some(dono) = self.territorios.get(&k).cloned() else {
@@ -1140,7 +1185,7 @@ impl GameWorld {
             self.avisa_missao(sid, "The bank can only be plundered during a siege.".into());
             return;
         }
-        let Some(ilha) = shared::mar::ilhotas().get(k as usize) else {
+        let Some(ilha) = shared::territorio::lugar(k) else {
             return;
         };
         let perto = s
@@ -1217,7 +1262,10 @@ impl GameWorld {
         }
         let agora = agora_unix();
         let mut fechar = Vec::new();
-        for g in &self.guerras {
+        let zona = self.zona.clone();
+        let daqui = |k: u8| shared::territorio::lugar(k).is_some_and(|l| l.zona == zona);
+        let locais: Vec<shared::territorio::Guerra> = self.guerras.iter().filter(|g| daqui(g.ilhota)).cloned().collect();
+        for g in &locais {
             let atacante_no_anel = self.cla_no_anel(g.ilhota, g.atacante_id);
             let aberta = agora >= g.inicio && (agora < g.fim || atacante_no_anel);
             if aberta {
@@ -1250,7 +1298,7 @@ impl GameWorld {
             }
         }
         if defensor_ficou {
-            let ilha = shared::mar::ilhotas().get(k as usize).map_or("the islet", |i| i.nome);
+            let ilha = shared::territorio::lugar(k).map_or("the islet", |i| i.nome);
             let texto = format!("The war for {ilha} is over: the defenders held.");
             let alvos: Vec<SessionId> = self.sessions.iter().filter(|(_, s)| s.logged_in).map(|(id, _)| *id).collect();
             for sid in alvos {
@@ -1269,7 +1317,7 @@ impl GameWorld {
 
     /// Does clan `cla` have someone standing in islet `k`'s ring?
     fn cla_no_anel(&self, k: u8, cla: i64) -> bool {
-        let Some(ilha) = shared::mar::ilhotas().get(k as usize) else {
+        let Some(ilha) = shared::territorio::lugar(k) else {
             return false;
         };
         self.sessions.values().any(|s| {
@@ -1285,9 +1333,9 @@ impl GameWorld {
     /// The islet whose Governor `sid` stands by, if any (held by anyone).
     pub(crate) fn governador_ao_lado(&self, sid: SessionId) -> Option<u8> {
         let s = self.sessions.get(&sid)?;
-        let k = s.em_terra?.ilhota;
+        let k = self.lugar_da_sessao(s)?;
         self.territorios.get(&k)?;
-        let ilha = shared::mar::ilhotas().get(k as usize)?;
+        let ilha = shared::territorio::lugar(k)?;
         let p = self.ecs.get::<&Position>(s.entity?).ok()?.0;
         (p.distance(shared::territorio::pos_do_governador(ilha.centro)) <= shared::territorio::ALCANCE_DO_NPC + 1.0)
             .then_some(k)
@@ -1307,7 +1355,7 @@ impl GameWorld {
             let resultado = crate::social::declarar_guerra(&ctx.pool, &nome, k, agora)
                 .await
                 .map(|sabado| {
-                    let ilha = shared::mar::ilhotas().get(k as usize).map_or("the islet", |i| i.nome);
+                    let ilha = shared::territorio::lugar(k).map_or("the islet", |i| i.nome);
                     format!(
                         "War declared on {ilha} for the weekend of {} (the defender picks the hour).",
                         shared::territorio::data_curta(sabado)
@@ -1431,7 +1479,7 @@ impl GameWorld {
             self.avisa_missao(sid, format!("The trip to your islet is ready again in {}:{:02}.", falta / 60, falta % 60));
             return;
         }
-        let Some(ilha) = shared::mar::ilhotas().get(k as usize) else {
+        let Some(ilha) = shared::territorio::lugar(k) else {
             return;
         };
         let chegada = shared::territorio::chegada_na_ilhota(ilha.centro);

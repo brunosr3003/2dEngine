@@ -28,6 +28,25 @@ use serde::{Deserialize, Serialize};
 /// Aresta do voxel, em unidades de mundo. Uma unidade = um metro = um tile do
 /// mapa antigo; o jogador tem ~1,7.
 pub const BLOCO: f32 = 0.5;
+/// TERRITORIES phase 6: the fort's clearing is BUILT, not found — an
+/// earthwork: the plateau is cut or filled to its level whatever the relief
+/// (unlike `aplainar_sitio`, which gives up past `Cidade::MORRO`), and the
+/// ramp blends back by smoothstep.
+fn aplainar_forte(f: &Cidade, bx: i32, bz: i32, b: i32) -> i32 {
+    let d = f.distancia(glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO));
+    if d <= f.raio_plato {
+        f.nivel
+    } else if d < f.raio {
+        let t = suave((d - f.raio_plato) / (f.raio - f.raio_plato));
+        (f.nivel as f32 + (b - f.nivel) as f32 * t).round() as i32
+    } else {
+        b
+    }
+}
+
+/// TERRITORIES phase 6: the clan fort's flat plateau on a main island, in
+/// world units (the ramp around it is `Cidade::RAMPA`).
+pub const RAIO_PLATO_DO_FORTE: f32 = 34.0;
 
 /// Acima disto e' terra. O relevo nasce em metros com o mar no zero.
 pub const NIVEL_DO_MAR: f32 = 0.0;
@@ -1369,6 +1388,9 @@ pub fn arvore_da_coluna(
     ger: &Gerador,
     agua: bool,
 ) -> Option<ArvorePlantada> {
+    if ger.no_forte(bx, bz) {
+        return None;
+    }
     // NADA NA PONTE da Ilha Magica: ela e' estreita e um tronco a fecha.
     // At sea only the territory islets' tree plots grow (`mar::lote_da_coluna`).
     if ger.e_mar() {
@@ -1505,6 +1527,9 @@ pub fn planta_da_coluna(
     ger: &Gerador,
     agua: bool,
 ) -> Option<PlantaPlantada> {
+    if ger.no_forte(bx, bz) {
+        return None;
+    }
     // NADA NA PONTE: pedra de forracao tambem barra passagem.
     if ger.e_mar() || ger.na_ponte_magica(bx, bz) {
         return None;
@@ -1693,6 +1718,9 @@ pub fn minerio_da_coluna(
     ger: &Gerador,
     agua: bool,
 ) -> Option<Minerio> {
+    if ger.no_forte(bx, bz) {
+        return None;
+    }
     if ger.e_mar() {
         return lote_de_minerio(bx, bz, false);
     }
@@ -1775,6 +1803,9 @@ pub fn energia_da_coluna(
     ger: &Gerador,
     agua: bool,
 ) -> Option<Minerio> {
+    if ger.no_forte(bx, bz) {
+        return None;
+    }
     if ger.e_mar() {
         return lote_de_minerio(bx, bz, true);
     }
@@ -2030,6 +2061,10 @@ pub fn estorvos_da_coluna(
     agua: bool,
     saida: &mut Vec<Estorvo>,
 ) {
+    // The clan fort's clearing stays bare (territories phase 6).
+    if ger.no_forte(bx, bz) {
+        return;
+    }
     let coluna = chave_de_coluna(bx + ger.raio_blocos, bz + ger.raio_blocos);
     // THE OPEN SEA plants nothing but its floating wreckage (`mar`): wood
     // is a "trunk", Steel crates are "ore", Energy is Energy — so the whole
@@ -2150,6 +2185,9 @@ pub struct Gerador {
     desenhado: Option<RelevoDesenhado>,
     /// The Ermo's oasis (`oasis`): a pond and a grove, dug into the dunes.
     oasis: Option<crate::oasis::Oasis>,
+    /// TERRITORIES phase 6: the clan FORT of a main island — a flat clearing
+    /// a walk away from town (`achar_forte`), no trees, rocks or Energy on it.
+    forte: Option<Cidade>,
 }
 
 /// As zonas cujo relevo e' desenhado a mao, e nao sorteado.
@@ -2638,6 +2676,7 @@ impl Gerador {
             planalto: std::sync::OnceLock::new(),
             desenhado: Some(RelevoDesenhado::Mar),
             oasis: None,
+            forte: None,
         }
     }
 
@@ -2781,6 +2820,7 @@ impl Gerador {
             planalto: std::sync::OnceLock::new(),
             desenhado: None,
             oasis: None,
+            forte: None,
         };
         g.cidade = g.achar_cidade();
         g.porto = g.achar_porto(g.cidade);
@@ -2834,6 +2874,7 @@ impl Gerador {
             planalto: std::sync::OnceLock::new(),
             desenhado: None,
             oasis: None,
+            forte: None,
         };
         g.cidade = g.achar_cidade();
         g.porto = g.achar_porto(g.cidade);
@@ -2894,7 +2935,96 @@ impl Gerador {
                 std::sync::OnceLock::new();
             g.oasis = *OASIS.get_or_init(|| g.achar_oasis());
         }
+        // TERRITORIES phase 6: the clan fort's clearing, searched once per
+        // island and process (like the oasis: a `Gerador` is built often).
+        if let Some(n) = ARQUIPELAGO.iter().position(|d| d.zona == def.zona) {
+            static FORTES: [std::sync::OnceLock<Option<Cidade>>; ARQUIPELAGO.len()] =
+                [const { std::sync::OnceLock::new() }; ARQUIPELAGO.len()];
+            g.forte = *FORTES[n].get_or_init(|| g.achar_forte());
+        }
         g
+    }
+
+    /// TERRITORIES phase 6: this island's clan FORT clearing, if it has one.
+    pub fn forte(&self) -> Option<Cidade> {
+        self.forte
+    }
+
+    /// Inside the fort's clearing (plateau and ramp): nothing grows there.
+    pub fn no_forte(&self, bx: i32, bz: i32) -> bool {
+        self.forte.is_some_and(|f| {
+            f.distancia(glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO)) <= f.raio + 2.0
+        })
+    }
+
+    /// Where the clan fort goes: 200+ u from town (260+ on the Planalto, past
+    /// the castle), clear of the port and the oasis, on dry and gentle ground
+    /// (`avaliar_sitio`, the town's own test, plus the wider fort rim dry).
+    /// Deterministic: server and clients land on the same spot.
+    fn achar_forte(&self) -> Option<Cidade> {
+        let cidade = self.cidade?.centro();
+        let longe = if self.planalto().is_some() { 240.0 } else { 200.0 };
+        let raio = RAIO_PLATO_DO_FORTE + Cidade::RAMPA;
+        let mut melhor: Option<(f32, Cidade)> = None;
+        for anel in 0..24 {
+            let dist = longe + anel as f32 * 20.0;
+            for k in 0..32 {
+                let a = k as f32 / 32.0 * std::f32::consts::TAU;
+                let c = cidade + glam::Vec2::new(a.cos(), a.sin()) * dist;
+                if self.porto.is_some_and(|p| p.centro.distance(c) < 170.0) {
+                    continue;
+                }
+                if self.oasis.is_some_and(|o| o.centro.distance(c) < 160.0) {
+                    continue;
+                }
+                // The Planalto: clear of Stormkeep, its regions and roads.
+                if let Some(pl) = self.planalto() {
+                    if pl.d_forte(c) < crate::planalto::FORTE_RAIO + raio + 20.0
+                        || pl.regioes.iter().any(|r| r.centro.distance(c) < crate::planalto::RAIO + raio)
+                        || pl.distancia_estrada(c) < raio + 6.0
+                    {
+                        continue;
+                    }
+                }
+                // The ground as it stands (the Planalto raises its terraces
+                // over the raw relief): dry out to the ramp's end, and the
+                // plateau within an earthwork's reach of the centre's level
+                // (it is cut or filled flat, `aplainar_forte`).
+                let chao = |q: glam::Vec2| self.bloco_em((q.x / BLOCO).round() as i32, (q.y / BLOCO).round() as i32);
+                let seco = |b: i32| (b + 1) as f32 * BLOCO > Cidade::SECO;
+                let nivel = chao(c);
+                if !seco(nivel) {
+                    continue;
+                }
+                let (mut soma, mut soma2, mut n, mut ok) = (0.0f32, 0.0f32, 0.0f32, true);
+                for anel in 1..=5 {
+                    let r = raio * anel as f32 / 5.0;
+                    for i in 0..16 {
+                        let a = i as f32 / 16.0 * std::f32::consts::TAU;
+                        let b = chao(c + glam::Vec2::new(a.cos(), a.sin()) * r);
+                        if !seco(b) || (r <= RAIO_PLATO_DO_FORTE && (b - nivel).abs() > 12) {
+                            ok = false;
+                            break;
+                        }
+                        soma += b as f32;
+                        soma2 += (b * b) as f32;
+                        n += 1.0;
+                    }
+                    if !ok {
+                        break;
+                    }
+                }
+                if !ok {
+                    continue;
+                }
+                let var = (soma2 / n - (soma / n).powi(2)).max(0.0).sqrt();
+                let nota = var + dist * 0.002;
+                if melhor.is_none_or(|(n, _)| nota < n) {
+                    melhor = Some((nota, Cidade::nova(c.x / BLOCO, c.y / BLOCO, nivel).com_plato(RAIO_PLATO_DO_FORTE)));
+                }
+            }
+        }
+        melhor.map(|(_, f)| f)
     }
 
     /// The Ermo's oasis, if this island has one.
@@ -2994,8 +3124,13 @@ impl Gerador {
             Some(pl) => pl.muralha(glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO), b),
             None => b,
         };
-        match &self.oasis {
+        let b = match &self.oasis {
             Some(o) => o.moldar(bx, bz, b),
+            None => b,
+        };
+        // The clan fort's clearing, flattened last.
+        match &self.forte {
+            Some(f) => aplainar_forte(f, bx, bz, b),
             None => b,
         }
     }
@@ -3641,7 +3776,8 @@ const MAGICA: [u8; 4] = *b"TALT";
 // 9 (30/09/2026): the Ermo's oasis digs a pond into the dunes (`oasis`).
 // 10 (30/09/2026): the Porões are carved into a larger Arena (`planta`).
 // 11 (30/09/2026): the castle walls of Last Refuge (`planalto::muralha`).
-const VERSAO: u16 = 11;
+// 12 (23/11/2026): the clan fort's clearing on each main island (`achar_forte`).
+const VERSAO: u16 = 12;
 
 impl Ilha {
     pub fn planalto(&self) -> Option<&crate::planalto::Plano> {
@@ -8098,6 +8234,41 @@ mod testes_ilhas_aereas {
                 assert_eq!(pedras, 0, "{:?}", i.bonus);
                 assert!(plantas > 0, "a vegetação sumiu");
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod testes_do_forte {
+    use super::*;
+
+    /// TERRITORIES phase 6: every Perlin main island has a fort clearing,
+    /// a walk from town, flat and dry on its whole plateau.
+    #[test]
+    fn toda_ilha_principal_tem_um_forte_plano() {
+        for def in ARQUIPELAGO.iter().filter(|d| {
+            !crate::celeste::e_celeste(d.zona)
+                && !crate::kogen::e_kogen(d.zona)
+                && !crate::abissal::e_abissal(d.zona)
+                && !crate::magica::e_magica(d.zona)
+                && !crate::arena::e_arena(d.zona)
+                && !crate::mar::e_mar(d.zona)
+        }) {
+            let g = Gerador::da_ilha(def);
+            let f = g.forte().unwrap_or_else(|| panic!("{}: no fort site", def.zona));
+            let c = f.centro();
+            let cidade = g.cidade().unwrap().centro();
+            assert!(c.distance(cidade) >= 200.0, "{}: fort {c} too close to town", def.zona);
+            for i in 0..24 {
+                let a = i as f32 / 24.0 * std::f32::consts::TAU;
+                for r in [0.0, 10.0, 20.0, 30.0] {
+                    let q = c + glam::Vec2::new(a.cos(), a.sin()) * r;
+                    let (bx, bz) = ((q.x / BLOCO).round() as i32, (q.y / BLOCO).round() as i32);
+                    assert_eq!(g.bloco_em(bx, bz), f.nivel, "{}: plateau not flat at {q}", def.zona);
+                    assert!(g.no_forte(bx, bz));
+                }
+            }
+            eprintln!("{}: fort at {c} ({:.0} u from town)", def.zona, c.distance(cidade));
         }
     }
 }
