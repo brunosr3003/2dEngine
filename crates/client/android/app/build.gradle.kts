@@ -37,7 +37,11 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.niertech.tempest"
+        // BETA (`TEMPEST_BETA=1`, the beta-tester page's APK): its own package
+        // and name, so it installs BESIDE the Play app, not over it.
+        val beta = System.getenv("TEMPEST_BETA") != null
+        applicationId = if (beta) "com.niertech.tempest.beta" else "com.niertech.tempest"
+        manifestPlaceholders["appLabel"] = if (beta) "Tempest Beta" else "Tempest"
         minSdk = 24
         targetSdk = 36
         versionCode = 17
