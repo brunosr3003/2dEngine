@@ -272,6 +272,7 @@ async fn main() -> anyhow::Result<()> {
                         AvisoLoja::Resultado { ok, texto } => linhas.push(format!("resultado ok={ok}: {texto}")),
                         AvisoLoja::Montando { segundos } => linhas.push(format!("montando {segundos:.1}s")),
                         AvisoLoja::OfertasRelampago(v) => linhas.push(format!("ofertas: {}", v.len())),
+                        AvisoLoja::AbrirPagamento { url } => linhas.push(format!("pagamento: {url}")),
                         AvisoLoja::Invocacao { premio } => {
                             linhas.push(format!("invocacao: {premio:?}"));
                         }
