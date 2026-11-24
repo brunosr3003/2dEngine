@@ -26,6 +26,7 @@ mod financeiro;
 mod hud_layouts;
 mod latencia;
 mod loja;
+mod loja_asaas;
 mod loja_google_play;
 mod loja_npc;
 mod loot_mobs;

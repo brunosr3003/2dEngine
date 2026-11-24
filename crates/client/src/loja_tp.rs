@@ -397,6 +397,15 @@ impl LojaTp {
             AvisoLoja::Invocacao { .. } => None,
             AvisoLoja::Invocacoes { .. } => None,
             AvisoLoja::OfertasRelampago(_) => None,
+            // PC (Asaas): the checkout opens in the browser.
+            AvisoLoja::AbrirPagamento { url } => {
+                self.em_voo = false;
+                if crate::nativo::abrir_url(&url) {
+                    None
+                } else {
+                    Some(format!("Shop: open this link to pay: {url}"))
+                }
+            }
         }
     }
 
@@ -1935,7 +1944,7 @@ impl LojaTp {
             let ativo = !self.em_voo;
             botao_ouro(
                 bt,
-                &cat::preco_brl(pk.centavos),
+                &cat::preco_brl(centavos_aqui(pk)),
                 ativo,
                 !modal && bt.toca(m),
                 k,
@@ -2059,7 +2068,7 @@ impl LojaTp {
                 );
                 y += 38.0 * k;
                 estilo::texto(x, y, "Price", ts(13.0, k), estilo::SUAVE);
-                let preco = cat::preco_brl(pk.centavos);
+                let preco = cat::preco_brl(centavos_aqui(&pk));
                 estilo::texto_forte(
                     x + largura - estilo::medir_forte(&preco, ts(22.0, k)),
                     y + 4.0 * k,
@@ -2917,4 +2926,14 @@ fn cor_do_grau(grau: u8) -> Color {
     let h = shared::items::tier_color_hex(grau).trim_start_matches('#');
     let v = u32::from_str_radix(h, 16).unwrap_or(0xbf_bf_bf);
     Color::from_rgba((v >> 16) as u8, (v >> 8) as u8, v as u8, 255)
+}
+
+/// What a TP pack costs on THIS platform: the store's price on Android and
+/// iOS; on PC the Asaas checkout charges at least R$ 5,00 (its minimum).
+fn centavos_aqui(pk: &cat::PacoteTp) -> u32 {
+    if cfg!(any(target_os = "android", target_os = "ios")) {
+        pk.centavos
+    } else {
+        pk.centavos.max(500)
+    }
 }

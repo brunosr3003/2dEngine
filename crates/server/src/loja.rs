@@ -193,6 +193,9 @@ pub enum Provedor {
     Simulado,
     Desligado,
     GooglePlay,
+    /// The PC builds (Windows, Mac, Linux): an Asaas hosted checkout
+    /// (`loja_asaas`), confirmed later by `conferir_asaas`.
+    Asaas,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -201,8 +204,11 @@ pub enum Aprovacao {
         externo: String,
     },
     /// Provedor real: o jogador paga fora e o webhook confirma depois.
+    /// `externo` = the provider's id for the pending payment (the Asaas
+    /// checkout id), kept on the order to look it up.
     Pendente {
         url: String,
+        externo: String,
     },
     Recusado {
         motivo: String,
@@ -225,6 +231,7 @@ impl Provedor {
             Provedor::Simulado => "simulado",
             Provedor::Desligado => "desligado",
             Provedor::GooglePlay => "google_play",
+            Provedor::Asaas => "asaas",
         }
     }
 
@@ -240,6 +247,15 @@ impl Provedor {
             },
             Provedor::Desligado => Aprovacao::Recusado {
                 motivo: "Payment unavailable right now.".into(),
+            },
+            Provedor::Asaas => match crate::loja_asaas::criar_checkout(pedido, pacote).await {
+                Ok((externo, url)) => Aprovacao::Pendente { url, externo },
+                Err(e) => {
+                    tracing::warn!("loja: checkout Asaas falhou: {e}");
+                    Aprovacao::Recusado {
+                        motivo: "Payment unavailable right now.".into(),
+                    }
+                }
             },
             Provedor::GooglePlay => {
                 let Some(gp) = google_play else {
@@ -321,7 +337,11 @@ pub async fn comprar_tp(
     .bind(pedido)
     .bind(conta)
     .bind(&codigo)
-    .bind(pacote.centavos as i64)
+    .bind(if provedor == Provedor::Asaas {
+        crate::loja_asaas::centavos_no_pc(pacote) as i64
+    } else {
+        pacote.centavos as i64
+    })
     .bind(provedor.nome())
     .execute(central)
     .await?;
@@ -345,10 +365,10 @@ pub async fn comprar_tp(
     }
     let resposta = match provedor.iniciar(pedido, pacote, google_play).await {
         Aprovacao::Aprovado { externo } => confirmar_pagamento(central, pedido, &externo).await?,
-        Aprovacao::Pendente { url } => {
+        Aprovacao::Pendente { url, externo } => {
             sqlx::query("UPDATE loja_pedidos SET externo = $2, atualizado_em = NOW() WHERE id = $1 AND status = 'pendente'")
                 .bind(pedido)
-                .bind(&url)
+                .bind(&externo)
                 .execute(central)
                 .await?;
             return Ok(Resposta::Pendente { url });
@@ -461,6 +481,43 @@ pub async fn confirmar_pagamento(
             }
         }
     })
+}
+
+/// ASAAS: has the PC order `pedido` been paid? Looks its checkout up and,
+/// when paid, credits it (`confirmar_pagamento`, idempotent). `None` = still
+/// waiting (or not an Asaas order any more).
+pub async fn conferir_asaas(central: &PgPool, pedido: &str) -> Result<Option<Resposta>> {
+    let linha: Option<(String, Option<String>, String)> = sqlx::query_as(
+        "SELECT status, externo, provedor FROM loja_pedidos WHERE id = $1",
+    )
+    .bind(pedido)
+    .fetch_optional(central)
+    .await?;
+    let Some((status, Some(checkout), provedor)) = linha else {
+        return Ok(None);
+    };
+    if status != "pendente" || provedor != Provedor::Asaas.nome() {
+        return Ok(None);
+    }
+    match crate::loja_asaas::pagamento_do_checkout(&checkout).await {
+        Ok(Some(pagamento)) => Ok(Some(confirmar_pagamento(central, pedido, &pagamento).await?)),
+        Ok(None) => Ok(None),
+        Err(e) => {
+            tracing::warn!("loja: consulta Asaas do pedido {pedido} falhou: {e}");
+            Ok(None)
+        }
+    }
+}
+
+/// ASAAS: the account's PC orders still waiting for payment (last 2 days).
+pub async fn pendentes_asaas(central: &PgPool, conta: &str) -> Result<Vec<String>> {
+    Ok(sqlx::query_scalar(
+        "SELECT id FROM loja_pedidos WHERE conta = $1 AND provedor = 'asaas' AND status = 'pendente'
+           AND externo IS NOT NULL AND atualizado_em > NOW() - INTERVAL '2 days' ORDER BY atualizado_em DESC LIMIT 10",
+    )
+    .bind(conta)
+    .fetch_all(central)
+    .await?)
 }
 
 /// Compra de montaria ou skin com TP: debito e posse na mesma transacao.

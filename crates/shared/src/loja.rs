@@ -976,6 +976,11 @@ pub enum AvisoLoja {
     },
     /// Open flash offers of this account (may be empty).
     OfertasRelampago(Vec<OfertaRelampago>),
+    /// PC (Asaas): open this checkout link in the browser; the TP arrive
+    /// once the payment confirms. Appended.
+    AbrirPagamento {
+        url: String,
+    },
 }
 
 #[cfg(test)]

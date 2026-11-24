@@ -28,16 +28,22 @@ async fn comprar_tp_e_responder(
     pedido: &str,
     google_play: Option<banco::GooglePlayCompra<'_>>,
 ) {
-    match banco::comprar_tp(
-        central,
-        banco::Provedor::do_ambiente(),
-        conta,
-        pacote,
-        pedido,
-        google_play,
-    )
-    .await
-    {
+    // No store purchase token (the PC builds) and Asaas set up: its checkout.
+    let provedor = if google_play.is_none() && crate::loja_asaas::configurado() {
+        banco::Provedor::Asaas
+    } else {
+        banco::Provedor::do_ambiente()
+    };
+    match banco::comprar_tp(central, provedor, conta, pacote, pedido, google_play).await {
+        Ok(Resposta::Pendente { url }) => {
+            avisa(to, AvisoLoja::AbrirPagamento { url });
+            resultado(
+                to,
+                true,
+                "Finish the payment in your browser: your TP arrive here as soon as it confirms.",
+            );
+            vigiar_asaas(central.clone(), pedido.to_string(), conta.to_string(), nome_tel.to_string(), to.clone(), pacote);
+        }
         Ok(r) => {
             if let (Resposta::Feito { .. }, Some(p)) = (&r, cat::pacote(pacote)) {
                 let codigo = Produto::Tp(pacote).codigo();
@@ -55,6 +61,87 @@ async fn comprar_tp_e_responder(
         Err(e) => {
             tracing::warn!("loja: compra de TP falhou: {e:#}");
             resultado(to, false, "The shop is unavailable right now.");
+        }
+    }
+}
+
+/// ASAAS: watches a PC order while its checkout is open — every 5 s, then
+/// every 30 s — and credits it the moment it is paid (telling the player).
+fn vigiar_asaas(
+    central: sqlx::PgPool,
+    pedido: String,
+    conta: String,
+    nome_tel: String,
+    to: mpsc::UnboundedSender<ServerMessage>,
+    pacote: u16,
+) {
+    tokio::spawn(async move {
+        let fim = std::time::Instant::now()
+            + std::time::Duration::from_secs(crate::loja_asaas::MINUTOS_DO_CHECKOUT as u64 * 60 + 300);
+        let mut voltas = 0u32;
+        while std::time::Instant::now() < fim {
+            let espera = if voltas < 120 { 5 } else { 30 };
+            tokio::time::sleep(std::time::Duration::from_secs(espera)).await;
+            voltas += 1;
+            match banco::conferir_asaas(&central, &pedido).await {
+                Ok(Some(r)) => {
+                    creditou_asaas(&nome_tel, pacote, &r);
+                    resultado(&to, r.ok(), r.texto());
+                    let _ = conta;
+                    return;
+                }
+                Ok(None) => {}
+                Err(e) => tracing::warn!("loja: vigia do pedido Asaas {pedido}: {e:#}"),
+            }
+        }
+    });
+}
+
+/// Telemetry of an Asaas order credited.
+fn creditou_asaas(nome_tel: &str, pacote: u16, r: &Resposta) {
+    if let (Resposta::Feito { .. }, Some(p)) = (r, cat::pacote(pacote)) {
+        let codigo = Produto::Tp(pacote).codigo();
+        crate::telemetria::conta_de(nome_tel, "loja_pedido", &codigo, 1);
+        crate::telemetria::conta_de(
+            nome_tel,
+            "loja_receita_centavos",
+            "BRL",
+            crate::loja_asaas::centavos_no_pc(p) as i64,
+        );
+        crate::telemetria::conta_de(nome_tel, "loja_tp_vendida", codigo, p.total() as i64);
+    }
+}
+
+/// ASAAS: on opening the shop, the account's PC orders paid meanwhile (the
+/// player closed the game before the payment confirmed) are credited.
+async fn conferir_pendentes_asaas(
+    central: &sqlx::PgPool,
+    conta: &str,
+    nome_tel: &str,
+    to: &mpsc::UnboundedSender<ServerMessage>,
+) {
+    if !crate::loja_asaas::configurado() {
+        return;
+    }
+    let Ok(pedidos) = banco::pendentes_asaas(central, conta).await else {
+        return;
+    };
+    for pedido in pedidos {
+        if let Ok(Some(r)) = banco::conferir_asaas(central, &pedido).await {
+            let pacote = sqlx::query_scalar::<_, String>("SELECT produto FROM loja_pedidos WHERE id = $1")
+                .bind(&pedido)
+                .fetch_optional(central)
+                .await
+                .ok()
+                .flatten()
+                .and_then(|c| match Produto::de_codigo(&c) {
+                    Some(Produto::Tp(i)) => Some(i),
+                    _ => None,
+                });
+            if let Some(p) = pacote {
+                creditou_asaas(nome_tel, p, &r);
+            }
+            resultado(to, r.ok(), r.texto());
         }
     }
 }
@@ -197,6 +284,7 @@ impl GameWorld {
         tokio::spawn(async move {
             match pedido {
                 PedidoLoja::Estado => {
+                    conferir_pendentes_asaas(&central, &conta, &nome_tel, &to).await;
                     entregar_pendentes(&central, &conta, &personagem, sid, &tx_mundo).await;
                 }
                 PedidoLoja::ComprarTp { pacote, pedido } => {
