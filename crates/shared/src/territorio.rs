@@ -301,6 +301,10 @@ pub fn teto(t: usize, porte: u8, vila: u8) -> u8 {
     if t == trilha::VILA {
         return vila_maxima(porte);
     }
+    // A main-island fort: no cannons, no Farmer's resources.
+    if porte == FORTE && matches!(t, trilha::CANHOES | trilha::MADEIRA | trilha::PEDRA | trilha::ENERGIA) {
+        return 0;
+    }
     if matches!(t, trilha::MUROS | trilha::PORTOES | trilha::CANHOES) && vila < 2 {
         return 0;
     }
@@ -833,3 +837,8 @@ mod testes_do_lugar {
         assert!(lugar(250).is_none());
     }
 }
+
+/// PHASE 6: the share of every gather and mob drop on a main island that
+/// goes to the bank of the clan holding its fort (a sea islet takes 10% of
+/// its own plots; a main island is busier, so it pays even at 3%).
+pub const TAXA_DO_FORTE: f32 = 0.03;

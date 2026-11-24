@@ -23,6 +23,81 @@ pub fn define_no_mar(sim: bool) {
     NO_MAR.store(sim, Ordering::Relaxed);
 }
 
+/// The zone I am in (territories phase 6: which forts are here).
+static ZONA: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
+
+pub fn define_zona(zona: &str) {
+    if let Ok(mut z) = ZONA.lock() {
+        *z = zona.to_string();
+    }
+}
+
+/// The territory at world point `q`: the sea's islet there, or this main
+/// island's fort when `q` is inside its clearing.
+pub fn lugar_na_posicao(q: ::glam::Vec2) -> Option<shared::territorio::Lugar> {
+    if no_mar() {
+        return shared::territorio::lugar(shared::mar::indice_da_ilhota(q)? as u8);
+    }
+    forte_daqui().filter(|l| l.centro.distance(q) <= l.raio + 4.0)
+}
+
+/// This main island's clan fort, if it has one.
+pub fn forte_daqui() -> Option<shared::territorio::Lugar> {
+    let zona = ZONA.lock().ok()?.clone();
+    shared::territorio::lugares_da_zona(&zona).into_iter().next().filter(|l| shared::territorio::e_forte(l.k))
+}
+
+/// Is territory `k` in the zone I am in?
+pub fn lugar_daqui(k: u8) -> Option<shared::territorio::Lugar> {
+    let l = shared::territorio::lugar(k)?;
+    (ZONA.lock().ok()?.as_str() == l.zona).then_some(l)
+}
+
+/// The territory I stand on: at sea the islet I went ashore on; on a main
+/// island its fort, inside the clearing.
+pub fn lugar_aqui(w: &crate::world::World) -> Option<shared::territorio::Lugar> {
+    let eu = w.ents.get(&w.self_id?)?;
+    let p = ::glam::Vec2::new(eu.render_pos.x, eu.render_pos.y);
+    if no_mar() {
+        if !w.em_terra {
+            return None;
+        }
+        return shared::territorio::lugar(shared::mar::indice_da_ilhota(p)? as u8);
+    }
+    let zona = ZONA.lock().ok()?.clone();
+    shared::territorio::lugar_em(&zona, p)
+}
+
+/// CLAIM at the heart of a territory: a free one, or — my clan attacking it
+/// in its open war — a held one (the server checks clan, rank and war).
+pub fn pode_tomar_aqui(w: &crate::world::World) -> bool {
+    let (Some(l), Some(eu)) = (lugar_aqui(w), w.self_id.and_then(|id| w.ents.get(&id))) else {
+        return false;
+    };
+    let p = ::glam::Vec2::new(eu.render_pos.x, eu.render_pos.y);
+    if p.distance(l.centro) > shared::territorio::RAIO_DO_NUCLEO || tomada_da_ilhota(l.k).is_some() {
+        return false;
+    }
+    if dono_da_ilhota(l.k).is_none() {
+        return true;
+    }
+    let minha = crate::mapa::minha_tag_de_cla();
+    guerra_da_ilhota(l.k).is_some_and(|g| {
+        agora_unix() >= g.inicio && !g.atacante_tag.is_empty() && Some(g.atacante_tag.as_str()) == minha.as_deref()
+    })
+}
+
+/// ON A MAIN ISLAND: the CLAIM button at the fort's heart (at sea the helm
+/// toggle does it).
+pub fn botao_de_tomar_o_forte(z: &crate::hud_layout::Zonas, w: &crate::world::World) -> Option<nv::PedidoNavio> {
+    if no_mar() || !pode_tomar_aqui(w) {
+        return None;
+    }
+    let leme = retangulo_do_leme(z);
+    let r = Rect::new(leme.x - 60.0 * z.s, leme.y - 52.0 * z.s, leme.w + 120.0 * z.s, 42.0 * z.s);
+    crate::ui::botao(r, "Claim fort", true).then_some(nv::PedidoNavio::ReivindicarIlhota)
+}
+
 pub fn no_mar() -> bool {
     NO_MAR.load(Ordering::Relaxed)
 }
@@ -101,7 +176,7 @@ pub fn faixa_da_tomada(w: &crate::world::World) {
     let agora = agora_unix();
     let guerras = GUERRAS.lock().map(|g| g.clone()).unwrap_or_default();
     if let Some((g, ilha)) = guerras.iter().find_map(|g| {
-        let i = shared::mar::ilhotas().get(g.ilhota as usize)?;
+        let i = lugar_daqui(g.ilhota)?;
         (agora >= g.inicio && i.centro.distance(p) <= 160.0).then_some((g, i))
     }) {
         let s = (screen_height().min(screen_width()) / 800.0).clamp(0.8, 1.6);
@@ -118,7 +193,7 @@ pub fn faixa_da_tomada(w: &crate::world::World) {
     }
     let lista = TOMADAS.lock().map(|t| t.clone()).unwrap_or_default();
     let Some((t, ilha)) = lista.iter().find_map(|t| {
-        let i = shared::mar::ilhotas().get(t.ilhota as usize)?;
+        let i = lugar_daqui(t.ilhota)?;
         (i.centro.distance(p) <= 120.0).then_some((t, i))
     }) else {
         return;
@@ -379,15 +454,9 @@ pub fn acao_do_leme(
         let eu = w.ents.get(&eu_id)?;
         // At the heart of a FREE islet: claim it (the server checks the clan
         // and the rank).
-        let p = ::glam::Vec2::new(eu.render_pos.x, eu.render_pos.y);
-        if let Some(k) = shared::mar::indice_da_ilhota(p) {
-            let centro = shared::mar::ilhotas()[k].centro;
-            if p.distance(centro) <= shared::territorio::RAIO_DO_NUCLEO
-                && dono_da_ilhota(k as u8).is_none()
-                && tomada_da_ilhota(k as u8).is_none()
-            {
-                return Some(("Claim island", "CLAIM", nv::PedidoNavio::ReivindicarIlhota));
-            }
+        // (Also a HELD islet, for my clan attacking it in its war.)
+        if pode_tomar_aqui(w) {
+            return Some(("Claim island", "CLAIM", nv::PedidoNavio::ReivindicarIlhota));
         }
         let alcance = shared::mar::ALCANCE_DO_DESEMBARQUE;
         let navio_perto = w.ents.values().any(|e| {

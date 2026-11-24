@@ -1977,6 +1977,9 @@ pub fn draw_entities_com_sombras(
     // TERRITORIES: the islets' hearts (flag and claim ring).
     if crate::mar_ui::no_mar() {
         crate::mar_cena::nucleos_das_ilhotas();
+    } else if let Some(l) = crate::mar_ui::forte_daqui() {
+        // Phase 6: this main island's clan fort.
+        crate::mar_cena::nucleo_do_forte(&l, &|x, z| vista.chao_em(x, z));
     }
     // Os rastros sao transparentes: vao depois de tudo que e' solido, senao
     // o que fosse desenhado atras deles depois nao apareceria atraves.

@@ -2338,6 +2338,7 @@ impl Jogo {
                 // arquivo de tiles nem um byte de rede entram nisso.
                 self.zona_atual = map_name.clone();
                 mar_ui::define_no_mar(shared::mar::e_mar(&map_name));
+                mar_ui::define_zona(&map_name);
                 self.mar_rota.parar();
                 self.terreno = shared::terreno::def_da_zona(&map_name).map(terreno::Terreno::novo);
                 render3d::define_noite(
@@ -8503,6 +8504,9 @@ impl Jogo {
                 self.envia(ClientMessage::Navio { pedido });
             }
             mar_ui::faixa_da_tomada(&self.world);
+            if let Some(pedido) = mar_ui::botao_de_tomar_o_forte(&z, &self.world) {
+                self.envia(ClientMessage::Navio { pedido });
+            }
             if let Some(pedido) = self.ilha_ui.pilula(&z, &self.world) {
                 self.envia(ClientMessage::Navio { pedido });
             }

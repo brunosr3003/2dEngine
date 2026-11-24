@@ -135,6 +135,24 @@ pra cidade com o respawn crescente).
 - Exige generalizar território, cerco e banco (hoje no processo do mar)
   pra qualquer zona.
 
+**Feito (23/11/2026)** — `territorio::Lugar` responde igual pra ilhota
+(id 0–11) e forte (id `PRIMEIRO_FORTE` + índice no `ARQUIPELAGO`):
+- **Sítio**: `Gerador::achar_forte`, uma clareira de platô 34 u achada no boot
+  (200+ u da cidade, longe do porto, do oásis e, no Planalto, do Stormkeep,
+  das regiões e das estradas), **aplainada à força** (`aplainar_forte`) e sem
+  árvore/pedra/energia/estorvo. Relevo `VERSAO` 12. As 4 ilhas de Perlin têm
+  forte; Skyreach, Kōgen-tō e Abyssia (relevo desenhado) ainda não.
+- **Porte `FORTE`**: grande em tudo (Fortaleza, trilhas 10, guerra 90 min),
+  muralha raio 24, **sem canhões**, sem Fazendeiro (só Governador).
+- **Um forte + uma ilhota por clã**: índice único `(cla, ilhota >= 100)`.
+- **Processo**: cada ilha roda o próprio forte (`tick_territorios` fora do
+  mar); a manutenção só é cobrada pelo mar.
+- **Só clãs**: sem clã não fere estrutura/defensor, não vira invasor e não
+  contesta o anel.
+- **Taxa 3%** (`TAXA_DO_FORTE`) da coleta e do drop de mobs da ilha (ouro
+  incluído, equipamento nunca) pro banco do clã dono; pontos da loja pra quem
+  é do clã.
+
 ## Fase 4 em detalhe (21/11/2026)
 
 **Portes das ilhotas** (12 no total): 3 **grandes** (raio ~105) só na faixa

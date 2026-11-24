@@ -1442,6 +1442,7 @@ pub(crate) fn zonas_comuns_da_ilha(
         sitios.retain(|s| !p.contem(*s, MOB_LONGE_DA_CIDADE_UN));
     }
     sitios.retain(|s| !perto_de_posto(*s, &postos));
+
     // The Bosque's safe wood (`LENHA_SEM_MOB_UN`): no slot near its grove.
     let lenha = lenha_segura_com(ilha, def, &|p| terra.as_ref().is_none_or(|t| t.contem(p)));
     sitios.retain(|s| {
@@ -1480,6 +1481,12 @@ pub(crate) fn zonas_comuns_da_ilha(
     for i in (1..sitios.len()).rev() {
         semente = lcg(semente);
         sitios.swap(i, (semente % (i as u64 + 1)) as usize);
+    }
+    // Phase 6: no hunting ground on the clan fort's clearing (its guards and
+    // its war are there), nor right at its foot. Taken out AFTER the shuffle,
+    // so the rest of the island keeps the hunting grounds it had.
+    if let Some(f) = shared::territorio::lugares_da_zona(def.zona).into_iter().find(|l| shared::territorio::e_forte(l.k)) {
+        sitios.retain(|s| s.distance(f.centro) > f.raio + MOB_LONGE_DA_CIDADE_UN);
     }
     // A ILHA MÁGICA TEM REGRA PRÓPRIA DE ADENSAMENTO.
     //
@@ -12620,10 +12627,21 @@ impl GameWorld {
             .collect();
         // TERRITORIES: a body ashore on an islet walks the land, not the water.
         // (Its islet and clan: the walls stop those who may not pass.)
+        // (Phase 6: on a main island with a standing fort, every player meets
+        // its walls — there is no going ashore there.)
+        let forte_de_pe = (!self.no_mar())
+            .then(|| self.estruturas.keys().copied().find(|k| self.e_daqui(*k)))
+            .flatten();
         let corpos_em_terra: HashMap<Entity, (u8, i64)> = self
             .sessions
             .values()
-            .filter_map(|s| Some((s.entity?, (s.em_terra?.ilhota, s.cla_id))))
+            .filter_map(|s| {
+                let k = match forte_de_pe {
+                    Some(k) if s.instancia == 0 => k,
+                    _ => s.em_terra?.ilhota,
+                };
+                Some((s.entity?, (k, s.cla_id)))
+            })
             .collect();
         let defensores_em_terra: std::collections::HashSet<Entity> = self
             .ecs
@@ -13410,7 +13428,9 @@ impl GameWorld {
             }
             // A clan never hurts its own islet's defenders.
             if let Ok(d) = self.ecs.get::<&territorios::DefensorTag>(entity).map(|d| *d) {
-                if self.mesmo_cla_da_ilhota(attacker_id, d.ilhota) {
+                // (Nor, at a main-island fort, does anyone clanless: the
+                // fort war is the clans'.)
+                if self.mesmo_cla_da_ilhota(attacker_id, d.ilhota) || self.sem_cla_no_forte(attacker_id, d.ilhota) {
                     continue;
                 }
             }
@@ -14094,6 +14114,10 @@ impl GameWorld {
                 }
             }
             self.dono_do_saque = kill_credits.get(&eid).copied();
+            // Phase 6: the island's fort takes its tax (not in a dungeon).
+            if self.ecs.get::<&dungeon::Instancia>(e).is_err() {
+                self.taxa_do_forte(&mut drops, kill_credits.get(&eid).copied());
+            }
             self.spawn_loot_drops(pos, &drops, seed, spread, kind_id);
             if e_chefe_aqui {
                 if let Some(attacker) = kill_credits.get(&eid) {
@@ -22100,6 +22124,10 @@ impl GameWorld {
         if let Some(k) = shared::mar::indice_da_ilhota(c.centro).filter(|_| self.no_mar()) {
             self.recurso_da_ilhota(k as u8, c.tier, &mut drops, Some(sid));
         }
+        // Phase 6: on a main island, its fort's tax.
+        if let Some(eu) = self.sessions.get(&sid).filter(|s| s.instancia == 0).map(|s| s.entity_id) {
+            self.taxa_do_forte(&mut drops, Some(eu));
+        }
         let mut premio = drops.clone();
         if self.na_magica() {
             premio.push((shared::item_id::MOEDA_MAGICA, 1));
@@ -24643,12 +24671,13 @@ mod testes_da_ilha_magica_lotada {
         let zonas = zonas_comuns_da_ilha(&ilha, def, origem);
         for z in zonas.zonas.iter().filter(|z| z.lv_min <= 10) {
             println!(
-                "inicio nv{}-{}: {} mobs, distancia {:.0}, forte {}",
+                "inicio nv{}-{}: {} mobs, distancia {:.0}, forte {} (do forte de clã {:.0})",
                 z.lv_min,
                 z.lv_max,
                 z.slots.len(),
                 z.centro.distance(origem),
-                z.forte
+                z.forte,
+                shared::territorio::lugar(shared::territorio::PRIMEIRO_FORTE).map_or(-1.0, |f| f.centro.distance(z.centro))
             );
         }
         let inicio: Vec<_> = zonas
@@ -24753,6 +24782,10 @@ mod testes_da_ilha_magica_lotada {
                     || !terra.contem(p) || perto_de_posto(p, &postos)
                     || ilha.cidade().is_some_and(|c| c.distancia(p) <= shared::terreno::Cidade::RAIO + MOB_LONGE_DA_CIDADE_UN)
                     || ilha.porto().is_some_and(|c| c.contem(p, MOB_LONGE_DA_CIDADE_UN))
+                    // The clan fort's clearing is mob-free on purpose (phase 6).
+                    || shared::territorio::lugares_da_zona(def.zona)
+                        .iter()
+                        .any(|f| f.centro.distance(p) <= f.raio + MOB_LONGE_DA_CIDADE_UN)
                     // The safe wood is mob-free on purpose (`LENHA_SEM_MOB_UN`).
                     || lenha.iter().any(|t| t.centro.distance(p) <= LENHA_SEM_MOB_UN)
                 {

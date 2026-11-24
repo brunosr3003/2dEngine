@@ -3666,16 +3666,43 @@ pub fn nucleos_das_ilhotas() {
                 .collect()
         });
         for (n, (base, anel)) in geo.iter().enumerate() {
-            let dono = crate::mar_ui::dono_da_ilhota(n as u8);
+            nucleo(n as u8, *base, anel, minha.as_deref(), t);
+        }
+    });
+}
+
+/// TERRITORIES phase 6: a main island's FORT heart — the same flagpole and
+/// claim ring, on the island's ground (`chao`).
+pub fn nucleo_do_forte(l: &shared::territorio::Lugar, chao: &dyn Fn(f32, f32) -> f32) {
+    let r = shared::territorio::RAIO_DO_NUCLEO;
+    let (cx, cz) = (l.centro.x, l.centro.y);
+    let base = vec3(cx, chao(cx, cz), cz);
+    let anel: Vec<Vec3> = (0..=48)
+        .map(|k| {
+            let a = k as f32 / 48.0 * std::f32::consts::TAU;
+            let (x, z) = (cx + a.cos() * r, cz + a.sin() * r);
+            vec3(x, chao(x, z) + 0.1, z)
+        })
+        .collect();
+    let minha = crate::mapa::minha_tag_de_cla();
+    nucleo(l.k, base, &anel, minha.as_deref(), get_time() as f32);
+}
+
+/// One territory heart: pole, flag and claim ring in the owner's colour.
+fn nucleo(n: u8, base: Vec3, anel: &[Vec3], minha: Option<&str>, t: f32) {
+    {
+        {
+            let base = &base;
+            let dono = crate::mar_ui::dono_da_ilhota(n);
             let mut cor = match &dono {
                 None => Color::new(0.95, 0.78, 0.36, 1.0),
-                Some(d) if !d.tag.is_empty() && minha.as_deref() == Some(d.tag.as_str()) => {
+                Some(d) if !d.tag.is_empty() && minha == Some(d.tag.as_str()) => {
                     Color::new(0.42, 0.88, 0.52, 1.0)
                 }
                 Some(_) => Color::new(0.95, 0.36, 0.36, 1.0),
             };
             // A claim under way: the ring pulses (red while contested).
-            if let Some(tm) = crate::mar_ui::tomada_da_ilhota(n as u8) {
+            if let Some(tm) = crate::mar_ui::tomada_da_ilhota(n) {
                 let pulso = 0.55 + 0.45 * (t * 5.0).sin().abs();
                 let base = if tm.contestada {
                     Color::new(0.95, 0.36, 0.36, 1.0)
@@ -3698,7 +3725,7 @@ pub fn nucleos_das_ilhotas() {
             // running round it.
             anel_de_tomada(*base, anel, cor, t);
         }
-    });
+    }
 }
 
 
@@ -3857,11 +3884,11 @@ pub fn caixa(c: Vec3, meia: Vec3, yaw: f32, cor: Color) {
 pub fn estrutura(kind: u16, p: Vec3, hp: u32, hp_max: u32) {
     use shared::territorio as tr;
     let q = ::glam::Vec2::new(p.x, p.z);
-    let Some(k) = mar::indice_da_ilhota(q) else {
+    // A sea islet's, or this main island's fort's (phase 6).
+    let Some(ilha) = crate::mar_ui::lugar_na_posicao(q) else {
         return;
     };
-    let ilha = &mar::ilhotas()[k];
-    let niveis = crate::mar_ui::dono_da_ilhota(k as u8).map_or(tr::NIVEIS_INICIAIS, |d| d.niveis);
+    let niveis = crate::mar_ui::dono_da_ilhota(ilha.k).map_or(tr::NIVEIS_INICIAIS, |d| d.niveis);
     let radial = (q - ilha.centro).normalize_or_zero();
     let ang_radial = radial.y.atan2(radial.x);
     let ang_tang = ang_radial + std::f32::consts::FRAC_PI_2;

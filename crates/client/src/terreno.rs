@@ -2570,7 +2570,9 @@ mod testes {
         use shared::terreno::{Ilha, TipoDeEstorvo, ESCALA_ALTURA, NIVEL_DO_MAR};
         let d = &ARQUIPELAGO[0];
         let t = Terreno::novo(d);
-        let i = Ilha::carregar_ou_gerar("", d.semente, d.raio_blocos, d.bioma, ESCALA_ALTURA);
+        // The server's own loader (`tick.rs`): with the town, the port and
+        // the clan fort's clearing (phase 6) in the relief.
+        let i = Ilha::da_ilha(d);
         let mut n = 0;
         let mut energias = 0;
         for e in i.todos_os_estorvos() {

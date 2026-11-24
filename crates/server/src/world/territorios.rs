@@ -360,10 +360,13 @@ impl GameWorld {
                 .iter()
                 .filter(|(_, _, p)| p.distance(centro) <= RAIO_DO_NUCLEO);
             let (mut do_cla, mut de_fora) = (0, 0);
+            // (At a main-island fort the clanless are out of the war: they
+            // neither hold nor contest the ring.)
+            let forte = shared::territorio::e_forte(*ilhota);
             for (_, cla, _) in dentro {
                 if *cla == t.cla_id && *cla != 0 {
                     do_cla += 1;
-                } else {
+                } else if !(forte && *cla == 0) {
                     de_fora += 1;
                 }
             }
@@ -836,10 +839,24 @@ impl GameWorld {
         let Some(dono) = self.territorios.get(&t.ilhota) else {
             return false;
         };
+        // Phase 6: a main-island fort's war is the clans' alone — the
+        // clanless cannot strike it (on a sea islet anyone may).
+        let forte = shared::territorio::e_forte(t.ilhota);
         self.sessions
             .values()
             .find(|s| s.entity_id == atacante)
-            .is_some_and(|s| s.cla_id != dono.cla_id)
+            .is_some_and(|s| s.cla_id != dono.cla_id && (!forte || s.cla_id != 0))
+    }
+
+    /// Phase 6: at a main-island fort, is this body clanless (out of the
+    /// clans' war: neither invader nor target, nor striking the guards)?
+    pub(crate) fn sem_cla_no_forte(&self, quem: EntityId, k: u8) -> bool {
+        shared::territorio::e_forte(k)
+            && self
+                .sessions
+                .values()
+                .find(|s| s.entity_id == quem)
+                .is_some_and(|s| s.cla_id == 0)
     }
 
     /// Does the wall stop a step from `de` to `para` on islet `ilhota` for a
@@ -1016,7 +1033,7 @@ impl GameWorld {
         let Some(k) = ilhota else {
             return;
         };
-        if self.mesmo_cla_da_ilhota(atacante, k) {
+        if self.mesmo_cla_da_ilhota(atacante, k) || self.sem_cla_no_forte(atacante, k) {
             return;
         }
         let ate = self.sim_time_s + shared::territorio::INVASOR_S;
@@ -1154,6 +1171,59 @@ impl GameWorld {
         tokio::spawn(async move {
             if let Err(e) = crate::social::depositar_no_banco(&ctx.pool, cla, &taxa).await {
                 tracing::warn!("banco do cla: falha ao depositar a taxa: {e:#}");
+                return;
+            }
+            if let Some(nome) = membro {
+                if let Err(e) = crate::social::somar_pontos(&ctx.pool, cla, &nome, pts).await {
+                    tracing::warn!("loja do cla: falha ao somar pontos: {e:#}");
+                }
+            }
+        });
+    }
+
+    /// PHASE 6: THE FORT'S TAX — on a main island whose fort a clan holds,
+    /// `TAXA_DO_FORTE` of every gather and every mob drop there (gold
+    /// included, never equipment) goes to that clan's bank; a member of it
+    /// earns clan points for their own share, as on an islet.
+    pub(crate) fn taxa_do_forte(&mut self, drops: &mut [(u16, u32)], quem: Option<EntityId>) {
+        if self.no_mar() {
+            return;
+        }
+        let Some(dono) = self.territorios.values().find(|d| self.e_daqui(d.ilhota)).cloned() else {
+            return;
+        };
+        let mut taxa: Vec<(u16, u32)> = Vec::new();
+        for (item, qtd) in drops.iter_mut() {
+            if shared::equip_slot_of(*item).is_some() || *qtd == 0 {
+                continue;
+            }
+            let bruto = *qtd as f32 * shared::territorio::TAXA_DO_FORTE;
+            let t = (bruto.floor() as u32 + u32::from(fastrand::f32() < bruto.fract())).min(*qtd);
+            if t > 0 {
+                *qtd -= t;
+                taxa.push((*item, t));
+            }
+        }
+        if taxa.is_empty() {
+            return;
+        }
+        let Some(ctx) = self.auth_ctx.clone() else {
+            return;
+        };
+        let cla = dono.cla_id;
+        let membro = quem
+            .and_then(|id| self.sessions.values().find(|s| s.entity_id == id))
+            .filter(|s| s.cla_id == cla)
+            .map(|s| s.name.clone());
+        let pts: u32 = taxa
+            .iter()
+            .filter(|(i, _)| *i != shared::item_id::GOLD && *i != shared::item_id::COPPER)
+            .map(|(_, q)| q)
+            .sum::<u32>()
+            * shared::territorio::PONTOS_POR_ITEM_DE_TAXA;
+        tokio::spawn(async move {
+            if let Err(e) = crate::social::depositar_no_banco(&ctx.pool, cla, &taxa).await {
+                tracing::warn!("forte: falha ao depositar a taxa: {e:#}");
                 return;
             }
             if let Some(nome) = membro {

@@ -2311,6 +2311,85 @@ mod testes {
         assert!(!w.e_daqui(f.k) && w.e_daqui(3));
     }
 
+    /// PHASE 6: a fort's war opens in its island's process, not at sea (and
+    /// a sea islet's war not on an island).
+    #[test]
+    fn a_guerra_do_forte_abre_na_propria_ilha() {
+        use shared::territorio as tr;
+        let (mut w, _sid, _rx) = mundo();
+        w.step(shared::TICK_DT);
+        let f = tr::lugares_da_zona("ilha_inicial")[0];
+        let agora = super::territorios::agora_unix();
+        for k in [f.k, 3] {
+            w.territorios.insert(k, tr::Dono { ilhota: k, cla_id: 7, ..Default::default() });
+        }
+        w.guerras = vec![
+            tr::Guerra { id: 1, ilhota: f.k, atacante_id: 9, inicio: agora - 60, fim: agora + 3600, ..Default::default() },
+            tr::Guerra { id: 2, ilhota: 3, atacante_id: 9, inicio: agora - 60, fim: agora + 3600, ..Default::default() },
+        ];
+        w.tick_guerras();
+        assert!(w.guerras_abertas.contains(&2) && !w.guerras_abertas.contains(&1), "the sea opens its islet's war only");
+        w.guerras_abertas.clear();
+        w.cercos_abertos.clear();
+        w.zona = "ilha_inicial".into();
+        w.tick_guerras();
+        assert!(w.guerras_abertas.contains(&1) && !w.guerras_abertas.contains(&2), "the island opens its fort's war only");
+        assert!(w.cercos_abertos.contains(&f.k));
+        assert_eq!(tr::janela_da_guerra_min(f.porte), 90);
+    }
+
+    /// PHASE 6: a held fort gets walls, a gate and guards on its island (no
+    /// cannons); its war is the clans' — the clanless neither strike it nor
+    /// become invaders, nor contest its ring; and 3% of the island's
+    /// gathering and drops is its tax.
+    #[test]
+    fn o_forte_tem_muralha_e_guarda_e_cobra_taxa() {
+        use shared::territorio::{self as tr, trilha};
+        let (mut w, sid, _rx) = mundo();
+        let (sem_cla, _rx2) = marujo(&mut w, 47_471, 4_701, "Andarilho", Vec2::ZERO);
+        w.step(shared::TICK_DT);
+        w.zona = "ilha_inicial".into();
+        let f = tr::lugares_da_zona("ilha_inicial")[0];
+        let mut niveis = tr::NIVEIS_INICIAIS;
+        niveis[trilha::VILA] = 2;
+        niveis[trilha::MUROS] = 2;
+        niveis[trilha::PORTOES] = 2;
+        niveis[trilha::DEFENSORES] = 2;
+        niveis[trilha::CANHOES] = 2;
+        w.territorios.insert(f.k, tr::Dono { ilhota: f.k, cla_id: 7, niveis, ..Default::default() });
+        w.sessions.get_mut(&sid).unwrap().cla_id = 9;
+        w.manter_estruturas();
+        w.manter_defensores();
+        let es = &w.estruturas[&f.k];
+        assert_eq!(es.muros.iter().flatten().count(), tr::SEGMENTOS_DA_MURALHA - 1);
+        assert!(es.portao.is_some());
+        assert!(es.canhoes.is_empty(), "no cannons at a fort");
+        assert_eq!(w.defensores[&f.k].len(), tr::quantos_defensores(tr::FORTE, 2));
+        let muro = es.muros.iter().flatten().next().copied().unwrap();
+        let tag = *w.ecs.get::<&super::territorios::EstruturaTag>(muro).unwrap();
+        // The siege is open: a clan member may strike; the clanless may not.
+        w.cercos_abertos.insert(f.k);
+        let eu = w.sessions[&sid].entity_id;
+        let andarilho = w.sessions[&sem_cla].entity_id;
+        assert!(w.pode_ferir_estrutura(eu, tag));
+        assert!(!w.pode_ferir_estrutura(andarilho, tag), "the clanless are out of the fort war");
+        let corpo_muro = w.ecs.get::<&NetId>(muro).unwrap().0;
+        w.marcar_invasor(andarilho, muro, corpo_muro);
+        assert!(!w.invasores.get(&f.k).is_some_and(|m| m.contains_key(&andarilho)));
+        w.marcar_invasor(eu, muro, corpo_muro);
+        assert!(w.invasores[&f.k].contains_key(&eu), "a clan attacker is an invader");
+        // THE TAX: ~3% of a big gold drop.
+        let mut drops = vec![(shared::item_id::GOLD, 100_000u32), (shared::item_id::SCALE, 1)];
+        w.taxa_do_forte(&mut drops, None);
+        let levou = 100_000 - drops[0].1;
+        assert!((2_900..=3_100).contains(&levou), "{levou}");
+        // At sea nothing of the sort.
+        w.zona = shared::mar::ZONA.into();
+        let mut drops = vec![(shared::item_id::GOLD, 100_000u32)];
+        w.taxa_do_forte(&mut drops, None);
+        assert_eq!(drops[0].1, 100_000);
+    }
+
     /// THE COAST'S PUSH (owner, 20/11/2026): a hull with its bow buried in
     /// an islet's beach eases back out until its whole outline floats.
     #[test]

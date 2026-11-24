@@ -2681,6 +2681,7 @@ pub const VERBETES: &[(&str, &str)] = &[
     ("Territory: {n}", "Território: {n}"),
     ("Nomad clan", "Clã nômade"),
     // ilha_ui.rs — Governador e Fazendeiro (fase 4)
+    ("Claim fort", "Tomar o forte"),
     ("Repair ship (free)", "Reparar navio (grátis)"),
     ("Travel to the islet", "Viajar para a ilhota"),
     ("Clan shop · {p} points", "Loja do clã · {p} pontos"),

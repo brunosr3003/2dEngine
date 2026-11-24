@@ -21,21 +21,20 @@ pub struct IlhaUi {
 /// The held islet of MY clan whose Governor or Farmer I stand by:
 /// (islet, Governor?).
 fn npc_perto(w: &crate::world::World) -> Option<(u8, bool)> {
-    if !w.em_terra {
-        return None;
-    }
+    let l = crate::mar_ui::lugar_aqui(w)?;
     let eu = w.ents.get(&w.self_id?)?;
     let p = ::glam::Vec2::new(eu.render_pos.x, eu.render_pos.y);
-    let k = shared::mar::indice_da_ilhota(p)?;
-    let dono = crate::mar_ui::dono_da_ilhota(k as u8)?;
+    let k = l.k;
+    let dono = crate::mar_ui::dono_da_ilhota(k)?;
     if dono.tag.is_empty() || Some(dono.tag.as_str()) != crate::mapa::minha_tag_de_cla().as_deref() {
         return None;
     }
-    let c = shared::mar::ilhotas()[k].centro;
+    let c = l.centro;
     if p.distance(tr::pos_do_governador(c)) <= tr::ALCANCE_DO_NPC {
-        Some((k as u8, true))
-    } else if p.distance(tr::pos_do_fazendeiro(c)) <= tr::ALCANCE_DO_NPC {
-        Some((k as u8, false))
+        Some((k, true))
+    } else if !tr::e_forte(k) && p.distance(tr::pos_do_fazendeiro(c)) <= tr::ALCANCE_DO_NPC {
+        // (A main-island fort has no Farmer.)
+        Some((k, false))
     } else {
         None
     }
@@ -43,18 +42,14 @@ fn npc_perto(w: &crate::world::World) -> Option<(u8, bool)> {
 
 /// The held islet of ANOTHER clan whose Governor I stand by.
 fn governador_inimigo_perto(w: &crate::world::World) -> Option<u8> {
-    if !w.em_terra {
-        return None;
-    }
+    let l = crate::mar_ui::lugar_aqui(w)?;
     let eu = w.ents.get(&w.self_id?)?;
     let p = ::glam::Vec2::new(eu.render_pos.x, eu.render_pos.y);
-    let k = shared::mar::indice_da_ilhota(p)?;
-    let dono = crate::mar_ui::dono_da_ilhota(k as u8)?;
+    let dono = crate::mar_ui::dono_da_ilhota(l.k)?;
     if !dono.tag.is_empty() && Some(dono.tag.as_str()) == crate::mapa::minha_tag_de_cla().as_deref() {
         return None;
     }
-    let c = shared::mar::ilhotas()[k].centro;
-    (p.distance(tr::pos_do_governador(c)) <= tr::ALCANCE_DO_NPC).then_some(k as u8)
+    (p.distance(tr::pos_do_governador(l.centro)) <= tr::ALCANCE_DO_NPC).then_some(l.k)
 }
 
 impl IlhaUi {
@@ -107,12 +102,14 @@ impl IlhaUi {
         ouro: u64,
     ) -> Option<PedidoNavio> {
         let (k, gov) = self.aberto?;
-        let ilha = shared::mar::ilhotas().get(k as usize)?;
+        let ilha = tr::lugar(k)?;
         let dono = crate::mar_ui::dono_da_ilhota(k)?;
         let (sw, sh) = (screen_width(), screen_height());
         let s = (sh.min(sw) / 800.0).clamp(0.75, 1.5);
+        // (A fort has no cannons: no ships come there.)
         let trilhas: Vec<usize> = (0..tr::N_TRILHAS)
             .filter(|t| tr::do_governador(*t) == gov)
+            .filter(|t| !(*t == tr::trilha::CANHOES && tr::canhoes_do_porte(ilha.porte) == 0))
             .collect();
         let linha = 64.0 * s;
         let w = (760.0 * s).min(sw - 24.0);
