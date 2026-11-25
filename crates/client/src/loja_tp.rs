@@ -398,10 +398,13 @@ impl LojaTp {
             AvisoLoja::Invocacoes { .. } => None,
             AvisoLoja::OfertasRelampago(_) => None,
             // PC (Asaas): the checkout opens in the browser.
+            // Not paid yet: no celebration until the server confirms it.
             AvisoLoja::AbrirPagamento { url } => {
                 self.em_voo = false;
+                let texto = AGUARDANDO_PAGAMENTO.to_string();
+                self.ultimo = Some((true, texto.clone()));
                 if crate::nativo::abrir_url(&url) {
-                    None
+                    Some(format!("Shop: {texto}"))
                 } else {
                     Some(format!("Shop: open this link to pay: {url}"))
                 }
@@ -2914,12 +2917,29 @@ mod tests {
     }
 
     #[test]
+    fn checkout_aberto_nao_comemora_antes_de_pagar() {
+        let mut l = LojaTp {
+            em_voo: true,
+            ..Default::default()
+        };
+        // An empty link opens nothing (the test never launches a browser).
+        l.receber(AvisoLoja::AbrirPagamento { url: String::new() });
+        assert!(!l.em_voo);
+        assert!(l.festa_pendente.is_none(), "so' comemora quando o pagamento confirma");
+        assert_eq!(l.ultimo.as_ref().map(|u| u.1.as_str()), Some(AGUARDANDO_PAGAMENTO));
+    }
+
+    #[test]
     fn primeiro_estado_nao_anima_o_saldo() {
         let mut l = LojaTp::default();
         l.receber(AvisoLoja::Estado(estado(900)));
         assert_eq!(l.tp_mostrado, 900.0);
     }
 }
+
+/// PC (Asaas): shown while the checkout is open in the browser.
+const AGUARDANDO_PAGAMENTO: &str =
+    "Finish the payment in your browser: your TP arrive here as soon as it confirms.";
 
 /// A cor do grau do pet, da mesma tabela de cor dos itens.
 fn cor_do_grau(grau: u8) -> Color {

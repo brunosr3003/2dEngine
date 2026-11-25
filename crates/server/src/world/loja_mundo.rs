@@ -36,12 +36,9 @@ async fn comprar_tp_e_responder(
     };
     match banco::comprar_tp(central, provedor, conta, pacote, pedido, google_play).await {
         Ok(Resposta::Pendente { url }) => {
+            // Only the link: the client says "finish it in the browser" without
+            // celebrating; the success result comes when the payment confirms.
             avisa(to, AvisoLoja::AbrirPagamento { url });
-            resultado(
-                to,
-                true,
-                "Finish the payment in your browser: your TP arrive here as soon as it confirms.",
-            );
             vigiar_asaas(central.clone(), pedido.to_string(), conta.to_string(), nome_tel.to_string(), to.clone(), pacote);
         }
         Ok(r) => {

@@ -29,6 +29,9 @@ pub fn modo_celular() -> bool {
 
 /// Opens `url` in the system browser. `false` if it could not.
 pub fn abrir_url(url: &str) -> bool {
+    if url.trim().is_empty() {
+        return false;
+    }
     #[cfg(target_os = "ios")]
     {
         ios::abrir_url(url)

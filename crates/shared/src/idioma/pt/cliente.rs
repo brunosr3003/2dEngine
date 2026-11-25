@@ -2680,6 +2680,8 @@ pub const VERBETES: &[(&str, &str)] = &[
     ("{n} · Free territory", "{n} · Território livre"),
     ("Territory: {n}", "Território: {n}"),
     ("Nomad clan", "Clã nômade"),
+    // loja_tp.rs — checkout do Asaas aberto (PC)
+    ("Finish the payment in your browser: your TP arrive here as soon as it confirms.", "Conclua o pagamento no navegador: seus TP chegam aqui assim que ele for confirmado."),
     // ilha_ui.rs — Governador e Fazendeiro (fase 4)
     ("Shop: open this link to pay: {u}", "Loja: abra este link para pagar: {u}"),
     ("Claim fort", "Tomar o forte"),

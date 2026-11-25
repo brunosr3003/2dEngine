@@ -19,7 +19,6 @@ pub const VERBETES: &[(&str, &str)] = &[
     ("Only the clan leader or an officer can claim an islet.", "Só o líder ou um oficial do clã pode tomar uma ilhota."),
     ("{i} now belongs to {c}.", "{i} agora pertence a {c}."),
     ("This islet is already being claimed.", "Esta ilhota já está sendo tomada."),
-    ("Finish the payment in your browser: your TP arrive here as soon as it confirms.", "Conclua o pagamento no navegador: seus TP chegam aqui assim que ele for confirmado."),
     ("Your clan already holds a main-island fort: one per clan.", "Seu clã já tem um forte de ilha principal: um por clã."),
     ("Hull repaired at your clan's islet, free.", "Casco reparado na ilhota do clã, de graça."),
     ("You can't travel to your islet from here.", "Daqui não dá para viajar para a sua ilhota."),
