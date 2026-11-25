@@ -2388,7 +2388,11 @@ impl LojaTp {
             }
             return Some(ClientMessage::Loja {
                 pedido: match conf {
-                    Confirma::Tp(pacote) => PedidoLoja::ComprarTp { pacote, pedido },
+                    // PC: the Asaas checkout; iOS: the server's provider.
+                    Confirma::Tp(pacote) if cfg!(target_os = "ios") => {
+                        PedidoLoja::ComprarTp { pacote, pedido }
+                    }
+                    Confirma::Tp(pacote) => PedidoLoja::ComprarTpNoPc { pacote, pedido },
                     Confirma::Item(produto) => PedidoLoja::ComprarItem {
                         produto,
                         vezes: cat::lote(self.lote),

@@ -27,9 +27,11 @@ async fn comprar_tp_e_responder(
     pacote: u16,
     pedido: &str,
     google_play: Option<banco::GooglePlayCompra<'_>>,
+    no_pc: bool,
 ) {
-    // No store purchase token (the PC builds) and Asaas set up: its checkout.
-    let provedor = if google_play.is_none() && crate::loja_asaas::configurado() {
+    // A PC build (`ComprarTpNoPc`) and Asaas set up: its checkout. Anything
+    // else keeps the server's provider (simulated on the test server).
+    let provedor = if no_pc && google_play.is_none() && crate::loja_asaas::configurado() {
         banco::Provedor::Asaas
     } else {
         banco::Provedor::do_ambiente()
@@ -258,6 +260,7 @@ impl GameWorld {
         let compra = matches!(
             pedido,
             PedidoLoja::ComprarTp { .. }
+                | PedidoLoja::ComprarTpNoPc { .. }
                 | PedidoLoja::ComprarTpGooglePlay { .. }
                 | PedidoLoja::ComprarItem { .. }
                 | PedidoLoja::ComprarOfertaGooglePlay { .. }
@@ -285,7 +288,11 @@ impl GameWorld {
                     entregar_pendentes(&central, &conta, &personagem, sid, &tx_mundo).await;
                 }
                 PedidoLoja::ComprarTp { pacote, pedido } => {
-                    comprar_tp_e_responder(&central, &conta, &nome_tel, &to, pacote, &pedido, None)
+                    comprar_tp_e_responder(&central, &conta, &nome_tel, &to, pacote, &pedido, None, false)
+                        .await;
+                }
+                PedidoLoja::ComprarTpNoPc { pacote, pedido } => {
+                    comprar_tp_e_responder(&central, &conta, &nome_tel, &to, pacote, &pedido, None, true)
                         .await;
                 }
                 // Mesma compra, aprovada pelo Google Play real (Android) em
@@ -306,6 +313,7 @@ impl GameWorld {
                         pacote,
                         &pedido,
                         google_play,
+                        false,
                     )
                     .await;
                 }

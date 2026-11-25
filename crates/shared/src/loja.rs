@@ -804,6 +804,14 @@ pub enum PedidoLoja {
         oferta: String,
         pedido: String,
     },
+    /// TP pack bought from a PC build (Windows/Mac/Linux): paid on the Asaas
+    /// checkout when the server has it. `ComprarTp` (iOS, older clients)
+    /// keeps the server's own provider — simulated on the test server, and
+    /// never an outside checkout on the iPhone. Appended.
+    ComprarTpNoPc {
+        pacote: u16,
+        pedido: String,
+    },
 }
 
 /// Mail ("Entregas") origin of anything bought with real money: it waits
