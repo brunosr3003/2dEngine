@@ -40,6 +40,7 @@ Nov 20, 2026 — New ships and naval PvP
 - Form alliances through your party, sail in separate ships without friendly fire and share wreck loot with nearby allies.
 - Naval combat now has progressive respawn delays, with a return to your deck while your ship survives.
 - On Windows, Mac and Linux, TP packs are now paid by Pix or card on a secure checkout page that opens in your browser; your TP arrive in the game as soon as the payment confirms (the shop only celebrates once it does).
+- Creating an account or recovering a password on a phone: tap outside the fields, or press Return on the last one, to close the keyboard and reach the button.
 
 Nov 13, 2026 — Clans, PK modes and the Prime Merchant
 

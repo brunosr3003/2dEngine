@@ -9703,13 +9703,20 @@ impl Jogo {
         );
         let digitado = self.teclado.digitado().to_vec();
         let mut email = std::mem::take(&mut self.esq_email);
-        if ui::campo(ce, "E-mail", &mut email, true, false, &digitado) {
+        let tocou_campo = ui::campo(ce, "E-mail", &mut email, true, false, &digitado);
+        if tocou_campo {
             self.campo_login_ativo = true;
+        } else if crate::foco::clique() {
+            // Toque fora do campo fecha o teclado da tela.
+            self.campo_login_ativo = false;
         }
         self.esq_email = email;
 
         let enter = is_key_pressed(KeyCode::Enter) || is_key_pressed(KeyCode::KpEnter);
         let pode = self.esq_email.contains('@') && !esperando;
+        if enter && !pode {
+            self.campo_login_ativo = false;
+        }
         let rotulo = if esperando {
             "Sending…"
         } else {
@@ -9806,11 +9813,19 @@ impl Jogo {
                 true,
             ),
         ];
+        let mut tocou_campo = false;
         for (i, (rect, rotulo, valor, senha)) in campos.iter_mut().enumerate() {
             if ui::campo(*rect, rotulo, valor, self.cad_foco == i, *senha, &digitado) {
                 self.cad_foco = i;
                 self.campo_login_ativo = true;
+                tocou_campo = true;
             }
+        }
+        // Toque fora dos campos fecha o teclado da tela (o dono, no iPhone:
+        // "se eu clico fora do teclado ele não fecha") — e o botão de criar,
+        // que o teclado cobre, volta a aparecer.
+        if crate::foco::clique() && !tocou_campo {
+            self.campo_login_ativo = false;
         }
         self.cad_usuario = std::mem::take(&mut campos[0].2);
         self.cad_email = std::mem::take(&mut campos[1].2);
@@ -9853,6 +9868,12 @@ impl Jogo {
         } else {
             "Create account"
         };
+        // Return no último campo com algo faltando: fecha o teclado, pra o
+        // motivo e o botão aparecerem (no iPhone deitado o teclado cobre
+        // metade da tela e o card não sobe o bastante pra mostrar os dois).
+        if enter && self.cad_foco == 3 && !pode {
+            self.campo_login_ativo = false;
+        }
         if (ui::botao(ccriar, rotulo, pode) || (pode && self.cad_foco == 3 && enter)) && pode {
             self.campo_login_ativo = false;
             self.cad_recado = None;
