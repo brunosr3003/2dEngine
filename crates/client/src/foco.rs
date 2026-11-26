@@ -78,6 +78,13 @@ pub mod chave {
     /// pra abrir o que já estava aberto. O dono: "eu abro a ilha mágica e
     /// continua pedindo pra eu abrir o menu e não pra entrar na ilha mágica".
     pub const MAGICA_ENTRAR: u16 = 112;
+    /// A linha da HISTÓRIA no rastreador de missões, à esquerda.
+    ///
+    /// O primeiro passo do jogo: personagem novo, a missão inicial ativa e
+    /// ninguém disse que tocar nela faz o boneco ir sozinho. O dono: "a
+    /// primeira quest tem que ser um tutorial de fazer a quest, que é clicar
+    /// ali na esquerda, com aquela tela preta igual os outros tutoriais".
+    pub const RASTREADOR_HISTORIA: u16 = 113;
     // 110 era `MENU_MINHA_ILHA`, a linha "My Island" do Menu: saiu em
     // 15/11/2026 com a Minha Ilha. Nao reusar.
 }

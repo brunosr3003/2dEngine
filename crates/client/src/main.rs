@@ -630,6 +630,11 @@ struct Jogo {
     /// → Ilha Mágica.
     dica_da_trava: Option<f64>,
     nivel_ui: nivel_ui::NivelUi,
+    /// O tutorial da PRIMEIRA MISSÃO já foi feito (tocou numa missão ou
+    /// fechou o tutorial) nesta sessão.
+    primeira_missao_feita: bool,
+    /// O tutorial da primeira missão está pedindo o foco neste quadro.
+    primeira_missao_em_curso: bool,
 }
 
 // O glue Java/C do miniquad pro Android (QuadNative.activityOnCreate) chama
@@ -1234,6 +1239,8 @@ async fn main() {
         fila_feitas: 0,
         fila_puladas: 0,
         dica_da_trava: None,
+        primeira_missao_feita: false,
+        primeira_missao_em_curso: false,
         nivel_ui: nivel_ui::NivelUi::default(),
     };
     // `MMO_HOST` explicito pula a escolha — e' o caminho do run-client.sh e dos
@@ -3917,11 +3924,65 @@ impl Jogo {
         foco::pede(alvo_da_trava(self.magica.aberto()));
     }
 
+    /// A PRIMEIRA MISSÃO: personagem novo, a missão inicial da história ativa e
+    /// ninguém andando nela ainda — a tela escurece e só a linha dela no
+    /// rastreador, à esquerda, fica acesa, como nos outros tutoriais. Tocar
+    /// nela liga a auto missão (o boneco vai sozinho), e o tutorial acaba.
+    ///
+    /// Só com a tela LIVRE: o escuro trava todo toque fora do buraco, então
+    /// com qualquer painel, diálogo ou carregamento na frente ele esperaria
+    /// por cima de botões que o jogador precisa tocar.
+    fn foco_da_primeira_missao(&mut self) {
+        use shared::quests::quest_status;
+        self.primeira_missao_em_curso = false;
+        if self.primeira_missao_feita
+            || !matches!(self.tela, Tela::Jogando)
+            || self.foco_tutorial.is_some()
+            || self.dica_da_trava.is_some()
+            || self.auto_missao.quest.is_some()
+        {
+            return;
+        }
+        let primeira = self.missoes.log.iter().any(|q| {
+            q.id == shared::historia::PRIMEIRO_ID && q.status == quest_status::ACTIVE
+        });
+        if !primeira
+            || self.carregando_desde.is_some()
+            || self.painel_grande()
+            || self.dialogo.pega_mouse()
+            || self.nivel_ui.captura_entrada()
+            || self.missoes.aberta
+            || self.loja.aberta()
+            || self.dungeon.na_instancia()
+        {
+            return;
+        }
+        self.primeira_missao_em_curso = true;
+        foco::pede(&[foco::chave::RASTREADOR_HISTORIA]);
+    }
+
+    /// A legenda do tutorial da primeira missão, ao lado do buraco aceso.
+    fn legenda_da_primeira_missao(&self) {
+        if !self.primeira_missao_em_curso || !foco::ativo() {
+            return;
+        }
+        let seguro = hud_layout::tela_segura();
+        hud_estilo::texto_centro_forte(
+            seguro.x + seguro.w * 0.5,
+            seguro.y + seguro.h * 0.5,
+            "Tap your quest on the left: your character goes there by itself.",
+            20,
+            hud_estilo::OURO,
+        );
+    }
+
     /// O destaque de tutorial bloqueia os demais toques. Este botão fica
     /// acima do escurecimento e sempre permite sair da orientação.
     fn desenhar_fechar_tutorial(&mut self) {
         if self.nivel_ui.captura_entrada()
-            || (self.foco_tutorial.is_none() && self.dica_da_trava.is_none())
+            || (self.foco_tutorial.is_none()
+                && self.dica_da_trava.is_none()
+                && !self.primeira_missao_em_curso)
         {
             return;
         }
@@ -3949,6 +4010,7 @@ impl Jogo {
         if sobre && is_mouse_button_pressed(MouseButton::Left) {
             self.foco_tutorial = None;
             self.dica_da_trava = None;
+            self.primeira_missao_feita = true;
             foco::limpar();
         }
     }
@@ -4012,6 +4074,8 @@ impl Jogo {
 
     /// Clicou numa missao do rastreador (ou "Ir" no diario): auto missao.
     fn iniciar_auto_missao(&mut self, id: u16) {
+        // Tocou numa missão: o tutorial da primeira missão está feito.
+        self.primeira_missao_feita = true;
         self.parar_seguir();
         let Some(def) = shared::quests::quest_by_id(id) else {
             return;
@@ -7389,6 +7453,7 @@ impl Jogo {
         }
         self.foco_do_tutorial();
         self.foco_da_trava();
+        self.foco_da_primeira_missao();
         self.tocar_fila();
         if !self.auto_missao.ativo() && self.fila_de_missoes.is_empty() {
             self.auto_resumo.parar();
@@ -7501,6 +7566,7 @@ impl Jogo {
         self.recompensas
             .desenhar(&self.bolsa.nomes, Some((&self.vox, &self.solido)));
         foco::desenha(get_time());
+        self.legenda_da_primeira_missao();
         foco::novo_quadro();
         if let Some(escolha) = self.nivel_ui.desenhar() {
             self.fecha_paineis();

@@ -962,6 +962,9 @@ impl Missoes {
             let linha = Rect::new(r.x + 2.0, y, r.w - 4.0, lh * s);
             let principal = historia::e_da_historia(q.id);
             if principal {
+                crate::foco::marca(crate::foco::chave::RASTREADOR_HISTORIA, linha);
+            }
+            if principal {
                 // A história: uma tira dourada à esquerda. O losango e o
                 // fundo inteiro comiam a linha que agora é uma só.
                 draw_rectangle(
