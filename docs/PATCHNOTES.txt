@@ -42,6 +42,7 @@ Nov 20, 2026 — New ships and naval PvP
 - On Windows, Mac and Linux, TP packs are now paid by Pix or card on a secure checkout page that opens in your browser; your TP arrive in the game as soon as the payment confirms (the shop only celebrates once it does).
 - Creating an account or recovering a password on a phone: tap outside the fields, or press Return on the last one, to close the keyboard and reach the button.
 - New characters get a first-quest tutorial: the screen dims and lights up your quest on the left; tap it and your character walks there by itself.
+- The "Rate Tempest" prompt now shows after half an hour of play.
 
 Nov 13, 2026 — Clans, PK modes and the Prime Merchant
 

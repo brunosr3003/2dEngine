@@ -2,8 +2,8 @@
 //! 09/11/2026: "after some time playing, that 'rate us on the Play Store'
 //! with the send-review button").
 //!
-//! When: only after the player has really played — `SEGUNDOS_MIN` of play in
-//! the world and level `NIVEL_MIN` — at a calm moment (no window open, not in
+//! When: only after the player has really played — `SEGUNDOS_MIN` (30 min) of
+//! play in the world — at a calm moment (no window open, not in
 //! a dungeon). "Later" brings it back after `INTERVALO_DIAS`, at most
 //! `VEZES_MAX` times; "Rate" never again. The text is NEUTRAL on purpose:
 //! Google's policy forbids asking "do you like the game?" before sending
@@ -12,8 +12,8 @@
 //! Where it sends: the game's Google Play page (the Play Store app first,
 //! `market://`, then the web page). Android only in production — the iPhone
 //! app is not on the App Store yet. A TEST build (`MMO_API_PADRAO` set at
-//! compile time) uses short thresholds and shows it on every platform, so it
-//! can be tried on the test server.
+//! compile time) shows it on every platform (same 30 min), so it can be tried
+//! on the test server.
 //!
 //! State: a small file next to the device prefs (`<prefs>.avaliacao`),
 //! `segundos;vezes;ultimo_unix;feito`.
@@ -46,8 +46,11 @@ const fn comeca_com(s: &[u8], p: &[u8]) -> bool {
     }
     true
 }
-const SEGUNDOS_MIN: f64 = if TESTE { 120.0 } else { 2.0 * 3600.0 };
-const NIVEL_MIN: u32 = if TESTE { 1 } else { 10 };
+/// Half an hour of play, on every build (owner, 26/11/2026: level 5 — the
+/// test build's 2 minutes — "is too early, it has to be after half an hour
+/// of play"). No level gate: the time is the rule.
+const SEGUNDOS_MIN: f64 = 30.0 * 60.0;
+const NIVEL_MIN: u32 = 1;
 const INTERVALO_DIAS: i64 = if TESTE { 0 } else { 7 };
 const VEZES_MAX: u32 = 3;
 /// Where the prompt makes sense at all.
